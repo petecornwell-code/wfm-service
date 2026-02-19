@@ -62,12 +62,12 @@ The contiguous window of time to be covered, expressed as a start time and end t
 
 ### 4.3 Specializations
 
-Each agent has exactly two specialization assignments:
+Each agent has one primary and one or more secondary specialization assignments:
 
-- **Primary specialization** — the agent's main area of expertise.
-- **Secondary specialization** — a secondary area the agent can cover.
+- **Primary specialization** — the agent's main area of expertise (exactly one).
+- **Secondary specializations** — additional areas the agent can cover (one or more).
 
-The set of available specializations is an input (e.g. "Billing", "Technical Support", "Sales"). Each timeslot may require coverage from multiple specializations simultaneously; the solver prefers assigning agents whose primary specialization matches the need, but may fall back to secondary.
+The set of available specializations is an input (e.g. "Billing", "Technical Support", "Sales"). Each timeslot may require coverage from multiple specializations simultaneously; the solver prefers assigning agents whose primary specialization matches the need, but may fall back to any of their secondary specializations.
 
 ### 4.4 Staffing Demand
 
@@ -219,7 +219,7 @@ classDiagram
     }
 
     Agent "1" --> "1" Specialization : primarySpecialization
-    Agent "1" --> "1" Specialization : secondarySpecialization
+    Agent "1" --> "1..*" Specialization : secondarySpecializations
 
     StaffingRequirement "* " --> "1" Timeslot
     StaffingRequirement "* " --> "1" Specialization
@@ -262,7 +262,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `department` | `String` | Department (from BambooHR) |
 | `jobTitle` | `String` | Job title (from BambooHR) |
 | `primarySpecialization` | `Specialization` | Main area of expertise (managed locally) |
-| `secondarySpecialization` | `Specialization` | Secondary area the agent can cover (managed locally) |
+| `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover (managed locally, one or more) |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
@@ -370,13 +370,13 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 | Constraint | Default Level | Description |
 |---|---|---|
-| Specialization match | Hard | An agent's primary or secondary specialization must match the assignment's required specialization. |
+| Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
 | Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 2 hours). |
 | Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
-| Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over their secondary. |
+| Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents on shift. Penalty scales with excess. |
@@ -394,7 +394,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 |---|---|---|
 | `GET` | `/agents` | List all agents |
 | `GET` | `/agents/{id}` | Get agent by id |
-| `PUT` | `/agents/{id}/specializations` | Set primary and secondary specialization for an agent |
+| `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
 | `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
 
 ### 7.2 Specializations
@@ -652,7 +652,8 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 ### Key tables
 
 - `specialization`
-- `agent` (FK → `specialization` for primary and secondary)
+- `agent` (FK → `specialization` for primary)
+- `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
 - `agent_preference` (FK → `agent`, unique on `agent` + `date`)
 - `timeslot`
 - `staffing_requirement` (FK → `timeslot`, FK → `specialization`)
@@ -666,7 +667,7 @@ The React front end communicates exclusively through the REST API described in s
 
 | View | Purpose |
 |---|---|
-| Agent list | View agents synced from BambooHR; assign primary/secondary specializations; submit start-time and break-time preferences per day |
+| Agent list | View agents synced from BambooHR; assign primary specialization and one or more secondary specializations; submit start-time and break-time preferences per day |
 | Specializations | Manage the list of available specializations |
 | Staffing requirements | Enter or calculate (Erlang X) required agents per timeslot per specialization |
 | Constraint weights | View and adjust per-tenant constraint weights |
