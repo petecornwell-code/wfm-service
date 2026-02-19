@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-WFM Service is a workforce management system that allocates **agents** to **timeslots** using constraint-based optimisation. The solver is powered by [Timefold](https://timefold.ai/) (Java). The application exposes a REST API via Spring Boot and persists state in PostgreSQL.
+WFM Service is a workforce management system that allocates **agents** to **timeslots** using constraint-based optimisation. The solver is powered by [Timefold](https://timefold.ai/) (Java). The application exposes a REST API via Spring Boot and persists state in PostgreSQL. Agent data is sourced from **BambooHR** via its REST API and synchronised into the local database.
 
 ## 2. Tech Stack
 
@@ -14,16 +14,26 @@ WFM Service is a workforce management system that allocates **agents** to **time
 | ORM | Hibernate (via Spring Data JPA) |
 | Database | PostgreSQL |
 | Solver | Timefold Solver (Java) |
+| Agent Data Source | BambooHR REST API |
 
 ## 3. Architecture
 
 ```
-┌───────────┐       ┌─────────────────────────────────────────────┐       ┌────────────┐
-│           │       │              Spring Boot                    │       │            │
+                    ┌─────────────────────────────────────────────┐
+┌───────────┐       │              Spring Boot                    │       ┌────────────┐
+│           │       │                                             │       │            │
 │   React   │◄─JSON─┤  Controller ─► Service ─► Repository       │◄─JPA──┤ PostgreSQL │
 │           │       │                  │                          │       │            │
 └───────────┘       │            Timefold Solver                  │       └────────────┘
-                    └─────────────────────────────────────────────┘
+                    │                  │                          │
+                    │         BambooHR Client (sync)              │
+                    └──────────────────┼──────────────────────────┘
+                                       │
+                                       ▼
+                                ┌─────────────┐
+                                │  BambooHR   │
+                                │  REST API   │
+                                └─────────────┘
 ```
 
 The backend is organised into three packages mirroring the standard layered pattern:
@@ -36,13 +46,19 @@ The backend is organised into three packages mirroring the standard layered patt
 
 ### 4.1 Agent
 
-An agent is a person who can be assigned to work during one or more timeslots.
+An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system (no local create/update).
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | `UUID` | Primary key |
-| `name` | `String` | Display name |
-| `skills` | `Set<Skill>` | Skills the agent possesses |
+| `id` | `UUID` | Primary key (internal) |
+| `bamboohrId` | `String` | BambooHR employee id (unique, external key) |
+| `name` | `String` | Display name (from BambooHR) |
+| `email` | `String` | Work email (from BambooHR) |
+| `department` | `String` | Department (from BambooHR) |
+| `jobTitle` | `String` | Job title (from BambooHR) |
+| `skills` | `Set<Skill>` | Skills the agent possesses (managed locally) |
+| `active` | `boolean` | Whether the employee is active in BambooHR |
+| `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
 ### 4.2 Timeslot
 
@@ -103,13 +119,14 @@ All endpoints are served under the base path `/api/v1`.
 
 ### 6.1 Agents
 
+Agent records originate from BambooHR. The API is read-only except for local skill assignments.
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/agents` | List all agents |
 | `GET` | `/agents/{id}` | Get agent by id |
-| `POST` | `/agents` | Create agent |
-| `PUT` | `/agents/{id}` | Update agent |
-| `DELETE` | `/agents/{id}` | Delete agent |
+| `PUT` | `/agents/{id}/skills` | Update the locally-managed skill set for an agent |
+| `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
 
 ### 6.2 Timeslots
 
@@ -137,7 +154,49 @@ All endpoints are served under the base path `/api/v1`.
 | `GET` | `/schedules/{id}` | Get schedule and current best solution. |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 
-## 7. Package Layout
+## 7. BambooHR Integration
+
+### 7.1 Overview
+
+Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table in sync with the BambooHR employee directory.
+
+### 7.2 Data Source
+
+Initially the BambooHR client will operate against an **in-memory mock** that returns static employee data. This allows development and testing to proceed without a live BambooHR account. The mock will be swapped for a real HTTP client behind a common interface when credentials are available.
+
+### 7.3 Client Interface
+
+```java
+public interface BambooHRClient {
+    List<BambooEmployee> listEmployees();
+    BambooEmployee getEmployee(String bamboohrId);
+}
+```
+
+Two implementations:
+
+| Implementation | Purpose |
+|---|---|
+| `MockBambooHRClient` | Returns hard-coded employee data from memory. Active by default via a Spring profile (`bamboohr.mock=true`). |
+| `HttpBambooHRClient` | Calls the live BambooHR REST API. Activated when `bamboohr.mock=false` and credentials are configured. |
+
+### 7.4 Sync Behaviour
+
+- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`.
+- **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
+- **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
+- **Skills are preserved** — Locally assigned skills are never overwritten by a sync.
+
+### 7.5 Configuration
+
+| Property | Description | Default |
+|---|---|---|
+| `bamboohr.mock` | Use in-memory mock client | `true` |
+| `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
+| `bamboohr.subdomain` | BambooHR company subdomain | — |
+| `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
+
+## 8. Package Layout
 
 ```
 src/main/java/com/wfm/
@@ -162,12 +221,18 @@ src/main/java/com/wfm/
 │   ├── TimeslotController.java
 │   ├── SkillController.java
 │   └── ScheduleController.java
+├── integration/
+│   ├── BambooHRClient.java
+│   ├── BambooEmployee.java
+│   ├── MockBambooHRClient.java
+│   ├── HttpBambooHRClient.java
+│   └── BambooSyncService.java
 ├── solver/
 │   └── ScheduleConstraintProvider.java
 └── WfmApplication.java
 ```
 
-## 8. Database
+## 9. Database
 
 PostgreSQL is the sole data store. Hibernate generates the schema from the JPA entity annotations. A migration tool (Flyway or Liquibase) should be added before the first production deployment.
 
@@ -180,17 +245,17 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 - `agent_assignment`
 - `schedule`
 
-## 9. React UI
+## 10. React UI
 
 The React front end communicates exclusively through the REST API described in section 6. Core views:
 
 | View | Purpose |
 |---|---|
-| Agent list | CRUD for agents and their skills |
+| Agent list | View agents synced from BambooHR; manage skill assignments |
 | Timeslot list | CRUD for timeslots |
 | Schedule | Trigger a solve, view progress, display resulting assignments |
 
-## 10. Open Questions
+## 11. Open Questions
 
 - Authentication and authorisation mechanism (e.g. Spring Security + OAuth2).
 - Solver time limit and termination strategy defaults.
