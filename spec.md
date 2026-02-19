@@ -336,20 +336,139 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/schedules/solve` | Start a solve run (async). Accepts solver inputs. Returns schedule id. |
-| `GET` | `/schedules/{id}` | Get schedule and current best solution. |
+| `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
+| `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
-## 8. BambooHR Integration
+## 8. Schedule Output
 
-### 8.1 Overview
+When a solve completes (or while in progress), `GET /schedules/{id}` returns the full schedule along with derived output views. These views are also available as a multi-tab spreadsheet export.
+
+### 8.1 Staffing Summary
+
+A per-day comparison of **predicted** staffing hours (derived from staffing requirements) versus **actual** staffing hours (derived from agent assignments).
+
+| Field | Type | Description |
+|---|---|---|
+| `date` | `LocalDate` | Day of the week |
+| `specialization` | `String` | Specialization name |
+| `predictedHours` | `BigDecimal` | Sum of `requiredAgents × incrementMinutes / 60` across all timeslots for that day and specialization |
+| `actualHours` | `BigDecimal` | Sum of `(assigned agents) × incrementMinutes / 60` across all timeslots for that day and specialization |
+| `deltaHours` | `BigDecimal` | `actualHours − predictedHours` (positive = overstaffed, negative = understaffed) |
+| `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100` |
+
+A `totals` row per day aggregates across all specializations. A weekly grand-total row aggregates across all days.
+
+### 8.2 Agent Schedule
+
+A per-agent, per-day view of every assignment, the specialization used, and break periods.
+
+Each entry in the list represents one agent-day:
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | The assigned agent |
+| `date` | `LocalDate` | Day |
+| `shiftStart` | `LocalTime` | Start time of earliest assignment |
+| `shiftEnd` | `LocalTime` | End time of latest assignment |
+| `totalHours` | `BigDecimal` | Total assigned hours (excluding breaks) |
+| `assignments` | `List<SlotDetail>` | Ordered list of timeslot assignments |
+| `breaks` | `List<BreakDetail>` | Gaps within the shift where the agent is unassigned |
+
+**SlotDetail:**
+
+| Field | Type | Description |
+|---|---|---|
+| `timeslot` | `Timeslot` | The assigned timeslot |
+| `requiredSpecialization` | `String` | Specialization the seat demanded |
+| `matchType` | `enum(PRIMARY, SECONDARY)` | Whether the agent's primary or secondary specialization was used |
+
+**BreakDetail:**
+
+| Field | Type | Description |
+|---|---|---|
+| `startTime` | `LocalTime` | Break start |
+| `endTime` | `LocalTime` | Break end |
+| `durationMinutes` | `int` | Break length |
+
+### 8.3 Preference Report
+
+A per-agent, per-day report showing which preferences were honoured and which were overridden.
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | The agent |
+| `date` | `LocalDate` | Day |
+| `preferredStartTime` | `LocalTime` | Submitted preference (null if none) |
+| `actualStartTime` | `LocalTime` | Earliest assignment start time |
+| `startTimeHonoured` | `boolean` | `true` if `actualStartTime >= preferredStartTime` (or no preference was set) |
+| `preferredBreakTime` | `LocalTime` | Submitted preference (null if none) |
+| `actualBreakTime` | `LocalTime` | Start of actual break closest to the preferred time (null if no break) |
+| `breakTimeHonoured` | `boolean` | `true` if the agent's break overlaps the preferred break timeslot (or no preference was set) |
+
+Summary counters are included at the schedule level:
+
+| Field | Type | Description |
+|---|---|---|
+| `totalPreferences` | `int` | Total agent-day preferences submitted |
+| `startTimeHonouredCount` | `int` | Number where start time was respected |
+| `breakTimeHonouredCount` | `int` | Number where break time was respected |
+| `overallHonouredPct` | `BigDecimal` | Percentage of all preference fields honoured |
+
+### 8.4 Constraint Violations
+
+A breakdown of every constraint violation in the current best solution, grouped by constraint and score level.
+
+| Field | Type | Description |
+|---|---|---|
+| `constraint` | `String` | Constraint name (matches section 6 names) |
+| `level` | `enum(HARD, SOFT)` | Score level of the violation |
+| `weight` | `HardSoftScore` | Active weight from ConstraintWeights |
+| `violationCount` | `int` | Number of times this constraint was violated |
+| `totalPenalty` | `HardSoftScore` | `weight × violationCount` — total score impact |
+| `violations` | `List<ViolationDetail>` | Individual violation instances |
+
+**ViolationDetail:**
+
+| Field | Type | Description |
+|---|---|---|
+| `agent` | `Agent` | Affected agent (if applicable) |
+| `timeslot` | `Timeslot` | Affected timeslot (if applicable) |
+| `description` | `String` | Human-readable explanation (e.g. "Agent Jane Smith assigned to Billing but has no matching specialization") |
+
+The response also includes score totals:
+
+| Field | Type | Description |
+|---|---|---|
+| `hardScore` | `int` | Total hard score (0 = all hard constraints satisfied) |
+| `softScore` | `int` | Total soft score (higher = better) |
+| `feasible` | `boolean` | `true` if `hardScore == 0` |
+
+### 8.5 Spreadsheet Export
+
+The schedule can be exported as a multi-tab spreadsheet (`.xlsx`). Each tab corresponds to one of the output views above.
+
+| Tab | Contents | Source |
+|---|---|---|
+| **Staffing Summary** | Predicted vs actual hours per day per specialization, with totals | Section 8.1 |
+| **Agent Schedule** | One row per agent per timeslot: agent name, date, timeslot start/end, specialization, match type (primary/secondary), and a "Break" flag for gap slots | Section 8.2 |
+| **Preference Report** | One row per agent per day: preferences submitted, actual values, honoured flags | Section 8.3 |
+
+Constraint violations (section 8.4) are not included in the spreadsheet — they are diagnostic data consumed via the API and displayed in the UI.
+
+Export is triggered via a dedicated endpoint (see section 7.6). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+
+## 9. BambooHR Integration
+
+### 9.1 Overview
 
 Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table in sync with the BambooHR employee directory.
 
-### 8.2 Data Source
+### 9.2 Data Source
 
 Initially the BambooHR client will operate against an **in-memory mock** that returns static employee data. This allows development and testing to proceed without a live BambooHR account. The mock will be swapped for a real HTTP client behind a common interface when credentials are available.
 
-### 8.3 Client Interface
+### 9.3 Client Interface
 
 ```java
 public interface BambooHRClient {
@@ -365,14 +484,14 @@ Two implementations:
 | `MockBambooHRClient` | Returns hard-coded employee data from memory. Active by default via a Spring profile (`bamboohr.mock=true`). |
 | `HttpBambooHRClient` | Calls the live BambooHR REST API. Activated when `bamboohr.mock=false` and credentials are configured. |
 
-### 8.4 Sync Behaviour
+### 9.4 Sync Behaviour
 
 - **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`.
 - **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 
-### 8.5 Configuration
+### 9.5 Configuration
 
 | Property | Description | Default |
 |---|---|---|
@@ -381,7 +500,7 @@ Two implementations:
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
 | `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
 
-## 9. Package Layout
+## 10. Package Layout
 
 ```
 src/main/java/com/wfm/
@@ -410,6 +529,8 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
 │   ├── ErlangXService.java
+│   ├── ScheduleOutputService.java
+│   ├── ScheduleExportService.java
 │   └── SolverService.java
 ├── controller/
 │   ├── AgentController.java
@@ -428,7 +549,7 @@ src/main/java/com/wfm/
 └── WfmApplication.java
 ```
 
-## 10. Database
+## 11. Database
 
 PostgreSQL is the sole data store. Hibernate generates the schema from the JPA entity annotations. A migration tool (Flyway or Liquibase) should be added before the first production deployment.
 
@@ -443,7 +564,7 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 - `constraint_weights` (one row per tenant; FK from `schedule`)
 - `schedule` (FK → `constraint_weights`)
 
-## 11. React UI
+## 12. React UI
 
 The React front end communicates exclusively through the REST API described in section 7. Core views:
 
@@ -452,9 +573,11 @@ The React front end communicates exclusively through the REST API described in s
 | Agent list | View agents synced from BambooHR; assign primary/secondary specializations; submit start-time and break-time preferences per day |
 | Specializations | Manage the list of available specializations |
 | Staffing requirements | Enter or calculate (Erlang X) required agents per timeslot per specialization |
+| Constraint weights | View and adjust per-tenant constraint weights |
 | Schedule | Configure solver inputs (increment, time range), trigger a solve, view resulting assignments |
+| Schedule results | After a solve, displays tabbed sub-views for: **Staffing Summary** (predicted vs actual hours), **Agent Schedule** (per-agent timeslot grid with specialization match type and breaks), **Preference Report** (honoured/overridden preferences per agent), and **Constraint Violations** (hard/soft breakdown with scores). Includes an "Export to Excel" button that downloads the `.xlsx` spreadsheet (section 8.5). |
 
-## 12. Open Questions
+## 13. Open Questions
 
 - Authentication and authorisation mechanism (e.g. Spring Security + OAuth2).
 - Solver time limit and termination strategy defaults.
