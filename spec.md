@@ -100,6 +100,36 @@ Preferences are optional. An agent with no submitted preferences is scheduled pu
 | Preferred start | 09:00 |
 | Preferred break | 12:30 |
 
+### 4.6 Break Rules
+
+Configurable rules that govern when an agent may take a break. A "break" is a gap — one or more consecutive timeslots during an agent's shift where they are not assigned. An agent's **shift** on a given day is defined as the span from their earliest assignment to their latest assignment.
+
+#### 4.6.1 Blocked window (hard)
+
+By default, the first **2 hours** and last **2 hours** of an agent's shift are blocked — no break may occur during these periods. The blocked duration is configurable per schedule.
+
+Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 10:00 and after 15:00; the eligible break window is 10:00–15:00.
+
+#### 4.6.2 Minimum shift duration (hard)
+
+Breaks are not permitted if an agent's shift is shorter than **4 hours**. This threshold is configurable per schedule.
+
+#### 4.6.3 Break start alignment (hard)
+
+The break start time must align to a configured boundary:
+
+| Setting | Allowed break starts (examples) |
+|---|---|
+| `ON_HOUR` | 10:00, 11:00, 12:00 |
+| `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
+| `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
+
+The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) must conform to the active alignment — the system validates or rounds at input time.
+
+#### 4.6.4 Break clustering penalty (soft)
+
+When too many agents take their break during the same timeslot, coverage suffers. A soft penalty is applied when the number of agents on break in a single timeslot exceeds a configurable threshold (expressed as a percentage of agents on shift that day, default **20%**). The penalty scales with the number of agents over the threshold.
+
 ## 5. Domain Model
 
 ### 5.1 Specialization
@@ -193,6 +223,10 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
 | `weekStartDate` | `LocalDate` | Monday of the target week |
+| `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 2) |
+| `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
+| `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
+| `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
@@ -210,9 +244,13 @@ Constraints are defined in a `ConstraintProvider` implementation.
 | Specialization match | Hard | An agent's primary or secondary specialization must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
+| Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 2 hours). |
+| Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
+| Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over their secondary. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
+| Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents on shift. Penalty scales with excess. |
 | Balanced workload | Soft | Prefer an even distribution of assignments across agents. |
 
 ## 7. API
