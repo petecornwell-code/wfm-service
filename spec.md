@@ -84,6 +84,22 @@ Demand can be:
 1. **Directly input** — the customer provides agent counts per timeslot per specialization.
 2. **Calculated via Erlang X** — derived from forecasted call volume per interval, average handle time (AHT), caller patience (abandonment), retry rate, and target service level. Erlang X accounts for caller abandonment and redials, producing more accurate staffing numbers than Erlang C. The calculation is performed per timeslot before the solver is invoked.
 
+### 4.5 Agent Preferences
+
+Agents may submit preferences for each day of the upcoming week. These are **soft inputs** — the solver tries to honour them but will override them when staffing demands require it. Two preferences are supported:
+
+- **Preferred start time** — the time the agent would like their first assignment to begin (e.g. 09:00). The solver attempts to avoid assigning the agent to timeslots before this time.
+- **Preferred break time** — the time the agent would like a break (e.g. 12:00). The solver attempts to leave the agent unassigned during timeslots that overlap this time.
+
+Preferences are optional. An agent with no submitted preferences is scheduled purely based on staffing demand and hard constraints.
+
+| Field | Example |
+|---|---|
+| Agent | Jane Smith |
+| Date | Monday |
+| Preferred start | 09:00 |
+| Preferred break | 12:30 |
+
 ## 5. Domain Model
 
 ### 5.1 Specialization
@@ -152,7 +168,21 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
 | `agent` | `Agent` | **Planning variable** — assigned by the solver |
 
-### 5.6 Schedule (Planning Solution)
+### 5.6 AgentPreference
+
+An agent's scheduling preferences for a specific day. These are loaded as problem facts and referenced by soft constraints during solving.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `agent` | `Agent` | The agent expressing the preference |
+| `date` | `LocalDate` | The day the preference applies to |
+| `preferredStartTime` | `LocalTime` | Desired start of first assignment (nullable) |
+| `preferredBreakTime` | `LocalTime` | Desired break time (nullable) |
+
+A unique constraint on (`agent`, `date`) ensures one preference record per agent per day.
+
+### 5.7 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run.
 
@@ -166,6 +196,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
+| `agentPreferences` | `List<AgentPreference>` | Problem facts |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver |
@@ -180,6 +211,8 @@ Constraints are defined in a `ConstraintProvider` implementation.
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over their secondary. |
+| Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
+| Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Balanced workload | Soft | Prefer an even distribution of assignments across agents. |
 
 ## 7. API
@@ -205,7 +238,14 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `POST` | `/specializations` | Create specialization |
 | `DELETE` | `/specializations/{id}` | Delete specialization |
 
-### 7.3 Staffing Requirements
+### 7.3 Agent Preferences
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/agents/{id}/preferences` | List preferences for an agent (optionally filtered by date range) |
+| `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week) |
+
+### 7.4 Staffing Requirements
 
 | Method | Path | Description |
 |---|---|---|
@@ -213,7 +253,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
-### 7.4 Solver
+### 7.5 Solver
 
 | Method | Path | Description |
 |---|---|---|
@@ -272,16 +312,19 @@ src/main/java/com/wfm/
 │   ├── Agent.java
 │   ├── Timeslot.java
 │   ├── StaffingRequirement.java
+│   ├── AgentPreference.java
 │   ├── AgentAssignment.java
 │   └── Schedule.java
 ├── repository/
 │   ├── SpecializationRepository.java
 │   ├── AgentRepository.java
+│   ├── AgentPreferenceRepository.java
 │   ├── TimeslotRepository.java
 │   ├── StaffingRequirementRepository.java
 │   └── ScheduleRepository.java
 ├── service/
 │   ├── AgentService.java
+│   ├── AgentPreferenceService.java
 │   ├── SpecializationService.java
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
@@ -311,6 +354,7 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 
 - `specialization`
 - `agent` (FK → `specialization` for primary and secondary)
+- `agent_preference` (FK → `agent`, unique on `agent` + `date`)
 - `timeslot`
 - `staffing_requirement` (FK → `timeslot`, FK → `specialization`)
 - `agent_assignment` (FK → `timeslot`, FK → `specialization`, FK → `agent`)
@@ -322,7 +366,7 @@ The React front end communicates exclusively through the REST API described in s
 
 | View | Purpose |
 |---|---|
-| Agent list | View agents synced from BambooHR; assign primary/secondary specializations |
+| Agent list | View agents synced from BambooHR; assign primary/secondary specializations; submit start-time and break-time preferences per day |
 | Specializations | Manage the list of available specializations |
 | Staffing requirements | Enter or calculate (Erlang X) required agents per timeslot per specialization |
 | Schedule | Configure solver inputs (increment, time range), trigger a solve, view resulting assignments |
