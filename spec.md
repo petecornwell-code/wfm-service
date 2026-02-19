@@ -144,6 +144,102 @@ The constraint table in section 6 documents the **default** level and weight for
 
 ## 5. Domain Model
 
+```mermaid
+classDiagram
+    direction LR
+
+    class Specialization {
+        +UUID id
+        +String name
+    }
+
+    class Agent {
+        +UUID id
+        +String bamboohrId
+        +String name
+        +String email
+        +String department
+        +String jobTitle
+        +boolean active
+        +OffsetDateTime lastSyncedAt
+    }
+
+    class Timeslot {
+        +UUID id
+        +LocalDate date
+        +LocalTime startTime
+        +LocalTime endTime
+    }
+
+    class StaffingRequirement {
+        +UUID id
+        +int requiredAgents
+        +Source source
+    }
+
+    class AgentAssignment {
+        <<Planning Entity>>
+        +UUID id
+    }
+
+    class AgentPreference {
+        +UUID id
+        +LocalDate date
+        +LocalTime preferredStartTime
+        +LocalTime preferredBreakTime
+    }
+
+    class ConstraintWeights {
+        <<ConstraintConfiguration>>
+        +UUID id
+        +HardSoftScore specMatchWeight
+        +HardSoftScore noOverlapWeight
+        +HardSoftScore breakBlockedWindowWeight
+        +HardSoftScore breakMinShiftWeight
+        +HardSoftScore breakAlignmentWeight
+        +HardSoftScore preferPrimaryWeight
+        +HardSoftScore honourStartTimeWeight
+        +HardSoftScore honourBreakTimeWeight
+        +HardSoftScore breakClusteringWeight
+        +HardSoftScore balancedWorkloadWeight
+    }
+
+    class Schedule {
+        <<PlanningSolution>>
+        +UUID id
+        +int incrementMinutes
+        +LocalTime startTime
+        +LocalTime endTime
+        +LocalDate weekStartDate
+        +int breakBlockedHours
+        +int breakMinShiftHours
+        +BreakAlignment breakStartAlignment
+        +int breakClusterThresholdPct
+        +HardSoftScore score
+    }
+
+    Agent "1" --> "1" Specialization : primarySpecialization
+    Agent "1" --> "1" Specialization : secondarySpecialization
+
+    StaffingRequirement "* " --> "1" Timeslot
+    StaffingRequirement "* " --> "1" Specialization
+
+    AgentAssignment "* " --> "1" Timeslot
+    AgentAssignment "* " --> "1" Specialization : requiredSpecialization
+    AgentAssignment "* " ..> "0..1" Agent : «planning variable»
+
+    AgentPreference "* " --> "1" Agent
+    note for AgentPreference "Unique on (agent, date)"
+
+    Schedule "1" --> "1" ConstraintWeights : «@ConstraintConfigurationProvider»
+    Schedule "1" *-- "* " Specialization : specializations
+    Schedule "1" *-- "* " Agent : agents
+    Schedule "1" *-- "* " Timeslot : timeslots
+    Schedule "1" *-- "* " StaffingRequirement : staffingRequirements
+    Schedule "1" *-- "* " AgentPreference : agentPreferences
+    Schedule "1" *-- "* " AgentAssignment : assignments
+```
+
 ### 5.1 Specialization
 
 A reference entity representing a named area of expertise (e.g. "Billing", "Technical Support", "Sales"). The set of specializations is configured as a solver input.
