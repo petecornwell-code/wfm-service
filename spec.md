@@ -6,6 +6,11 @@ WFM Service is a workforce management system that allocates **agents** to **time
 
 The service is **multi-tenant**. Tenant identity and authentication are managed by an external **AI service platform** (a separate project, out of scope for this document). Every API request includes a `tenant_id` (`BIGINT`) provided by the platform. All data is isolated per tenant at the database level — see section 3.1.
 
+### Assumptions
+
+1. Agents work a contiguous block of hours each day (their "shift"), which includes a break.
+2. Each agent has exactly one primary specialization and one or more secondary specializations.
+
 ## 2. Tech Stack
 
 | Layer | Technology |
