@@ -42,11 +42,62 @@ The backend is organised into three packages mirroring the standard layered patt
 - **`service`** — Business logic, solver lifecycle management, and transaction orchestration.
 - **`controller`** — REST endpoints that accept and return JSON.
 
-## 4. Domain Model
+## 4. Solver Inputs
 
-### 4.1 Agent
+Each solve run is configured by a set of inputs that define the problem space. These inputs are provided by the user before the solver is invoked.
 
-An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system (no local create/update).
+### 4.1 Timeslot Increment
+
+All timeslots in a given solution share a uniform duration. Supported values:
+
+| Increment | Example slots (8 am–9 am) |
+|---|---|
+| 15 minutes | 08:00–08:15, 08:15–08:30, 08:30–08:45, 08:45–09:00 |
+| 30 minutes | 08:00–08:30, 08:30–09:00 |
+| 60 minutes | 08:00–09:00 |
+
+### 4.2 Time Range
+
+The contiguous window of time to be covered, expressed as a start time and end time (e.g. 08:00–18:00). Timeslots are **generated** by subdividing this range into intervals of the configured increment. For example, 08:00–18:00 at 15-minute increments produces 40 timeslots per day.
+
+### 4.3 Specializations
+
+Each agent has exactly two specialization assignments:
+
+- **Primary specialization** — the agent's main area of expertise.
+- **Secondary specialization** — a secondary area the agent can cover.
+
+The set of available specializations is an input (e.g. "Billing", "Technical Support", "Sales"). Each timeslot carries a required specialization; the solver prefers assigning agents whose primary specialization matches, but may fall back to secondary.
+
+### 4.4 Staffing Demand
+
+The total number of agent-hours the client requires for the upcoming week, broken down **by day**. This input is provided per-specialization so the solver knows how many hours of each specialization are needed each day.
+
+| Field | Example |
+|---|---|
+| Day | Monday |
+| Specialization | Billing |
+| Required hours | 64 |
+
+Demand can be:
+
+1. **Directly input** — the customer provides the hours.
+2. **Calculated via Erlang C** — derived from call-volume forecasts, average handle time, and target service level. The Erlang C calculation is performed before the solver is invoked and the result is stored as the required hours.
+
+## 5. Domain Model
+
+### 5.1 Specialization
+
+A reference entity representing a named area of expertise (e.g. "Billing", "Technical Support", "Sales"). The set of specializations is configured as a solver input.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `name` | `String` | Unique specialization name |
+
+### 5.2 Agent
+
+An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system, except for specialization assignments which are managed locally.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -56,31 +107,38 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `email` | `String` | Work email (from BambooHR) |
 | `department` | `String` | Department (from BambooHR) |
 | `jobTitle` | `String` | Job title (from BambooHR) |
-| `skills` | `Set<Skill>` | Skills the agent possesses (managed locally) |
+| `primarySpecialization` | `Specialization` | Main area of expertise (managed locally) |
+| `secondarySpecialization` | `Specialization` | Secondary area the agent can cover (managed locally) |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
-### 4.2 Timeslot
+### 5.3 Timeslot
 
-A timeslot represents a window of time that requires agent coverage.
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `UUID` | Primary key |
-| `startTime` | `OffsetDateTime` | Start of the window |
-| `endTime` | `OffsetDateTime` | End of the window |
-| `requiredSkill` | `Skill` | Skill needed for this slot |
-
-### 4.3 Skill
-
-A reference entity representing a named capability.
+A timeslot is a single interval within the coverage window. Timeslots are **generated** from the configured time range and increment — they are not created manually. Each timeslot is associated with a day and a required specialization.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
-| `name` | `String` | Unique skill name |
+| `date` | `LocalDate` | The day this slot belongs to |
+| `startTime` | `LocalTime` | Start of the interval |
+| `endTime` | `LocalTime` | End of the interval |
+| `requiredSpecialization` | `Specialization` | Specialization needed for this slot |
 
-### 4.4 AgentAssignment (Planning Entity)
+### 5.4 StaffingRequirement
+
+Represents the demand for a given specialization on a given day. Used to determine how many timeslots of each specialization to generate.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `date` | `LocalDate` | The day |
+| `specialization` | `Specialization` | Which specialization is needed |
+| `requiredHours` | `BigDecimal` | Total agent-hours required |
+| `source` | `enum(DIRECT, ERLANG_C)` | How the value was determined |
+
+The number of timeslots generated for a given day/specialization is: `requiredHours / incrementHours`. For example, 64 required hours at 30-minute increments = 128 timeslots that need agent coverage for that specialization on that day.
+
+### 5.5 AgentAssignment (Planning Entity)
 
 The central Timefold planning entity. The solver decides which agent fills each timeslot.
 
@@ -90,81 +148,86 @@ The central Timefold planning entity. The solver decides which agent fills each 
 | `timeslot` | `Timeslot` | The slot to fill |
 | `agent` | `Agent` | **Planning variable** — assigned by the solver |
 
-### 4.5 Schedule (Planning Solution)
+### 5.6 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `incrementMinutes` | `int` | 15, 30, or 60 |
+| `startTime` | `LocalTime` | Coverage window start |
+| `endTime` | `LocalTime` | Coverage window end |
+| `weekStartDate` | `LocalDate` | Monday of the target week |
+| `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts |
-| `timeslots` | `List<Timeslot>` | Problem facts |
+| `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
+| `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver |
 
-## 5. Constraints
+## 6. Constraints
 
 Constraints are defined in a `ConstraintProvider` implementation.
 
 | Constraint | Level | Description |
 |---|---|---|
 | One assignment per timeslot | Hard | Each timeslot is assigned at most one agent. |
-| Agent skill match | Hard | An agent must possess the skill required by the timeslot. |
-| No overlapping assignments | Hard | An agent cannot be assigned to two timeslots that overlap in time. |
+| Specialization match | Hard | An agent's primary or secondary specialization must match the timeslot's required specialization. |
+| No overlapping assignments | Hard | An agent cannot be assigned to two timeslots that overlap in time on the same day. |
+| Prefer primary specialization | Soft | Prefer assigning agents to timeslots matching their primary specialization over their secondary. |
 | Balanced workload | Soft | Prefer an even distribution of assignments across agents. |
 
-## 6. API
+## 7. API
 
 All endpoints are served under the base path `/api/v1`.
 
-### 6.1 Agents
+### 7.1 Agents
 
-Agent records originate from BambooHR. The API is read-only except for local skill assignments.
+Agent records originate from BambooHR. The API is read-only except for local specialization assignments.
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/agents` | List all agents |
 | `GET` | `/agents/{id}` | Get agent by id |
-| `PUT` | `/agents/{id}/skills` | Update the locally-managed skill set for an agent |
+| `PUT` | `/agents/{id}/specializations` | Set primary and secondary specialization for an agent |
 | `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
 
-### 6.2 Timeslots
+### 7.2 Specializations
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/timeslots` | List all timeslots |
-| `GET` | `/timeslots/{id}` | Get timeslot by id |
-| `POST` | `/timeslots` | Create timeslot |
-| `PUT` | `/timeslots/{id}` | Update timeslot |
-| `DELETE` | `/timeslots/{id}` | Delete timeslot |
+| `GET` | `/specializations` | List all specializations |
+| `POST` | `/specializations` | Create specialization |
+| `DELETE` | `/specializations/{id}` | Delete specialization |
 
-### 6.3 Skills
+### 7.3 Staffing Requirements
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/skills` | List all skills |
-| `POST` | `/skills` | Create skill |
-| `DELETE` | `/skills/{id}` | Delete skill |
+| `GET` | `/staffing-requirements` | List all staffing requirements |
+| `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
+| `POST` | `/staffing-requirements/erlang-c` | Calculate requirements from Erlang C inputs |
 
-### 6.4 Solver
+### 7.4 Solver
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/schedules/solve` | Start a solve run (async). Returns schedule id. |
+| `POST` | `/schedules/solve` | Start a solve run (async). Accepts solver inputs. Returns schedule id. |
 | `GET` | `/schedules/{id}` | Get schedule and current best solution. |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 
-## 7. BambooHR Integration
+## 8. BambooHR Integration
 
-### 7.1 Overview
+### 8.1 Overview
 
 Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table in sync with the BambooHR employee directory.
 
-### 7.2 Data Source
+### 8.2 Data Source
 
 Initially the BambooHR client will operate against an **in-memory mock** that returns static employee data. This allows development and testing to proceed without a live BambooHR account. The mock will be swapped for a real HTTP client behind a common interface when credentials are available.
 
-### 7.3 Client Interface
+### 8.3 Client Interface
 
 ```java
 public interface BambooHRClient {
@@ -180,14 +243,14 @@ Two implementations:
 | `MockBambooHRClient` | Returns hard-coded employee data from memory. Active by default via a Spring profile (`bamboohr.mock=true`). |
 | `HttpBambooHRClient` | Calls the live BambooHR REST API. Activated when `bamboohr.mock=false` and credentials are configured. |
 
-### 7.4 Sync Behaviour
+### 8.4 Sync Behaviour
 
 - **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`.
 - **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
-- **Skills are preserved** — Locally assigned skills are never overwritten by a sync.
+- **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 
-### 7.5 Configuration
+### 8.5 Configuration
 
 | Property | Description | Default |
 |---|---|---|
@@ -196,30 +259,34 @@ Two implementations:
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
 | `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
 
-## 8. Package Layout
+## 9. Package Layout
 
 ```
 src/main/java/com/wfm/
 ├── model/
+│   ├── Specialization.java
 │   ├── Agent.java
 │   ├── Timeslot.java
-│   ├── Skill.java
+│   ├── StaffingRequirement.java
 │   ├── AgentAssignment.java
 │   └── Schedule.java
 ├── repository/
+│   ├── SpecializationRepository.java
 │   ├── AgentRepository.java
 │   ├── TimeslotRepository.java
-│   ├── SkillRepository.java
+│   ├── StaffingRequirementRepository.java
 │   └── ScheduleRepository.java
 ├── service/
 │   ├── AgentService.java
-│   ├── TimeslotService.java
-│   ├── SkillService.java
+│   ├── SpecializationService.java
+│   ├── StaffingRequirementService.java
+│   ├── TimeslotGeneratorService.java
+│   ├── ErlangCService.java
 │   └── SolverService.java
 ├── controller/
 │   ├── AgentController.java
-│   ├── TimeslotController.java
-│   ├── SkillController.java
+│   ├── SpecializationController.java
+│   ├── StaffingRequirementController.java
 │   └── ScheduleController.java
 ├── integration/
 │   ├── BambooHRClient.java
@@ -232,32 +299,34 @@ src/main/java/com/wfm/
 └── WfmApplication.java
 ```
 
-## 9. Database
+## 10. Database
 
 PostgreSQL is the sole data store. Hibernate generates the schema from the JPA entity annotations. A migration tool (Flyway or Liquibase) should be added before the first production deployment.
 
 ### Key tables
 
-- `agent`
-- `skill`
-- `agent_skill` (join table)
-- `timeslot`
-- `agent_assignment`
+- `specialization`
+- `agent` (FK → `specialization` for primary and secondary)
+- `timeslot` (FK → `specialization`)
+- `staffing_requirement` (FK → `specialization`)
+- `agent_assignment` (FK → `timeslot`, FK → `agent`)
 - `schedule`
 
-## 10. React UI
+## 11. React UI
 
-The React front end communicates exclusively through the REST API described in section 6. Core views:
+The React front end communicates exclusively through the REST API described in section 7. Core views:
 
 | View | Purpose |
 |---|---|
-| Agent list | View agents synced from BambooHR; manage skill assignments |
-| Timeslot list | CRUD for timeslots |
-| Schedule | Trigger a solve, view progress, display resulting assignments |
+| Agent list | View agents synced from BambooHR; assign primary/secondary specializations |
+| Specializations | Manage the list of available specializations |
+| Staffing requirements | Enter or calculate (Erlang C) required hours per day per specialization |
+| Schedule | Configure solver inputs (increment, time range), trigger a solve, view resulting assignments |
 
-## 11. Open Questions
+## 12. Open Questions
 
 - Authentication and authorisation mechanism (e.g. Spring Security + OAuth2).
 - Solver time limit and termination strategy defaults.
 - Multi-tenancy requirements.
 - Deployment topology (single JAR, containers, cloud provider).
+- Erlang C input parameters to expose (call volume, AHT, service level target, etc.).
