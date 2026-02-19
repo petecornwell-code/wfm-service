@@ -4,6 +4,8 @@
 
 WFM Service is a workforce management system that allocates **agents** to **timeslots** using constraint-based optimisation. The solver is powered by [Timefold](https://timefold.ai/) (Java). The application exposes a REST API via Spring Boot and persists state in PostgreSQL. Agent data is sourced from **BambooHR** via its REST API and synchronised into the local database.
 
+The service is **multi-tenant**. Tenant identity and authentication are managed by an external **AI service platform** (a separate project, out of scope for this document). Every API request includes a `tenant_id` (`BIGINT`) provided by the platform. All data is isolated per tenant at the database level — see section 3.1.
+
 ## 2. Tech Stack
 
 | Layer | Technology |
@@ -41,6 +43,14 @@ The backend is organised into three packages mirroring the standard layered patt
 - **`model`** — JPA entities and Timefold planning model annotations.
 - **`service`** — Business logic, solver lifecycle management, and transaction orchestration.
 - **`controller`** — REST endpoints that accept and return JSON.
+
+### 3.1 Multi-Tenancy
+
+All data is scoped to a tenant via a `tenant_id` column (`BIGINT`) present on every tenant-owned table. The value is assigned and supplied by the external AI service platform — WFM Service never generates tenant ids itself.
+
+- **Inbound requests** — The platform authenticates each request and forwards the resolved `tenant_id` to WFM Service (e.g. via a request header or token claim). The exact mechanism is owned by the platform and is out of scope for this document.
+- **Data isolation** — Every query filters by `tenant_id`. An entity created by one tenant is never visible to another.
+- **Database strategy** — Shared schema, shared tables, discriminated by `tenant_id`. No per-tenant schemas or databases.
 
 ## 4. Solver Inputs
 
@@ -150,11 +160,13 @@ classDiagram
 
     class Specialization {
         +UUID id
+        +long tenantId
         +String name
     }
 
     class Agent {
         +UUID id
+        +long tenantId
         +String bamboohrId
         +String name
         +String email
@@ -166,6 +178,7 @@ classDiagram
 
     class Timeslot {
         +UUID id
+        +long tenantId
         +LocalDate date
         +LocalTime startTime
         +LocalTime endTime
@@ -173,6 +186,7 @@ classDiagram
 
     class StaffingRequirement {
         +UUID id
+        +long tenantId
         +int requiredAgents
         +Source source
     }
@@ -180,10 +194,12 @@ classDiagram
     class AgentAssignment {
         <<Planning Entity>>
         +UUID id
+        +long tenantId
     }
 
     class AgentPreference {
         +UUID id
+        +long tenantId
         +LocalDate date
         +LocalTime preferredStartTime
         +LocalTime preferredBreakTime
@@ -192,6 +208,7 @@ classDiagram
     class ConstraintWeights {
         <<ConstraintConfiguration>>
         +UUID id
+        +long tenantId
         +HardSoftScore specMatchWeight
         +HardSoftScore noOverlapWeight
         +HardSoftScore breakBlockedWindowWeight
@@ -207,6 +224,7 @@ classDiagram
     class Schedule {
         <<PlanningSolution>>
         +UUID id
+        +long tenantId
         +int incrementMinutes
         +LocalTime startTime
         +LocalTime endTime
@@ -247,7 +265,8 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
-| `name` | `String` | Unique specialization name |
+| `tenantId` | `long` | Tenant identifier (from platform) |
+| `name` | `String` | Unique specialization name (unique per tenant) |
 
 ### 5.2 Agent
 
@@ -256,7 +275,8 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key (internal) |
-| `bamboohrId` | `String` | BambooHR employee id (unique, external key) |
+| `tenantId` | `long` | Tenant identifier (from platform) |
+| `bamboohrId` | `String` | BambooHR employee id (unique per tenant, external key) |
 | `name` | `String` | Display name (from BambooHR) |
 | `email` | `String` | Work email (from BambooHR) |
 | `department` | `String` | Department (from BambooHR) |
@@ -273,6 +293,7 @@ A timeslot is a single time interval within the coverage window. Timeslots are *
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
 | `date` | `LocalDate` | The day this slot belongs to |
 | `startTime` | `LocalTime` | Start of the interval |
 | `endTime` | `LocalTime` | End of the interval |
@@ -284,6 +305,7 @@ Represents the demand for a given specialization in a given timeslot. There is o
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
 | `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
 | `requiredAgents` | `int` | Number of concurrent agents needed |
@@ -302,6 +324,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
 | `agent` | `Agent` | **Planning variable** — assigned by the solver |
@@ -313,6 +336,7 @@ An agent's scheduling preferences for a specific day. These are loaded as proble
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
 | `agent` | `Agent` | The agent expressing the preference |
 | `date` | `LocalDate` | The day the preference applies to |
 | `preferredStartTime` | `LocalTime` | Desired start of first assignment (nullable) |
@@ -322,11 +346,12 @@ A unique constraint on (`agent`, `date`) ensures one preference record per agent
 
 ### 5.7 ConstraintWeights
 
-A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. Persisted per tenant so each tenant can tune solver behaviour independently.
+A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. One row per tenant (identified by `tenantId`) so each tenant can tune solver behaviour independently.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `id` | `UUID` | — | Primary key |
+| `tenantId` | `long` | — | Tenant identifier (from platform); unique — one row per tenant |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
 | `noOverlapWeight` | `HardSoftScore` | `hard(1)` | No overlapping assignments |
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
@@ -347,6 +372,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
 | `incrementMinutes` | `int` | 15, 30, or 60 |
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
@@ -384,7 +410,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 ## 7. API
 
-All endpoints are served under the base path `/api/v1`.
+All endpoints are served under the base path `/api/v1`. Every request is scoped to a single tenant — the `tenant_id` is extracted from the authenticated context provided by the AI service platform (see section 3.1). Responses only include data belonging to the requesting tenant.
 
 ### 7.1 Agents
 
@@ -649,17 +675,19 @@ src/main/java/com/wfm/
 
 PostgreSQL is the sole data store. Hibernate generates the schema from the JPA entity annotations. A migration tool (Flyway or Liquibase) should be added before the first production deployment.
 
+Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queries filter on `tenant_id` to enforce data isolation (see section 3.1).
+
 ### Key tables
 
-- `specialization`
-- `agent` (FK → `specialization` for primary)
+- `specialization` (`tenant_id`, unique on `tenant_id` + `name`)
+- `agent` (`tenant_id`, FK → `specialization` for primary, unique on `tenant_id` + `bamboohr_id`)
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
-- `agent_preference` (FK → `agent`, unique on `agent` + `date`)
-- `timeslot`
-- `staffing_requirement` (FK → `timeslot`, FK → `specialization`)
-- `agent_assignment` (FK → `timeslot`, FK → `specialization`, FK → `agent`)
-- `constraint_weights` (one row per tenant; FK from `schedule`)
-- `schedule` (FK → `constraint_weights`)
+- `agent_preference` (`tenant_id`, FK → `agent`, unique on `tenant_id` + `agent` + `date`)
+- `timeslot` (`tenant_id`)
+- `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`)
+- `agent_assignment` (`tenant_id`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
+- `constraint_weights` (`tenant_id`, unique on `tenant_id` — one row per tenant; FK from `schedule`)
+- `schedule` (`tenant_id`, FK → `constraint_weights`)
 
 ## 12. React UI
 
@@ -676,8 +704,6 @@ The React front end communicates exclusively through the REST API described in s
 
 ## 13. Open Questions
 
-- Authentication and authorisation mechanism (e.g. Spring Security + OAuth2).
 - Solver time limit and termination strategy defaults.
-- Multi-tenancy requirements.
 - Deployment topology (single JAR, containers, cloud provider).
 - Erlang X input parameters to expose (call volume forecast per interval, AHT, caller patience, retry rate, service level target).
