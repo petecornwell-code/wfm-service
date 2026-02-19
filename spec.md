@@ -106,9 +106,9 @@ Configurable rules that govern when an agent may take a break. A "break" is a ga
 
 #### 4.6.1 Blocked window (hard)
 
-By default, the first **2 hours** and last **2 hours** of an agent's shift are blocked — no break may occur during these periods. The blocked duration is configurable per schedule.
+By default, the first **1 hour** and last **1 hour** of an agent's shift are blocked — no break may occur during these periods. The blocked duration is configurable per schedule.
 
-Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 10:00 and after 15:00; the eligible break window is 10:00–15:00.
+Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 09:00 and after 16:00; the eligible break window is 09:00–16:00.
 
 #### 4.6.2 Minimum shift duration (hard)
 
@@ -351,7 +351,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
 | `weekStartDate` | `LocalDate` | Monday of the target week |
-| `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 2) |
+| `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 1) |
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
@@ -373,7 +373,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
-| Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 2 hours). |
+| Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 1 hour). |
 | Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
