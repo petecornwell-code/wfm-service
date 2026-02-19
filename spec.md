@@ -71,18 +71,18 @@ The set of available specializations is an input (e.g. "Billing", "Technical Sup
 
 ### 4.4 Staffing Demand
 
-The total number of agent-hours the client requires for the upcoming week, broken down **by day**. This input is provided per-specialization so the solver knows how many hours of each specialization are needed each day.
+The number of agents required **per timeslot, per specialization**. Because call volumes vary throughout the day, staffing demand is expressed at timeslot granularity — not as a flat daily total. This allows peak periods to be staffed more heavily than quiet periods.
 
 | Field | Example |
 |---|---|
-| Day | Monday |
+| Timeslot | Monday 09:00–09:15 |
 | Specialization | Billing |
-| Required hours | 64 |
+| Required agents | 8 |
 
 Demand can be:
 
-1. **Directly input** — the customer provides the hours.
-2. **Calculated via Erlang C** — derived from call-volume forecasts, average handle time, and target service level. The Erlang C calculation is performed before the solver is invoked and the result is stored as the required hours.
+1. **Directly input** — the customer provides agent counts per timeslot per specialization.
+2. **Calculated via Erlang X** — derived from forecasted call volume per interval, average handle time (AHT), caller patience (abandonment), retry rate, and target service level. Erlang X accounts for caller abandonment and redials, producing more accurate staffing numbers than Erlang C. The calculation is performed per timeslot before the solver is invoked.
 
 ## 5. Domain Model
 
@@ -125,19 +125,19 @@ A timeslot is a single time interval within the coverage window. Timeslots are *
 
 ### 5.4 StaffingRequirement
 
-Represents the demand for a given specialization on a given day. Used to determine how many **agent seats** (AgentAssignment instances) to generate per timeslot for that specialization.
+Represents the demand for a given specialization in a given timeslot. There is one StaffingRequirement per timeslot/specialization combination. Each row directly states how many concurrent agents are needed, enabling non-uniform staffing across the day.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
-| `date` | `LocalDate` | The day |
+| `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
-| `requiredHours` | `BigDecimal` | Total agent-hours required |
-| `source` | `enum(DIRECT, ERLANG_C)` | How the value was determined |
+| `requiredAgents` | `int` | Number of concurrent agents needed |
+| `source` | `enum(DIRECT, ERLANG_X)` | How the value was determined |
 
-**Deriving seats per timeslot:** The number of concurrent agents needed for a specialization is `requiredHours / coverageHours`, where `coverageHours` is the length of the time range (e.g. 10 hours for 08:00–18:00). This count is applied uniformly across every timeslot on that day for that specialization.
+**Generating seats:** For each StaffingRequirement, the system creates `requiredAgents` AgentAssignment instances for that timeslot and specialization. This is a direct 1-to-N expansion — no averaging or division needed.
 
-Example: Monday needs 64 hours of Billing, coverage window is 10 hours → 64 / 10 = **7 Billing agents needed per timeslot** (rounding up: 7). If timeslots are 15-minute increments with 40 slots per day, the system generates 40 × 7 = **280 AgentAssignment** instances for Billing on Monday, each needing a Billing-capable agent.
+Example: Monday 09:00–09:15 needs 8 Billing agents and 3 Tech Support agents → the system generates **8 + 3 = 11 AgentAssignment** instances for that single timeslot. Across 40 timeslots in a day, the total seat count varies per slot based on the individual StaffingRequirement values.
 
 ### 5.5 AgentAssignment (Planning Entity)
 
@@ -211,7 +211,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 |---|---|---|
 | `GET` | `/staffing-requirements` | List all staffing requirements |
 | `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
-| `POST` | `/staffing-requirements/erlang-c` | Calculate requirements from Erlang C inputs |
+| `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
 ### 7.4 Solver
 
@@ -285,7 +285,7 @@ src/main/java/com/wfm/
 │   ├── SpecializationService.java
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
-│   ├── ErlangCService.java
+│   ├── ErlangXService.java
 │   └── SolverService.java
 ├── controller/
 │   ├── AgentController.java
@@ -312,7 +312,7 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 - `specialization`
 - `agent` (FK → `specialization` for primary and secondary)
 - `timeslot`
-- `staffing_requirement` (FK → `specialization`)
+- `staffing_requirement` (FK → `timeslot`, FK → `specialization`)
 - `agent_assignment` (FK → `timeslot`, FK → `specialization`, FK → `agent`)
 - `schedule`
 
@@ -324,7 +324,7 @@ The React front end communicates exclusively through the REST API described in s
 |---|---|
 | Agent list | View agents synced from BambooHR; assign primary/secondary specializations |
 | Specializations | Manage the list of available specializations |
-| Staffing requirements | Enter or calculate (Erlang C) required hours per day per specialization |
+| Staffing requirements | Enter or calculate (Erlang X) required agents per timeslot per specialization |
 | Schedule | Configure solver inputs (increment, time range), trigger a solve, view resulting assignments |
 
 ## 12. Open Questions
@@ -333,4 +333,4 @@ The React front end communicates exclusively through the REST API described in s
 - Solver time limit and termination strategy defaults.
 - Multi-tenancy requirements.
 - Deployment topology (single JAR, containers, cloud provider).
-- Erlang C input parameters to expose (call volume, AHT, service level target, etc.).
+- Erlang X input parameters to expose (call volume forecast per interval, AHT, caller patience, retry rate, service level target).
