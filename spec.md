@@ -130,6 +130,18 @@ The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) mus
 
 When too many agents take their break during the same timeslot, coverage suffers. A soft penalty is applied when the number of agents on break in a single timeslot exceeds a configurable threshold (expressed as a percentage of agents on shift that day, default **20%**). The penalty scales with the number of agents over the threshold.
 
+### 4.7 Constraint Weights
+
+Each constraint (section 6) has an associated **weight** that controls how much a violation affects the solver score. Weights are stored per tenant and loaded as part of the planning solution via Timefold's `@ConstraintConfiguration` mechanism.
+
+Weights allow per-tenant customisation without changing constraint code:
+
+- **Disable a constraint** — set its weight to zero.
+- **Prioritise constraints** — give one soft constraint a weight of 10 and another a weight of 1.
+- **Promote soft to hard (or vice versa)** — change a weight from `HardSoftScore.ofSoft(n)` to `HardSoftScore.ofHard(n)`.
+
+The constraint table in section 6 documents the **default** level and weight for each constraint. A tenant's saved weights override these defaults at solve time.
+
 ## 5. Domain Model
 
 ### 5.1 Specialization
@@ -212,7 +224,27 @@ An agent's scheduling preferences for a specific day. These are loaded as proble
 
 A unique constraint on (`agent`, `date`) ensures one preference record per agent per day.
 
-### 5.7 Schedule (Planning Solution)
+### 5.7 ConstraintWeights
+
+A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. Persisted per tenant so each tenant can tune solver behaviour independently.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `id` | `UUID` | — | Primary key |
+| `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
+| `noOverlapWeight` | `HardSoftScore` | `hard(1)` | No overlapping assignments |
+| `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
+| `breakMinShiftWeight` | `HardSoftScore` | `hard(1)` | Break minimum shift |
+| `breakAlignmentWeight` | `HardSoftScore` | `hard(1)` | Break start alignment |
+| `preferPrimaryWeight` | `HardSoftScore` | `soft(1)` | Prefer primary specialization |
+| `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
+| `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
+| `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
+| `balancedWorkloadWeight` | `HardSoftScore` | `soft(1)` | Balanced workload |
+
+The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
+
+### 5.8 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run.
 
@@ -227,6 +259,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
+| `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
@@ -237,9 +270,9 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 
 ## 6. Constraints
 
-Constraints are defined in a `ConstraintProvider` implementation.
+Constraints are defined in a `ConstraintProvider` implementation. The **Level** column shows the default; per-tenant `ConstraintWeights` (section 5.7) can override levels and magnitudes at solve time.
 
-| Constraint | Level | Description |
+| Constraint | Default Level | Description |
 |---|---|---|
 | Specialization match | Hard | An agent's primary or secondary specialization must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
@@ -283,7 +316,14 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `GET` | `/agents/{id}/preferences` | List preferences for an agent (optionally filtered by date range) |
 | `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week) |
 
-### 7.4 Staffing Requirements
+### 7.4 Constraint Weights
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/constraint-weights` | Get the current tenant's constraint weights |
+| `PUT` | `/constraint-weights` | Update constraint weights (partial updates allowed; omitted fields keep defaults) |
+
+### 7.5 Staffing Requirements
 
 | Method | Path | Description |
 |---|---|---|
@@ -291,7 +331,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
-### 7.5 Solver
+### 7.6 Solver
 
 | Method | Path | Description |
 |---|---|---|
@@ -352,6 +392,7 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirement.java
 │   ├── AgentPreference.java
 │   ├── AgentAssignment.java
+│   ├── ConstraintWeights.java
 │   └── Schedule.java
 ├── repository/
 │   ├── SpecializationRepository.java
@@ -359,11 +400,13 @@ src/main/java/com/wfm/
 │   ├── AgentPreferenceRepository.java
 │   ├── TimeslotRepository.java
 │   ├── StaffingRequirementRepository.java
+│   ├── ConstraintWeightsRepository.java
 │   └── ScheduleRepository.java
 ├── service/
 │   ├── AgentService.java
 │   ├── AgentPreferenceService.java
 │   ├── SpecializationService.java
+│   ├── ConstraintWeightsService.java
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
 │   ├── ErlangXService.java
@@ -372,6 +415,7 @@ src/main/java/com/wfm/
 │   ├── AgentController.java
 │   ├── SpecializationController.java
 │   ├── StaffingRequirementController.java
+│   ├── ConstraintWeightsController.java
 │   └── ScheduleController.java
 ├── integration/
 │   ├── BambooHRClient.java
@@ -396,7 +440,8 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 - `timeslot`
 - `staffing_requirement` (FK → `timeslot`, FK → `specialization`)
 - `agent_assignment` (FK → `timeslot`, FK → `specialization`, FK → `agent`)
-- `schedule`
+- `constraint_weights` (one row per tenant; FK from `schedule`)
+- `schedule` (FK → `constraint_weights`)
 
 ## 11. React UI
 
