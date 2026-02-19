@@ -10,6 +10,7 @@ The service is **multi-tenant**. Tenant identity and authentication are managed 
 
 1. Agents work a contiguous block of hours each day (their "shift"), which includes a break.
 2. Each agent has exactly one primary specialization and one or more secondary specializations.
+3. The time period to be scheduled is made up of a contiguous sequence of timeslots.
 
 ## 2. Tech Stack
 
