@@ -698,16 +698,137 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 
 ## 12. React UI
 
-The React front end communicates exclusively through the REST API described in section 7. Core views:
+The React front end communicates exclusively through the REST API described in section 7. A persistent sidebar or top-level navigation provides access to each page. All pages operate within the authenticated tenant context.
 
-| View | Purpose |
-|---|---|
-| Agent list | View agents synced from BambooHR; assign primary specialization and one or more secondary specializations; submit start-time and break-time preferences per day |
-| Specializations | Manage the list of available specializations |
-| Staffing requirements | Enter or calculate (Erlang X) required agents per timeslot per specialization |
-| Constraint weights | View and adjust per-tenant constraint weights |
-| Schedule | Configure solver inputs (increment, time range), trigger a solve, view resulting assignments |
-| Schedule results | After a solve, displays tabbed sub-views for: **Staffing Summary** (predicted vs actual hours), **Agent Schedule** (per-agent timeslot grid with specialization match type and breaks), **Preference Report** (honoured/overridden preferences per agent), and **Constraint Violations** (hard/soft breakdown with scores). Includes an "Export to Excel" button that downloads the `.xlsx` spreadsheet (section 8.5). |
+### 12.1 Specializations Page
+
+Manages the set of available specializations (section 4.3).
+
+| Control | Type | Description |
+|---|---|---|
+| Specializations table | Table | Lists all specializations by name. One row per specialization. |
+| Add specialization | Text input + button | Text field for the specialization name and an "Add" button. Creates a new specialization via `POST /specializations`. |
+| Delete button | Icon button (per row) | Deletes the specialization via `DELETE /specializations/{id}`. Disabled or shows a warning if the specialization is in use by agents or staffing requirements. |
+
+### 12.2 Agents Page
+
+Displays agents synced from BambooHR and allows local specialization assignment (sections 5.2, 7.1).
+
+| Control | Type | Description |
+|---|---|---|
+| Agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, active status, last synced timestamp. Sortable and filterable. |
+| Sync button | Button | Triggers `POST /agents/sync`. Displays a loading indicator while the sync runs and refreshes the table on completion. |
+| Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
+| Edit specializations (per agent) | Inline or modal form | **Primary specialization:** single-select dropdown populated from the specializations list. **Secondary specializations:** multi-select control populated from the specializations list (excluding the selected primary). Saves via `PUT /agents/{id}/specializations`. |
+
+### 12.3 Agent Preferences Page
+
+Allows agents (or administrators on their behalf) to submit shift preferences (sections 4.5, 7.3). Accessible as a sub-view of the Agents page or as a standalone page.
+
+| Control | Type | Description |
+|---|---|---|
+| Agent selector | Dropdown or search | Selects the agent whose preferences are being viewed or edited. |
+| Week picker | Date picker | Selects the target week (Monday start). Loads existing preferences via `GET /agents/{id}/preferences?week={date}`. |
+| Preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker). Time pickers are constrained by the active break start alignment (section 4.6.3). |
+| Save button | Button | Persists all rows via `PUT /agents/{id}/preferences`. Disabled until a change is made. |
+| Clear button | Button (per row or bulk) | Clears preference values for selected day(s), indicating no preference. |
+
+### 12.4 Staffing Requirements Page
+
+Defines how many agents are needed per timeslot per specialization (sections 4.4, 7.5).
+
+| Control | Type | Description |
+|---|---|---|
+| Week picker | Date picker | Selects the target week. Loads existing requirements via `GET /staffing-requirements?week={date}`. |
+| Input mode toggle | Tab or radio group | Switches between **Direct input** and **Erlang X calculation**. |
+| **Direct input mode** | | |
+| Demand grid | Editable table | Rows: timeslots (generated from the time range and increment). Columns: one per specialization. Cells contain the required agent count (integer input). |
+| Copy day | Button + day selector | Copies one day's demand profile to other selected days to speed up entry. |
+| Save button | Button | Persists via `POST /staffing-requirements`. |
+| **Erlang X mode** | | |
+| Erlang X parameters form | Form fields | Per specialization per timeslot (or per day with a distribution pattern): **Forecasted call volume**, **Average handle time (AHT)** in seconds, **Caller patience** in seconds, **Retry rate** (percentage), **Target service level** (percentage within threshold seconds). |
+| Calculate button | Button | Submits parameters via `POST /staffing-requirements/erlang-x`. Displays the calculated agent counts in the demand grid for review before saving. |
+| Accept & save button | Button | Persists the calculated requirements. |
+
+### 12.5 Constraint Weights Page
+
+Displays and adjusts per-tenant constraint weights (sections 4.7, 5.7, 7.4).
+
+| Control | Type | Description |
+|---|---|---|
+| Weights table | Editable table | One row per constraint (matching the constraints in section 6). Columns: **Constraint name**, **Description**, **Level** (Hard/Soft dropdown), **Weight** (numeric input). Pre-populated from `GET /constraint-weights`. |
+| Reset to defaults button | Button | Restores all weights to the defaults defined in section 5.7. |
+| Save button | Button | Persists changes via `PUT /constraint-weights`. |
+
+### 12.6 Schedule Setup Page
+
+Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.6).
+
+| Control | Type | Description |
+|---|---|---|
+| Week picker | Date picker | Selects the Monday of the target week (`weekStartDate`). |
+| Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
+| Time range start | Time picker | Coverage window start (e.g. 08:00). |
+| Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
+| Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1). |
+| Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
+| Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
+| Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
+| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, and any missing data warnings (e.g. agents without specializations). |
+| Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
+| Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
+
+### 12.7 Schedule Results Page
+
+Displays solver output for a given schedule (section 8). Shown after a solve completes or when viewing a past schedule.
+
+| Control | Type | Description |
+|---|---|---|
+| Schedule header | Read-only panel | Displays: week, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped). |
+| Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
+| Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
+| Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
+| Results tabs | Tab bar | Four tabs as described below. |
+
+#### 12.7.1 Staffing Summary Tab
+
+Corresponds to section 8.1.
+
+| Control | Type | Description |
+|---|---|---|
+| Summary table | Table | Columns: **Day**, **Specialization**, **Predicted hours**, **Actual hours**, **Delta hours**, **Coverage %**. Colour-coded: green for fully staffed or overstaffed, amber for slightly understaffed, red for significantly understaffed. Includes per-day totals and a weekly grand-total row. |
+| Day filter | Dropdown or button group | Filters the table to a single day or shows all days. |
+
+#### 12.7.2 Agent Schedule Tab
+
+Corresponds to section 8.2.
+
+| Control | Type | Description |
+|---|---|---|
+| Schedule grid | Grid / heatmap | Rows: agents. Columns: timeslots for the selected day. Cells are colour-coded by specialization match type (primary vs secondary). Break timeslots are visually distinct (e.g. hatched or grey). Hovering a cell shows a tooltip with timeslot times, required specialization, and match type. |
+| Day selector | Dropdown or tab strip | Switches the grid to a different day of the week. |
+| Agent search / filter | Text input | Filters the grid to agents whose name matches the search text. |
+| Legend | Inline legend | Explains cell colours: primary match, secondary match, break, unassigned. |
+
+#### 12.7.3 Preference Report Tab
+
+Corresponds to section 8.3.
+
+| Control | Type | Description |
+|---|---|---|
+| Preference table | Table | Columns: **Agent**, **Day**, **Preferred start**, **Actual start**, **Start honoured** (check/cross icon), **Preferred break**, **Actual break**, **Break honoured** (check/cross icon). Sortable by any column. |
+| Summary counters | Read-only panel | Displays `totalPreferences`, `startTimeHonouredCount`, `breakTimeHonouredCount`, and `overallHonouredPct`. |
+| Filter: overridden only | Toggle | Filters the table to show only rows where at least one preference was overridden. |
+
+#### 12.7.4 Constraint Violations Tab
+
+Corresponds to section 8.4.
+
+| Control | Type | Description |
+|---|---|---|
+| Score summary | Read-only panel | Displays **Hard score**, **Soft score**, and **Feasible** (yes/no badge). Hard score highlighted in red if non-zero. |
+| Violations table | Expandable table | One row per constraint. Columns: **Constraint name**, **Level** (Hard/Soft badge), **Weight**, **Violation count**, **Total penalty**. Expandable to show individual `ViolationDetail` rows with agent, timeslot, and human-readable description. |
+| Filter by level | Dropdown or toggle | Filters to Hard only, Soft only, or All. |
 
 ## 13. Open Questions
 
