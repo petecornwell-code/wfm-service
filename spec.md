@@ -67,7 +67,7 @@ Each agent has exactly two specialization assignments:
 - **Primary specialization** — the agent's main area of expertise.
 - **Secondary specialization** — a secondary area the agent can cover.
 
-The set of available specializations is an input (e.g. "Billing", "Technical Support", "Sales"). Each timeslot carries a required specialization; the solver prefers assigning agents whose primary specialization matches, but may fall back to secondary.
+The set of available specializations is an input (e.g. "Billing", "Technical Support", "Sales"). Each timeslot may require coverage from multiple specializations simultaneously; the solver prefers assigning agents whose primary specialization matches the need, but may fall back to secondary.
 
 ### 4.4 Staffing Demand
 
@@ -114,7 +114,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 
 ### 5.3 Timeslot
 
-A timeslot is a single interval within the coverage window. Timeslots are **generated** from the configured time range and increment — they are not created manually. Each timeslot is associated with a day and a required specialization.
+A timeslot is a single time interval within the coverage window. Timeslots are **generated** from the configured time range and increment — they are not created manually. A timeslot is specialization-agnostic; multiple agents with different specializations may be needed in the same timeslot.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -122,11 +122,10 @@ A timeslot is a single interval within the coverage window. Timeslots are **gene
 | `date` | `LocalDate` | The day this slot belongs to |
 | `startTime` | `LocalTime` | Start of the interval |
 | `endTime` | `LocalTime` | End of the interval |
-| `requiredSpecialization` | `Specialization` | Specialization needed for this slot |
 
 ### 5.4 StaffingRequirement
 
-Represents the demand for a given specialization on a given day. Used to determine how many timeslots of each specialization to generate.
+Represents the demand for a given specialization on a given day. Used to determine how many **agent seats** (AgentAssignment instances) to generate per timeslot for that specialization.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -136,16 +135,21 @@ Represents the demand for a given specialization on a given day. Used to determi
 | `requiredHours` | `BigDecimal` | Total agent-hours required |
 | `source` | `enum(DIRECT, ERLANG_C)` | How the value was determined |
 
-The number of timeslots generated for a given day/specialization is: `requiredHours / incrementHours`. For example, 64 required hours at 30-minute increments = 128 timeslots that need agent coverage for that specialization on that day.
+**Deriving seats per timeslot:** The number of concurrent agents needed for a specialization is `requiredHours / coverageHours`, where `coverageHours` is the length of the time range (e.g. 10 hours for 08:00–18:00). This count is applied uniformly across every timeslot on that day for that specialization.
+
+Example: Monday needs 64 hours of Billing, coverage window is 10 hours → 64 / 10 = **7 Billing agents needed per timeslot** (rounding up: 7). If timeslots are 15-minute increments with 40 slots per day, the system generates 40 × 7 = **280 AgentAssignment** instances for Billing on Monday, each needing a Billing-capable agent.
 
 ### 5.5 AgentAssignment (Planning Entity)
 
-The central Timefold planning entity. The solver decides which agent fills each timeslot.
+The central Timefold planning entity. Each instance represents one **seat** — a need for one agent with a particular specialization in a particular timeslot. The solver decides which agent fills each seat.
+
+Multiple AgentAssignment instances may reference the same timeslot, each for a different (or the same) specialization. This is how a single timeslot is staffed by several agents across multiple specializations.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
-| `timeslot` | `Timeslot` | The slot to fill |
+| `timeslot` | `Timeslot` | The time interval to fill |
+| `requiredSpecialization` | `Specialization` | The specialization this seat demands |
 | `agent` | `Agent` | **Planning variable** — assigned by the solver |
 
 ### 5.6 Schedule (Planning Solution)
@@ -172,10 +176,10 @@ Constraints are defined in a `ConstraintProvider` implementation.
 
 | Constraint | Level | Description |
 |---|---|---|
-| One assignment per timeslot | Hard | Each timeslot is assigned at most one agent. |
-| Specialization match | Hard | An agent's primary or secondary specialization must match the timeslot's required specialization. |
-| No overlapping assignments | Hard | An agent cannot be assigned to two timeslots that overlap in time on the same day. |
-| Prefer primary specialization | Soft | Prefer assigning agents to timeslots matching their primary specialization over their secondary. |
+| Specialization match | Hard | An agent's primary or secondary specialization must match the assignment's required specialization. |
+| No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
+| One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
+| Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over their secondary. |
 | Balanced workload | Soft | Prefer an even distribution of assignments across agents. |
 
 ## 7. API
@@ -307,9 +311,9 @@ PostgreSQL is the sole data store. Hibernate generates the schema from the JPA e
 
 - `specialization`
 - `agent` (FK → `specialization` for primary and secondary)
-- `timeslot` (FK → `specialization`)
+- `timeslot`
 - `staffing_requirement` (FK → `specialization`)
-- `agent_assignment` (FK → `timeslot`, FK → `agent`)
+- `agent_assignment` (FK → `timeslot`, FK → `specialization`, FK → `agent`)
 - `schedule`
 
 ## 11. React UI
