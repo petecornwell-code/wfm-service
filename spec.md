@@ -169,6 +169,17 @@ Weights allow per-tenant customisation without changing constraint code:
 
 The constraint table in section 6 documents the **default** level and weight for each constraint. A tenant's saved weights override these defaults at solve time.
 
+### 4.8 Agent Days Off
+
+Agents have designated days off that are synced from BambooHR as explicit dates. The solver must not assign an agent to any timeslot on a day off. Two types are supported:
+
+- **Mandatory day off** — the agent's regular non-working days (the equivalent of weekends; typically two per week). These recur weekly but are stored as explicit dates per scheduling period.
+- **PTO (Paid Time Off)** — approved leave days. Only pre-approved PTO is considered; sick days are out of scope and not modelled.
+
+Both types have the same effect on the solver: the agent is **completely unavailable** for the day. The distinction is informational — it appears in the UI and agent schedule output so managers can see *why* an agent is absent.
+
+Days off are **read-only** within WFM Service — they originate from BambooHR and are synced alongside agent data (see section 9).
+
 ## 5. Domain Model
 
 ```mermaid
@@ -223,6 +234,13 @@ classDiagram
         +LocalTime preferredBreakTime
     }
 
+    class AgentDayOff {
+        +UUID id
+        +long tenantId
+        +LocalDate date
+        +DayOffType type
+    }
+
     class ConstraintWeights {
         <<ConstraintConfiguration>>
         +UUID id
@@ -267,12 +285,16 @@ classDiagram
     AgentPreference "* " --> "1" Agent
     note for AgentPreference "Unique on (agent, date).\nAt most one isStanding=true per agent."
 
+    AgentDayOff "* " --> "1" Agent
+    note for AgentDayOff "Unique on (agent, date).\nSynced from BambooHR."
+
     Schedule "1" --> "1" ConstraintWeights : «@ConstraintConfigurationProvider»
     Schedule "1" *-- "* " Specialization : specializations
     Schedule "1" *-- "* " Agent : agents
     Schedule "1" *-- "* " Timeslot : timeslots
     Schedule "1" *-- "* " StaffingRequirement : staffingRequirements
     Schedule "1" *-- "* " AgentPreference : agentPreferences
+    Schedule "1" *-- "* " AgentDayOff : agentDaysOff
     Schedule "1" *-- "* " AgentAssignment : assignments
 ```
 
@@ -368,7 +390,23 @@ An agent's scheduling preferences. Each record is tied to a specific date. The `
 
 **Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single **effective** preference: if a non-standing preference exists for that date, use it; otherwise use the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is per-record — the entire standing record is replaced, not merged field-by-field. The solver receives only the resolved effective preferences.
 
-### 5.7 ConstraintWeights
+### 5.7 AgentDayOff
+
+A day on which an agent is unavailable for scheduling. Days off are synced from BambooHR (see section 9) and treated as read-only within WFM Service.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
+| `agent` | `Agent` | The unavailable agent |
+| `date` | `LocalDate` | The day the agent is off |
+| `type` | `enum(MANDATORY, PTO)` | Reason for the day off — `MANDATORY` for regular non-working days (e.g. weekends), `PTO` for approved leave |
+
+**Uniqueness constraint:** Unique on (`agent`, `date`) — an agent has at most one day-off record per date.
+
+**Solver usage:** When building the planning solution, the service loads all `AgentDayOff` records that fall within the schedule's week. These are included as problem facts and referenced by the "Agent day off" hard constraint (section 6).
+
+### 5.8 ConstraintWeights
 
 A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. One row per tenant (identified by `tenantId`) so each tenant can tune solver behaviour independently.
 
@@ -376,6 +414,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 |---|---|---|---|
 | `id` | `UUID` | — | Primary key |
 | `tenantId` | `long` | — | Tenant identifier (from platform); unique — one row per tenant |
+| `agentDayOffWeight` | `HardSoftScore` | `hard(1)` | Agent day off |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
 | `noOverlapWeight` | `HardSoftScore` | `hard(1)` | No overlapping assignments |
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
@@ -389,7 +428,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
-### 5.8 Schedule (Planning Solution)
+### 5.9 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run.
 
@@ -410,16 +449,18 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `agents` | `List<Agent>` | Problem facts |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts |
+| `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule week |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver |
 
 ## 6. Constraints
 
-Constraints are defined in a `ConstraintProvider` implementation. The **Level** column shows the default; per-tenant `ConstraintWeights` (section 5.7) can override levels and magnitudes at solve time.
+Constraints are defined in a `ConstraintProvider` implementation. The **Level** column shows the default; per-tenant `ConstraintWeights` (section 5.8) can override levels and magnitudes at solve time.
 
 | Constraint | Default Level | Description |
 |---|---|---|
+| Agent day off | Hard | An agent must not be assigned to any timeslot on a day they have a day off (mandatory or PTO). |
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
@@ -447,7 +488,16 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
 | `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
 
-### 7.2 Specializations
+### 7.2 Agent Days Off
+
+Days off are synced from BambooHR (section 9) and are read-only.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/agents/{id}/days-off` | List days off for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date` and `type` (MANDATORY or PTO). |
+| `GET` | `/days-off` | List all agent days off, optionally filtered by date range. Useful for the schedule setup page to show availability across all agents for a given week. |
+
+### 7.3 Specializations
 
 | Method | Path | Description |
 |---|---|---|
@@ -455,7 +505,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `POST` | `/specializations` | Create specialization |
 | `DELETE` | `/specializations/{id}` | Delete specialization |
 
-### 7.3 Agent Preferences
+### 7.4 Agent Preferences
 
 | Method | Path | Description |
 |---|---|---|
@@ -463,14 +513,14 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
 | `DELETE` | `/agents/{id}/preferences/{date}` | Delete a specific day's preference. If the deleted preference was standing, the agent will have no standing preference until one is set. |
 
-### 7.4 Constraint Weights
+### 7.5 Constraint Weights
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/constraint-weights` | Get the current tenant's constraint weights |
 | `PUT` | `/constraint-weights` | Update constraint weights (partial updates allowed; omitted fields keep defaults) |
 
-### 7.5 Staffing Requirements
+### 7.6 Staffing Requirements
 
 | Method | Path | Description |
 |---|---|---|
@@ -478,7 +528,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
-### 7.6 Solver
+### 7.7 Solver
 
 | Method | Path | Description |
 |---|---|---|
@@ -604,7 +654,7 @@ The schedule can be exported as a multi-tab spreadsheet (`.xlsx`). Each tab corr
 
 Constraint violations (section 8.4) are not included in the spreadsheet — they are diagnostic data consumed via the API and displayed in the UI.
 
-Export is triggered via a dedicated endpoint (see section 7.6). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+Export is triggered via a dedicated endpoint (see section 7.7). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ## 9. BambooHR Integration
 
@@ -622,8 +672,11 @@ Initially the BambooHR client will operate against an **in-memory mock** that re
 public interface BambooHRClient {
     List<BambooEmployee> listEmployees();
     BambooEmployee getEmployee(String bamboohrId);
+    List<BambooTimeOff> listTimeOff(LocalDate from, LocalDate to);
 }
 ```
+
+`BambooTimeOff` represents a single day-off record: employee id, date, and type (`MANDATORY` or `PTO`).
 
 Two implementations:
 
@@ -638,6 +691,7 @@ Two implementations:
 - **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
+- **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
 
 ### 9.5 Configuration
 
@@ -658,6 +712,7 @@ src/main/java/com/wfm/
 │   ├── Timeslot.java
 │   ├── StaffingRequirement.java
 │   ├── AgentPreference.java
+│   ├── AgentDayOff.java
 │   ├── AgentAssignment.java
 │   ├── ConstraintWeights.java
 │   └── Schedule.java
@@ -665,6 +720,7 @@ src/main/java/com/wfm/
 │   ├── SpecializationRepository.java
 │   ├── AgentRepository.java
 │   ├── AgentPreferenceRepository.java
+│   ├── AgentDayOffRepository.java
 │   ├── TimeslotRepository.java
 │   ├── StaffingRequirementRepository.java
 │   ├── ConstraintWeightsRepository.java
@@ -689,6 +745,7 @@ src/main/java/com/wfm/
 ├── integration/
 │   ├── BambooHRClient.java
 │   ├── BambooEmployee.java
+│   ├── BambooTimeOff.java
 │   ├── MockBambooHRClient.java
 │   ├── HttpBambooHRClient.java
 │   └── BambooSyncService.java
@@ -709,6 +766,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 - `agent` (`tenant_id`, FK → `specialization` for primary, unique on `tenant_id` + `bamboohr_id`)
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
 - `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
+- `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`)
 - `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`)
 - `agent_assignment` (`tenant_id`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
@@ -739,10 +797,11 @@ Displays agents synced from BambooHR and allows local specialization assignment 
 | Sync button | Button | Triggers `POST /agents/sync`. Displays a loading indicator while the sync runs and refreshes the table on completion. |
 | Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
 | Edit specializations (per agent) | Inline or modal form | **Primary specialization:** single-select dropdown populated from the specializations list. **Secondary specializations:** multi-select control populated from the specializations list (excluding the selected primary). Saves via `PUT /agents/{id}/specializations`. |
+| Days off (per agent) | Expandable row or modal | Shows upcoming days off for the agent (read-only), fetched via `GET /agents/{id}/days-off`. Each entry displays the date and type (Mandatory / PTO). |
 
 ### 12.3 Agent Preferences Page
 
-Allows agents (or administrators on their behalf) to submit shift preferences (sections 4.5, 7.3). Accessible as a sub-view of the Agents page or as a standalone page.
+Allows agents (or administrators on their behalf) to submit shift preferences (sections 4.5, 7.4). Accessible as a sub-view of the Agents page or as a standalone page.
 
 | Control | Type | Description |
 |---|---|---|
@@ -754,7 +813,7 @@ Allows agents (or administrators on their behalf) to submit shift preferences (s
 
 ### 12.4 Staffing Requirements Page
 
-Defines how many agents are needed per timeslot per specialization (sections 4.4, 7.5).
+Defines how many agents are needed per timeslot per specialization (sections 4.4, 7.6).
 
 | Control | Type | Description |
 |---|---|---|
@@ -771,17 +830,17 @@ Defines how many agents are needed per timeslot per specialization (sections 4.4
 
 ### 12.5 Constraint Weights Page
 
-Displays and adjusts per-tenant constraint weights (sections 4.7, 5.7, 7.4).
+Displays and adjusts per-tenant constraint weights (sections 4.7, 5.8, 7.5).
 
 | Control | Type | Description |
 |---|---|---|
 | Weights table | Editable table | One row per constraint (matching the constraints in section 6). Columns: **Constraint name**, **Description**, **Level** (Hard/Soft dropdown), **Weight** (numeric input). Pre-populated from `GET /constraint-weights`. |
-| Reset to defaults button | Button | Restores all weights to the defaults defined in section 5.7. |
+| Reset to defaults button | Button | Restores all weights to the defaults defined in section 5.8. |
 | Save button | Button | Persists changes via `PUT /constraint-weights`. |
 
 ### 12.6 Schedule Setup Page
 
-Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.6).
+Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 
 | Control | Type | Description |
 |---|---|---|
@@ -793,7 +852,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.6).
 | Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
-| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, and any missing data warnings (e.g. agents without specializations). |
+| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this week, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
 
