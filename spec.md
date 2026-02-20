@@ -755,23 +755,19 @@ Two implementations:
 
 ### 9.4 Sync Behaviour
 
-- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`.
+- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`. Synced employees are written to the default tenant.
 - **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 - **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
 
-### 9.5 Tenant Scoping
-
-Each tenant has its own BambooHR account, identified by a unique subdomain and API key. BambooHR credentials are stored per tenant. The scheduled sync iterates over all tenants with configured credentials and syncs each independently. On-demand sync (`POST /agents/sync`) uses the credentials of the requesting tenant.
-
-### 9.6 Configuration
+### 9.5 Configuration
 
 | Property | Description | Default |
 |---|---|---|
 | `bamboohr.mock` | Use in-memory mock client | `true` |
-| `bamboohr.api-key` | BambooHR API key (required when mock=false). Per-tenant — stored in tenant configuration. | — |
-| `bamboohr.subdomain` | BambooHR company subdomain. Per-tenant — stored in tenant configuration. | — |
+| `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
+| `bamboohr.subdomain` | BambooHR company subdomain | — |
 | `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
 
 ## 10. Package Layout
