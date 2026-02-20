@@ -312,6 +312,8 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 
 An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system, except for specialization assignments which are managed locally.
 
+**Specialization requirement:** Every active agent must have a primary specialization and at least one secondary specialization assigned before the agent can participate in a solve run. Freshly synced agents from BambooHR arrive without specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active agent lacks specializations (see section 7.7).
+
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key (internal) |
@@ -536,6 +538,12 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
+
+**Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` with a descriptive error:
+
+- Every active agent must have a primary specialization and at least one secondary specialization assigned.
+- At least one staffing requirement must exist for the target week.
+- At least one active agent must be available (i.e. not on a day off for every day of the week).
 
 ## 8. Schedule Output
 
