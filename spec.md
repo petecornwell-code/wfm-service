@@ -112,19 +112,20 @@ Preferences are optional. An agent with no submitted preferences is scheduled pu
 
 #### Standing vs weekly preferences
 
-A preference record is either **standing** or **weekly**:
+Every preference record has a date and a boolean `isStanding` flag:
 
-- **Standing preference** — has no date. It applies continuously to every day the agent is scheduled, acting as a default. An agent may have at most one standing preference.
-- **Weekly preference** — has a specific date. It applies only to that day and **overrides** the standing preference for that day.
+- **Standing preference** (`isStanding = true`) — applies as the default for every day the agent is scheduled. At most **one** preference per agent may be standing at any time. When a different preference is marked as standing, the previous standing preference has its flag set to `false` automatically.
+- **Weekly preference** (`isStanding = false`) — applies only to its specific date and **overrides** the standing preference for that day.
 
-When the solver loads preferences for a given agent-day it resolves them as follows: if a weekly preference exists for that date, use it; otherwise fall back to the standing preference (if one exists); otherwise the agent has no preference for that day.
+When the solver resolves preferences for a given agent-day: if a weekly (non-standing) preference exists for that date, use it; otherwise fall back to the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is **per-record** — a weekly override replaces the standing preference entirely for that day (individual fields are not merged).
 
-| Field | Example (standing) | Example (weekly) |
+| Field | Example (standing) | Example (weekly override) |
 |---|---|---|
 | Agent | Jane Smith | Jane Smith |
-| Date | *(null — applies every day)* | Monday 2026-02-23 |
+| Date | 2026-02-23 | 2026-02-25 |
+| Is standing | `true` | `false` |
 | Preferred start | 09:00 | 10:00 |
-| Preferred break | 12:30 | 13:00 |
+| Preferred break | 12:30 | *(null — no break preference this day)* |
 
 ### 4.6 Break Rules
 
@@ -216,7 +217,8 @@ classDiagram
     class AgentPreference {
         +UUID id
         +long tenantId
-        +LocalDate date [nullable]
+        +LocalDate date
+        +boolean isStanding
         +LocalTime preferredStartTime
         +LocalTime preferredBreakTime
     }
@@ -263,7 +265,7 @@ classDiagram
     AgentAssignment "* " ..> "0..1" Agent : «planning variable»
 
     AgentPreference "* " --> "1" Agent
-    note for AgentPreference "date nullable (null = standing).\nUnique on (agent, date) where date is not null.\nUnique on (agent) where date is null."
+    note for AgentPreference "Unique on (agent, date).\nAt most one isStanding=true per agent."
 
     Schedule "1" --> "1" ConstraintWeights : «@ConstraintConfigurationProvider»
     Schedule "1" *-- "* " Specialization : specializations
@@ -347,23 +349,24 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 
 ### 5.6 AgentPreference
 
-An agent's scheduling preferences. A preference is either **standing** (applies to every day) or **weekly** (applies to a specific date and overrides the standing preference for that day). These are loaded as problem facts and referenced by soft constraints during solving.
+An agent's scheduling preferences. Each record is tied to a specific date. The `isStanding` flag marks one preference as the agent's default that applies to every day unless overridden. These are loaded as problem facts and referenced by soft constraints during solving.
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `UUID` | Primary key |
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `agent` | `Agent` | The agent expressing the preference |
-| `date` | `LocalDate` | The day the preference applies to. **Nullable** — `null` indicates a standing preference that applies every day. |
+| `date` | `LocalDate` | The day the preference was set for |
+| `isStanding` | `boolean` | `true` = this preference applies as the default for every day. At most one per agent. Default `false`. |
 | `preferredStartTime` | `LocalTime` | Desired start of first assignment (nullable) |
 | `preferredBreakTime` | `LocalTime` | Desired break time (nullable) |
 
 **Uniqueness constraints:**
 
-- One standing preference per agent: unique on (`agent`) where `date IS NULL`.
-- One weekly preference per agent per day: unique on (`agent`, `date`) where `date IS NOT NULL`.
+- Unique on (`agent`, `date`) — one preference record per agent per day.
+- At most one `isStanding = true` per agent — enforced by application logic (and optionally by a partial unique index on (`agent`) where `is_standing = true`).
 
-**Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single effective preference: the weekly preference for that date if one exists, otherwise the standing preference, otherwise no preference.
+**Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single **effective** preference: if a non-standing preference exists for that date, use it; otherwise use the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is per-record — the entire standing record is replaced, not merged field-by-field. The solver receives only the resolved effective preferences.
 
 ### 5.7 ConstraintWeights
 
@@ -456,10 +459,9 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents/{id}/preferences` | List preferences for an agent. Optionally filtered by date range via query parameters. Always includes the standing preference (if one exists) alongside any weekly preferences in the range. |
-| `PUT` | `/agents/{id}/preferences/standing` | Create or update the agent's standing preference (preferred start time and/or break time that apply every day). Send `null` values to clear individual fields; `DELETE` the resource to remove the standing preference entirely. |
-| `DELETE` | `/agents/{id}/preferences/standing` | Remove the agent's standing preference. |
-| `PUT` | `/agents/{id}/preferences` | Create or update weekly preferences for an agent (batch by week). Each entry includes a `date`; any date-specific preference overrides the standing preference for that day. |
+| `GET` | `/agents/{id}/preferences` | List preferences for an agent. Optionally filtered by date range via query parameters. Always includes the standing preference (if one exists) alongside any date-specific preferences in the range. Each record includes `isStanding`. |
+| `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
+| `DELETE` | `/agents/{id}/preferences/{date}` | Delete a specific day's preference. If the deleted preference was standing, the agent will have no standing preference until one is set. |
 
 ### 7.4 Constraint Weights
 
@@ -538,16 +540,17 @@ Each entry in the list represents one agent-day:
 
 ### 8.3 Preference Report
 
-A per-agent, per-day report showing which preferences were honoured and which were overridden.
+A per-agent, per-day report showing which preferences were honoured and which were overridden. Preference values shown are the **effective (resolved)** values after standing-vs-weekly resolution (see section 5.6), not the raw stored records.
 
 | Field | Type | Description |
 |---|---|---|
 | `agent` | `Agent` | The agent |
 | `date` | `LocalDate` | Day |
-| `preferredStartTime` | `LocalTime` | Submitted preference (null if none) |
+| `preferenceSource` | `enum(WEEKLY, STANDING, NONE)` | Whether the effective preference came from a date-specific record, the standing default, or no preference existed |
+| `preferredStartTime` | `LocalTime` | Effective preferred start time (null if none) |
 | `actualStartTime` | `LocalTime` | Earliest assignment start time |
 | `startTimeHonoured` | `boolean` | `true` if `actualStartTime >= preferredStartTime` (or no preference was set) |
-| `preferredBreakTime` | `LocalTime` | Submitted preference (null if none) |
+| `preferredBreakTime` | `LocalTime` | Effective preferred break time (null if none) |
 | `actualBreakTime` | `LocalTime` | Start of actual break closest to the preferred time (null if no break) |
 | `breakTimeHonoured` | `boolean` | `true` if the agent's break overlaps the preferred break timeslot (or no preference was set) |
 
@@ -705,7 +708,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 - `specialization` (`tenant_id`, unique on `tenant_id` + `name`)
 - `agent` (`tenant_id`, FK → `specialization` for primary, unique on `tenant_id` + `bamboohr_id`)
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
-- `agent_preference` (`tenant_id`, FK → `agent`, `date` nullable. Partial unique on `tenant_id` + `agent` + `date` where `date IS NOT NULL`; partial unique on `tenant_id` + `agent` where `date IS NULL`)
+- `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
 - `timeslot` (`tenant_id`)
 - `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`)
 - `agent_assignment` (`tenant_id`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
@@ -739,20 +742,15 @@ Displays agents synced from BambooHR and allows local specialization assignment 
 
 ### 12.3 Agent Preferences Page
 
-Allows agents (or administrators on their behalf) to submit shift preferences (sections 4.5, 7.3). Accessible as a sub-view of the Agents page or as a standalone page. The page is split into two sections: a standing preference that applies every day, and weekly overrides for specific dates.
+Allows agents (or administrators on their behalf) to submit shift preferences (sections 4.5, 7.3). Accessible as a sub-view of the Agents page or as a standalone page.
 
 | Control | Type | Description |
 |---|---|---|
 | Agent selector | Dropdown or search | Selects the agent whose preferences are being viewed or edited. |
-| **Standing preference section** | | |
-| Standing preference form | Inline form | Fields: **Preferred start time** (time picker), **Preferred break time** (time picker). Displays the agent's current standing preference or "No standing preference set". Time pickers are constrained by the active break start alignment (section 4.6.3). |
-| Save standing button | Button | Persists via `PUT /agents/{id}/preferences/standing`. Disabled until a change is made. |
-| Remove standing button | Button | Removes the standing preference via `DELETE /agents/{id}/preferences/standing`. Shown only when a standing preference exists. |
-| **Weekly preferences section** | | |
-| Week picker | Date picker | Selects the target week (Monday start). Loads existing weekly preferences via `GET /agents/{id}/preferences?week={date}`. |
-| Weekly preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker), **Source** (read-only label: "Weekly override" if a date-specific value is set, "Standing default" if falling back to the standing preference, "None" if no preference). Time pickers are constrained by the active break start alignment (section 4.6.3). |
-| Save weekly button | Button | Persists weekly overrides via `PUT /agents/{id}/preferences`. Disabled until a change is made. Only sends rows that have been explicitly set as weekly overrides. |
-| Clear button | Button (per row or bulk) | Removes the weekly override for the selected day(s), causing those days to fall back to the standing preference. |
+| Week picker | Date picker | Selects the target week (Monday start). Loads existing preferences via `GET /agents/{id}/preferences?week={date}`. |
+| Preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker), **Standing** (checkbox — at most one row may be checked; checking a new row unchecks the previous standing row), **Source** (read-only label: "Standing default" if the row's values are inherited from the standing preference, "Weekly override" if a date-specific preference exists, "None" if no preference). Time pickers are constrained by the active break start alignment (section 4.6.3). |
+| Save button | Button | Persists all rows via `PUT /agents/{id}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures only one is standing per agent. |
+| Delete button | Button (per row) | Deletes the preference for the selected day via `DELETE /agents/{id}/preferences/{date}`. That day then falls back to the standing preference (if one exists). |
 
 ### 12.4 Staffing Requirements Page
 
