@@ -155,7 +155,7 @@ The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) mus
 
 #### 4.6.4 Break clustering penalty (soft)
 
-When too many agents take their break during the same timeslot, coverage suffers. A soft penalty is applied when the number of agents on break in a single timeslot exceeds a configurable threshold (expressed as a percentage of agents on shift that day, default **20%**). The penalty scales with the number of agents over the threshold.
+When too many agents take their break during the same timeslot, coverage suffers. A soft penalty is applied when the number of agents on break in a single timeslot exceeds a configurable threshold (expressed as a percentage of agents **assigned during that same timeslot**, default **20%**). The penalty scales linearly with the number of agents over the threshold — e.g. if the threshold allows 8 agents on break and 10 are on break, the penalty is 2 × the constraint weight.
 
 ### 4.7 Constraint Weights
 
@@ -452,7 +452,9 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule week |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
-| `score` | `HardSoftScore` | Populated by solver |
+| `score` | `HardSoftScore` | Populated by solver; set to `null` if the schedule has been manually edited after solving |
+| `status` | `enum(RUNNING, COMPLETED, STOPPED)` | Current solver status |
+| `manuallyEdited` | `boolean` | `true` if any assignment has been changed after the solve completed. When `true`, the `score` is no longer valid and the UI displays a "manually edited" warning. Default `false`. |
 
 ## 6. Constraints
 
@@ -470,7 +472,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
-| Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents on shift. Penalty scales with excess. |
+| Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 
 ## 7. API
 
@@ -508,7 +510,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents/{id}/preferences` | List preferences for an agent. Optionally filtered by date range via query parameters. Always includes the standing preference (if one exists) alongside any date-specific preferences in the range. Each record includes `isStanding`. |
+| `GET` | `/agents/{id}/preferences` | List **raw** preference records for an agent. Optionally filtered by date range via query parameters. Always includes the standing preference (if one exists) alongside any date-specific preferences in the range. Each record includes `isStanding`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.6). |
 | `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
 | `DELETE` | `/agents/{id}/preferences/{date}` | Delete a specific day's preference. If the deleted preference was standing, the agent will have no standing preference until one is set. |
 
@@ -524,7 +526,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/staffing-requirements` | List all staffing requirements |
-| `POST` | `/staffing-requirements` | Create or update requirements (batch by week) |
+| `POST` | `/staffing-requirements` | Create or replace requirements for a week. The payload contains the complete set of requirements for the specified week — any existing requirements for that week not present in the payload are **deleted**. This is a full-week replace, not a merge. |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
 ### 7.7 Solver
@@ -534,6 +536,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `POST` | `/schedules/solve` | Start a solve run (async). Accepts solver inputs. Returns schedule id. |
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
+| `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` with a descriptive error:
@@ -867,7 +870,7 @@ Displays solver output for a given schedule (section 8). Shown after a solve com
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: week, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped). |
+| Schedule header | Read-only panel | Displays: week, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
@@ -891,6 +894,7 @@ Corresponds to section 8.2.
 | Schedule grid | Grid / heatmap | Rows: agents. Columns: timeslots for the selected day. Cells are colour-coded by specialization match type (primary vs secondary). Break timeslots are visually distinct (e.g. hatched or grey). Hovering a cell shows a tooltip with timeslot times, required specialization, and match type. |
 | Day selector | Dropdown or tab strip | Switches the grid to a different day of the week. |
 | Agent search / filter | Text input | Filters the grid to agents whose name matches the search text. |
+| Reassign agent | Click cell / modal | On a completed schedule, clicking an assigned cell opens a modal to reassign the seat to a different agent. The dropdown shows available agents (filtered to those with a matching specialization). Saving calls `PUT /schedules/{id}/assignments/{assignmentId}`. The schedule is flagged as manually edited and the score is invalidated. |
 | Legend | Inline legend | Explains cell colours: primary match, secondary match, break, unassigned. |
 
 #### 12.7.3 Preference Report Tab
