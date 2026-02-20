@@ -130,7 +130,7 @@ When the solver resolves preferences for a given agent-day: if a weekly (non-sta
 
 ### 4.6 Break Rules
 
-Configurable rules that govern when an agent may take a break. A "break" is a gap — one or more consecutive timeslots during an agent's shift where they are not assigned. An agent's **shift** on a given day is defined as the span from their earliest assignment to their latest assignment.
+Configurable rules that govern when an agent may take a break. Each agent receives **exactly one break** per shift — a contiguous block of unassigned timeslots. An agent's **shift** on a given day is defined as the span from their earliest assignment to their latest assignment.
 
 #### 4.6.1 Blocked window (hard)
 
@@ -142,7 +142,19 @@ Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 09:00 
 
 Breaks are not permitted if an agent's shift is shorter than **4 hours**. This threshold is configurable per schedule.
 
-#### 4.6.3 Break start alignment (hard)
+#### 4.6.3 Break duration (hard)
+
+The break duration is configurable per schedule, expressed in minutes. It must be a **multiple of the schedule's timeslot increment** (section 4.1). Typical values are 30, 45, or 60 minutes. The solver assigns exactly this many contiguous unassigned timeslots as the agent's break.
+
+| Schedule increment | Valid break durations (examples) |
+|---|---|
+| 15 minutes | 15, 30, 45, 60, 75, … |
+| 30 minutes | 30, 60, 90, … |
+| 60 minutes | 60, 120, … |
+
+The default break duration is **60 minutes**. Pre-solve validation rejects a break duration that is not a multiple of the increment.
+
+#### 4.6.4 Break start alignment (hard)
 
 The break start time must align to a configured boundary:
 
@@ -154,7 +166,7 @@ The break start time must align to a configured boundary:
 
 The default is `ON_HALF_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.7) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
 
-#### 4.6.4 Break clustering penalty (soft)
+#### 4.6.5 Break clustering penalty (soft)
 
 When too many agents take their break during the same timeslot, coverage suffers. A soft penalty is applied when the number of agents on break in a single timeslot exceeds a configurable threshold (expressed as a percentage of agents **assigned during that same timeslot**, default **20%**). The penalty scales linearly with the number of agents over the threshold — e.g. if the threshold allows 8 agents on break and 10 are on break, the penalty is 2 × the constraint weight.
 
@@ -249,6 +261,8 @@ classDiagram
         +long tenantId
         +HardSoftScore specMatchWeight
         +HardSoftScore noOverlapWeight
+        +HardSoftScore exactlyOneBreakWeight
+        +HardSoftScore breakDurationWeight
         +HardSoftScore breakBlockedWindowWeight
         +HardSoftScore breakMinShiftWeight
         +HardSoftScore breakAlignmentWeight
@@ -271,6 +285,7 @@ classDiagram
         +LocalDate weekStartDate
         +LocalDate weekEndDate
         +int breakBlockedHours
+        +int breakDurationMinutes
         +int breakMinShiftHours
         +BreakAlignment breakStartAlignment
         +int breakClusterThresholdPct
@@ -425,6 +440,8 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `agentDayOffWeight` | `HardSoftScore` | `hard(1)` | Agent day off |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
 | `noOverlapWeight` | `HardSoftScore` | `hard(1)` | No overlapping assignments |
+| `exactlyOneBreakWeight` | `HardSoftScore` | `hard(1)` | Exactly one break per shift |
+| `breakDurationWeight` | `HardSoftScore` | `hard(1)` | Break duration |
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
 | `breakMinShiftWeight` | `HardSoftScore` | `hard(1)` | Break minimum shift |
 | `breakAlignmentWeight` | `HardSoftScore` | `hard(1)` | Break start alignment |
@@ -451,6 +468,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `weekStartDate` | `LocalDate` | First day of the schedule period |
 | `weekEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `weekStartDate` to `weekEndDate`. |
 | `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 1) |
+| `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
@@ -478,6 +496,8 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
+| Exactly one break | Hard | An agent with a shift at or above the minimum shift threshold must have exactly one contiguous break of the configured duration. An agent below the threshold must have no break. |
+| Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
 | Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 1 hour). |
 | Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
@@ -559,6 +579,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 - Every active agent must have a primary specialization and at least one secondary specialization assigned.
 - At least one staffing requirement must exist for the target period.
 - At least one active agent must be available (i.e. not on a day off for every day of the period).
+- `breakDurationMinutes` must be a positive multiple of `incrementMinutes`.
 - Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the error response so they can be corrected.
 
 ## 8. Schedule Output
@@ -875,6 +896,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
 | Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1). |
+| Break duration | Dropdown or numeric input | Break length in minutes (default 60). Options are filtered to multiples of the selected timeslot increment (e.g. 30, 45, 60 for a 15-min increment). |
 | Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
