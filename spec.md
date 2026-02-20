@@ -369,7 +369,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
-| `agent` | `Agent` | **Planning variable** — assigned by the solver |
+| `agent` | `Agent` | **Planning variable** (not nullable) — assigned by the solver. Every seat must be filled; the solver will never leave a seat unassigned. |
 
 ### 5.6 AgentPreference
 
