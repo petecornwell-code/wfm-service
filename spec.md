@@ -152,7 +152,7 @@ The break start time must align to a configured boundary:
 | `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
 | `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
 
-The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) must conform to the active alignment — the system **rejects** any preferred break time that does not fall on a valid boundary (e.g. submitting 12:27 when alignment is `ON_HOUR` returns a validation error).
+The default is `ON_HALF_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.7) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
 
 #### 4.6.4 Break clustering penalty (soft)
 
@@ -557,8 +557,9 @@ Days off are synced from BambooHR (section 9) and are read-only.
 **Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` with a descriptive error:
 
 - Every active agent must have a primary specialization and at least one secondary specialization assigned.
-- At least one staffing requirement must exist for the target week.
-- At least one active agent must be available (i.e. not on a day off for every day of the week).
+- At least one staffing requirement must exist for the target period.
+- At least one active agent must be available (i.e. not on a day off for every day of the period).
+- Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the error response so they can be corrected.
 
 ## 8. Schedule Output
 
