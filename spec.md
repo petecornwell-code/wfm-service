@@ -300,7 +300,7 @@ classDiagram
 
     AgentAssignment "* " --> "1" Timeslot
     AgentAssignment "* " --> "1" Specialization : requiredSpecialization
-    AgentAssignment "* " ..> "0..1" Agent : «planning variable»
+    AgentAssignment "* " ..> "1" Agent : «planning variable»
 
     AgentPreference "* " --> "1" Agent
     note for AgentPreference "Unique on (agent, date).\nAt most one isStanding=true per agent."
@@ -427,7 +427,7 @@ A day on which an agent is unavailable for scheduling. Days off are synced from 
 
 **Uniqueness constraint:** Unique on (`agent`, `date`) — an agent has at most one day-off record per date.
 
-**Solver usage:** When building the planning solution, the service loads all `AgentDayOff` records that fall within the schedule's week. These are included as problem facts and referenced by the "Agent day off" hard constraint (section 6).
+**Solver usage:** When building the planning solution, the service loads all `AgentDayOff` records that fall within the schedule's period. These are included as problem facts and referenced by the "Agent day off" hard constraint (section 6).
 
 ### 5.8 ConstraintWeights
 
@@ -531,7 +531,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/agents/{id}/days-off` | List days off for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date` and `type` (MANDATORY or PTO). |
-| `GET` | `/days-off` | List all agent days off, optionally filtered by date range. Useful for the schedule setup page to show availability across all agents for a given week. |
+| `GET` | `/days-off` | List all agent days off, optionally filtered by date range. Useful for the schedule setup page to show availability across all agents for a given period. |
 
 ### 7.3 Specializations
 
@@ -546,7 +546,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/agents/{id}/preferences` | List **raw** preference records for an agent. Optionally filtered by date range via query parameters. Always includes the standing preference (if one exists) alongside any date-specific preferences in the range. Each record includes `isStanding`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.6). |
-| `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch by week). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
+| `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
 | `DELETE` | `/agents/{id}/preferences/{date}` | Delete a specific day's preference. If the deleted preference was standing, the agent will have no standing preference until one is set. |
 
 ### 7.5 Constraint Weights
@@ -561,18 +561,41 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/staffing-requirements` | List all staffing requirements |
-| `POST` | `/staffing-requirements` | Create or replace requirements for a week. The payload contains the complete set of requirements for the specified week — any existing requirements for that week not present in the payload are **deleted**. This is a full-week replace, not a merge. |
+| `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
 ### 7.7 Solver
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/schedules/solve` | Start a solve run (async). Accepts solver inputs. Returns schedule id. |
+| `POST` | `/schedules/solve` | Start a solve run (async). Returns schedule id. Request body contains schedule configuration (see below). |
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 | `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
+
+**Request body for `POST /schedules/solve`:**
+
+```json
+{
+  "weekStartDate": "2026-02-23",
+  "weekEndDate": "2026-02-27",
+  "startTime": "08:00",
+  "endTime": "18:00",
+  "incrementMinutes": 15,
+  "breakBlockedHours": 1,
+  "breakDurationMinutes": 60,
+  "breakMinShiftHours": 4,
+  "breakStartAlignment": "ON_HALF_HOUR",
+  "breakClusterThresholdPct": 20,
+  "defaultContractedHoursPerDay": 8.0,
+  "overallocationHardLimitPct": 10
+}
+```
+
+All fields with defaults (section 5.9) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, and days off from the database for the specified date range.
+
+**Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict`. To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
 
 **Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` with a descriptive error:
 
@@ -592,18 +615,18 @@ A per-day comparison of **predicted** staffing hours (derived from staffing requ
 
 | Field | Type | Description |
 |---|---|---|
-| `date` | `LocalDate` | Day of the week |
+| `date` | `LocalDate` | Day |
 | `specialization` | `String` | Specialization name |
 | `predictedHours` | `BigDecimal` | Sum of `requiredAgents × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `actualHours` | `BigDecimal` | Sum of `(assigned agents) × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `deltaHours` | `BigDecimal` | `actualHours − predictedHours` (positive = overstaffed, negative = understaffed) |
 | `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100` |
 
-A `totals` row per day aggregates across all specializations. A weekly grand-total row aggregates across all days.
+A `totals` row per day aggregates across all specializations. A grand-total row aggregates across all days.
 
 ### 8.2 Agent Schedule
 
-A per-agent, per-day view of every assignment, the specialization used, and break periods.
+A per-agent, per-day view of every assignment, the specialization used, and break periods. Agents who are available (active, specializations assigned, not on a day off) but receive **zero assignments** on a given day are included with an empty assignments list and `totalHours = 0`, so managers can spot under-utilisation.
 
 Each entry in the list represents one agent-day:
 
@@ -668,7 +691,7 @@ A breakdown of every constraint violation in the current best solution, grouped 
 | `level` | `enum(HARD, SOFT)` | Score level of the violation |
 | `weight` | `HardSoftScore` | Active weight from ConstraintWeights |
 | `violationCount` | `int` | Number of times this constraint was violated |
-| `totalPenalty` | `HardSoftScore` | `weight × violationCount` — total score impact |
+| `totalPenalty` | `HardSoftScore` | Sum of individual match scores across all violations of this constraint. For fixed-penalty constraints this equals `weight × violationCount`; for variable-penalty constraints (e.g. workload deviation, break clustering) each match contributes a different score. |
 | `violations` | `List<ViolationDetail>` | Individual violation instances |
 
 **ViolationDetail:**
@@ -738,13 +761,17 @@ Two implementations:
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 - **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
 
-### 9.5 Configuration
+### 9.5 Tenant Scoping
+
+Each tenant has its own BambooHR account, identified by a unique subdomain and API key. BambooHR credentials are stored per tenant. The scheduled sync iterates over all tenants with configured credentials and syncs each independently. On-demand sync (`POST /agents/sync`) uses the credentials of the requesting tenant.
+
+### 9.6 Configuration
 
 | Property | Description | Default |
 |---|---|---|
 | `bamboohr.mock` | Use in-memory mock client | `true` |
-| `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
-| `bamboohr.subdomain` | BambooHR company subdomain | — |
+| `bamboohr.api-key` | BambooHR API key (required when mock=false). Per-tenant — stored in tenant configuration. | — |
+| `bamboohr.subdomain` | BambooHR company subdomain. Per-tenant — stored in tenant configuration. | — |
 | `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
 
 ## 10. Package Layout
@@ -812,8 +839,8 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
 - `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
-- `timeslot` (`tenant_id`)
-- `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`)
+- `timeslot` (`tenant_id`, unique on `tenant_id` + `date` + `start_time` + `end_time`)
+- `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`, unique on `tenant_id` + `timeslot` + `specialization`)
 - `agent_assignment` (`tenant_id`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
 - `constraint_weights` (`tenant_id`, unique on `tenant_id` — one row per tenant; FK from `schedule`)
 - `schedule` (`tenant_id`, FK → `constraint_weights`)
@@ -852,7 +879,7 @@ Allows agents (or administrators on their behalf) to submit shift preferences (s
 | Control | Type | Description |
 |---|---|---|
 | Agent selector | Dropdown or search | Selects the agent whose preferences are being viewed or edited. |
-| Week picker | Date picker | Selects the target week (Monday start). Loads existing preferences via `GET /agents/{id}/preferences?week={date}`. |
+| Period picker | Date range picker | Selects the target date range. Loads existing preferences via `GET /agents/{id}/preferences?from={date}&to={date}`. |
 | Preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker), **Standing** (checkbox — at most one row may be checked; checking a new row unchecks the previous standing row), **Source** (read-only label: "Standing default" if the row's values are inherited from the standing preference, "Weekly override" if a date-specific preference exists, "None" if no preference). Time pickers are constrained by the active break start alignment (section 4.6.3). |
 | Save button | Button | Persists all rows via `PUT /agents/{id}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures only one is standing per agent. |
 | Delete button | Button (per row) | Deletes the preference for the selected day via `DELETE /agents/{id}/preferences/{date}`. That day then falls back to the standing preference (if one exists). |
@@ -863,7 +890,7 @@ Defines how many agents are needed per timeslot per specialization (sections 4.4
 
 | Control | Type | Description |
 |---|---|---|
-| Week picker | Date picker | Selects the target week. Loads existing requirements via `GET /staffing-requirements?week={date}`. |
+| Period picker | Date range picker | Selects the target date range. Loads existing requirements via `GET /staffing-requirements?from={date}&to={date}`. |
 | Input mode toggle | Tab or radio group | Switches between **Direct input** and **Erlang X calculation**. |
 | **Direct input mode** | | |
 | Demand grid | Editable table | Rows: timeslots (generated from the time range and increment). Columns: one per specialization. Cells contain the required agent count (integer input). |
@@ -902,7 +929,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
 | Over-allocation hard limit | Numeric input (%) | Percentage above contracted hours at which over-allocation becomes a hard constraint violation (default 10%). |
-| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this week, and any missing data warnings (e.g. agents without specializations). |
+| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
 
@@ -912,7 +939,7 @@ Displays solver output for a given schedule (section 8). Shown after a solve com
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: week, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). |
+| Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
@@ -934,7 +961,7 @@ Corresponds to section 8.2.
 | Control | Type | Description |
 |---|---|---|
 | Schedule grid | Grid / heatmap | Rows: agents. Columns: timeslots for the selected day. Cells are colour-coded by specialization match type (primary vs secondary). Break timeslots are visually distinct (e.g. hatched or grey). Hovering a cell shows a tooltip with timeslot times, required specialization, and match type. |
-| Day selector | Dropdown or tab strip | Switches the grid to a different day of the week. |
+| Day selector | Dropdown or tab strip | Switches the grid to a different day of the schedule period. |
 | Agent search / filter | Text input | Filters the grid to agents whose name matches the search text. |
 | Reassign agent | Click cell / modal | On a completed schedule, clicking an assigned cell opens a modal to reassign the seat to a different agent. The dropdown shows available agents (filtered to those with a matching specialization). Saving calls `PUT /schedules/{id}/assignments/{assignmentId}`. The schedule is flagged as manually edited and the score is invalidated. |
 | Legend | Inline legend | Explains cell colours: primary match, secondary match, break, unassigned. |
