@@ -12,6 +12,7 @@ The service is **multi-tenant**. Tenant identity and authentication are managed 
 2. Each agent has exactly one primary specialization and one or more secondary specializations.
 3. The time period to be scheduled is made up of a contiguous sequence of timeslots.
 4. The solver will be configured to solve for a maximum of five minutes per run.
+5. All times are in a single tenant-local time zone. No time zone conversion or storage is performed. Multi-zone tenants are out of scope.
 
 ## 2. Tech Stack
 
@@ -151,7 +152,7 @@ The break start time must align to a configured boundary:
 | `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
 | `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
 
-The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) must conform to the active alignment — the system validates or rounds at input time.
+The default is `ON_HALF_HOUR`. An agent's preferred break time (section 4.5) must conform to the active alignment — the system **rejects** any preferred break time that does not fall on a valid boundary (e.g. submitting 12:27 when alignment is `ON_HOUR` returns a validation error).
 
 #### 4.6.4 Break clustering penalty (soft)
 
@@ -254,6 +255,8 @@ classDiagram
         +HardSoftScore honourStartTimeWeight
         +HardSoftScore honourBreakTimeWeight
         +HardSoftScore breakClusteringWeight
+        +HardSoftScore balancedWorkloadWeight
+        +HardSoftScore agentDayOffWeight
     }
 
     class Schedule {
@@ -264,6 +267,7 @@ classDiagram
         +LocalTime startTime
         +LocalTime endTime
         +LocalDate weekStartDate
+        +LocalDate weekEndDate
         +int breakBlockedHours
         +int breakMinShiftHours
         +BreakAlignment breakStartAlignment
@@ -439,7 +443,8 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `incrementMinutes` | `int` | 15, 30, or 60 |
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
-| `weekStartDate` | `LocalDate` | Monday of the target week |
+| `weekStartDate` | `LocalDate` | First day of the schedule period |
+| `weekEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `weekStartDate` to `weekEndDate`. |
 | `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 1) |
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
@@ -449,7 +454,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `agents` | `List<Agent>` | Problem facts — **only active agents with specializations assigned** are loaded (inactive agents are excluded at input time, not by constraint) |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts |
-| `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule week |
+| `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver; set to `null` if the schedule has been manually edited after solving |
@@ -852,7 +857,8 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 
 | Control | Type | Description |
 |---|---|---|
-| Week picker | Date picker | Selects the Monday of the target week (`weekStartDate`). |
+| Schedule period start | Date picker | Selects the first day of the schedule period (`weekStartDate`). |
+| Schedule period end | Date picker | Selects the last day of the schedule period (`weekEndDate`). Must be on or after the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
 | Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
