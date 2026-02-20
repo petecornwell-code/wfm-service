@@ -448,7 +448,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
-| `agents` | `List<Agent>` | Problem facts |
+| `agents` | `List<Agent>` | Problem facts — **only active agents with specializations assigned** are loaded (inactive agents are excluded at input time, not by constraint) |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts |
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule week |
