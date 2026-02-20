@@ -449,8 +449,9 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
 | `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
-| `workloadDeviationWeight` | `HardSoftScore` | `soft(1)` | Workload deviation (soft — any over- or under-allocation from contracted hours) |
-| `workloadOverallocationHardWeight` | `HardSoftScore` | `hard(1)` | Workload over-allocation hard limit (hard — over-allocation exceeding 10% of contracted hours) |
+| `contractedHoursWeight` | `HardSoftScore` | `hard(1)` | Contracted hours (hard — every agent must work exactly their contracted hours) |
+| `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`) |
+| `preferDemandCoverageWeight` | `HardSoftScore` | `soft(1)` | Prefer demand coverage (soft — when agents have surplus hours, prefer assigning them to real demand timeslots) |
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
@@ -473,7 +474,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
-| `overallocationHardLimitPct` | `int` | Percentage above contracted hours at which over-allocation becomes a hard constraint violation (default 10) |
+| `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 10) |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts — **only active agents with specializations assigned** are loaded (inactive agents are excluded at input time, not by constraint) |
@@ -505,8 +506,9 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
-| Workload deviation | Soft | Penalise any deviation between an agent's total assigned hours per day and their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Penalty is proportional to the absolute difference in hours. Applies to both over- and under-allocation. |
-| Workload over-allocation hard limit | Hard | An agent's total assigned hours per day must not exceed their contracted hours by more than the configured `overallocationHardLimitPct` (default 10%). For example, an agent contracted for 8 hours triggers a hard violation if assigned more than 8.8 hours. |
+| Contracted hours | Hard | Every agent must be assigned exactly their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). The solver must not leave an agent with fewer or more hours than their contract specifies. |
+| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 10%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 220 total hours across all agents. |
+| Prefer demand coverage | Soft | When agents must be assigned hours to fulfil their contracted hours but demand does not require them, prefer over-assigning agents to real demand timeslots rather than leaving demand uncovered. The solver accepts the over-staffing soft penalty to ensure agents work their contracted hours while maximising useful coverage. |
 
 ## 7. API
 
