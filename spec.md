@@ -254,7 +254,6 @@ classDiagram
         +HardSoftScore honourStartTimeWeight
         +HardSoftScore honourBreakTimeWeight
         +HardSoftScore breakClusteringWeight
-        +HardSoftScore balancedWorkloadWeight
     }
 
     class Schedule {
@@ -426,7 +425,6 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
 | `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
-| `balancedWorkloadWeight` | `HardSoftScore` | `soft(1)` | Balanced workload |
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
@@ -473,7 +471,6 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents on shift. Penalty scales with excess. |
-| Balanced workload | Soft | Prefer an even distribution of assignments across agents. |
 
 ## 7. API
 
