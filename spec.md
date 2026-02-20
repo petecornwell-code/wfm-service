@@ -201,6 +201,7 @@ classDiagram
         +String email
         +String department
         +String jobTitle
+        +BigDecimal contractedHoursPerDay
         +boolean active
         +OffsetDateTime lastSyncedAt
     }
@@ -255,7 +256,8 @@ classDiagram
         +HardSoftScore honourStartTimeWeight
         +HardSoftScore honourBreakTimeWeight
         +HardSoftScore breakClusteringWeight
-        +HardSoftScore balancedWorkloadWeight
+        +HardSoftScore workloadDeviationWeight
+        +HardSoftScore workloadOverallocationHardWeight
         +HardSoftScore agentDayOffWeight
     }
 
@@ -328,6 +330,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `jobTitle` | `String` | Job title (from BambooHR) |
 | `primarySpecialization` | `Specialization` | Main area of expertise (managed locally) |
 | `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover (managed locally, one or more) |
+| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours (e.g. 8.0 for full-time, 4.0 for part-time). Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.9) and can be overridden per agent. Managed locally via the API. |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
@@ -429,6 +432,8 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
 | `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
+| `workloadDeviationWeight` | `HardSoftScore` | `soft(1)` | Workload deviation (soft — any over- or under-allocation from contracted hours) |
+| `workloadOverallocationHardWeight` | `HardSoftScore` | `hard(1)` | Workload over-allocation hard limit (hard — over-allocation exceeding 10% of contracted hours) |
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
@@ -449,6 +454,8 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
+| `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
+| `overallocationHardLimitPct` | `int` | Percentage above contracted hours at which over-allocation becomes a hard constraint violation (default 10) |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts — **only active agents with specializations assigned** are loaded (inactive agents are excluded at input time, not by constraint) |
@@ -478,6 +485,8 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
+| Workload deviation | Soft | Penalise any deviation between an agent's total assigned hours per day and their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Penalty is proportional to the absolute difference in hours. Applies to both over- and under-allocation. |
+| Workload over-allocation hard limit | Hard | An agent's total assigned hours per day must not exceed their contracted hours by more than the configured `overallocationHardLimitPct` (default 10%). For example, an agent contracted for 8 hours triggers a hard violation if assigned more than 8.8 hours. |
 
 ## 7. API
 
@@ -492,6 +501,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `GET` | `/agents` | List all agents |
 | `GET` | `/agents/{id}` | Get agent by id |
 | `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
+| `PUT` | `/agents/{id}/contracted-hours` | Set the agent's contracted hours per day. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the tenant-level default is used. |
 | `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
 
 ### 7.2 Agent Days Off
@@ -806,10 +816,11 @@ Displays agents synced from BambooHR and allows local specialization assignment 
 
 | Control | Type | Description |
 |---|---|---|
-| Agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, active status, last synced timestamp. Sortable and filterable. |
+| Agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours/day, active status, last synced timestamp. Sortable and filterable. |
 | Sync button | Button | Triggers `POST /agents/sync`. Displays a loading indicator while the sync runs and refreshes the table on completion. |
 | Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
 | Edit specializations (per agent) | Inline or modal form | **Primary specialization:** single-select dropdown populated from the specializations list. **Secondary specializations:** multi-select control populated from the specializations list (excluding the selected primary). Saves via `PUT /agents/{id}/specializations`. |
+| Edit contracted hours (per agent) | Inline edit or modal | Numeric input for the agent's contracted hours per day. Displays the tenant default if no override is set. Saves via `PUT /agents/{id}/contracted-hours`. |
 | Days off (per agent) | Expandable row or modal | Shows upcoming days off for the agent (read-only), fetched via `GET /agents/{id}/days-off`. Each entry displays the date and type (Mandatory / PTO). |
 
 ### 12.3 Agent Preferences Page
@@ -866,6 +877,8 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
+| Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
+| Over-allocation hard limit | Numeric input (%) | Percentage above contracted hours at which over-allocation becomes a hard constraint violation (default 10%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this week, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
