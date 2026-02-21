@@ -130,7 +130,7 @@ When the solver resolves preferences for a given agent-day: if a weekly (non-sta
 
 ### 4.6 Break Rules
 
-Configurable rules that govern when an agent may take a break. Each agent receives **exactly one break** per shift — a contiguous block of unassigned timeslots. An agent's **shift** on a given day is defined as the span from their earliest assignment to their latest assignment.
+Configurable rules that govern when an agent may take a break. Each agent receives **exactly one break** per shift — a contiguous block of unassigned timeslots. An agent's **shift** on a given day is defined as the span from the start time of their earliest assignment to the end time of their latest assignment.
 
 #### 4.6.1 Blocked window (hard)
 
