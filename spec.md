@@ -270,8 +270,9 @@ classDiagram
         +HardSoftScore honourStartTimeWeight
         +HardSoftScore honourBreakTimeWeight
         +HardSoftScore breakClusteringWeight
-        +HardSoftScore workloadDeviationWeight
-        +HardSoftScore workloadOverallocationHardWeight
+        +HardSoftScore contractedHoursWeight
+        +HardSoftScore bulkOverallocationLimitWeight
+        +HardSoftScore preferDemandCoverageWeight
         +HardSoftScore agentDayOffWeight
     }
 
@@ -289,7 +290,11 @@ classDiagram
         +int breakMinShiftHours
         +BreakAlignment breakStartAlignment
         +int breakClusterThresholdPct
+        +BigDecimal defaultContractedHoursPerDay
+        +int overallocationHardLimitPct
         +HardSoftScore score
+        +ScheduleStatus status
+        +boolean manuallyEdited
     }
 
     Agent "1" --> "1" Specialization : primarySpecialization
@@ -516,7 +521,7 @@ All endpoints are served under the base path `/api/v1`. Every request is scoped 
 
 ### 7.1 Agents
 
-Agent records originate from BambooHR. The API is read-only except for local specialization assignments.
+Agent records originate from BambooHR. The API is read-only except for local specialization assignments and contracted hours.
 
 | Method | Path | Description |
 |---|---|---|
@@ -693,7 +698,7 @@ A breakdown of every constraint violation in the current best solution, grouped 
 | `level` | `enum(HARD, SOFT)` | Score level of the violation |
 | `weight` | `HardSoftScore` | Active weight from ConstraintWeights |
 | `violationCount` | `int` | Number of times this constraint was violated |
-| `totalPenalty` | `HardSoftScore` | Sum of individual match scores across all violations of this constraint. For fixed-penalty constraints this equals `weight × violationCount`; for variable-penalty constraints (e.g. workload deviation, break clustering) each match contributes a different score. |
+| `totalPenalty` | `HardSoftScore` | Sum of individual match scores across all violations of this constraint. For fixed-penalty constraints this equals `weight × violationCount`; for variable-penalty constraints (e.g. prefer demand coverage, break clustering) each match contributes a different score. |
 | `violations` | `List<ViolationDetail>` | Individual violation instances |
 
 **ViolationDetail:**
@@ -878,7 +883,7 @@ Allows agents (or administrators on their behalf) to submit shift preferences (s
 |---|---|---|
 | Agent selector | Dropdown or search | Selects the agent whose preferences are being viewed or edited. |
 | Period picker | Date range picker | Selects the target date range. Loads existing preferences via `GET /agents/{id}/preferences?from={date}&to={date}`. |
-| Preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker), **Standing** (checkbox — at most one row may be checked; checking a new row unchecks the previous standing row), **Source** (read-only label: "Standing default" if the row's values are inherited from the standing preference, "Weekly override" if a date-specific preference exists, "None" if no preference). Time pickers are constrained by the active break start alignment (section 4.6.3). |
+| Preferences grid | Editable table | One row per day (Monday–Sunday). Columns: **Day**, **Preferred start time** (time picker), **Preferred break time** (time picker), **Standing** (checkbox — at most one row may be checked; checking a new row unchecks the previous standing row), **Source** (read-only label: "Standing default" if the row's values are inherited from the standing preference, "Weekly override" if a date-specific preference exists, "None" if no preference). Time pickers are constrained by the active break start alignment (section 4.6.4). |
 | Save button | Button | Persists all rows via `PUT /agents/{id}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures only one is standing per agent. |
 | Delete button | Button (per row) | Deletes the preference for the selected day via `DELETE /agents/{id}/preferences/{date}`. That day then falls back to the standing preference (if one exists). |
 
@@ -926,7 +931,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
-| Over-allocation hard limit | Numeric input (%) | Percentage above contracted hours at which over-allocation becomes a hard constraint violation (default 10%). |
+| Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 10%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
