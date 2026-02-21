@@ -134,7 +134,7 @@ Configurable rules that govern when an agent may take a break. Each agent receiv
 
 #### 4.6.1 Blocked window (hard)
 
-By default, the first **1 hour** and last **1 hour** of an agent's shift are blocked — no break may occur during these periods. The blocked duration is configurable per schedule.
+By default, the first **1 hour** and last **1 hour** of an agent's shift are blocked — no part of a break may fall within these periods. The blocked duration is configurable per schedule.
 
 Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 09:00 and after 16:00; the eligible break window is 09:00–16:00.
 
@@ -505,7 +505,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
 | Exactly one break | Hard | An agent with a shift at or above the minimum shift threshold must have exactly one contiguous break of the configured duration. An agent below the threshold must have no break. |
 | Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
-| Break blocked window | Hard | An agent's break must not fall within the first or last N hours of their shift (configurable, default 1 hour). |
+| Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1 hour). The entire break must be contained within the eligible window between the blocked periods. |
 | Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
