@@ -459,7 +459,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `tenantId` | `long` | — | Tenant identifier (from platform); unique — one row per tenant |
 | `agentDayOffWeight` | `HardSoftScore` | `hard(1)` | Agent day off |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
-| `noOverlapWeight` | `HardSoftScore` | `hard(1)` | No overlapping assignments |
+| `noOverlapWeight` | `HardSoftScore` | `hard(1)` | One assignment per timeslot |
 | `exactlyOneBreakWeight` | `HardSoftScore` | `hard(1)` | Exactly one break per shift |
 | `breakDurationWeight` | `HardSoftScore` | `hard(1)` | Break duration |
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
@@ -515,7 +515,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 |---|---|---|
 | Agent day off | Hard | An agent must not be assigned to any timeslot on a day they have a day off (mandatory or PTO). |
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
-| No overlapping assignments | Hard | An agent cannot be assigned to two seats whose timeslots overlap in time on the same day. |
+| One assignment per timeslot | Hard | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
 | Exactly one break | Hard | An agent with a shift at or above the minimum shift threshold must have exactly one contiguous break of the configured duration. An agent below the threshold must have no break. |
 | Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
