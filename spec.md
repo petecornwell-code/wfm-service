@@ -648,7 +648,7 @@ A `totals` row per day aggregates across all specializations. A grand-total row 
 
 ### 8.2 Agent Schedule
 
-A per-agent, per-day view of every assignment, the specialization used, and break periods. Agents who are available (active, specializations assigned, not on a day off) but receive **zero assignments** on a given day are included with an empty assignments list and `totalHours = 0`, so managers can spot under-utilisation.
+A per-agent, per-day view of every assignment, the specialization used, and break periods.
 
 Each entry in the list represents one agent-day:
 
