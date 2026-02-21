@@ -803,6 +803,7 @@ src/main/java/com/wfm/
 ├── service/
 │   ├── AgentService.java
 │   ├── AgentPreferenceService.java
+│   ├── AgentDayOffService.java
 │   ├── SpecializationService.java
 │   ├── ConstraintWeightsService.java
 │   ├── StaffingRequirementService.java
@@ -813,6 +814,7 @@ src/main/java/com/wfm/
 │   └── SolverService.java
 ├── controller/
 │   ├── AgentController.java
+│   ├── AgentDayOffController.java
 │   ├── SpecializationController.java
 │   ├── StaffingRequirementController.java
 │   ├── ConstraintWeightsController.java
