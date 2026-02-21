@@ -115,8 +115,8 @@ Preferences are optional. An agent with no submitted preferences is scheduled pu
 
 Every preference record has a date and a boolean `isStanding` flag:
 
-- **Standing preference** (`isStanding = true`) — applies as the default for every day the agent is scheduled. At most **one** preference per agent may be standing at any time. When a different preference is marked as standing, the previous standing preference has its flag set to `false` automatically.
-- **Weekly preference** (`isStanding = false`) — applies only to its specific date and **overrides** the standing preference for that day.
+- **Standing preference** (`isStanding = true`) — applies as the default for every day the agent is scheduled. At most **one** preference per agent may be standing at any time. When a different preference is marked as standing, the previous standing preference is **deleted** (not merely toggled to `false`).
+- **Weekly preference** (`isStanding = false`) — applies only to its specific date and **overrides** the standing preference for that day. A weekly preference and a standing preference **may coexist on the same date** — the weekly preference takes priority for that date while the standing preference continues to serve as the default for all other days.
 
 When the solver resolves preferences for a given agent-day: if a weekly (non-standing) preference exists for that date, use it; otherwise fall back to the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is **per-record** — a weekly override replaces the standing preference entirely for that day (individual fields are not merged).
 
@@ -308,7 +308,7 @@ classDiagram
     AgentAssignment "* " ..> "1" Agent : «planning variable»
 
     AgentPreference "* " --> "1" Agent
-    note for AgentPreference "Unique on (agent, date).\nAt most one isStanding=true per agent."
+    note for AgentPreference "Unique on (agent, date, isStanding).\nAt most one isStanding=true per agent."
 
     AgentDayOff "* " --> "1" Agent
     note for AgentDayOff "Unique on (agent, date).\nSynced from BambooHR."
@@ -413,8 +413,8 @@ An agent's scheduling preferences. Each record is tied to a specific date. The `
 
 **Uniqueness constraints:**
 
-- Unique on (`agent`, `date`) — one preference record per agent per day.
-- At most one `isStanding = true` per agent — enforced by application logic (and optionally by a partial unique index on (`agent`) where `is_standing = true`).
+- Unique on (`agent`, `date`, `isStanding`) — at most one standing and one non-standing preference record per agent per date. This allows a standing preference and a weekly override to coexist on the same date.
+- At most one `isStanding = true` per agent (across all dates) — enforced by application logic (and optionally by a partial unique index on (`agent`) where `is_standing = true`). When a new preference is marked as standing, the previous standing preference is deleted.
 
 **Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single **effective** preference: if a non-standing preference exists for that date, use it; otherwise use the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is per-record — the entire standing record is replaced, not merged field-by-field. The solver receives only the resolved effective preferences.
 
@@ -842,7 +842,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 - `specialization` (`tenant_id`, unique on `tenant_id` + `name`)
 - `agent` (`tenant_id`, FK → `specialization` for primary, unique on `tenant_id` + `bamboohr_id`)
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
-- `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
+- `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date` + `is_standing`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`, unique on `tenant_id` + `date` + `start_time` + `end_time`)
 - `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`, unique on `tenant_id` + `timeslot` + `specialization`)
