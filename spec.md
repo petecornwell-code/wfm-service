@@ -60,6 +60,21 @@ All data is scoped to a tenant via a `tenant_id` column (`BIGINT`) present on ev
 - **Data isolation** — Every query filters by `tenant_id`. An entity created by one tenant is never visible to another.
 - **Database strategy** — Shared schema, shared tables, discriminated by `tenant_id`. No per-tenant schemas or databases.
 
+### 3.2 CORS
+
+The React frontend is served from a different origin to the Spring Boot API. A global CORS configuration is registered via a `WebMvcConfigurer` bean to allow cross-origin requests.
+
+| Setting | Value | Notes |
+|---|---|---|
+| Allowed origins | Configurable via `cors.allowed-origins` | Comma-separated list. Defaults to `http://localhost:3000` for local development. |
+| Allowed methods | `GET, POST, PUT, DELETE, OPTIONS` | All methods used by the API. |
+| Allowed headers | `*` | Permits any request header (including `Authorization` and custom tenant headers). |
+| Exposed headers | `Content-Disposition` | Required for the spreadsheet export download (section 8.5). |
+| Allow credentials | `true` | Enables cookies and authorization headers. |
+| Max age | `3600` (seconds) | Browsers cache preflight responses for 1 hour. |
+
+In production the allowed origins must be restricted to the actual frontend domain(s). The wildcard `*` must **not** be used when `allowCredentials` is `true`.
+
 ## 4. Solver Inputs
 
 Each solve run is configured by a set of inputs that define the problem space. These inputs are provided by the user before the solver is invoked.
