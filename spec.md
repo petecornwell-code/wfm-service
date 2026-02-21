@@ -272,7 +272,6 @@ classDiagram
         +HardSoftScore breakClusteringWeight
         +HardSoftScore contractedHoursWeight
         +HardSoftScore bulkOverallocationLimitWeight
-        +HardSoftScore preferDemandCoverageWeight
         +HardSoftScore agentDayOffWeight
     }
 
@@ -457,7 +456,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
 | `contractedHoursWeight` | `HardSoftScore` | `hard(1)` | Contracted hours (hard — every agent must work exactly their contracted hours) |
 | `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`, default 130%) |
-| `preferDemandCoverageWeight` | `HardSoftScore` | `soft(1)` | Prefer demand coverage (soft — when agents have surplus hours, prefer assigning them to real demand timeslots) |
+
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
@@ -514,7 +513,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 | Contracted hours | Hard | Every agent must be assigned exactly their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). The solver must not leave an agent with fewer or more hours than their contract specifies. |
 | Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 460 total hours across all agents. |
-| Prefer demand coverage | Soft | When agents must be assigned hours to fulfil their contracted hours but demand does not require them, prefer over-assigning agents to real demand timeslots rather than leaving demand uncovered. The solver accepts the over-staffing soft penalty to ensure agents work their contracted hours while maximising useful coverage. |
+
 
 ## 7. API
 
