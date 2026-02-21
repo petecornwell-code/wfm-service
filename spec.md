@@ -728,6 +728,7 @@ The response also includes score totals:
 | `hardScore` | `int` | Total hard score (0 = all hard constraints satisfied) |
 | `softScore` | `int` | Total soft score (higher = better) |
 | `feasible` | `boolean` | `true` if `hardScore == 0` |
+| `violatedHardConstraints` | `List<String>` | Names of hard constraints with at least one violation (empty when `feasible == true`). Derived from the violations list above, included at top level for convenience. |
 
 ### 8.5 Spreadsheet Export
 
@@ -959,6 +960,7 @@ Displays solver output for a given schedule (section 8). Shown after a solve com
 | Control | Type | Description |
 |---|---|---|
 | Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). |
+| Non-optimal banner | Alert banner | Displayed prominently at the top of the page when `feasible == false`. Shows the text **"NON-OPTIMAL SOLUTION"** followed by a bulleted list of every violated hard constraint name (from `violatedHardConstraints`). Styled as a warning/error banner (e.g. red or amber background) so it is immediately visible. Hidden when the solution is feasible. |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
