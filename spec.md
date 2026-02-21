@@ -737,6 +737,8 @@ Export is triggered via a dedicated endpoint (see section 7.7). The response str
 
 Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table in sync with the BambooHR employee directory.
 
+The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant. Employee-to-tenant mapping is handled by the BPO's operational processes and reflected in the department or custom field data within BambooHR.
+
 ### 9.2 Data Source
 
 Initially the BambooHR client will operate against an **in-memory mock** that returns static employee data. This allows development and testing to proceed without a live BambooHR account. The mock will be swapped for a real HTTP client behind a common interface when credentials are available.
@@ -762,8 +764,8 @@ Two implementations:
 
 ### 9.4 Sync Behaviour
 
-- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`. Synced employees are written to the default tenant.
-- **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync.
+- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`. Synced employees are mapped to their respective tenants based on BambooHR data.
+- **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync for the requesting tenant.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 - **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
