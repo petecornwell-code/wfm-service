@@ -411,10 +411,11 @@ An agent's scheduling preferences. Each record is tied to a specific date. The `
 | `preferredStartTime` | `LocalTime` | Desired start of first assignment (nullable) |
 | `preferredBreakTime` | `LocalTime` | Desired break time (nullable) |
 
-**Uniqueness constraints:**
+**Keys and uniqueness constraints:**
 
-- Unique on (`agent`, `date`, `isStanding`) — at most one standing and one non-standing preference record per agent per date. This allows a standing preference and a weekly override to coexist on the same date.
-- At most one `isStanding = true` per agent (across all dates) — enforced by application logic (and optionally by a partial unique index on (`agent`) where `is_standing = true`). When a new preference is marked as standing, the previous standing preference is deleted.
+- **Primary key:** `id` (UUID) — surrogate key. All references to a preference record use this key.
+- **Business uniqueness:** Unique on (`agent`, `date`, `isStanding`) — at most one standing and one non-standing preference record per agent per date. This allows a standing preference and a weekly override to coexist on the same date.
+- **Standing uniqueness:** At most one `isStanding = true` per agent (across all dates) — enforced by application logic (and optionally by a partial unique index on (`agent`) where `is_standing = true`). When a new preference is marked as standing, the previous standing preference is deleted.
 
 **Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single **effective** preference: if a non-standing preference exists for that date, use it; otherwise use the standing preference (if one exists); otherwise the agent has no preference for that day. Resolution is per-record — the entire standing record is replaced, not merged field-by-field. The solver receives only the resolved effective preferences.
 
