@@ -713,7 +713,7 @@ A breakdown of every constraint violation in the current best solution, grouped 
 | `level` | `enum(HARD, SOFT)` | Score level of the violation |
 | `weight` | `HardSoftScore` | Active weight from ConstraintWeights |
 | `violationCount` | `int` | Number of times this constraint was violated |
-| `totalPenalty` | `HardSoftScore` | Sum of individual match scores across all violations of this constraint. For fixed-penalty constraints this equals `weight × violationCount`; for variable-penalty constraints (e.g. prefer demand coverage, break clustering) each match contributes a different score. |
+| `totalPenalty` | `HardSoftScore` | Sum of individual match scores across all violations of this constraint. For fixed-penalty constraints this equals `weight × violationCount`; for variable-penalty constraints (e.g. break clustering) each match contributes a different score. |
 | `violations` | `List<ViolationDetail>` | Individual violation instances |
 
 **ViolationDetail:**
@@ -1011,6 +1011,8 @@ Corresponds to section 8.4.
 ## 13. Open Issues (SME Review Required)
 
 - **Contracted hours: does the value include or exclude break time?** The "Contracted hours" constraint (section 6) requires every agent to work exactly their contracted hours per day, but does not state whether break time counts towards that total. Section 5.2 describes the field as "contracted daily working hours" and section 8.2 defines `totalHours` as "Total assigned hours (excluding breaks)", which together imply contracted hours means assigned (non-break) hours. This should be confirmed and stated explicitly in the constraint definition. The answer also affects pre-solve feasibility — e.g. an agent with 8 contracted hours and a 1-hour break needs a coverage window of at least 9 hours.
+
+- **"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.** The planning variable `AgentAssignment.agent` is non-nullable, so the solver **must** assign an agent to every seat. Combined with the "Contracted hours" hard constraint (every agent works exactly their contracted hours), this creates a tension: if total seat-hours exceed the workforce's total contracted hours the solver is forced to over-allocate some agents, and if total seat-hours fall short some agents cannot reach their contracted hours. The "Bulk over-allocation limit" hard constraint (section 6) caps aggregate over-allocation at `overallocationHardLimitPct` (default 130 %), but there is no equivalent mechanism for under-allocation. SME discussion is needed to decide: (a) whether a "dummy" or "unassigned" agent should be introduced so that surplus seats can go unfilled, (b) whether the contracted hours constraint should be relaxed from "exactly" to "at most" (or soft), (c) how under-allocation (fewer seats than contracted hours) should be handled — e.g. allow agents to be idle, introduce slack assignments, or flag as infeasible, and (d) what the acceptable tolerance bands are for both over- and under-allocation scenarios.
 
 ## 14. Open Questions
 
