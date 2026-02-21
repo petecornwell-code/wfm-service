@@ -991,7 +991,11 @@ Corresponds to section 8.4.
 | Violations table | Expandable table | One row per constraint. Columns: **Constraint name**, **Level** (Hard/Soft badge), **Weight**, **Violation count**, **Total penalty**. Expandable to show individual `ViolationDetail` rows with agent, timeslot, and human-readable description. |
 | Filter by level | Dropdown or toggle | Filters to Hard only, Soft only, or All. |
 
-## 13. Open Questions
+## 13. Open Issues (SME Review Required)
+
+- **Contracted hours: does the value include or exclude break time?** The "Contracted hours" constraint (section 6) requires every agent to work exactly their contracted hours per day, but does not state whether break time counts towards that total. Section 5.2 describes the field as "contracted daily working hours" and section 8.2 defines `totalHours` as "Total assigned hours (excluding breaks)", which together imply contracted hours means assigned (non-break) hours. This should be confirmed and stated explicitly in the constraint definition. The answer also affects pre-solve feasibility — e.g. an agent with 8 contracted hours and a 1-hour break needs a coverage window of at least 9 hours.
+
+## 14. Open Questions
 
 - Solver time limit and termination strategy defaults.
 - Deployment topology (single JAR, containers, cloud provider).
