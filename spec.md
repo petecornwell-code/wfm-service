@@ -279,7 +279,6 @@ classDiagram
         +HardSoftScore exactlyOneBreakWeight
         +HardSoftScore breakDurationWeight
         +HardSoftScore breakBlockedWindowWeight
-        +HardSoftScore breakMinShiftWeight
         +HardSoftScore breakAlignmentWeight
         +HardSoftScore preferPrimaryWeight
         +HardSoftScore honourStartTimeWeight
@@ -463,7 +462,6 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `exactlyOneBreakWeight` | `HardSoftScore` | `hard(1)` | Exactly one break per shift |
 | `breakDurationWeight` | `HardSoftScore` | `hard(1)` | Break duration |
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
-| `breakMinShiftWeight` | `HardSoftScore` | `hard(1)` | Break minimum shift |
 | `breakAlignmentWeight` | `HardSoftScore` | `hard(1)` | Break start alignment |
 | `preferPrimaryWeight` | `HardSoftScore` | `soft(1)` | Prefer primary specialization |
 | `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
@@ -517,10 +515,9 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | One assignment per timeslot | Hard | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
-| Exactly one break | Hard | An agent with a shift at or above the minimum shift threshold must have exactly one contiguous break of the configured duration. An agent below the threshold must have no break. |
+| Exactly one break | Hard | An agent whose shift length meets or exceeds the minimum shift threshold (`breakMinShiftHours`, default 4) must have exactly one contiguous break of the configured duration. An agent whose shift is shorter than the threshold must have no break. |
 | Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
 | Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1 hour). The entire break must be contained within the eligible window between the blocked periods. |
-| Break minimum shift | Hard | An agent whose shift is shorter than the configured threshold (default 4 hours) must not have a break. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
