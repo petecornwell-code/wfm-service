@@ -531,13 +531,36 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 All endpoints are served under the base path `/api/v1`. Every request is scoped to a single tenant — the `tenant_id` is extracted from the authenticated context provided by the AI service platform (see section 3.1). Responses only include data belonging to the requesting tenant.
 
+**Pagination.** List endpoints that can return unbounded or large result sets support cursor-based pagination via the following query parameters and response envelope:
+
+| Query parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `int` | `50` | Maximum number of items to return (1–200). |
+| `cursor` | `String` | *(none)* | Opaque cursor returned by a previous response. When omitted the server returns the first page. |
+
+Paginated responses use a standard envelope:
+
+```json
+{
+  "data": [ ... ],
+  "nextCursor": "eyJpZCI6MTAwfQ",
+  "hasMore": true
+}
+```
+
+- `data` — array of items for the current page.
+- `nextCursor` — opaque cursor to pass as the `cursor` query parameter to fetch the next page. `null` when there are no more results.
+- `hasMore` — `true` if additional pages exist beyond this one.
+
+Endpoints with small, bounded result sets (e.g. per-agent filtered by date range) return a plain JSON array and do not use the pagination envelope.
+
 ### 7.1 Agents
 
 Agent records originate from BambooHR. The API is read-only except for local specialization assignments and contracted hours.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents` | List all agents |
+| `GET` | `/agents` | List agents. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
 | `GET` | `/agents/{id}` | Get agent by id |
 | `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
 | `PUT` | `/agents/{id}/contracted-hours` | Set the agent's contracted hours per day. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the tenant-level default is used. |
@@ -550,7 +573,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/agents/{id}/days-off` | List days off for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date` and `type` (MANDATORY or PTO). |
-| `GET` | `/days-off` | List all agent days off, optionally filtered by date range. Useful for the schedule setup page to show availability across all agents for a given period. |
+| `GET` | `/days-off` | List all agent days off, optionally filtered by date range (`from`, `to`). Paginated. Useful for the schedule setup page to show availability across all agents for a given period. |
 
 ### 7.3 Specializations
 
@@ -579,7 +602,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/staffing-requirements` | List all staffing requirements |
+| `GET` | `/staffing-requirements` | List staffing requirements. Paginated. Optional query parameters `from` and `to` filter by date range. |
 | `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
@@ -588,6 +611,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/schedules/solve` | Start a solve run (async). Returns schedule id. Request body contains schedule configuration (see below). |
+| `GET` | `/schedules` | List schedules. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Used by the "Past schedules list" in the Schedule Setup page. |
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 | `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
@@ -951,7 +975,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
-| Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
+| Past schedules list | Paginated table | Lists previously completed schedules with date, score, and status, fetched via `GET /schedules`. Each row links to its Schedule Results page. |
 
 ### 12.7 Schedule Results Page
 
