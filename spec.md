@@ -455,7 +455,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
 | `contractedHoursWeight` | `HardSoftScore` | `hard(1)` | Contracted hours (hard — every agent must work exactly their contracted hours) |
-| `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`) |
+| `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`, default 130%) |
 | `preferDemandCoverageWeight` | `HardSoftScore` | `soft(1)` | Prefer demand coverage (soft — when agents have surplus hours, prefer assigning them to real demand timeslots) |
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
@@ -479,7 +479,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
-| `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 10) |
+| `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 130) |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
 | `agents` | `List<Agent>` | Problem facts — **only active agents with specializations assigned** are loaded (inactive agents are excluded at input time, not by constraint) |
@@ -512,7 +512,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 | Contracted hours | Hard | Every agent must be assigned exactly their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). The solver must not leave an agent with fewer or more hours than their contract specifies. |
-| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 10%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 220 total hours across all agents. |
+| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 460 total hours across all agents. |
 | Prefer demand coverage | Soft | When agents must be assigned hours to fulfil their contracted hours but demand does not require them, prefer over-assigning agents to real demand timeslots rather than leaving demand uncovered. The solver accepts the over-staffing soft penalty to ensure agents work their contracted hours while maximising useful coverage. |
 
 ## 7. API
@@ -596,7 +596,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
   "breakStartAlignment": "ON_HALF_HOUR",
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
-  "overallocationHardLimitPct": 10
+  "overallocationHardLimitPct": 130
 }
 ```
 
@@ -931,7 +931,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
-| Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 10%). |
+| Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Table | Lists previously completed schedules with date, score, and status. Each row links to its Schedule Results page. |
