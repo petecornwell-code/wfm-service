@@ -555,13 +555,22 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 **Schedule lifecycle.** A schedule progresses through the following states:
 
 1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /schedules/{id}/stop`) but not accepted or rejected.
-2. **`COMPLETED`** — the solver has finished (or was stopped). The scheduler reviews the results. The schedule can be **accepted** or **rejected**.
+2. **`COMPLETED`** — the solver has finished. The scheduler reviews the results. The schedule can be **accepted** or **rejected**.
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
-4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period. At most **one** schedule may be accepted per overlapping date range per tenant. Accepting a new schedule for the same period automatically replaces the previously accepted one (the old schedule is deleted).
+4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period. At most **one** schedule may be accepted per overlapping date range per tenant. Accepting a new schedule for the same period automatically replaces the previously accepted one (the old schedule is deleted from the database).
 
-**Rejection and persistence:** Rejecting a schedule **deletes** it and all its associated data (timeslots, assignments, staffing requirements generated for the solve). Rejected schedules are not retained. Only accepted schedules are persisted long-term.
+**In-memory persistence model.** Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
 
-**Replacement:** If the solver is re-run for the same period and the new schedule is accepted, it replaces the previously accepted schedule — the old accepted schedule is deleted. There is no archive of superseded schedules.
+- The `Schedule` object and all its associated data (generated timeslots, agent assignments, staffing requirement expansions, solver score) exist only in the JVM heap until the schedule is accepted.
+- API endpoints that query non-accepted schedules (`GET /schedules/{id}`, `GET /schedules`, `GET /schedules/{id}/export`) serve data from the in-memory store.
+- If the server restarts or crashes, any non-accepted schedules are **lost** — the user must re-run the solver. This is acceptable because non-accepted schedules are transient working data, not committed decisions.
+- Only one non-accepted schedule may exist per tenant at a time (enforced by the concurrent-solve restriction).
+
+**Acceptance and persistence:** When a schedule is accepted (`PUT /schedules/{id}/accept`), the complete schedule — including the `Schedule` record, all generated timeslots, all agent assignments, staffing requirement snapshots, and the final score — is written to the database in a single transaction. This is the **only point** at which schedule data touches the database. Once persisted, the schedule is removed from the in-memory store.
+
+**Rejection:** Rejecting a schedule simply discards it from the in-memory store. No database operation is required since the schedule was never persisted.
+
+**Replacement:** If the solver is re-run for the same period and the new schedule is accepted, it replaces the previously accepted schedule — the old accepted schedule is deleted from the database. There is no archive of superseded schedules.
 
 ## 6. Constraints
 
@@ -726,11 +735,11 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/schedules/solve` | Start a solve run (async). Returns schedule id. Request body contains schedule configuration (see below). |
-| `GET` | `/schedules` | List schedules. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Used by the "Past schedules list" in the Schedule Setup page. |
-| `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
+| `GET` | `/schedules` | List schedules. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Includes both accepted schedules (from the database) and the current non-accepted schedule (from memory, if one exists). Used by the "Past schedules list" in the Schedule Setup page. |
+| `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). Serves from the in-memory store for non-accepted schedules and from the database for accepted schedules. |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
-| `PUT` | `/schedules/{id}/accept` | Accept this schedule as the active schedule for its period. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. If another accepted schedule exists for an overlapping date range, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
-| `PUT` | `/schedules/{id}/reject` | Reject and delete this schedule. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule and all its associated data (timeslots, assignments) are permanently deleted. Returns `204 No Content`. |
+| `PUT` | `/schedules/{id}/accept` | Accept this schedule as the active schedule for its period. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Persists the complete schedule (including all timeslots, assignments, and score) to the database in a single transaction and removes it from the in-memory store. If another accepted schedule exists for an overlapping date range, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
+| `PUT` | `/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Request body for `POST /schedules/solve`:**
@@ -754,17 +763,19 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
 
 All fields with defaults (section 5.10) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, and days off from the database for the specified date range.
 
-**Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
+**Concurrent solves:** Only one non-accepted schedule may exist per tenant at a time (tracked in the in-memory store). If a tenant attempts to start a solve while another is already running or awaiting accept/reject, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the existing one must first be stopped (if running) and then accepted or rejected.
 
-**Transaction scopes.** The solve lifecycle is divided into two transactional phases, each with independent rollback semantics:
+**Transaction scopes.** Since non-accepted schedules are held entirely in memory (section 5.10), the solve lifecycle does not involve database transactions until acceptance:
 
-1. **Pre-solve transaction** — covers everything from receiving the `POST /schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading agents/specializations/preferences/days off/exceptions from the database, generating timeslots, expanding staffing requirements into `AgentAssignment` entities, creating the `Schedule` record with status `RUNNING`, and persisting all generated entities. This entire phase executes within a **single database transaction**. If any step fails (validation error, database constraint violation, unexpected exception), the transaction is **rolled back** — no Schedule, no timeslots, no assignments are persisted. The client receives an error response and the system state is unchanged.
+1. **Pre-solve phase** — covers everything from receiving the `POST /schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading agents/specializations/preferences/days off/exceptions from the database (read-only), generating timeslots, expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. If any step fails (validation error, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
 
-2. **Solve transaction** — once the pre-solve transaction commits successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), a **second transaction** commits the final assignments and score back to the database and sets the status to `COMPLETED` or `STOPPED`. If this commit fails, the schedule remains in `RUNNING` status and is cleaned up by the stale-run recovery mechanism (see below).
+2. **Solve phase** — once the pre-solve phase completes successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), the in-memory schedule status is updated to `COMPLETED` or `STOPPED` and the final assignments and score are retained in memory for the user to review.
 
-**Failure recovery.** If the server crashes or restarts while a solve is in progress, the schedule will be left in `RUNNING` status with no active solver thread. On application startup, the service queries for any schedules with status `RUNNING` and transitions them to `STOPPED` with a null score — the solver result is lost and the user must re-run the solve. This prevents orphaned `RUNNING` schedules from permanently blocking the concurrent-solve check.
+3. **Accept transaction** — when the user accepts the schedule via `PUT /schedules/{id}/accept`, the complete schedule and all its associated data are written to the database in a **single transaction**. If this transaction fails, the schedule remains in memory with its `COMPLETED` or `STOPPED` status and the user can retry acceptance. This is the only phase that performs database writes for schedule data.
 
-**Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is persisted. This is functionally equivalent to the user calling `PUT /schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
+**Failure recovery.** Since non-accepted schedules exist only in memory, a server crash or restart simply loses any in-progress or completed-but-not-accepted schedules. No database cleanup is needed — there are no orphaned records to recover. The concurrent-solve check is also held in memory, so a restart naturally clears it. The user must re-run the solver after a restart.
+
+**Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is retained in memory. This is functionally equivalent to the user calling `PUT /schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
 
 **Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
@@ -1223,5 +1234,4 @@ The following items are out of scope for the initial release but are anticipated
 - **Schedule comparison.** Allow side-by-side comparison of two completed schedules for the same period before accepting one.
 - **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
-- **Stale schedule cleanup.** A scheduled job to delete schedules stuck in `COMPLETED` or `STOPPED` status beyond a configurable TTL (e.g. 7 days) that were never accepted or rejected.
 - **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
