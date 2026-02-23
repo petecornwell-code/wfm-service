@@ -502,8 +502,19 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver; set to `null` if the schedule has been manually edited after solving |
-| `status` | `enum(RUNNING, COMPLETED, STOPPED)` | Current solver status |
+| `status` | `enum(RUNNING, COMPLETED, STOPPED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below) |
 | `manuallyEdited` | `boolean` | `true` if any assignment has been changed after the solve completed. When `true`, the `score` is no longer valid and the UI displays a "manually edited" warning. Default `false`. |
+
+**Schedule lifecycle.** A schedule progresses through the following states:
+
+1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /schedules/{id}/stop`) but not accepted or rejected.
+2. **`COMPLETED`** — the solver has finished (or was stopped). The scheduler reviews the results and may make manual reassignments. The schedule can be **accepted** or **rejected**.
+3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
+4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period. At most **one** schedule may be accepted per overlapping date range per tenant. Accepting a new schedule for the same period automatically replaces the previously accepted one (the old schedule is deleted).
+
+**Rejection and persistence:** Rejecting a schedule **deletes** it and all its associated data (timeslots, assignments, staffing requirements generated for the solve). Rejected schedules are not retained. Only accepted schedules are persisted long-term.
+
+**Replacement:** If the solver is re-run for the same period and the new schedule is accepted, it replaces the previously accepted schedule — the old accepted schedule is deleted. There is no archive of superseded schedules.
 
 ## 6. Constraints
 
@@ -652,6 +663,8 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
 | `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules — returns `409 Conflict` (error code `CONFLICT`) if the schedule is still running. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
+| `PUT` | `/schedules/{id}/accept` | Accept this schedule as the active schedule for its period. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. If another accepted schedule exists for an overlapping date range, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
+| `PUT` | `/schedules/{id}/reject` | Reject and delete this schedule. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule and all its associated data (timeslots, assignments) are permanently deleted. Returns `204 No Content`. |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Request body for `POST /schedules/solve`:**
@@ -1013,7 +1026,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
-| Past schedules list | Paginated table | Lists previously completed schedules with date, score, and status, fetched via `GET /schedules`. Each row links to its Schedule Results page. |
+| Past schedules list | Paginated table | Lists previously completed and accepted schedules with date, score, and status, fetched via `GET /schedules`. Accepted schedules are visually distinguished (e.g. bold or with an "Accepted" badge). Each row links to its Schedule Results page. |
 
 ### 12.7 Schedule Results Page
 
@@ -1021,10 +1034,13 @@ Displays solver output for a given schedule (section 8). Shown after a solve com
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). |
+| Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped/accepted), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). Shows an **"Accepted"** badge when the schedule has been accepted. |
 | Non-optimal banner | Alert banner | Displayed prominently at the top of the page when `feasible == false`. Shows the text **"NON-OPTIMAL SOLUTION"** followed by a bulleted list of every violated hard constraint name (from `violatedHardConstraints`). Styled as a warning/error banner (e.g. red or amber background) so it is immediately visible. Hidden when the solution is feasible. |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
+| Accept button | Primary button | Visible when the schedule status is `COMPLETED` or `STOPPED`. Accepts this schedule as the active schedule for its period via `PUT /schedules/{id}/accept`. If the solution is **not feasible** (`feasible == false`), clicking the button opens a confirmation dialog (see below) before proceeding. On success, the schedule status changes to `ACCEPTED`, the button is replaced by the accepted badge, and the reject button is hidden. |
+| Reject button | Destructive/secondary button | Visible when the schedule status is `COMPLETED` or `STOPPED`. Opens a confirmation dialog: *"Are you sure you want to reject this schedule? It will be permanently deleted."* On confirmation, calls `PUT /schedules/{id}/reject` and navigates back to the Schedule Setup page. |
+| Non-optimal accept confirmation | Modal dialog | Shown only when the user clicks **Accept** on a non-feasible schedule. Displays: **"This schedule has hard constraint violations and is not optimal. Are you sure you want to accept it?"** with a summary of violated hard constraints. Two buttons: **"Accept anyway"** (proceeds with accept) and **"Cancel"** (returns to the results page). |
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
 | Results tabs | Tab bar | Four tabs as described below. |
 
