@@ -155,7 +155,7 @@ Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 09:00 
 
 #### 4.6.2 Minimum shift duration (hard)
 
-Breaks are not permitted if an agent's shift is shorter than **4 hours**. This threshold is configurable per schedule.
+Breaks are only permitted if an agent's contracted hours **exceed** the threshold (strictly greater than). The default threshold is **4 hours**, configurable per schedule. An agent with exactly 4 hours (or fewer) of contracted work does **not** receive a break.
 
 #### 4.6.3 Break duration (hard)
 
@@ -535,7 +535,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
 | `breakBlockedHours` | `double` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
-| `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
+| `breakMinShiftHours` | `int` | Contracted hours must strictly exceed this threshold for a break to be assigned (default 4). An agent with exactly this many hours or fewer gets no break. |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours excluding break time (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
@@ -573,7 +573,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | One assignment per timeslot | Hard | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
-| Exactly one break | Hard | An agent whose shift length meets or exceeds the minimum shift threshold (`breakMinShiftHours`, default 4) must have exactly one contiguous break of the configured duration. An agent whose shift is shorter than the threshold must have no break. |
+| Exactly one break | Hard | An agent whose contracted hours **strictly exceed** the minimum shift threshold (`breakMinShiftHours`, default 4) must have exactly one contiguous break of the configured duration. An agent whose contracted hours are equal to or less than the threshold must have **no break** — their shift consists entirely of assigned work. |
 | Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
 | Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1.0 hour, fractional values supported). The entire break must be contained within the eligible window between the blocked periods. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
@@ -753,7 +753,7 @@ All fields with defaults (section 5.10) are optional in the request — omitted 
 - At least one active agent must be available (i.e. not on a day off for every day of the period).
 - `breakDurationMinutes` must be a positive multiple of `incrementMinutes`. *(`details[].field`: `"breakDurationMinutes"`.)*
 - Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
-- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception on a given day requires only a 5-hour window. Agents failing this check are listed in the `details` array.
+- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration where applicable (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours **strictly greater than** `breakMinShiftHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For agents at or below the threshold (no break), the check verifies `coverageWindowHours ≥ effectiveContractedHours`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception requires only a 4-hour window (no break). Agents failing this check are listed in the `details` array.
 - No agent may have both an exception and a day off on the same date within the schedule period. *(`details[].field`: `"agentException.date"`, with the conflicting agent and date identified.)*
 
 ## 8. Schedule Output
@@ -1093,7 +1093,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.8).
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
 | Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1.0). Accepts fractional values (e.g. 0.5 for 30 minutes). |
 | Break duration | Dropdown or numeric input | Break length in minutes (default 60). Options are filtered to multiples of the selected timeslot increment (e.g. 30, 45, 60 for a 15-min increment). |
-| Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
+| Minimum shift for break | Numeric input | Contracted hours must strictly exceed this value for a break to be assigned (default 4). Agents with exactly this many hours or fewer get no break. |
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
