@@ -746,6 +746,16 @@ All fields with defaults (section 5.10) are optional in the request — omitted 
 
 **Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
 
+**Transaction scopes.** The solve lifecycle is divided into two transactional phases, each with independent rollback semantics:
+
+1. **Pre-solve transaction** — covers everything from receiving the `POST /schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading agents/specializations/preferences/days off/exceptions from the database, generating timeslots, expanding staffing requirements into `AgentAssignment` entities, creating the `Schedule` record with status `RUNNING`, and persisting all generated entities. This entire phase executes within a **single database transaction**. If any step fails (validation error, database constraint violation, unexpected exception), the transaction is **rolled back** — no Schedule, no timeslots, no assignments are persisted. The client receives an error response and the system state is unchanged.
+
+2. **Solve transaction** — once the pre-solve transaction commits successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), a **second transaction** commits the final assignments and score back to the database and sets the status to `COMPLETED` or `STOPPED`. If this commit fails, the schedule remains in `RUNNING` status and is cleaned up by the stale-run recovery mechanism (see below).
+
+**Failure recovery.** If the server crashes or restarts while a solve is in progress, the schedule will be left in `RUNNING` status with no active solver thread. On application startup, the service queries for any schedules with status `RUNNING` and transitions them to `STOPPED` with a null score — the solver result is lost and the user must re-run the solve. This prevents orphaned `RUNNING` schedules from permanently blocking the concurrent-solve check.
+
+**Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is persisted. This is functionally equivalent to the user calling `PUT /schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
+
 **Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
 - Every active agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"agent.specializations"`, with the affected agent identified.)*
@@ -923,6 +933,7 @@ Two implementations:
 | `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
 | `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
+| `solver.time-limit` | Maximum duration for a single solve run (ISO-8601 duration) | `PT5M` (5 minutes) |
 
 ## 10. Package Layout
 
@@ -1190,7 +1201,6 @@ All endpoints are served under `/api/v1`. The following versioning strategy appl
 
 ## 15. Open Questions
 
-- Solver time limit and termination strategy defaults.
 - Deployment topology (single JAR, containers, cloud provider).
 - Erlang X input parameters to expose (call volume forecast per interval, AHT, caller patience, retry rate, service level target).
 
