@@ -319,8 +319,8 @@ classDiagram
         +int incrementMinutes
         +LocalTime startTime
         +LocalTime endTime
-        +LocalDate weekStartDate
-        +LocalDate weekEndDate
+        +LocalDate periodStartDate
+        +LocalDate periodEndDate
         +int breakBlockedHours
         +int breakDurationMinutes
         +int breakMinShiftHours
@@ -531,8 +531,8 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `incrementMinutes` | `int` | 15, 30, or 60 |
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
-| `weekStartDate` | `LocalDate` | First day of the schedule period |
-| `weekEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `weekStartDate` to `weekEndDate`. |
+| `periodStartDate` | `LocalDate` | First day of the schedule period |
+| `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
 | `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 1) |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
@@ -727,8 +727,8 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
 
 ```json
 {
-  "weekStartDate": "2026-02-23",
-  "weekEndDate": "2026-02-27",
+  "periodStartDate": "2026-02-23",
+  "periodEndDate": "2026-02-27",
   "startTime": "08:00",
   "endTime": "18:00",
   "incrementMinutes": 15,
@@ -1086,8 +1086,8 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.8).
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule period start | Date picker | Selects the first day of the schedule period (`weekStartDate`). |
-| Schedule period end | Date picker | Selects the last day of the schedule period (`weekEndDate`). Must be on or after the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
+| Schedule period start | Date picker | Selects the first day of the schedule period (`periodStartDate`). |
+| Schedule period end | Date picker | Selects the last day of the schedule period (`periodEndDate`). Must be on or after the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
 | Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
