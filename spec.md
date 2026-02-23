@@ -179,7 +179,7 @@ The break start time must align to a configured boundary:
 | `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
 | `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
 
-The default is `ON_HALF_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.7) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
+The default is `ON_HALF_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.8) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
 
 #### 4.6.5 Break clustering penalty (soft)
 
@@ -207,6 +207,21 @@ Agents have designated days off that are synced from BambooHR as explicit dates.
 Both types have the same effect on the solver: the agent is **completely unavailable** for the day. The distinction is informational — it appears in the UI and agent schedule output so managers can see *why* an agent is absent.
 
 Days off are **read-only** within WFM Service — they originate from BambooHR and are synced alongside agent data (see section 9).
+
+### 4.9 Agent Exceptions
+
+Some agents may need to work different hours on specific days due to personal circumstances. Rather than changing the agent's contracted hours permanently, a scheduler can create an **exception** for a specific agent on a specific date. This overrides the agent's normal contracted hours for that day only.
+
+Common reasons for exceptions:
+
+- **Childcare** — agent must leave early for school pickup.
+- **Part-time study** — agent attends classes on certain days.
+- **Training** — agent is only available for a shortened shift.
+- **Phased return** — agent returning from leave on reduced hours.
+
+Exceptions are created before the solver runs and are treated as hard inputs — the solver schedules the agent for exactly the overridden number of hours on that day. Each exception includes a free-text reason so that schedule reviewers can see why an agent has non-standard hours.
+
+An exception must not conflict with a day off on the same date — an agent cannot be both unavailable and working reduced hours on the same day.
 
 ## 5. Domain Model
 
@@ -270,6 +285,14 @@ classDiagram
         +DayOffType type
     }
 
+    class AgentException {
+        +UUID id
+        +long tenantId
+        +LocalDate date
+        +BigDecimal contractedHoursOverride
+        +String reason
+    }
+
     class ConstraintWeights {
         <<ConstraintConfiguration>>
         +UUID id
@@ -307,7 +330,6 @@ classDiagram
         +int overallocationHardLimitPct
         +HardSoftScore score
         +ScheduleStatus status
-        +boolean manuallyEdited
     }
 
     Agent "1" --> "1" Specialization : primarySpecialization
@@ -326,6 +348,9 @@ classDiagram
     AgentDayOff "* " --> "1" Agent
     note for AgentDayOff "Unique on (agent, date).\nSynced from BambooHR."
 
+    AgentException "* " --> "1" Agent
+    note for AgentException "Unique on (agent, date).\nOverrides contracted hours for that day."
+
     Schedule "1" --> "1" ConstraintWeights : «@ConstraintConfigurationProvider»
     Schedule "1" *-- "* " Specialization : specializations
     Schedule "1" *-- "* " Agent : agents
@@ -333,6 +358,7 @@ classDiagram
     Schedule "1" *-- "* " StaffingRequirement : staffingRequirements
     Schedule "1" *-- "* " AgentPreference : agentPreferences
     Schedule "1" *-- "* " AgentDayOff : agentDaysOff
+    Schedule "1" *-- "* " AgentException : agentExceptions
     Schedule "1" *-- "* " AgentAssignment : assignments
 ```
 
@@ -350,7 +376,7 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 
 An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system, except for specialization assignments which are managed locally.
 
-**Specialization requirement:** Every active agent must have a primary specialization and at least one secondary specialization assigned before the agent can participate in a solve run. Freshly synced agents from BambooHR arrive without specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active agent lacks specializations (see section 7.7).
+**Specialization requirement:** Every active agent must have a primary specialization and at least one secondary specialization assigned before the agent can participate in a solve run. Freshly synced agents from BambooHR arrive without specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active agent lacks specializations (see section 7.8).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -363,7 +389,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `jobTitle` | `String` | Job title (from BambooHR) |
 | `primarySpecialization` | `Specialization` | Main area of expertise (managed locally) |
 | `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover (managed locally, one or more) |
-| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.9) and can be overridden per agent. Managed locally via the API. |
+| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.10) and can be overridden per agent. Managed locally via the API. |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
@@ -448,7 +474,28 @@ A day on which an agent is unavailable for scheduling. Days off are synced from 
 
 **Solver usage:** When building the planning solution, the service loads all `AgentDayOff` records that fall within the schedule's period. These are included as problem facts and referenced by the "Agent day off" hard constraint (section 6).
 
-### 5.8 ConstraintWeights
+### 5.8 AgentException
+
+A per-agent, per-day override that allows an agent to work different contracted hours than their standard `contractedHoursPerDay` on a specific date. Exceptions are used to accommodate individual circumstances — for example, an agent who is a part-time student and can only work 4 hours on certain days, or an agent with childcare responsibilities requiring a shorter shift.
+
+Exceptions are **pre-solve inputs** — they must be configured before the solver is run. The solver uses the exception's `contractedHoursOverride` in place of the agent's normal contracted hours for that day when evaluating the "Contracted hours" constraint (section 6).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
+| `agent` | `Agent` | The agent the exception applies to |
+| `date` | `LocalDate` | The day the override applies to |
+| `contractedHoursOverride` | `BigDecimal` | The number of working hours (excluding break time) for this agent on this day. Replaces the agent's `contractedHoursPerDay` for this date only. Must be positive. |
+| `reason` | `String` | A free-text explanation of why the exception exists (e.g. "Childcare — school pickup", "Part-time student", "Training day — short shift"). Required. |
+
+**Uniqueness constraint:** Unique on (`agent`, `date`) — an agent has at most one exception per date.
+
+**Interaction with days off:** An exception and a day off must not coexist for the same agent on the same date — pre-solve validation (section 7.8) rejects this as contradictory.
+
+**Solver resolution:** When building the planning solution, the service loads all `AgentException` records that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.8) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
+
+### 5.9 ConstraintWeights
 
 A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. One row per tenant (identified by `tenantId`) so each tenant can tune solver behaviour independently.
 
@@ -473,7 +520,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
-### 5.9 Schedule (Planning Solution)
+### 5.10 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run.
 
@@ -499,16 +546,16 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts |
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
+| `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.8) |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
-| `score` | `HardSoftScore` | Populated by solver; set to `null` if the schedule has been manually edited after solving |
+| `score` | `HardSoftScore` | Populated by solver |
 | `status` | `enum(RUNNING, COMPLETED, STOPPED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below) |
-| `manuallyEdited` | `boolean` | `true` if any assignment has been changed after the solve completed. When `true`, the `score` is no longer valid and the UI displays a "manually edited" warning. Default `false`. |
 
 **Schedule lifecycle.** A schedule progresses through the following states:
 
 1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /schedules/{id}/stop`) but not accepted or rejected.
-2. **`COMPLETED`** — the solver has finished (or was stopped). The scheduler reviews the results and may make manual reassignments. The schedule can be **accepted** or **rejected**.
+2. **`COMPLETED`** — the solver has finished (or was stopped). The scheduler reviews the results. The schedule can be **accepted** or **rejected**.
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
 4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period. At most **one** schedule may be accepted per overlapping date range per tenant. Accepting a new schedule for the same period automatically replaces the previously accepted one (the old schedule is deleted).
 
@@ -518,7 +565,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 
 ## 6. Constraints
 
-Constraints are defined in a `ConstraintProvider` implementation. The **Level** column shows the default; per-tenant `ConstraintWeights` (section 5.8) can override levels and magnitudes at solve time.
+Constraints are defined in a `ConstraintProvider` implementation. The **Level** column shows the default; per-tenant `ConstraintWeights` (section 5.9) can override levels and magnitudes at solve time.
 
 | Constraint | Default Level | Description |
 |---|---|---|
@@ -639,14 +686,24 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `PUT` | `/agents/{id}/preferences` | Create or update preferences for an agent (batch). Each entry includes `date`, `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server sets the previous standing preference (if any) to `false`. |
 | `DELETE` | `/agents/{id}/preferences/{date}` | Delete a specific day's preference. If the deleted preference was standing, the agent will have no standing preference until one is set. |
 
-### 7.5 Constraint Weights
+### 7.5 Agent Exceptions
+
+Exceptions allow an agent's contracted hours to be overridden on specific dates, with a mandatory reason (section 5.8).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/agents/{id}/exceptions` | List exception records for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date`, `contractedHoursOverride`, and `reason`. |
+| `PUT` | `/agents/{id}/exceptions` | Create or update exceptions for an agent (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same agent and date are replaced. Returns `400` (error code `VALIDATION_FAILED`) if an exception conflicts with a day off on the same date. |
+| `DELETE` | `/agents/{id}/exceptions/{date}` | Delete the exception for the specified date. The agent reverts to their standard contracted hours for that day. |
+
+### 7.6 Constraint Weights
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/constraint-weights` | Get the current tenant's constraint weights |
 | `PUT` | `/constraint-weights` | Update constraint weights (partial updates allowed; omitted fields keep defaults) |
 
-### 7.6 Staffing Requirements
+### 7.7 Staffing Requirements
 
 | Method | Path | Description |
 |---|---|---|
@@ -654,7 +711,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
-### 7.7 Solver
+### 7.8 Solver
 
 | Method | Path | Description |
 |---|---|---|
@@ -662,7 +719,6 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `GET` | `/schedules` | List schedules. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Used by the "Past schedules list" in the Schedule Setup page. |
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
-| `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules — returns `409 Conflict` (error code `CONFLICT`) if the schedule is still running. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
 | `PUT` | `/schedules/{id}/accept` | Accept this schedule as the active schedule for its period. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. If another accepted schedule exists for an overlapping date range, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
 | `PUT` | `/schedules/{id}/reject` | Reject and delete this schedule. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule and all its associated data (timeslots, assignments) are permanently deleted. Returns `204 No Content`. |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
@@ -686,7 +742,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 }
 ```
 
-All fields with defaults (section 5.9) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, and days off from the database for the specified date range.
+All fields with defaults (section 5.10) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, and days off from the database for the specified date range.
 
 **Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
 
@@ -697,7 +753,8 @@ All fields with defaults (section 5.9) are optional in the request — omitted f
 - At least one active agent must be available (i.e. not on a day off for every day of the period).
 - `breakDurationMinutes` must be a positive multiple of `incrementMinutes`. *(`details[].field`: `"breakDurationMinutes"`.)*
 - Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
-- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's contracted hours plus the configured break duration (since contracted hours exclude break time). Specifically, for every active agent whose shift would include a break (contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ contractedHoursPerDay + (breakDurationMinutes / 60)`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours. Agents failing this check are listed in the `details` array.
+- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception on a given day requires only a 5-hour window. Agents failing this check are listed in the `details` array.
+- No agent may have both an exception and a day off on the same date within the schedule period. *(`details[].field`: `"agentException.date"`, with the conflicting agent and date identified.)*
 
 ## 8. Schedule Output
 
@@ -817,7 +874,7 @@ The schedule can be exported as a multi-tab spreadsheet (`.xlsx`). Each tab corr
 
 Constraint violations (section 8.4) are not included in the spreadsheet — they are diagnostic data consumed via the API and displayed in the UI.
 
-Export is triggered via a dedicated endpoint (see section 7.7). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+Export is triggered via a dedicated endpoint (see section 7.8). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ## 9. BambooHR Integration
 
@@ -878,6 +935,7 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirement.java
 │   ├── AgentPreference.java
 │   ├── AgentDayOff.java
+│   ├── AgentException.java
 │   ├── AgentAssignment.java
 │   ├── ConstraintWeights.java
 │   └── Schedule.java
@@ -886,6 +944,7 @@ src/main/java/com/wfm/
 │   ├── AgentRepository.java
 │   ├── AgentPreferenceRepository.java
 │   ├── AgentDayOffRepository.java
+│   ├── AgentExceptionRepository.java
 │   ├── TimeslotRepository.java
 │   ├── StaffingRequirementRepository.java
 │   ├── ConstraintWeightsRepository.java
@@ -894,6 +953,7 @@ src/main/java/com/wfm/
 │   ├── AgentService.java
 │   ├── AgentPreferenceService.java
 │   ├── AgentDayOffService.java
+│   ├── AgentExceptionService.java
 │   ├── SpecializationService.java
 │   ├── ConstraintWeightsService.java
 │   ├── StaffingRequirementService.java
@@ -905,6 +965,7 @@ src/main/java/com/wfm/
 ├── controller/
 │   ├── AgentController.java
 │   ├── AgentDayOffController.java
+│   ├── AgentExceptionController.java
 │   ├── SpecializationController.java
 │   ├── StaffingRequirementController.java
 │   ├── ConstraintWeightsController.java
@@ -934,6 +995,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. All queri
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
 - `agent_preference` (`tenant_id`, FK → `agent`, `date`, `is_standing`, unique on `tenant_id` + `agent` + `date` + `is_standing`; partial unique on `tenant_id` + `agent` where `is_standing = true` to enforce at most one standing preference per agent)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
+- `agent_exception` (`tenant_id`, FK → `agent`, `date`, `contracted_hours_override`, `reason`, unique on `tenant_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`, unique on `tenant_id` + `date` + `start_time` + `end_time`)
 - `staffing_requirement` (`tenant_id`, FK → `timeslot`, FK → `specialization`, unique on `tenant_id` + `timeslot` + `specialization`)
 - `agent_assignment` (`tenant_id`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
@@ -979,9 +1041,21 @@ Allows agents (or administrators on their behalf) to submit shift preferences (s
 | Save button | Button | Persists all rows via `PUT /agents/{id}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures only one is standing per agent. |
 | Delete button | Button (per row) | Deletes the preference for the selected day via `DELETE /agents/{id}/preferences/{date}`. That day then falls back to the standing preference (if one exists). |
 
-### 12.4 Staffing Requirements Page
+### 12.4 Agent Exceptions Page
 
-Defines how many agents are needed per timeslot per specialization (sections 4.4, 7.6).
+Manages per-agent, per-day contracted hours overrides (sections 4.9, 5.8, 7.5). Accessible as a sub-view of the Agents page or as a standalone page.
+
+| Control | Type | Description |
+|---|---|---|
+| Agent selector | Dropdown or search | Selects the agent whose exceptions are being viewed or edited. |
+| Period picker | Date range picker | Selects the target date range. Loads existing exceptions via `GET /agents/{id}/exceptions?from={date}&to={date}`. |
+| Exceptions grid | Editable table | One row per day within the selected range. Columns: **Day**, **Standard hours** (read-only — the agent's normal `contractedHoursPerDay`), **Override hours** (numeric input — the `contractedHoursOverride` for this day; blank if no exception), **Reason** (text input — required when override hours is set). Days that coincide with a day off are greyed out and cannot have an exception. |
+| Save button | Button | Persists all rows with an override via `PUT /agents/{id}/exceptions`. Disabled until a change is made. Validates that reason is provided for every override. |
+| Delete button | Button (per row) | Deletes the exception for the selected day via `DELETE /agents/{id}/exceptions/{date}`. The agent reverts to standard contracted hours for that day. |
+
+### 12.5 Staffing Requirements Page
+
+Defines how many agents are needed per timeslot per specialization (sections 4.4, 7.7).
 
 | Control | Type | Description |
 |---|---|---|
@@ -996,19 +1070,19 @@ Defines how many agents are needed per timeslot per specialization (sections 4.4
 | Calculate button | Button | Submits parameters via `POST /staffing-requirements/erlang-x`. Displays the calculated agent counts in the demand grid for review before saving. |
 | Accept & save button | Button | Persists the calculated requirements. |
 
-### 12.5 Constraint Weights Page
+### 12.6 Constraint Weights Page
 
-Displays and adjusts per-tenant constraint weights (sections 4.7, 5.8, 7.5).
+Displays and adjusts per-tenant constraint weights (sections 4.7, 5.9, 7.6).
 
 | Control | Type | Description |
 |---|---|---|
 | Weights table | Editable table | One row per constraint (matching the constraints in section 6). Columns: **Constraint name**, **Description**, **Level** (Hard/Soft dropdown), **Weight** (numeric input). Pre-populated from `GET /constraint-weights`. |
-| Reset to defaults button | Button | Restores all weights to the defaults defined in section 5.8. |
+| Reset to defaults button | Button | Restores all weights to the defaults defined in section 5.9. |
 | Save button | Button | Persists changes via `PUT /constraint-weights`. |
 
-### 12.6 Schedule Setup Page
+### 12.7 Schedule Setup Page
 
-Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
+Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.8).
 
 | Control | Type | Description |
 |---|---|---|
@@ -1024,17 +1098,17 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.7).
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Tenant-level default contracted daily hours for agents without an explicit override (default 8.0). |
 | Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
-| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, and any missing data warnings (e.g. agents without specializations). |
+| Validation summary | Read-only panel | Before solving, displays a summary: number of agents, specializations configured, staffing requirements loaded, days off affecting this period, exceptions configured, and any missing data warnings (e.g. agents without specializations, conflicting exceptions and days off). |
 | Solve button | Button | Submits `POST /schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Paginated table | Lists previously completed and accepted schedules with date, score, and status, fetched via `GET /schedules`. Accepted schedules are visually distinguished (e.g. bold or with an "Accepted" badge). Each row links to its Schedule Results page. |
 
-### 12.7 Schedule Results Page
+### 12.8 Schedule Results Page
 
 Displays solver output for a given schedule (section 8). Shown after a solve completes or when viewing a past schedule.
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped/accepted), and a "Manually edited" warning badge if any assignments have been changed post-solve (score is no longer valid). Shows an **"Accepted"** badge when the schedule has been accepted. |
+| Schedule header | Read-only panel | Displays: schedule period, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped/accepted). Shows an **"Accepted"** badge when the schedule has been accepted. |
 | Non-optimal banner | Alert banner | Displayed prominently at the top of the page when `feasible == false`. Shows the text **"NON-OPTIMAL SOLUTION"** followed by a bulleted list of every violated hard constraint name (from `violatedHardConstraints`). Styled as a warning/error banner (e.g. red or amber background) so it is immediately visible. Hidden when the solution is feasible. |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /schedules/{id}` for status and intermediate scores. |
@@ -1044,7 +1118,7 @@ Displays solver output for a given schedule (section 8). Shown after a solve com
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /schedules/{id}/export`. |
 | Results tabs | Tab bar | Four tabs as described below. |
 
-#### 12.7.1 Staffing Summary Tab
+#### 12.8.1 Staffing Summary Tab
 
 Corresponds to section 8.1.
 
@@ -1053,7 +1127,7 @@ Corresponds to section 8.1.
 | Summary table | Table | Columns: **Day**, **Specialization**, **Predicted hours**, **Actual hours**, **Delta hours**, **Coverage %**. Colour-coded: green for fully staffed or overstaffed, amber for slightly understaffed, red for significantly understaffed. Includes per-day totals and a weekly grand-total row. |
 | Day filter | Dropdown or button group | Filters the table to a single day or shows all days. |
 
-#### 12.7.2 Agent Schedule Tab
+#### 12.8.2 Agent Schedule Tab
 
 Corresponds to section 8.2.
 
@@ -1062,10 +1136,9 @@ Corresponds to section 8.2.
 | Schedule grid | Grid / heatmap | Rows: agents. Columns: timeslots for the selected day. Cells are colour-coded by specialization match type (primary vs secondary). Break timeslots are visually distinct (e.g. hatched or grey). Hovering a cell shows a tooltip with timeslot times, required specialization, and match type. |
 | Day selector | Dropdown or tab strip | Switches the grid to a different day of the schedule period. |
 | Agent search / filter | Text input | Filters the grid to agents whose name matches the search text. |
-| Reassign agent | Click cell / modal | On a completed schedule, clicking an assigned cell opens a modal to reassign the seat to a different agent. The dropdown shows available agents (filtered to those with a matching specialization). Saving calls `PUT /schedules/{id}/assignments/{assignmentId}`. The schedule is flagged as manually edited and the score is invalidated. |
 | Legend | Inline legend | Explains cell colours: primary match, secondary match, break, unassigned. |
 
-#### 12.7.3 Preference Report Tab
+#### 12.8.3 Preference Report Tab
 
 Corresponds to section 8.3.
 
@@ -1075,7 +1148,7 @@ Corresponds to section 8.3.
 | Summary counters | Read-only panel | Displays `totalPreferences`, `startTimeHonouredCount`, `breakTimeHonouredCount`, and `overallHonouredPct`. |
 | Filter: overridden only | Toggle | Filters the table to show only rows where at least one preference was overridden. |
 
-#### 12.7.4 Constraint Violations Tab
+#### 12.8.4 Constraint Violations Tab
 
 Corresponds to section 8.4.
 
@@ -1087,9 +1160,9 @@ Corresponds to section 8.4.
 
 ## 13. Open Issues (SME Review Required)
 
-- ~~**Contracted hours: does the value include or exclude break time?**~~ **Resolved.** Contracted hours **exclude** break time. An agent's contracted hours represent assigned (non-break) working time only. Break time is additional — e.g. a full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. This is now stated explicitly in sections 5.2, 5.9, and 6.
+- ~~**Contracted hours: does the value include or exclude break time?**~~ **Resolved.** Contracted hours **exclude** break time. An agent's contracted hours represent assigned (non-break) working time only. Break time is additional — e.g. a full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. This is now stated explicitly in sections 5.2, 5.10, and 6.
 
-- ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.7 has been updated accordingly.
+- ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.8 has been updated accordingly.
 
 - **"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.** The planning variable `AgentAssignment.agent` is non-nullable, so the solver **must** assign an agent to every seat. Combined with the "Contracted hours" hard constraint (every agent works exactly their contracted hours), this creates a tension: if total seat-hours exceed the workforce's total contracted hours the solver is forced to over-allocate some agents, and if total seat-hours fall short some agents cannot reach their contracted hours. The "Bulk over-allocation limit" hard constraint (section 6) caps aggregate over-allocation at `overallocationHardLimitPct` (default 130 %), but there is no equivalent mechanism for under-allocation. SME discussion is needed to decide: (a) whether a "dummy" or "unassigned" agent should be introduced so that surplus seats can go unfilled, (b) whether the contracted hours constraint should be relaxed from "exactly" to "at most" (or soft), (c) how under-allocation (fewer seats than contracted hours) should be handled — e.g. allow agents to be idle, introduce slack assignments, or flag as infeasible, and (d) what the acceptable tolerance bands are for both over- and under-allocation scenarios.
 
