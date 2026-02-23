@@ -363,7 +363,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `jobTitle` | `String` | Job title (from BambooHR) |
 | `primarySpecialization` | `Specialization` | Main area of expertise (managed locally) |
 | `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover (managed locally, one or more) |
-| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours (e.g. 8.0 for full-time, 4.0 for part-time). Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.9) and can be overridden per agent. Managed locally via the API. |
+| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.9) and can be overridden per agent. Managed locally via the API. |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
 
@@ -491,7 +491,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
-| `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
+| `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours excluding break time (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
 | `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 130) |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-tenant weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts |
@@ -523,7 +523,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
-| Contracted hours | Hard | Every agent must be assigned exactly their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). The solver must not leave an agent with fewer or more hours than their contract specifies. |
+| Contracted hours | Hard | Every agent must be assigned exactly their contracted hours per day (`contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). The solver must not leave an agent with fewer or more assigned hours than their contract specifies. |
 | Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 460 total hours across all agents. |
 
 
@@ -684,7 +684,7 @@ All fields with defaults (section 5.9) are optional in the request — omitted f
 - At least one active agent must be available (i.e. not on a day off for every day of the period).
 - `breakDurationMinutes` must be a positive multiple of `incrementMinutes`. *(`details[].field`: `"breakDurationMinutes"`.)*
 - Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
-- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's contracted hours plus the configured break duration. Specifically, for every active agent whose shift would include a break (contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ contractedHoursPerDay + (breakDurationMinutes / 60)`. Agents failing this check are listed in the `details` array. *(See section 13 — the exact arithmetic depends on whether contracted hours include or exclude break time.)*
+- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's contracted hours plus the configured break duration (since contracted hours exclude break time). Specifically, for every active agent whose shift would include a break (contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ contractedHoursPerDay + (breakDurationMinutes / 60)`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours. Agents failing this check are listed in the `details` array.
 
 ## 8. Schedule Output
 
@@ -1071,9 +1071,9 @@ Corresponds to section 8.4.
 
 ## 13. Open Issues (SME Review Required)
 
-- **Contracted hours: does the value include or exclude break time?** The "Contracted hours" constraint (section 6) requires every agent to work exactly their contracted hours per day, but does not state whether break time counts towards that total. Section 5.2 describes the field as "contracted daily working hours" and section 8.2 defines `totalHours` as "Total assigned hours (excluding breaks)", which together imply contracted hours means assigned (non-break) hours. This should be confirmed and stated explicitly in the constraint definition. The answer also affects pre-solve feasibility — e.g. an agent with 8 contracted hours and a 1-hour break needs a coverage window of at least 9 hours.
+- ~~**Contracted hours: does the value include or exclude break time?**~~ **Resolved.** Contracted hours **exclude** break time. An agent's contracted hours represent assigned (non-break) working time only. Break time is additional — e.g. a full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. This is now stated explicitly in sections 5.2, 5.9, and 6.
 
-- **Coverage window vs. contracted hours + break pre-solve validation.** Section 7.7 adds a pre-solve check that the coverage window is wide enough to accommodate each agent's contracted hours plus break duration. The exact formula depends on the open issue above (contracted hours including or excluding break time). If contracted hours **exclude** break time, the window must be ≥ `contractedHoursPerDay + breakDurationMinutes / 60`. If contracted hours **include** break time, the window only needs to be ≥ `contractedHoursPerDay`. This should be finalised once the contracted-hours semantics are confirmed.
+- ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.7 has been updated accordingly.
 
 - **"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.** The planning variable `AgentAssignment.agent` is non-nullable, so the solver **must** assign an agent to every seat. Combined with the "Contracted hours" hard constraint (every agent works exactly their contracted hours), this creates a tension: if total seat-hours exceed the workforce's total contracted hours the solver is forced to over-allocate some agents, and if total seat-hours fall short some agents cannot reach their contracted hours. The "Bulk over-allocation limit" hard constraint (section 6) caps aggregate over-allocation at `overallocationHardLimitPct` (default 130 %), but there is no equivalent mechanism for under-allocation. SME discussion is needed to decide: (a) whether a "dummy" or "unassigned" agent should be introduced so that surplus seats can go unfilled, (b) whether the contracted hours constraint should be relaxed from "exactly" to "at most" (or soft), (c) how under-allocation (fewer seats than contracted hours) should be handled — e.g. allow agents to be idle, introduce slack assignments, or flag as infeasible, and (d) what the acceptable tolerance bands are for both over- and under-allocation scenarios.
 
