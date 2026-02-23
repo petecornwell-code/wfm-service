@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-WFM Service is a workforce management system that allocates **agents** to **timeslots** using constraint-based optimisation. The solver is powered by [Timefold](https://timefold.ai/) (Java). The application exposes a REST API via Spring Boot and persists state in PostgreSQL. Agent data is sourced from **BambooHR** via its REST API and synchronised into the local database.
+WFM Service is a workforce management system that allocates **agents** to **timeslots** using constraint-based optimisation. The solver is powered by [Timefold](https://timefold.ai/) (Java). The application exposes a REST API via Spring Boot and persists state in PostgreSQL. Agent data is sourced from **BambooHR** via its REST API and refreshed into the local database on demand.
 
 The service is **multi-tenant**. Tenant identity and authentication are managed by an external **AI service platform** (a separate project, out of scope for this document). Every API request includes a `tenant_id` (`BIGINT`) provided by the platform. All data is isolated per tenant at the database level — see section 3.1.
 
@@ -36,7 +36,7 @@ The service is **multi-tenant**. Tenant identity and authentication are managed 
 │           │       │                  │                          │       │            │
 └───────────┘       │            Timefold Solver                  │       └────────────┘
                     │                  │                          │
-                    │         BambooHR Client (sync)              │
+                    │         BambooHR Client (refresh)              │
                     └──────────────────┼──────────────────────────┘
                                        │
                                        ▼
@@ -200,14 +200,14 @@ The constraint table in section 6 documents the **default** level and weight for
 
 ### 4.8 Agent Days Off
 
-Agents have designated days off that are synced from BambooHR as explicit dates. The solver must not assign an agent to any timeslot on a day off. Two types are supported:
+Agents have designated days off that are refreshed from BambooHR as explicit dates. The solver must not assign an agent to any timeslot on a day off. Two types are supported:
 
 - **Mandatory day off** — the agent's regular non-working days (the equivalent of weekends; typically two per week). These recur weekly but are stored as explicit dates per scheduling period.
 - **PTO (Paid Time Off)** — approved leave days. Only pre-approved PTO is considered; sick days are out of scope and not modelled.
 
 Both types have the same effect on the solver: the agent is **completely unavailable** for the day. The distinction is informational — it appears in the UI and agent schedule output so managers can see *why* an agent is absent.
 
-Days off are **read-only** within WFM Service — they originate from BambooHR and are synced alongside agent data (see section 9).
+Days off are **read-only** within WFM Service — they originate from BambooHR and are refreshed alongside agent data (see section 9).
 
 ### 4.9 Agent Exceptions
 
@@ -246,7 +246,7 @@ classDiagram
         +String jobTitle
         +BigDecimal contractedHoursPerDay
         +boolean active
-        +OffsetDateTime lastSyncedAt
+        +OffsetDateTime lastRefreshedAt
     }
 
     class Timeslot {
@@ -348,7 +348,7 @@ classDiagram
     note for AgentPreference "Standing: unique on (agent, dayOfWeek).\nWeekly: unique on (agent, date)."
 
     AgentDayOff "* " --> "1" Agent
-    note for AgentDayOff "Unique on (agent, date).\nSynced from BambooHR."
+    note for AgentDayOff "Unique on (agent, date).\nRefreshed from BambooHR."
 
     AgentException "* " --> "1" Agent
     note for AgentException "Unique on (agent, date).\nOverrides contracted hours for that day."
@@ -378,7 +378,7 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 
 An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and treated as **read-only** within this system, except for specialization assignments which are managed locally.
 
-**Specialization requirement:** Every active agent must have a primary specialization and at least one secondary specialization assigned before the agent can participate in a solve run. Freshly synced agents from BambooHR arrive without specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active agent lacks specializations (see section 7.8).
+**Specialization requirement:** Every active agent must have a primary specialization and at least one secondary specialization assigned before the agent can participate in a solve run. Freshly refreshed agents from BambooHR arrive without specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active agent lacks specializations (see section 7.8).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -393,7 +393,7 @@ An agent is a person who can be assigned to work during one or more timeslots. A
 | `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover (managed locally, one or more) |
 | `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Defaults to the tenant-level `defaultContractedHoursPerDay` (see section 5.10) and can be overridden per agent. Managed locally via the API. |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
-| `lastSyncedAt` | `OffsetDateTime` | Timestamp of last successful sync |
+| `lastRefreshedAt` | `OffsetDateTime` | Timestamp of last successful refresh from BambooHR |
 
 ### 5.3 Timeslot
 
@@ -463,7 +463,7 @@ An agent's scheduling preferences. Standing preferences define recurring default
 
 ### 5.7 AgentDayOff
 
-A day on which an agent is unavailable for scheduling. Days off are synced from BambooHR (see section 9) and treated as read-only within WFM Service.
+A day on which an agent is unavailable for scheduling. Days off are refreshed from BambooHR (see section 9) and treated as read-only within WFM Service.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -562,11 +562,13 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
 4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period. At most **one** schedule may be accepted per overlapping date range per tenant. Accepting a new schedule for the same period automatically replaces the previously accepted one (the old schedule is deleted from the database).
 
-**In-memory persistence model.** Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
+**In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its generated data (timeslots, agent assignments, staffing requirement expansions, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
-- The `Schedule` object and all its associated data (generated timeslots, agent assignments, staffing requirement expansions, solver score) exist only in the JVM heap until the schedule is accepted.
+Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
+
+- The `Schedule` object and its solver-generated data exist only in the JVM heap until the schedule is accepted.
 - API endpoints that query non-accepted schedules (`GET /schedules/{id}`, `GET /schedules`, `GET /schedules/{id}/export`) serve data from the in-memory store.
-- If the server restarts or crashes, any non-accepted schedules are **lost** — the user must re-run the solver. This is acceptable because non-accepted schedules are transient working data, not committed decisions.
+- If the server restarts or crashes, any non-accepted schedules are **lost** — the user must re-run the solver. This is acceptable because non-accepted schedules are transient working data, not committed decisions. All input data remains safely in the database.
 - Only one non-accepted schedule may exist per tenant at a time (enforced by the concurrent-solve restriction).
 
 **Acceptance and persistence:** When a schedule is accepted (`PUT /schedules/{id}/accept`), the complete schedule — including the `Schedule` record, all generated timeslots, all agent assignments, staffing requirement snapshots, and the final score — is written to the database in a single transaction. This is the **only point** at which schedule data touches the database. Once persisted, the schedule is removed from the in-memory store.
@@ -681,11 +683,11 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `GET` | `/agents/{id}` | Get agent by id |
 | `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
 | `PUT` | `/agents/{id}/contracted-hours` | Set the agent's contracted hours per day. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the tenant-level default is used. |
-| `POST` | `/agents/sync` | Trigger a sync from BambooHR. All syncs are user-initiated (section 9.4). |
+| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). |
 
 ### 7.2 Agent Days Off
 
-Days off are synced from BambooHR (section 9) and are read-only.
+Days off are refreshed from BambooHR (section 9) and are read-only.
 
 | Method | Path | Description |
 |---|---|---|
@@ -731,7 +733,7 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
 |---|---|---|
 | `GET` | `/staffing-requirements` | List staffing requirements. Paginated. Optional query parameters `from` and `to` filter by date range. |
 | `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
-| `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
+| `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level). The calculation and persistence of the resulting requirements is executed in a **single transaction** — either all requirements are saved or none are, ensuring no partial state. |
 
 ### 7.8 Solver
 
@@ -914,7 +916,7 @@ Export is triggered via a dedicated endpoint (see section 7.8). The response str
 
 ### 9.1 Overview
 
-Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table in sync with the BambooHR employee directory.
+Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table up to date with the BambooHR employee directory via user-initiated refreshes.
 
 The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant. Employee-to-tenant mapping is handled by the BPO's operational processes and reflected in the department or custom field data within BambooHR.
 
@@ -941,13 +943,13 @@ Two implementations:
 | `MockBambooHRClient` | Returns hard-coded employee data from memory. Active by default via a Spring profile (`bamboohr.mock=true`). |
 | `HttpBambooHRClient` | Calls the live BambooHR REST API. Activated when `bamboohr.mock=false` and credentials are configured. |
 
-### 9.4 Sync Behaviour
+### 9.4 Refresh Behaviour
 
-All syncs are **user-initiated** — there is no automatic or scheduled background sync. A sync is triggered explicitly via `POST /api/v1/agents/sync` (typically by clicking the Sync button on the Agents page). This ensures the user is always in control of when external data is pulled into the system.
+All refreshes are **user-initiated** — there is no automatic or scheduled background refresh. A refresh is triggered explicitly via `POST /api/v1/agents/refresh` (typically by clicking the Refresh button on the Agents page). This ensures the user is always in control of when external data is pulled into the system.
 
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
-- **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
-- **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
+- **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
+- **Days off refresh** — The refresh also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
 
 ### 9.5 Configuration
 
@@ -1010,7 +1012,7 @@ src/main/java/com/wfm/
 │   ├── BambooTimeOff.java
 │   ├── MockBambooHRClient.java
 │   ├── HttpBambooHRClient.java
-│   └── BambooSyncService.java
+│   └── BambooRefreshService.java
 ├── solver/
 │   └── ScheduleConstraintProvider.java
 └── WfmApplication.java
@@ -1052,12 +1054,12 @@ Manages the set of available specializations (section 4.3).
 
 ### 12.2 Agents Page
 
-Displays agents synced from BambooHR and allows local specialization assignment (sections 5.2, 7.1).
+Displays agents refreshed from BambooHR and allows local specialization assignment (sections 5.2, 7.1).
 
 | Control | Type | Description |
 |---|---|---|
-| Agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours/day, active status, last synced timestamp. Sortable and filterable. |
-| Sync button | Button | Triggers `POST /agents/sync`. Displays a loading indicator while the sync runs and refreshes the table on completion. |
+| Agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours/day, active status, last refreshed timestamp. Sortable and filterable. |
+| Refresh button | Button | Triggers `POST /agents/refresh`. Displays a loading indicator while the refresh runs and reloads the table on completion. |
 | Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
 | Edit specializations (per agent) | Inline or modal form | **Primary specialization:** single-select dropdown populated from the specializations list. **Secondary specializations:** multi-select control populated from the specializations list (excluding the selected primary). Saves via `PUT /agents/{id}/specializations`. |
 | Edit contracted hours (per agent) | Inline edit or modal | Numeric input for the agent's contracted hours per day. Displays the tenant default if no override is set. Saves via `PUT /agents/{id}/contracted-hours`. |
