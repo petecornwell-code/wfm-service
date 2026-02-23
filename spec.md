@@ -179,7 +179,7 @@ The break start time must align to a configured boundary:
 | `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
 | `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
 
-The default is `ON_HALF_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.8) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
+The default is `ON_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.8) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
 
 #### 4.6.5 Break clustering penalty (soft)
 
@@ -536,7 +536,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakBlockedHours` | `double` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `int` | Contracted hours must strictly exceed this threshold for a break to be assigned (default 4). An agent with exactly this many hours or fewer gets no break. |
-| `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
+| `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Tenant-level default contracted daily hours excluding break time (default 8.0). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
 | `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 130) |
@@ -754,7 +754,7 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
   "breakBlockedHours": 1.0,
   "breakDurationMinutes": 60,
   "breakMinShiftHours": 4,
-  "breakStartAlignment": "ON_HALF_HOUR",
+  "breakStartAlignment": "ON_HOUR",
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
   "overallocationHardLimitPct": 130
