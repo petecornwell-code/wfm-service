@@ -554,6 +554,43 @@ Paginated responses use a standard envelope:
 
 Endpoints with small, bounded result sets (e.g. per-agent filtered by date range) return a plain JSON array and do not use the pagination envelope.
 
+**Error responses.** All endpoints use a standard error envelope for non-2xx responses:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Human-readable summary of what went wrong.",
+    "details": [
+      {
+        "field": "breakDurationMinutes",
+        "message": "Must be a positive multiple of incrementMinutes (15).",
+        "value": "25"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `error.code` | `String` | Yes | A stable, machine-readable error code. Clients should switch on this value rather than parsing `message`. See table below for defined codes. |
+| `error.message` | `String` | Yes | A human-readable description of the error. Not guaranteed to be stable across versions. |
+| `error.details` | `Array` | No | Optional list of field-level or item-level errors. Primarily used for validation failures. |
+| `error.details[].field` | `String` | No | The request field or entity that caused the error (e.g. `"breakDurationMinutes"`, `"agent.primarySpecialization"`). |
+| `error.details[].message` | `String` | Yes | Human-readable explanation of the specific issue. |
+| `error.details[].value` | `String` | No | The rejected value, if applicable. |
+
+**Standard error codes and HTTP status mappings:**
+
+| HTTP Status | Error Code | When Used |
+|---|---|---|
+| `400` | `VALIDATION_FAILED` | Request body or query parameters fail validation (e.g. missing required fields, invalid values, pre-solve validation failures). The `details` array lists each failing check. |
+| `404` | `NOT_FOUND` | The requested entity does not exist or does not belong to the requesting tenant. |
+| `409` | `CONFLICT` | The request conflicts with current state (e.g. a solve is already running for the tenant). |
+| `422` | `UNPROCESSABLE_ENTITY` | The request is syntactically valid but semantically invalid (e.g. a staffing requirement references a non-existent specialization). |
+| `500` | `INTERNAL_ERROR` | An unexpected server error occurred. The `message` field contains a generic description; details are logged server-side. |
+
 ### 7.1 Agents
 
 Agent records originate from BambooHR. The API is read-only except for local specialization assignments and contracted hours.
@@ -603,7 +640,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/staffing-requirements` | List staffing requirements. Paginated. Optional query parameters `from` and `to` filter by date range. |
-| `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. |
+| `POST` | `/staffing-requirements` | Create or replace requirements for a schedule period. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
 | `POST` | `/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level) |
 
 ### 7.7 Solver
@@ -614,7 +651,7 @@ Days off are synced from BambooHR (section 9) and are read-only.
 | `GET` | `/schedules` | List schedules. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Used by the "Past schedules list" in the Schedule Setup page. |
 | `GET` | `/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). |
 | `PUT` | `/schedules/{id}/stop` | Terminate a running solve early. |
-| `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
+| `PUT` | `/schedules/{id}/assignments/{assignmentId}` | Manually reassign a seat to a different agent. Accepts `{ "agentId": "..." }`. Only allowed on completed schedules — returns `409 Conflict` (error code `CONFLICT`) if the schedule is still running. Sets the schedule's `manuallyEdited` flag to `true` and invalidates the score (section 8). |
 | `GET` | `/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Request body for `POST /schedules/solve`:**
@@ -638,16 +675,16 @@ Days off are synced from BambooHR (section 9) and are read-only.
 
 All fields with defaults (section 5.9) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, and days off from the database for the specified date range.
 
-**Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict`. To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
+**Concurrent solves:** Only one solve may be running per tenant at a time. If a tenant attempts to start a solve while another is already running, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the running one must first be stopped via `PUT /schedules/{id}/stop`.
 
-**Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` with a descriptive error:
+**Pre-solve validation:** `POST /schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
-- Every active agent must have a primary specialization and at least one secondary specialization assigned.
+- Every active agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"agent.specializations"`, with the affected agent identified.)*
 - At least one staffing requirement must exist for the target period.
 - At least one active agent must be available (i.e. not on a day off for every day of the period).
-- `breakDurationMinutes` must be a positive multiple of `incrementMinutes`.
-- Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the error response so they can be corrected.
-- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's contracted hours plus the configured break duration. Specifically, for every active agent whose shift would include a break (contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ contractedHoursPerDay + (breakDurationMinutes / 60)`. If any agent fails this check the solve is rejected with an error listing the affected agents. *(See section 13 — the exact arithmetic depends on whether contracted hours include or exclude break time.)*
+- `breakDurationMinutes` must be a positive multiple of `incrementMinutes`. *(`details[].field`: `"breakDurationMinutes"`.)*
+- Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
+- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's contracted hours plus the configured break duration. Specifically, for every active agent whose shift would include a break (contracted hours ≥ `minimumShiftForBreakHours`), the check verifies that `coverageWindowHours ≥ contractedHoursPerDay + (breakDurationMinutes / 60)`. Agents failing this check are listed in the `details` array. *(See section 13 — the exact arithmetic depends on whether contracted hours include or exclude break time.)*
 
 ## 8. Schedule Output
 
