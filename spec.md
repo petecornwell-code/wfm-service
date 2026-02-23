@@ -1166,8 +1166,45 @@ Corresponds to section 8.4.
 
 - **"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.** The planning variable `AgentAssignment.agent` is non-nullable, so the solver **must** assign an agent to every seat. Combined with the "Contracted hours" hard constraint (every agent works exactly their contracted hours), this creates a tension: if total seat-hours exceed the workforce's total contracted hours the solver is forced to over-allocate some agents, and if total seat-hours fall short some agents cannot reach their contracted hours. The "Bulk over-allocation limit" hard constraint (section 6) caps aggregate over-allocation at `overallocationHardLimitPct` (default 130 %), but there is no equivalent mechanism for under-allocation. SME discussion is needed to decide: (a) whether a "dummy" or "unassigned" agent should be introduced so that surplus seats can go unfilled, (b) whether the contracted hours constraint should be relaxed from "exactly" to "at most" (or soft), (c) how under-allocation (fewer seats than contracted hours) should be handled — e.g. allow agents to be idle, introduce slack assignments, or flag as infeasible, and (d) what the acceptable tolerance bands are for both over- and under-allocation scenarios.
 
-## 14. Open Questions
+## 14. API Versioning
+
+All endpoints are served under `/api/v1`. The following versioning strategy applies:
+
+**What constitutes a breaking change (requires a new major version):**
+
+- Removing or renaming an endpoint, field, or enum value.
+- Changing the type of an existing field (e.g. `int` → `String`).
+- Adding a new **required** field to a request body.
+- Changing the semantics of an existing field or error code in a way that would break existing clients.
+
+**What is non-breaking (does not require a new version):**
+
+- Adding a new optional field to a request or response body (clients must ignore unknown fields).
+- Adding a new endpoint.
+- Adding a new enum value (clients should handle unknown values gracefully).
+- Adding a new error code.
+
+**Coexistence:** When a `v2` is introduced, both `/api/v1` and `/api/v2` will be served simultaneously for a deprecation period. The React UI is always built against the latest API version and does not need to support older versions. External consumers (if any) will receive a deprecation notice with a sunset date.
+
+**Current status:** Only `v1` exists. No breaking changes are anticipated before the first production release.
+
+## 15. Open Questions
 
 - Solver time limit and termination strategy defaults.
 - Deployment topology (single JAR, containers, cloud provider).
 - Erlang X input parameters to expose (call volume forecast per interval, AHT, caller patience, retry rate, service level target).
+
+## 16. Future Enhancements
+
+The following items are out of scope for the initial release but are anticipated as future work:
+
+- **Audit trail and timestamps.** Add `createdAt`, `updatedAt`, and `createdBy` fields to key entities (schedules, constraint weights, exceptions, preferences). Record who accepted/rejected each schedule and when.
+- **Optimistic locking.** Add `@Version` fields to entities with concurrent write risk (constraint weights, staffing requirements, preferences, exceptions). Return ETags on responses and require `If-Match` on updates to prevent lost updates.
+- **Solve progress via SSE/WebSocket.** Replace polling-based solve progress with a server-sent events or WebSocket stream for real-time score updates and status changes.
+- **Schedule comparison.** Allow side-by-side comparison of two completed schedules for the same period before accepting one.
+- **Health and readiness endpoints.** Expose `/actuator/health` and `/actuator/readiness` for container orchestration and monitoring.
+- **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
+- **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
+- **Stale schedule cleanup.** A scheduled job to delete schedules stuck in `COMPLETED` or `STOPPED` status beyond a configurable TTL (e.g. 7 days) that were never accepted or rejected.
+- **Rate limiting.** Throttle expensive endpoints (`POST /agents/sync`, `POST /schedules/solve`) to prevent abuse.
+- **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
