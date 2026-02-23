@@ -669,7 +669,7 @@ Agent records originate from BambooHR. The API is read-only except for local spe
 | `GET` | `/agents/{id}` | Get agent by id |
 | `PUT` | `/agents/{id}/specializations` | Set primary and secondary specializations for an agent |
 | `PUT` | `/agents/{id}/contracted-hours` | Set the agent's contracted hours per day. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the tenant-level default is used. |
-| `POST` | `/agents/sync` | Trigger an on-demand sync from BambooHR |
+| `POST` | `/agents/sync` | Trigger a sync from BambooHR. All syncs are user-initiated (section 9.4). |
 
 ### 7.2 Agent Days Off
 
@@ -929,8 +929,8 @@ Two implementations:
 
 ### 9.4 Sync Behaviour
 
-- **Scheduled sync** — A `@Scheduled` job runs at a configurable interval (default: every 6 hours) and calls `BambooHRClient.listEmployees()`. Synced employees are mapped to their respective tenants based on BambooHR data.
-- **On-demand sync** — `POST /api/v1/agents/sync` triggers an immediate sync for the requesting tenant.
+All syncs are **user-initiated** — there is no automatic or scheduled background sync. A sync is triggered explicitly via `POST /api/v1/agents/sync` (typically by clicking the Sync button on the Agents page). This ensures the user is always in control of when external data is pulled into the system.
+
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a sync.
 - **Days off sync** — The sync also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the synced date range are deleted.
@@ -942,7 +942,6 @@ Two implementations:
 | `bamboohr.mock` | Use in-memory mock client | `true` |
 | `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
-| `bamboohr.sync-cron` | Cron expression for scheduled sync | `0 0 */6 * * *` |
 | `solver.time-limit` | Maximum duration for a single solve run (ISO-8601 duration) | `PT5M` (5 minutes) |
 
 ## 10. Package Layout
@@ -1225,5 +1224,4 @@ The following items are out of scope for the initial release but are anticipated
 - **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
 - **Stale schedule cleanup.** A scheduled job to delete schedules stuck in `COMPLETED` or `STOPPED` status beyond a configurable TTL (e.g. 7 days) that were never accepted or rejected.
-- **Rate limiting.** Throttle expensive endpoints (`POST /agents/sync`, `POST /schedules/solve`) to prevent abuse.
 - **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
