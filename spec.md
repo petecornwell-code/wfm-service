@@ -149,7 +149,7 @@ Configurable rules that govern when an agent may take a break. Each agent receiv
 
 #### 4.6.1 Blocked window (hard)
 
-By default, the first **1 hour** and last **1 hour** of an agent's shift are blocked — no part of a break may fall within these periods. The blocked duration is configurable per schedule.
+By default, the first **1 hour** and last **1 hour** of an agent's shift are blocked — no part of a break may fall within these periods. The blocked duration is configurable per schedule and supports fractional hours (e.g. 0.5 for 30 minutes, 1.5 for 90 minutes).
 
 Example: an agent's shift runs 08:00–17:00. Breaks are forbidden before 09:00 and after 16:00; the eligible break window is 09:00–16:00.
 
@@ -321,7 +321,7 @@ classDiagram
         +LocalTime endTime
         +LocalDate periodStartDate
         +LocalDate periodEndDate
-        +int breakBlockedHours
+        +double breakBlockedHours
         +int breakDurationMinutes
         +int breakMinShiftHours
         +BreakAlignment breakStartAlignment
@@ -533,7 +533,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `endTime` | `LocalTime` | Coverage window end |
 | `periodStartDate` | `LocalDate` | First day of the schedule period |
 | `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
-| `breakBlockedHours` | `int` | Hours blocked at start and end of shift for breaks (default 1) |
+| `breakBlockedHours` | `double` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `int` | Minimum shift length in hours before breaks are allowed (default 4) |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HALF_HOUR`) |
@@ -575,7 +575,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
 | Exactly one break | Hard | An agent whose shift length meets or exceeds the minimum shift threshold (`breakMinShiftHours`, default 4) must have exactly one contiguous break of the configured duration. An agent whose shift is shorter than the threshold must have no break. |
 | Break duration | Hard | An agent's break must be exactly the configured number of contiguous timeslots (`breakDurationMinutes / incrementMinutes`). |
-| Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1 hour). The entire break must be contained within the eligible window between the blocked periods. |
+| Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1.0 hour, fractional values supported). The entire break must be contained within the eligible window between the blocked periods. |
 | Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
@@ -732,7 +732,7 @@ Exceptions allow an agent's contracted hours to be overridden on specific dates,
   "startTime": "08:00",
   "endTime": "18:00",
   "incrementMinutes": 15,
-  "breakBlockedHours": 1,
+  "breakBlockedHours": 1.0,
   "breakDurationMinutes": 60,
   "breakMinShiftHours": 4,
   "breakStartAlignment": "ON_HALF_HOUR",
@@ -1091,7 +1091,7 @@ Configures solver inputs and triggers a solve run (sections 4.1, 4.2, 4.6, 7.8).
 | Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
-| Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1). |
+| Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1.0). Accepts fractional values (e.g. 0.5 for 30 minutes). |
 | Break duration | Dropdown or numeric input | Break length in minutes (default 60). Options are filtered to multiples of the selected timeslot increment (e.g. 30, 45, 60 for a 15-min increment). |
 | Minimum shift for break | Numeric input | Minimum shift duration in hours before a break is permitted (default 4). |
 | Break start alignment | Dropdown | Options: On the hour, On the half hour, On the quarter hour. |
