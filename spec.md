@@ -649,6 +649,16 @@ Endpoints with small, bounded result sets (e.g. per-agent filtered by date range
 | `422` | `UNPROCESSABLE_ENTITY` | The request is syntactically valid but semantically invalid (e.g. a staffing requirement references a non-existent specialization). |
 | `500` | `INTERNAL_ERROR` | An unexpected server error occurred. The `message` field contains a generic description; details are logged server-side. |
 
+**Health and readiness.** The following operational endpoints are served outside the `/api/v1` path, are **not** tenant-scoped, and do not require authentication. They are provided by Spring Boot Actuator.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/actuator/health` | Returns the overall application health status. Includes checks for database connectivity (PostgreSQL) and disk space. Returns `200` with `{"status": "UP"}` when healthy, `503` with `{"status": "DOWN"}` when any component is unhealthy. |
+| `GET` | `/actuator/health/readiness` | Kubernetes-style readiness probe. Returns `200` when the application is ready to accept traffic (database connection pool is available, Timefold solver factory is initialised). Returns `503` when not ready. Used by container orchestrators to decide whether to route traffic to this instance. |
+| `GET` | `/actuator/health/liveness` | Kubernetes-style liveness probe. Returns `200` when the JVM is running and not deadlocked. Returns `503` if the application is in an unrecoverable state. Used by container orchestrators to decide whether to restart the instance. |
+
+All other Actuator endpoints are disabled by default. Additional endpoints (e.g. `/actuator/info`, `/actuator/metrics`) may be enabled via configuration for operational use but are not part of the application API.
+
 ### 7.1 Agents
 
 Agent records originate from BambooHR. The API is read-only except for local specialization assignments and contracted hours.
@@ -1212,7 +1222,6 @@ The following items are out of scope for the initial release but are anticipated
 - **Optimistic locking.** Add `@Version` fields to entities with concurrent write risk (constraint weights, staffing requirements, preferences, exceptions). Return ETags on responses and require `If-Match` on updates to prevent lost updates.
 - **Solve progress via SSE/WebSocket.** Replace polling-based solve progress with a server-sent events or WebSocket stream for real-time score updates and status changes.
 - **Schedule comparison.** Allow side-by-side comparison of two completed schedules for the same period before accepting one.
-- **Health and readiness endpoints.** Expose `/actuator/health` and `/actuator/readiness` for container orchestration and monitoring.
 - **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
 - **Stale schedule cleanup.** A scheduled job to delete schedules stuck in `COMPLETED` or `STOPPED` status beyond a configurable TTL (e.g. 7 days) that were never accepted or rejected.
