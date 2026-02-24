@@ -28,22 +28,20 @@ The service is **multi-tenant** and **multi-desk**. Tenant identity and authenti
 
 ## 3. Architecture
 
-```
-                    ┌─────────────────────────────────────────────┐
-┌───────────┐       │              Spring Boot                    │       ┌────────────┐
-│           │       │                                             │       │            │
-│   React   │◄─JSON─┤  Controller ─► Service ─► Repository       │◄─JPA──┤ PostgreSQL │
-│           │       │                  │                          │       │            │
-└───────────┘       │            Timefold Solver                  │       └────────────┘
-                    │                  │                          │
-                    │         BambooHR Client (refresh)              │
-                    └──────────────────┼──────────────────────────┘
-                                       │
-                                       ▼
-                                ┌─────────────┐
-                                │  BambooHR   │
-                                │  REST API   │
-                                └─────────────┘
+```mermaid
+graph LR
+    React["React"]
+    subgraph SpringBoot["Spring Boot"]
+        Controller --> Service --> Repository
+        Service --> Solver["Timefold Solver"]
+        Service --> BambooClient["BambooHR Client\n(refresh)"]
+    end
+    PostgreSQL[("PostgreSQL")]
+    BambooHR["BambooHR\nREST API"]
+
+    React -- "JSON" --> Controller
+    Repository -- "JPA" --> PostgreSQL
+    BambooClient --> BambooHR
 ```
 
 The backend is organised into the following packages:
