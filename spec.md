@@ -403,9 +403,9 @@ classDiagram
     Desk "1" *-- "* " DeskAgent
     Desk "1" *-- "* " Specialization
     Desk "1" *-- "* " StaffingRequirement
-    Desk "1" *-- "* " AgentPreference
-    Desk "1" *-- "* " AgentException
-    Desk "1" *-- "* " ConstraintWeights
+    Desk "1" o-- "* " AgentPreference : deskId
+    Desk "1" o-- "* " AgentException : deskId
+    Desk "1" *-- "1" ConstraintWeights
     Desk "1" *-- "* " Schedule
 
     DeskAgent "* " --> "1" Agent
@@ -558,7 +558,7 @@ An agent's scheduling preferences for a specific desk. Standing preferences defi
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `deskId` | `UUID` | Desk this preference belongs to |
 | `agent` | `Agent` | The agent expressing the preference |
-| `dayOfWeek` | `DayOfWeek` | The day of week this preference applies to (MONDAY–SUNDAY). Always set. For weekly preferences this is derived from `date`. |
+| `dayOfWeek` | `DayOfWeek` | The day of week this preference applies to (MONDAY–SUNDAY). Always set. For weekly preferences (`isStanding = false`), the server **derives** `dayOfWeek` from `date` and ignores any client-supplied value — the client may omit it for weekly preferences. For standing preferences (`isStanding = true`), `dayOfWeek` is required and `date` must be null. |
 | `date` | `LocalDate` | The specific date this preference applies to. **Null** for standing preferences (which apply to every occurrence of `dayOfWeek`). Set for weekly preferences. |
 | `isStanding` | `boolean` | `true` = this is the recurring default for the given `dayOfWeek`. `false` = this applies only to the specific `date`. Default `false`. |
 | `preferredStartTime` | `LocalTime` | Desired start of first assignment (nullable) |
@@ -608,7 +608,7 @@ Exceptions are **pre-solve inputs** — they must be configured before the solve
 
 **Interaction with days off:** An exception and a day off must not coexist for the same agent on the same date — pre-solve validation (section 7.11) rejects this as contradictory.
 
-**Solver resolution:** When building the planning solution for a desk, the service loads all `AgentException` records for that desk that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the desk-agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.9) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
+**Solver resolution:** When building the planning solution for a desk, the service loads all `AgentException` records for that desk that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the desk-agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.11) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
 
 ### 5.11 ConstraintWeights
 
@@ -800,7 +800,8 @@ Endpoints with small, bounded result sets (e.g. per-agent filtered by date range
 |---|---|---|
 | `400` | `VALIDATION_FAILED` | Request body or query parameters fail validation (e.g. missing required fields, invalid values, pre-solve validation failures). The `details` array lists each failing check. |
 | `404` | `NOT_FOUND` | The requested entity does not exist or does not belong to the requesting tenant. |
-| `409` | `CONFLICT` | The request conflicts with current state (e.g. a solve is already running for the tenant). |
+| `409` | `CONFLICT` | The request conflicts with current state (e.g. a solve is already running for the desk, or an entity cannot be deleted because it is in use). |
+| `409` | `REFRESH_IN_PROGRESS` | A BambooHR refresh is already in progress for this tenant (section 9.4). |
 | `422` | `UNPROCESSABLE_ENTITY` | The request is syntactically valid but semantically invalid (e.g. a staffing requirement references a non-existent specialization). |
 | `500` | `INTERNAL_ERROR` | An unexpected server error occurred. The `message` field contains a generic description; details are logged server-side. |
 
@@ -820,7 +821,7 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks` | List all desks for the tenant. Returns id, name, and description. Not paginated (bounded by business constraints — a tenant typically has fewer than 20 desks). |
+| `GET` | `/desks` | List all desks for the tenant. Returns a flat JSON array (not paginated — bounded by business constraints; a tenant typically has fewer than 20 desks). Each object: `{ "id": "uuid", "name": "Inbound Sales", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. |
 | `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "..." }`. Name must be unique per tenant. Returns `201` with the created desk. |
 | `GET` | `/desks/{deskId}` | Get desk by id. |
 | `PUT` | `/desks/{deskId}` | Update desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. All fields are optional — omitted fields keep their current values. Name must remain unique per tenant. |
@@ -833,7 +834,7 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
-| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. Returns `400` if any agent is already assigned to this desk. Returns the created desk-agent records. |
+| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. Returns `400` if any agent is already assigned to this desk. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the desk's `defaultContractedHoursPerDay` is used. |
@@ -889,7 +890,7 @@ Desk-scoped. Each desk defines its own set of specializations.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk |
+| `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk. Returns a flat JSON array (not paginated — bounded by business constraints; a desk typically has fewer than 20 specializations). Each object: `{ "id": "uuid", "name": "Billing" }`. |
 | `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `201` with the created specialization. |
 | `PUT` | `/desks/{deskId}/specializations/{id}` | Rename a specialization. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `200` with the updated specialization. |
 | `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any desk-agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
@@ -964,7 +965,7 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). |
-| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
+| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
 | `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. |
 
 **Request body for `POST /desks/{deskId}/staffing-requirements`:**
@@ -986,7 +987,7 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 }
 ```
 
-Each entry references a timeslot by its `id` (timeslots must already exist in the database) and a specialization by its `id` (must belong to this desk). The combination of `timeslotId` + `specializationId` must be unique within the payload. All existing live staffing requirements whose timeslot falls within the date range implied by the payload are deleted before the new requirements are inserted — this is a full replace, not a merge.
+Each entry references a timeslot by its `id` (timeslots must already exist in the database) and a specialization by its `id` (must belong to this desk). The combination of `timeslotId` + `specializationId` must be unique within the payload. The **replacement date range** is derived from the timeslots referenced in the payload: `min(timeslot.date)` to `max(timeslot.date)`. All existing live staffing requirements whose timeslot date falls within this range are deleted before the new requirements are inserted — this is a full replace for that date range, not a merge. To update a single day, include only timeslots for that day.
 
 **Request body for `POST /desks/{deskId}/staffing-requirements/erlang-x`:**
 
@@ -1056,7 +1057,7 @@ Desk-scoped. Each desk runs its own independent solver.
   "incrementMinutes": 15,
   "breakBlockedHours": 1.0,
   "breakDurationMinutes": 60,
-  "breakMinShiftHours": 4,
+  "breakMinShiftHours": 4.0,
   "breakStartAlignment": "ON_HOUR",
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
@@ -1065,7 +1066,7 @@ Desk-scoped. Each desk runs its own independent solver.
 }
 ```
 
-All fields with defaults (section 5.12) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading desk-agents, specializations, staffing requirements, preferences, days off, and exceptions from the database for the specified desk and date range.
+All fields with defaults (section 5.12) are optional in the request — omitted fields use their default values. The five scheduling parameters — `periodStartDate`, `periodEndDate`, `startTime`, `endTime`, and `incrementMinutes` — are **required**. The server assembles the `Schedule` by loading desk-agents, specializations, staffing requirements, preferences, days off, and exceptions from the database for the specified desk and date range.
 
 **Schedule summary format** (used by `POST /schedules/solve` response, `GET /schedules` list items, and `PUT /schedules/{id}/stop` response):
 
@@ -1122,6 +1123,11 @@ When a solve completes (or while in progress), `GET /desks/{deskId}/schedules/{i
 
 **Computation model.** Output views (staffing summary, agent schedule, preference report, constraint violations) are **computed on-the-fly** from the raw `AgentAssignment` data by `ScheduleOutputService` — they are not pre-computed or stored. For non-accepted schedules this uses the in-memory `Schedule` object directly. For accepted schedules, the service loads the `Schedule`, its snapshot timeslots, snapshot staffing requirements, and agent assignments from the database, then derives the views. Agent names and specialization names are resolved from the **current** agent and specialization records (not snapshotted) — if an agent is renamed after acceptance, the output views reflect the new name. This is acceptable because agent identity doesn't change, only the display label.
 
+**Nested entity representations in output views.** When entities appear in output views (sections 8.1–8.4), they are serialized as compact objects, not full entity records:
+- **Agent** → `{ "id": "uuid", "name": "Jane Smith" }` — only `id` and `name`, since this is sufficient for display. Full agent details are available via `GET /agents/{id}`.
+- **Timeslot** → `{ "id": "uuid", "date": "2026-02-23", "startTime": "08:00", "endTime": "08:15" }` — all fields except `tenantId`, `deskId`, `scheduleId`.
+- **Specialization** → `{ "id": "uuid", "name": "Billing" }` — only `id` and `name`.
+
 **Response structure for `GET /desks/{deskId}/schedules/{id}`:**
 
 ```json
@@ -1136,7 +1142,7 @@ When a solve completes (or while in progress), `GET /desks/{deskId}/schedules/{i
   "incrementMinutes": 15,
   "breakDurationMinutes": 60,
   "breakBlockedHours": 1.0,
-  "breakMinShiftHours": 4,
+  "breakMinShiftHours": 4.0,
   "breakStartAlignment": "ON_HOUR",
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
@@ -1391,10 +1397,11 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
 │   ├── ErlangXService.java
+│   ├── ScheduleService.java          (schedule CRUD: list, accept, reject, get detail; coordinates InMemoryScheduleStore + ScheduleRepository)
 │   ├── ScheduleOutputService.java
 │   ├── ScheduleExportService.java
 │   ├── InMemoryScheduleStore.java
-│   └── SolverService.java
+│   └── SolverService.java            (solver lifecycle: start, stop, pre-solve validation)
 ├── controller/
 │   ├── DeskController.java
 │   ├── AgentController.java
@@ -1443,7 +1450,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 
 - `desk` (`tenant_id`, `name`, `description`, `default_contracted_hours_per_day`, unique on `tenant_id` + `name`)
 - `agent` (`tenant_id`, unique on `tenant_id` + `bamboohr_id`)
-- `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
+- `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `agent` + `date`). The `tenant_id` column is present for query filtering but not needed in the uniqueness constraint since `agent` already implies tenant.
 
 **Desk-scoped tables** (`tenant_id` + `desk_id`):
 
