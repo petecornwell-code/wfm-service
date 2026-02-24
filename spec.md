@@ -127,7 +127,18 @@ The number of agents required **per timeslot, per specialization**. Because call
 Demand can be:
 
 1. **Directly input** — the customer provides agent counts per timeslot per specialization.
-2. **Calculated via Erlang X** — derived from forecasted call volume per interval, average handle time (AHT), caller patience (abandonment), retry rate, and target service level. Erlang X accounts for caller abandonment and redials, producing more accurate staffing numbers than Erlang C. The calculation is performed per timeslot before the solver is invoked.
+2. **Calculated via Erlang X** — Erlang X extends Erlang C by accounting for caller abandonment and redials, producing more accurate staffing numbers. The calculation is performed per timeslot per specialization before the solver is invoked. The minimal input parameters are:
+
+   | Parameter | Type | Unit | Description |
+   |---|---|---|---|
+   | `callVolume` | `int` | calls | Forecasted number of incoming calls for this timeslot |
+   | `aht` | `double` | seconds | Average Handle Time — mean duration of a call including talk time and after-call work |
+   | `patience` | `double` | seconds | Average caller patience — mean time a caller will wait in queue before abandoning |
+   | `retryRate` | `double` | % (0–100) | Percentage of abandoned callers who will call back |
+   | `serviceLevelTarget` | `double` | % (0–100) | Target percentage of calls answered within `serviceLevelThreshold` |
+   | `serviceLevelThreshold` | `int` | seconds | Maximum acceptable wait time for the service level target (e.g. 20 seconds for "80% of calls answered within 20 seconds") |
+
+   Each row in the Erlang X request applies to a single timeslot and specialization. The output is the calculated `requiredAgents` count for that combination.
 
 ### 4.5 Agent Preferences
 
@@ -343,6 +354,8 @@ classDiagram
         +HardSoftScore breakClusteringWeight
         +HardSoftScore contractedHoursWeight
         +HardSoftScore bulkOverallocationLimitWeight
+        +HardSoftScore bulkUnderallocationSoftWeight
+        +HardSoftScore bulkUnderallocationHardWeight
         +HardSoftScore agentDayOffWeight
     }
 
@@ -363,6 +376,7 @@ classDiagram
         +int breakClusterThresholdPct
         +BigDecimal defaultContractedHoursPerDay
         +int overallocationHardLimitPct
+        +int underallocationHardLimitPct
         +HardSoftScore score
         +ScheduleStatus status
     }
@@ -595,6 +609,8 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
 | `contractedHoursWeight` | `HardSoftScore` | `hard(1)` | Contracted hours (hard — every agent must work exactly their contracted hours) |
 | `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`, default 130%) |
+| `bulkUnderallocationSoftWeight` | `HardSoftScore` | `soft(1)` | Bulk under-allocation soft penalty (scales linearly with the shortfall between demand and contracted hours) |
+| `bulkUnderallocationHardWeight` | `HardSoftScore` | `hard(1)` | Bulk under-allocation hard limit (violated when demand falls below `underallocationHardLimitPct` of contracted hours, default 70%) |
 
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
@@ -620,6 +636,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Desk-level default contracted daily hours excluding break time (default 8.0). Applied to any desk-agent whose `contractedHoursPerDay` is not explicitly set. |
 | `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 130) |
+| `underallocationHardLimitPct` | `int` | Minimum percentage of total contracted agent hours that total predicted demand hours must reach before triggering a hard constraint violation (default 70). Below this floor the schedule is considered infeasible. Between this floor and 100% a soft penalty applies proportional to the shortfall. |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-desk weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts — desk's specializations |
 | `deskAgents` | `List<DeskAgent>` | Problem facts — **only active desk-agents with specializations assigned** are loaded (inactive agents and desk-agents without specializations are excluded at input time, not by constraint) |
@@ -673,7 +690,8 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 | Contracted hours | Hard | Every desk-agent must be assigned exactly their contracted hours per day (from `DeskAgent.contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). The solver must not leave an agent with fewer or more assigned hours than their contract specifies. |
-| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 460 total hours across all agents. |
+| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 260 total hours across all agents. |
+| Bulk under-allocation limit | Soft / Hard | When total predicted demand hours are less than total contracted agent hours for the schedule period, a **soft penalty** is applied that scales linearly with the gap. If total predicted demand hours fall below `underallocationHardLimitPct` (configurable, default 70%) of total contracted agent hours, a **hard** violation is triggered. For example, if total contracted hours across all agents = 200 and the limit is 70%, demand below 140 hours is a hard violation; demand between 140–200 hours incurs a soft penalty proportional to the shortfall. |
 
 
 ## 7. API
@@ -873,7 +891,8 @@ Desk-scoped. Each desk runs its own independent solver.
   "breakStartAlignment": "ON_HOUR",
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
-  "overallocationHardLimitPct": 130
+  "overallocationHardLimitPct": 130,
+  "underallocationHardLimitPct": 70
 }
 ```
 
@@ -1250,7 +1269,7 @@ Defines how many agents are needed per timeslot per specialization for the selec
 | Copy day | Button + day selector | Copies one day's demand profile to other selected days to speed up entry. |
 | Save button | Button | Persists via `POST /desks/{deskId}/staffing-requirements`. |
 | **Erlang X mode** | | |
-| Erlang X parameters form | Form fields | Per specialization per timeslot (or per day with a distribution pattern): **Forecasted call volume**, **Average handle time (AHT)** in seconds, **Caller patience** in seconds, **Retry rate** (percentage), **Target service level** (percentage within threshold seconds). |
+| Erlang X parameters form | Form fields | Per specialization per timeslot (or per day with a distribution pattern): **Call volume** (integer), **AHT** (seconds), **Patience** (seconds), **Retry rate** (%), **Service level target** (%), **Service level threshold** (seconds). See section 4.4 for parameter definitions. |
 | Calculate button | Button | Submits parameters via `POST /desks/{deskId}/staffing-requirements/erlang-x`. Displays the calculated agent counts in the demand grid for review before saving. |
 | Accept & save button | Button | Persists the calculated requirements. |
 
@@ -1282,6 +1301,7 @@ Configures solver inputs and triggers a solve run for the selected desk (section
 | Break cluster threshold | Numeric input (%) | Maximum percentage of on-shift agents on break per timeslot before penalty applies (default 20). |
 | Default contracted hours/day | Numeric input | Desk-level default contracted daily hours for agents without an explicit override (default 8.0). |
 | Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
+| Under-allocation hard limit | Numeric input (%) | Minimum percentage of total contracted agent hours that total predicted demand must reach. Below this floor the schedule is infeasible; between the floor and 100% a soft penalty applies (default 70%). |
 | Validation summary | Read-only panel | Before solving, displays a summary: number of desk-agents, specializations configured, staffing requirements loaded, days off affecting this period, exceptions configured, and any missing data warnings (e.g. desk-agents without specializations, conflicting exceptions and days off). |
 | Solve button | Button | Submits `POST /desks/{deskId}/schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
 | Past schedules list | Paginated table | Lists previously completed and accepted schedules for this desk with date, score, and status, fetched via `GET /desks/{deskId}/schedules`. Accepted schedules are visually distinguished (e.g. bold or with an "Accepted" badge). Each row links to its Schedule Results page. |
@@ -1348,7 +1368,7 @@ Corresponds to section 8.4.
 
 - ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.10 has been updated accordingly.
 
-- **"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.** The planning variable `AgentAssignment.agent` is non-nullable, so the solver **must** assign an agent to every seat. Combined with the "Contracted hours" hard constraint (every agent works exactly their contracted hours), this creates a tension: if total seat-hours exceed the workforce's total contracted hours the solver is forced to over-allocate some agents, and if total seat-hours fall short some agents cannot reach their contracted hours. The "Bulk over-allocation limit" hard constraint (section 6) caps aggregate over-allocation at `overallocationHardLimitPct` (default 130 %), but there is no equivalent mechanism for under-allocation. SME discussion is needed to decide: (a) whether a "dummy" or "unassigned" agent should be introduced so that surplus seats can go unfilled, (b) whether the contracted hours constraint should be relaxed from "exactly" to "at most" (or soft), (c) how under-allocation (fewer seats than contracted hours) should be handled — e.g. allow agents to be idle, introduce slack assignments, or flag as infeasible, and (d) what the acceptable tolerance bands are for both over- and under-allocation scenarios.
+- ~~**"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.**~~ **Resolved.** (a) No dummy agent — every seat must be filled. (b) Contracted hours remains a hard constraint — every agent must work exactly their contracted hours. (c) Under-allocation is handled by a new "Bulk under-allocation limit" constraint: a **soft penalty** that scales linearly with the shortfall between total predicted demand hours and total contracted agent hours, plus a configurable **hard floor** (`underallocationHardLimitPct`, default 70%) below which the schedule is infeasible. (d) Both over-allocation (`overallocationHardLimitPct`) and under-allocation (`underallocationHardLimitPct`) limits are configurable per schedule. See sections 5.12 and 6.
 
 ## 14. API Versioning
 
@@ -1374,8 +1394,8 @@ All endpoints are served under `/api/v1`. The following versioning strategy appl
 
 ## 15. Open Questions
 
-- Deployment topology (single JAR, containers, cloud provider).
-- Erlang X input parameters to expose (call volume forecast per interval, AHT, caller patience, retry rate, service level target).
+- Deployment topology (single JAR, containers, cloud provider). Initially the application will run on a laptop for development and demonstration purposes.
+- ~~Erlang X input parameters to expose.~~ **Resolved.** The minimal parameter set is defined in section 4.4: call volume, AHT, patience, retry rate, service level target, and service level threshold.
 
 ## 16. Future Enhancements
 
