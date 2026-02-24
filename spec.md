@@ -8,7 +8,7 @@ The service is **multi-tenant** and **multi-desk**. Tenant identity and authenti
 
 ### Assumptions
 
-1. Agents work a contiguous block of hours each day (their "shift"), which includes a break.
+1. Agents work a contiguous block of hours each day (their "shift"), which may include a break (agents whose contracted hours do not exceed `breakMinShiftHours` work without a break — see section 4.6.2).
 2. Each agent has exactly one primary specialization and one or more secondary specializations.
 3. The time period to be scheduled is made up of a contiguous sequence of timeslots.
 4. The solver will be configured to solve for a maximum of five minutes per run.
@@ -684,7 +684,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 
 **Schedule lifecycle.** A schedule progresses through the following states:
 
-1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /schedules/{id}/stop`) but not accepted or rejected.
+1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /desks/{deskId}/schedules/{id}/stop`) but not accepted or rejected.
 2. **`COMPLETED`** — the solver has finished. The scheduler reviews the results. The schedule can be **accepted** or **rejected**.
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
 4. **`FAILED`** — the solver threw an unrecoverable exception during execution. The schedule retains whatever partial data was available (score may be `null`, assignments may be empty). A failed schedule can only be **rejected** (not accepted). The user must fix any underlying issue and re-run the solver.
@@ -829,9 +829,9 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 |---|---|---|
 | `GET` | `/desks` | List all desks for the tenant. Returns a flat JSON array (not paginated — bounded by business constraints; a tenant typically has fewer than 20 desks). Each object: `{ "id": "uuid", "name": "Inbound Sales", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. |
 | `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. `name` is required; `description` and `defaultContractedHoursPerDay` are optional (default 8.0). Name must be unique per tenant. Returns `201` with the created desk. Also auto-creates a `constraint_weights` row with defaults for this desk (section 5.11). |
-| `GET` | `/desks/{deskId}` | Get desk by id. |
+| `GET` | `/desks/{deskId}` | Get desk by id. Returns `200` with the same object format as `GET /desks` list items. |
 | `PUT` | `/desks/{deskId}` | Update desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. All fields are optional — omitted fields keep their current values. Name must remain unique per tenant. |
-| `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data: desk-agents (and their preferences, exceptions), specializations, timeslots, staffing requirements, constraint weights, and any non-accepted in-memory schedule. |
+| `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data: desk-agents (and their preferences, exceptions), specializations, timeslots, staffing requirements, constraint weights, and any non-accepted in-memory schedule. |
 
 ### 7.2 Desk Agents
 
@@ -915,7 +915,7 @@ Desk-scoped. Each desk defines its own set of specializations.
 | `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk. Returns a flat JSON array (not paginated — bounded by business constraints; a desk typically has fewer than 20 specializations). Each object: `{ "id": "uuid", "name": "Billing" }`. |
 | `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `201` with the created specialization. |
 | `PUT` | `/desks/{deskId}/specializations/{id}` | Rename a specialization. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `200` with the updated specialization. |
-| `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any desk-agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
+| `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any desk-agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
 
 ### 7.6 Agent Preferences
 
@@ -924,8 +924,8 @@ Desk-scoped. Preferences are specific to an agent within a desk. Handled by `Des
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents/{agentId}/preferences` | List **raw** preference records for an agent on this desk. Optionally filtered by date range via query parameters. Always includes all standing preferences for the desk-agent alongside any date-specific (weekly) preferences in the range. Returns a flat JSON array. Each object: `{ "id": "uuid", "dayOfWeek": "MONDAY", "date": null, "isStanding": true, "preferredStartTime": "09:00", "preferredBreakTime": "12:30" }`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.8). |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/preferences` | Create or update preferences for an agent on this desk (batch). Each entry includes `dayOfWeek`, `date` (null for standing), `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server deletes any previous standing preference for that same desk-agent-day before saving the new one. |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}/preferences/{id}` | Delete a preference by its id. If the deleted preference was standing, the desk-agent will have no standing default for that day of week until a new one is set. |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/preferences` | Create or update preferences for an agent on this desk (batch). Each entry includes `dayOfWeek`, `date` (null for standing), `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server deletes any previous standing preference for that same desk-agent-day before saving the new one. Returns `200` with the full updated list of preferences for this desk-agent (same format as `GET .../preferences`). |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}/preferences/{id}` | Delete a preference by its id. Returns `204 No Content` on success. If the deleted preference was standing, the desk-agent will have no standing default for that day of week until a new one is set. |
 
 ### 7.7 Agent Exceptions
 
@@ -934,8 +934,8 @@ Desk-scoped. Exceptions allow a desk-agent's contracted hours to be overridden o
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents/{agentId}/exceptions` | List exception records for an agent on this desk. Optionally filtered by date range via query parameters (`from`, `to`). Returns a flat JSON array. Each object: `{ "id": "uuid", "date": "2026-03-01", "contractedHoursOverride": 4.0, "reason": "Part-time study" }`. |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/exceptions` | Create or update exceptions for an agent on this desk (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same desk-agent and date are replaced. Returns `400` (error code `VALIDATION_FAILED`) if an exception conflicts with a day off on the same date. |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}/exceptions/{date}` | Delete the exception for the specified date. The desk-agent reverts to their standard contracted hours for that day. |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/exceptions` | Create or update exceptions for an agent on this desk (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same desk-agent and date are replaced. Returns `200` with the full updated list of exceptions for this desk-agent (same format as `GET .../exceptions`). Returns `400` (error code `VALIDATION_FAILED`) if an exception conflicts with a day off on the same date. |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}/exceptions/{date}` | Delete the exception for the specified date. Returns `204 No Content` on success. The desk-agent reverts to their standard contracted hours for that day. |
 
 ### 7.8 Constraint Weights
 
@@ -986,9 +986,9 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item uses the same format as the staffing requirements response body below. |
-| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
-| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. |
+| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredAgents", "source" }`). |
+| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `200` with the response body below. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
+| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. Returns `200` with the response body below. |
 
 **Request body for `POST /desks/{deskId}/staffing-requirements`:**
 
@@ -1173,6 +1173,7 @@ When a solve completes (or while in progress), `GET /desks/{deskId}/schedules/{i
   "score": { "hardScore": 0, "softScore": -42 },
   "feasible": true,
   "violatedHardConstraints": [],
+  "errorMessage": null,
   "createdAt": "2026-02-24T10:30:00Z",
 
   "staffingSummary": [ ... ],
@@ -1277,14 +1278,13 @@ A breakdown of every constraint violation in the current best solution, grouped 
 | `timeslot` | `Timeslot` | Affected timeslot (if applicable) |
 | `description` | `String` | Human-readable explanation (e.g. "Agent Jane Smith assigned to Billing but has no matching specialization") |
 
-The response also includes score totals:
+The following score totals are included at the **schedule detail top level** (alongside `score` and `feasible` in the response JSON shown in section 8, not inside the `constraintViolations` array):
 
 | Field | Type | Description |
 |---|---|---|
-| `hardScore` | `int` | Total hard score (0 = all hard constraints satisfied) |
-| `softScore` | `int` | Total soft score (higher = better) |
-| `feasible` | `boolean` | `true` if `hardScore == 0` |
-| `violatedHardConstraints` | `List<String>` | Names of hard constraints with at least one violation (empty when `feasible == true`). Derived from the violations list above, included at top level for convenience. |
+| `violatedHardConstraints` | `List<String>` | Names of hard constraints with at least one violation (empty when `feasible == true`). Derived from the `constraintViolations` list, included at top level for convenience. |
+
+The `score` (`{ "hardScore": ..., "softScore": ... }`) and `feasible` fields are already defined at the schedule detail top level (see section 8 response structure).
 
 ### 8.5 Spreadsheet Export
 
@@ -1363,13 +1363,18 @@ All refreshes are **user-initiated** — there is no automatic or scheduled back
 
 ### 9.5 Configuration
 
+The following table lists **all** application configuration properties (not just BambooHR). They are grouped here for a single reference.
+
 | Property | Description | Default |
 |---|---|---|
+| **CORS** | | |
 | `cors.allowed-origins` | Comma-separated list of allowed CORS origins (section 3.3) | `http://localhost:3000` |
+| **BambooHR** | | |
 | `bamboohr.mock` | Use in-memory mock client | `true` |
 | `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
 | `bamboohr.time-off.lookahead-weeks` | Number of weeks ahead to fetch day-off records during a refresh | `8` |
+| **Solver** | | |
 | `solver.time-limit` | Maximum duration for a single solve run (ISO-8601 duration) | `PT5M` (5 minutes) |
 | `solver.polling-interval-ms` | Recommended polling interval for the UI when checking solve progress (milliseconds). Not enforced server-side — the client may poll at any rate. | `2000` (2 seconds) |
 
