@@ -57,6 +57,7 @@ The backend is organised into three packages mirroring the standard layered patt
 All data is scoped to a tenant via a `tenant_id` column (`BIGINT`) present on every tenant-owned table. The value is assigned and supplied by the external AI service platform — WFM Service never generates tenant ids itself.
 
 - **Inbound requests** — The platform authenticates each request and forwards the resolved `tenant_id` to WFM Service via the HTTP header `X-Tenant-ID`. A Spring `OncePerRequestFilter` (`TenantFilter`) reads this header, parses it as a `Long`, and stores the value in a `ThreadLocal` holder (`TenantContext`). All service and repository code retrieves the current tenant id from `TenantContext.getTenantId()`. If the header is missing or not a valid long, the filter returns `400 Bad Request`. The filter is registered in the package layout under `config/TenantFilter.java` and the thread-local holder under `config/TenantContext.java`.
+- **Async thread propagation** — The solver runs on a separate thread (section 7.11). Since `ThreadLocal` values do not propagate to child threads, the `SolverService` must capture the `tenant_id` from `TenantContext` on the request thread and explicitly set it on the solver thread before execution (e.g. in a `Runnable` wrapper). The same applies to any other async operations (e.g. `@Async` methods).
 - **Data isolation** — Every query filters by `tenant_id`. An entity created by one tenant is never visible to another.
 - **Database strategy** — Shared schema, shared tables, discriminated by `tenant_id`. No per-tenant schemas or databases.
 
@@ -70,6 +71,7 @@ Within a tenant, all scheduling work is organised into **desks**. A desk represe
   2. **Agent days off** — also sourced from BambooHR. A day off reflects the person's absence and applies regardless of desk.
 - **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. The same agent may be assigned to multiple desks with different configurations in each.
 - **Desk context in the API** — All desk-scoped endpoints require a `deskId` path parameter or are nested under a desk resource. Desk management endpoints (`/desks`) require only tenant context. See section 7 for details.
+- **Cross-desk overlap** — An agent assigned to multiple desks may be scheduled on two desks for the same timeslot if both desks solve concurrently. This is **by design** — the BPO manages this operationally (e.g. by not assigning the same agent to desks with overlapping hours, or by staggering solve runs). Cross-desk conflict detection is listed as a future enhancement (section 16).
 - **Desk selection in the UI** — Before navigating to any scheduling page, the user selects a desk from a desk picker (section 12.1). All subsequent pages operate within that desk's context.
 
 ### 3.3 CORS
@@ -302,6 +304,7 @@ classDiagram
         +UUID id
         +long tenantId
         +UUID deskId
+        +UUID scheduleId
         +LocalDate date
         +LocalTime startTime
         +LocalTime endTime
@@ -311,6 +314,7 @@ classDiagram
         +UUID id
         +long tenantId
         +UUID deskId
+        +UUID scheduleId
         +int requiredAgents
         +Source source
     }
@@ -320,6 +324,7 @@ classDiagram
         +UUID id
         +long tenantId
         +UUID deskId
+        +UUID scheduleId
     }
 
     class AgentPreference {
@@ -381,9 +386,9 @@ classDiagram
         +LocalTime endTime
         +LocalDate periodStartDate
         +LocalDate periodEndDate
-        +double breakBlockedHours
+        +BigDecimal breakBlockedHours
         +int breakDurationMinutes
-        +int breakMinShiftHours
+        +BigDecimal breakMinShiftHours
         +BreakAlignment breakStartAlignment
         +int breakClusterThresholdPct
         +BigDecimal defaultContractedHoursPerDay
@@ -413,7 +418,7 @@ classDiagram
 
     AgentAssignment "* " --> "1" Timeslot
     AgentAssignment "* " --> "1" Specialization : requiredSpecialization
-    AgentAssignment "* " ..> "1" Agent : «planning variable»
+    AgentAssignment "* " ..> "1" DeskAgent : «planning variable»
 
     AgentPreference "* " --> "1" Agent
     note for AgentPreference "Standing: unique on (desk, agent, dayOfWeek).\nWeekly: unique on (desk, agent, date)."
@@ -529,7 +534,7 @@ Example: Monday 09:00–09:15 needs 8 Billing agents and 3 Tech Support agents �
 
 ### 5.7 AgentAssignment (Planning Entity)
 
-The central Timefold planning entity. Each instance represents one **seat** — a need for one agent with a particular specialization in a particular timeslot. The solver decides which agent fills each seat. Agent assignments are desk-scoped.
+The central Timefold planning entity. Each instance represents one **seat** — a need for one agent with a particular specialization in a particular timeslot. The solver decides which desk-agent fills each seat. Agent assignments are desk-scoped.
 
 Multiple AgentAssignment instances may reference the same timeslot, each for a different (or the same) specialization. This is how a single timeslot is staffed by several agents across multiple specializations.
 
@@ -541,7 +546,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `scheduleId` | `UUID` | The accepted schedule this assignment belongs to (NOT NULL — assignments only exist as part of a persisted schedule) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
-| `agent` | `Agent` | **Planning variable** (not nullable) — assigned by the solver. Every seat must be filled; the solver will never leave a seat unassigned. |
+| `deskAgent` | `DeskAgent` | **Planning variable** (`@PlanningVariable`, not nullable) — assigned by the solver. Every seat must be filled; the solver will never leave a seat unassigned. The `@ValueRangeProvider` is `Schedule.deskAgents` (section 5.12). Using `DeskAgent` (rather than `Agent`) gives constraints direct access to desk-specific configuration: specializations, contracted hours, and the underlying `Agent` record. When an accepted schedule is persisted to the database, the `agent_assignment` row stores FKs to both `desk_agent` and `agent` for query convenience. |
 
 ### 5.8 AgentPreference
 
@@ -601,13 +606,15 @@ Exceptions are **pre-solve inputs** — they must be configured before the solve
 
 **Uniqueness constraint:** Unique on (`desk`, `agent`, `date`) — an agent has at most one exception per desk per date.
 
-**Interaction with days off:** An exception and a day off must not coexist for the same agent on the same date — pre-solve validation (section 7.9) rejects this as contradictory.
+**Interaction with days off:** An exception and a day off must not coexist for the same agent on the same date — pre-solve validation (section 7.11) rejects this as contradictory.
 
 **Solver resolution:** When building the planning solution for a desk, the service loads all `AgentException` records for that desk that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the desk-agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.9) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
 
 ### 5.11 ConstraintWeights
 
 A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. One row per desk (identified by `tenantId` + `deskId`) so each desk can tune solver behaviour independently.
+
+**Lifecycle:** A `constraint_weights` row is **auto-created with defaults** when a desk is created (`POST /desks`). `GET /desks/{deskId}/constraint-weights` always returns a row (never 404). `PUT` updates individual fields; omitted fields retain their current values.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
@@ -647,7 +654,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `endTime` | `LocalTime` | Coverage window end |
 | `periodStartDate` | `LocalDate` | First day of the schedule period |
 | `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous, at least 1 day, and at most **31 days** (i.e. `periodEndDate − periodStartDate + 1 ≤ 31`). It can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
-| `breakBlockedHours` | `double` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). |
+| `breakBlockedHours` | `BigDecimal` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). Uses `BigDecimal` for consistency with other hour-based fields. |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `BigDecimal` | Contracted hours must strictly exceed this threshold for a break to be assigned (default 4.0). An agent with exactly this many hours or fewer gets no break. Uses `BigDecimal` for consistency with other hour-based fields (e.g. a threshold of 4.5 is valid). |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HOUR`) |
@@ -657,7 +664,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `underallocationHardLimitPct` | `int` | Minimum percentage of total contracted agent hours that total predicted demand hours must reach before triggering a hard constraint violation (default 70). Below this floor the schedule is considered infeasible. Between this floor and 100% a soft penalty applies proportional to the shortfall. |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-desk weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts — desk's specializations |
-| `deskAgents` | `List<DeskAgent>` | Problem facts — **only desk-agents whose underlying `Agent.active` is `true` and who have specializations assigned** are loaded. "Active" is determined solely by the `Agent.active` flag (set by BambooHR refresh). Inactive agents and desk-agents without specializations are excluded at input time, not by constraint. |
+| `deskAgents` | `List<DeskAgent>` | Problem facts and **`@ValueRangeProvider`** for the `AgentAssignment.deskAgent` planning variable. **Only desk-agents whose underlying `Agent.active` is `true` and who have specializations assigned** are loaded. "Active" is determined solely by the `Agent.active` flag (set by BambooHR refresh). Inactive agents and desk-agents without specializations are excluded at input time, not by constraint. |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts |
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
@@ -679,7 +686,9 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 
 **In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its solver-generated data (agent assignments, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, timeslots, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
-Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
+**Implementation:** The in-memory store is a `ConcurrentHashMap<UUID, Schedule>` keyed by **schedule ID**, held as a Spring-managed singleton bean (`InMemoryScheduleStore`). A secondary index `ConcurrentHashMap<UUID, UUID>` maps **desk ID → schedule ID** to enforce the one-non-accepted-schedule-per-desk invariant and to look up a desk's current schedule. Both maps are updated atomically when schedules are created, accepted, or rejected.
+
+Schedules in `RUNNING`, `COMPLETED`, `STOPPED`, and `FAILED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
 
 - The `Schedule` object and its solver-generated data exist only in the JVM heap until the schedule is accepted.
 - API endpoints that query non-accepted schedules (`GET /schedules/{id}`, `GET /schedules`, `GET /schedules/{id}/export`) serve data from the in-memory store.
@@ -725,8 +734,8 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 | Contracted hours | Hard | Every desk-agent must be assigned exactly their contracted hours per day (from `DeskAgent.contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any desk-agent whose contracted hours are not a multiple of the increment. |
-| Bulk over-allocation limit | Hard | The total assigned staffing hours across all agents for the schedule period must not exceed the total predicted demand hours (derived from staffing requirements) by more than the configured `overallocationHardLimitPct` (default 130%). For example, if staffing requirements predict 200 total hours of demand, the solver must not assign more than 260 total hours across all agents. |
-| Bulk under-allocation limit | Soft / Hard | When total predicted demand hours are less than total contracted agent hours for the schedule period, a **soft penalty** is applied that scales linearly with the gap. If total predicted demand hours fall below `underallocationHardLimitPct` (configurable, default 70%) of total contracted agent hours, a **hard** violation is triggered. For example, if total contracted hours across all agents = 200 and the limit is 70%, demand below 140 hours is a hard violation; demand between 140–200 hours incurs a soft penalty proportional to the shortfall. |
+| Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each desk-agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ (requiredAgents × incrementMinutes / 60)` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
+| Bulk under-allocation limit | Soft / Hard | When **total predicted demand hours** are less than **total contracted agent hours** for the schedule period, a **soft penalty** scales linearly with the gap. If demand falls below `underallocationHardLimitPct` (default 70%) of contracted hours, a **hard** violation is triggered. Same definitions of "total contracted agent hours" and "total predicted demand hours" as the over-allocation constraint above. Example: contracted hours = 200, limit = 70% → demand below 140 hours is a hard violation; demand between 140–200 hours incurs a soft penalty proportional to the shortfall. This is also evaluated as a **pre-solve check**. |
 
 
 ## 7. API
@@ -814,7 +823,7 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 | `GET` | `/desks` | List all desks for the tenant. Returns id, name, and description. Not paginated (bounded by business constraints — a tenant typically has fewer than 20 desks). |
 | `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "..." }`. Name must be unique per tenant. Returns `201` with the created desk. |
 | `GET` | `/desks/{deskId}` | Get desk by id. |
-| `PUT` | `/desks/{deskId}` | Update desk name and/or description. |
+| `PUT` | `/desks/{deskId}` | Update desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. All fields are optional — omitted fields keep their current values. Name must remain unique per tenant. |
 | `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data: desk-agents (and their preferences, exceptions), specializations, timeslots, staffing requirements, constraint weights, and any non-accepted in-memory schedule. |
 
 ### 7.2 Desk Agents
@@ -828,6 +837,32 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the desk's `defaultContractedHoursPerDay` is used. |
+
+**Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response):
+
+```json
+{
+  "id": "desk-agent-uuid",
+  "deskId": "uuid",
+  "agent": {
+    "id": "agent-uuid",
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "department": "Support",
+    "jobTitle": "Senior Agent",
+    "active": true,
+    "lastRefreshedAt": "2026-02-24T10:00:00Z"
+  },
+  "primarySpecialization": { "id": "uuid", "name": "Billing" },
+  "secondarySpecializations": [
+    { "id": "uuid", "name": "Technical Support" }
+  ],
+  "contractedHoursPerDay": 8.0,
+  "effectiveContractedHoursPerDay": 8.0
+}
+```
+
+`effectiveContractedHoursPerDay` is the resolved value: the desk-agent's `contractedHoursPerDay` if set, otherwise the desk's `defaultContractedHoursPerDay`. `primarySpecialization` and `secondarySpecializations` are `null`/empty if not yet assigned.
 
 ### 7.3 Agents (Tenant-Level)
 
@@ -885,8 +920,32 @@ Desk-scoped. Each desk has its own constraint weight configuration.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/constraint-weights` | Get constraint weights for this desk |
-| `PUT` | `/desks/{deskId}/constraint-weights` | Update constraint weights for this desk (partial updates allowed; omitted fields keep defaults) |
+| `GET` | `/desks/{deskId}/constraint-weights` | Get constraint weights for this desk. Returns `200` with the current weights (see format below). If no weights have been explicitly saved for this desk, returns the defaults from section 5.11. |
+| `PUT` | `/desks/{deskId}/constraint-weights` | Update constraint weights for this desk (partial updates allowed; omitted fields keep their current values). Returns `200` with the full updated weights. |
+
+**Constraint weights JSON format** (used by both GET response and PUT request):
+
+```json
+{
+  "agentDayOffWeight": { "hardScore": 1, "softScore": 0 },
+  "specMatchWeight": { "hardScore": 1, "softScore": 0 },
+  "noOverlapWeight": { "hardScore": 1, "softScore": 0 },
+  "exactlyOneBreakWeight": { "hardScore": 1, "softScore": 0 },
+  "breakDurationWeight": { "hardScore": 1, "softScore": 0 },
+  "breakBlockedWindowWeight": { "hardScore": 1, "softScore": 0 },
+  "breakAlignmentWeight": { "hardScore": 1, "softScore": 0 },
+  "preferPrimaryWeight": { "hardScore": 0, "softScore": 1 },
+  "honourStartTimeWeight": { "hardScore": 0, "softScore": 1 },
+  "honourBreakTimeWeight": { "hardScore": 0, "softScore": 1 },
+  "breakClusteringWeight": { "hardScore": 0, "softScore": 2 },
+  "contractedHoursWeight": { "hardScore": 1, "softScore": 0 },
+  "bulkOverallocationLimitWeight": { "hardScore": 1, "softScore": 0 },
+  "bulkUnderallocationSoftWeight": { "hardScore": 0, "softScore": 1 },
+  "bulkUnderallocationHardWeight": { "hardScore": 1, "softScore": 0 }
+}
+```
+
+Each weight is a `HardSoftScore` object. To promote a constraint from soft to hard (or vice versa), change the score component — e.g. `{ "hardScore": 0, "softScore": 0 }` disables a constraint entirely.
 
 ### 7.9 Timeslots
 
@@ -894,7 +953,7 @@ Desk-scoped. Timeslots must be generated and persisted **before** staffing requi
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/timeslots` | List timeslots for this desk. Optional query parameters `from` and `to` filter by date range. Returns timeslots ordered by date then start time. |
+| `GET` | `/desks/{deskId}/timeslots` | List timeslots for this desk. Query parameters `from` and `to` filter by date range (both required — open-ended listing is not supported since the result set could be very large). Returns a **flat JSON array** (not paginated) of timeslot objects ordered by date then start time. The maximum result size is bounded by the 31-day period limit × slots per day (e.g. 31 × 40 = 1,240 rows at 15-min increments). Each object: `{ "id": "uuid", "date": "2026-02-23", "startTime": "08:00", "endTime": "08:15" }`. |
 | `POST` | `/desks/{deskId}/timeslots/generate` | Generate timeslots for the given parameters and persist them. Request body: `{ "periodStartDate": "2026-02-23", "periodEndDate": "2026-02-27", "startTime": "08:00", "endTime": "18:00", "incrementMinutes": 15 }`. Creates one timeslot per increment per day in the date range. If timeslots already exist for any date in the range on this desk, they are **deleted and regenerated** — any staffing requirements referencing the old timeslots for those dates are also deleted. Returns the generated timeslots. Returns `400` (error code `VALIDATION_FAILED`) if `incrementMinutes` is not 15, 30, or 60, or if the time range is not evenly divisible by the increment. |
 | `DELETE` | `/desks/{deskId}/timeslots` | Delete all timeslots (and their associated staffing requirements) for the given date range. Query parameters `from` and `to` are required. Returns `409 Conflict` if any of the affected timeslots are referenced by an accepted schedule. |
 
@@ -950,7 +1009,7 @@ Each entry references a timeslot by its `id` (timeslots must already exist in th
 }
 ```
 
-Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the `requiredAgents` count for each entry and persists the results as staffing requirements with `source = ERLANG_X`. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
+Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the `requiredAgents` count for each entry and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredAgents = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredAgents = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
 
 **Response body (both endpoints):**
 
@@ -978,10 +1037,10 @@ Desk-scoped. Each desk runs its own independent solver.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/desks/{deskId}/schedules/solve` | Start a solve run for this desk (async). Returns schedule id. Request body contains schedule configuration (see below). |
-| `GET` | `/desks/{deskId}/schedules` | List schedules for this desk. Paginated. Returns summary records (id, period, status, score, feasibility, creation timestamp) without the full output views. Includes both accepted schedules (from the database) and the current non-accepted schedule (from memory, if one exists). Used by the "Past schedules list" in the Schedule Setup page. |
+| `POST` | `/desks/{deskId}/schedules/solve` | Start a solve run for this desk (async). Request body contains schedule configuration (see below). Returns `202 Accepted` with a schedule summary (see summary format below). The solver begins asynchronously; the client should poll `GET /desks/{deskId}/schedules/{id}` for progress. |
+| `GET` | `/desks/{deskId}/schedules` | List schedules for this desk. Paginated. Returns summary records (see summary format below) without the full output views. Includes both accepted schedules (from the database) and the current non-accepted schedule (from memory, if one exists). Used by the "Past schedules list" in the Schedule Setup page. |
 | `GET` | `/desks/{deskId}/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). Serves from the in-memory store for non-accepted schedules and from the database for accepted schedules. |
-| `PUT` | `/desks/{deskId}/schedules/{id}/stop` | Terminate a running solve early. |
+| `PUT` | `/desks/{deskId}/schedules/{id}/stop` | Terminate a running solve early. Returns `200` with the updated schedule summary (status will be `STOPPED`). Returns `409 Conflict` if the schedule is not in `RUNNING` status. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/accept` | Accept this schedule as the active schedule for its period on this desk. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Persists the complete schedule (including all timeslots, assignments, and score) to the database in a single transaction and removes it from the in-memory store. If another accepted schedule exists for an overlapping date range on this desk, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED`, `STOPPED`, or `FAILED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
 | `GET` | `/desks/{deskId}/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
@@ -1007,6 +1066,26 @@ Desk-scoped. Each desk runs its own independent solver.
 ```
 
 All fields with defaults (section 5.12) are optional in the request — omitted fields use their default values. The server assembles the `Schedule` by loading desk-agents, specializations, staffing requirements, preferences, days off, and exceptions from the database for the specified desk and date range.
+
+**Schedule summary format** (used by `POST /schedules/solve` response, `GET /schedules` list items, and `PUT /schedules/{id}/stop` response):
+
+```json
+{
+  "id": "uuid",
+  "deskId": "uuid",
+  "status": "RUNNING",
+  "periodStartDate": "2026-02-23",
+  "periodEndDate": "2026-02-27",
+  "startTime": "08:00",
+  "endTime": "18:00",
+  "incrementMinutes": 15,
+  "score": null,
+  "feasible": null,
+  "createdAt": "2026-02-24T10:30:00Z"
+}
+```
+
+`score` and `feasible` are `null` while status is `RUNNING` (if no feasible solution has been found yet) or `FAILED`. Once the solver finds a solution, `score` contains `{ "hardScore": 0, "softScore": -42 }` and `feasible` is derived from the hard score.
 
 **Concurrent solves:** Only one non-accepted schedule may exist per desk at a time (tracked in the in-memory store). Different desks may have concurrent solves running independently. If a desk attempts to start a solve while another is already running or awaiting accept/reject for that desk, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the existing one must first be stopped (if running) and then accepted or rejected.
 
@@ -1035,10 +1114,13 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 - Every desk-agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
 - The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each desk-agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration where applicable (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours **strictly greater than** `breakMinShiftHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For agents at or below the threshold (no break), the check verifies `coverageWindowHours ≥ effectiveContractedHours`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception requires only a 4-hour window (no break). Agents failing this check are listed in the `details` array.
 - No agent may have both an exception (on this desk) and a day off on the same date within the schedule period. *(`details[].field`: `"agentException.date"`, with the conflicting agent and date identified.)*
+- Every specialization referenced by a staffing requirement in the schedule period must have at least one eligible desk-agent (active, with that specialization as primary or secondary, and not on day-off for every day of the period). If a specialization has demand but no agent can fill it, the solver will inevitably violate constraints. *(`details[].field`: `"staffingRequirement.specialization"`, with the unmatched specialization identified.)*
 
 ## 8. Schedule Output
 
 When a solve completes (or while in progress), `GET /desks/{deskId}/schedules/{id}` returns the full schedule along with derived output views. These views are also available as a multi-tab spreadsheet export.
+
+**Computation model.** Output views (staffing summary, agent schedule, preference report, constraint violations) are **computed on-the-fly** from the raw `AgentAssignment` data by `ScheduleOutputService` — they are not pre-computed or stored. For non-accepted schedules this uses the in-memory `Schedule` object directly. For accepted schedules, the service loads the `Schedule`, its snapshot timeslots, snapshot staffing requirements, and agent assignments from the database, then derives the views. Agent names and specialization names are resolved from the **current** agent and specialization records (not snapshotted) — if an agent is renamed after acceptance, the output views reflect the new name. This is acceptable because agent identity doesn't change, only the display label.
 
 **Response structure for `GET /desks/{deskId}/schedules/{id}`:**
 
@@ -1248,7 +1330,8 @@ All refreshes are **user-initiated** — there is no automatic or scheduled back
 - **Concurrency guard** — Only one refresh may run at a time per tenant. The service holds an in-memory `ConcurrentHashMap<Long, Boolean>` keyed by `tenant_id`. When a refresh is requested, the service attempts `putIfAbsent(tenantId, true)`. If a refresh is already in progress for the tenant, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this tenant."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
-- **Days off refresh** — The refresh also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
+- **Days off refresh** — The refresh also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
+- **Transaction scope** — The entire refresh (agent upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
 
 ### 9.5 Configuration
 
@@ -1257,7 +1340,9 @@ All refreshes are **user-initiated** — there is no automatic or scheduled back
 | `bamboohr.mock` | Use in-memory mock client | `true` |
 | `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
+| `bamboohr.time-off.lookahead-weeks` | Number of weeks ahead to fetch day-off records during a refresh | `8` |
 | `solver.time-limit` | Maximum duration for a single solve run (ISO-8601 duration) | `PT5M` (5 minutes) |
+| `solver.polling-interval-ms` | Recommended polling interval for the UI when checking solve progress (milliseconds). Not enforced server-side — the client may poll at any rate. | `2000` (2 seconds) |
 
 ## 10. Package Layout
 
@@ -1275,7 +1360,12 @@ src/main/java/com/wfm/
 │   ├── AgentException.java
 │   ├── AgentAssignment.java
 │   ├── ConstraintWeights.java
-│   └── Schedule.java
+│   ├── Schedule.java
+│   ├── DayOffType.java              (enum: MANDATORY, PTO)
+│   ├── ScheduleStatus.java          (enum: RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)
+│   ├── BreakAlignment.java          (enum: ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)
+│   ├── StaffingSource.java          (enum: DIRECT, ERLANG_X)
+│   └── MatchType.java               (enum: PRIMARY, SECONDARY)
 ├── repository/
 │   ├── DeskRepository.java
 │   ├── SpecializationRepository.java
@@ -1287,6 +1377,7 @@ src/main/java/com/wfm/
 │   ├── TimeslotRepository.java
 │   ├── StaffingRequirementRepository.java
 │   ├── ConstraintWeightsRepository.java
+│   ├── AgentAssignmentRepository.java
 │   └── ScheduleRepository.java
 ├── service/
 │   ├── DeskService.java
@@ -1302,6 +1393,7 @@ src/main/java/com/wfm/
 │   ├── ErlangXService.java
 │   ├── ScheduleOutputService.java
 │   ├── ScheduleExportService.java
+│   ├── InMemoryScheduleStore.java
 │   └── SolverService.java
 ├── controller/
 │   ├── DeskController.java
@@ -1320,9 +1412,20 @@ src/main/java/com/wfm/
 │   ├── MockBambooHRClient.java
 │   ├── HttpBambooHRClient.java
 │   └── BambooRefreshService.java
+├── dto/                               (request/response DTOs for all API endpoints)
+│   ├── SolveRequest.java
+│   ├── ScheduleSummary.java
+│   ├── ScheduleDetailResponse.java
+│   ├── StaffingRequirementRequest.java
+│   ├── ErlangXRequest.java
+│   ├── StaffingRequirementResponse.java
+│   ├── DeskAgentResponse.java
+│   ├── ConstraintWeightsDto.java
+│   └── ErrorResponse.java
 ├── config/
 │   ├── TenantFilter.java
-│   └── TenantContext.java
+│   ├── TenantContext.java
+│   └── CorsConfig.java
 ├── solver/
 │   └── ScheduleConstraintProvider.java
 └── WfmApplication.java
@@ -1338,7 +1441,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 
 **Tenant-level tables** (no `desk_id`):
 
-- `desk` (`tenant_id`, unique on `tenant_id` + `name`)
+- `desk` (`tenant_id`, `name`, `description`, `default_contracted_hours_per_day`, unique on `tenant_id` + `name`)
 - `agent` (`tenant_id`, unique on `tenant_id` + `bamboohr_id`)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `tenant_id` + `agent` + `date`)
 
@@ -1351,9 +1454,9 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 - `agent_exception` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `date`, `contracted_hours_override`, `reason`, unique on `tenant_id` + `desk_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`, `desk_id`, FK → `desk`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `date` + `start_time` + `end_time` where `schedule_id IS NULL`). Rows with `schedule_id IS NULL` are live input data; rows with a `schedule_id` are accepted schedule snapshots.
 - `staffing_requirement` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `timeslot` + `specialization` where `schedule_id IS NULL`). Same live-vs-snapshot distinction as `timeslot`.
-- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `agent`). Assignments only exist as part of an accepted schedule.
+- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `desk_agent`, FK → `agent`). Assignments only exist as part of an accepted schedule. Stores FKs to both `desk_agent` (the planning variable) and `agent` (denormalised for query convenience).
 - `constraint_weights` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` — one row per desk)
-- `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`)
+- `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`, `status`, `increment_minutes`, `start_time`, `end_time`, `period_start_date`, `period_end_date`, `break_blocked_hours`, `break_duration_minutes`, `break_min_shift_hours`, `break_start_alignment`, `break_cluster_threshold_pct`, `default_contracted_hours_per_day`, `overallocation_hard_limit_pct`, `underallocation_hard_limit_pct`, `hard_score`, `soft_score`, `error_message`, `created_at`). Only `ACCEPTED` schedules are written to this table.
 
 ## 12. React UI
 
@@ -1449,8 +1552,7 @@ Defines how many agents are needed per timeslot per specialization for the selec
 | Save button | Button | Persists via `POST /desks/{deskId}/staffing-requirements`. |
 | **Erlang X mode** | | |
 | Erlang X parameters form | Form fields | Per specialization per timeslot (or per day with a distribution pattern): **Call volume** (integer), **AHT** (seconds), **Patience** (seconds), **Retry rate** (%), **Service level target** (%), **Service level threshold** (seconds). See section 4.4 for parameter definitions. |
-| Calculate button | Button | Submits parameters via `POST /desks/{deskId}/staffing-requirements/erlang-x`. Displays the calculated agent counts in the demand grid for review before saving. |
-| Accept & save button | Button | Persists the calculated requirements. |
+| Calculate & save button | Button | Submits parameters via `POST /desks/{deskId}/staffing-requirements/erlang-x`. The endpoint calculates **and persists** the results in a single transaction (section 7.10). The response returns the calculated requirements, which are displayed in the demand grid so the user can review them. If the results are unsatisfactory, the user can adjust parameters and re-submit — the new results will replace the previous ones for the same date range. |
 
 ### 12.8 Constraint Weights Page
 
@@ -1586,4 +1688,5 @@ The following items are out of scope for the initial release but are anticipated
 - **Schedule comparison.** Allow side-by-side comparison of two completed schedules for the same period before accepting one.
 - **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
+- **Cross-desk conflict detection.** Warn or prevent scheduling the same agent on overlapping timeslots across different desks. Currently handled operationally by the BPO (section 3.2).
 - **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
