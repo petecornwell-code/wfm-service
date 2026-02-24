@@ -837,7 +837,7 @@ Agent records originate from BambooHR. These endpoints are **tenant-level** — 
 |---|---|---|
 | `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
 | `GET` | `/agents/{id}` | Get agent by id. Returns the tenant-level agent record (BambooHR fields). |
-| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). |
+| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). Returns `200` with the full list of agents for the tenant after the refresh completes (same shape as `GET /agents` but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). This avoids requiring a separate GET call after every refresh. |
 
 ### 7.4 Agent Days Off
 
