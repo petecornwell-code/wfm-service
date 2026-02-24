@@ -488,6 +488,7 @@ A timeslot is a single time interval within the coverage window. Timeslots are *
 | `id` | `UUID` | Primary key |
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `deskId` | `UUID` | Desk this timeslot belongs to |
+| `scheduleId` | `UUID` | Nullable. `NULL` = live input data (user-editable). Non-null = snapshot belonging to an accepted schedule. |
 | `date` | `LocalDate` | The day this slot belongs to |
 | `startTime` | `LocalTime` | Start of the interval |
 | `endTime` | `LocalTime` | End of the interval |
@@ -501,6 +502,7 @@ Represents the demand for a given specialization in a given timeslot. There is o
 | `id` | `UUID` | Primary key |
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `deskId` | `UUID` | Desk this requirement belongs to |
+| `scheduleId` | `UUID` | Nullable. `NULL` = live input data (user-editable). Non-null = snapshot belonging to an accepted schedule. |
 | `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
 | `requiredAgents` | `int` | Number of concurrent agents needed |
@@ -521,6 +523,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `id` | `UUID` | Primary key |
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `deskId` | `UUID` | Desk this assignment belongs to |
+| `scheduleId` | `UUID` | The accepted schedule this assignment belongs to (NOT NULL — assignments only exist as part of a persisted schedule) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
 | `agent` | `Agent` | **Planning variable** (not nullable) — assigned by the solver. Every seat must be filled; the solver will never leave a seat unassigned. |
@@ -656,7 +659,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
 4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period on this desk. At most **one** schedule may be accepted per overlapping date range per desk. Accepting a new schedule for the same period on the same desk automatically replaces the previously accepted one (the old schedule is deleted from the database).
 
-**In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its generated data (timeslots, agent assignments, staffing requirement expansions, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
+**In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its solver-generated data (agent assignments, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, timeslots, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
 Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
 
@@ -664,6 +667,20 @@ Schedules in `RUNNING`, `COMPLETED`, and `STOPPED` status are held **entirely in
 - API endpoints that query non-accepted schedules (`GET /schedules/{id}`, `GET /schedules`, `GET /schedules/{id}/export`) serve data from the in-memory store.
 - If the server restarts or crashes, any non-accepted schedules are **lost** — the user must re-run the solver. This is acceptable because non-accepted schedules are transient working data, not committed decisions. All input data remains safely in the database.
 - Only one non-accepted schedule may exist per desk at a time (enforced by the concurrent-solve restriction). Different desks may have concurrent solves running independently.
+
+**Live data vs accepted schedule snapshots.** Timeslots and staffing requirements exist in two forms in the database:
+
+1. **Live data** (`schedule_id IS NULL`) — the working data that users create and edit via the API. These are the current inputs for future solve runs.
+2. **Accepted schedule snapshots** (`schedule_id IS NOT NULL`) — read-only copies created when a schedule is accepted. These ensure the accepted schedule is self-contained and its output views (staffing summary, etc.) remain accurate even if the user later changes live timeslots or staffing requirements.
+
+Agent assignments only ever exist as part of an accepted schedule — they always have a `schedule_id`.
+
+When a schedule is accepted (section 7.11), the accept transaction:
+1. Persists the `Schedule` record.
+2. Copies the live timeslots for the schedule's date range into snapshot rows with `schedule_id` set.
+3. Copies the live staffing requirements for those timeslots into snapshot rows with `schedule_id` set, pointing to the snapshot timeslots.
+4. Writes the solver's agent assignments with `schedule_id` set, pointing to the snapshot timeslots.
+5. All four steps execute in a single transaction.
 
 **Acceptance and persistence:** When a schedule is accepted (`PUT /schedules/{id}/accept`), the complete schedule — including the `Schedule` record, all generated timeslots, all agent assignments, staffing requirement snapshots, and the final score — is written to the database in a single transaction. This is the **only point** at which schedule data touches the database. Once persisted, the schedule is removed from the in-memory store.
 
@@ -1189,9 +1206,9 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 - `specialization` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` + `name`)
 - `agent_preference` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `day_of_week`, `date`, `is_standing`; partial unique on `tenant_id` + `desk_id` + `agent` + `day_of_week` where `is_standing = true`; partial unique on `tenant_id` + `desk_id` + `agent` + `date` where `is_standing = false`)
 - `agent_exception` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `date`, `contracted_hours_override`, `reason`, unique on `tenant_id` + `desk_id` + `agent` + `date`)
-- `timeslot` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` + `date` + `start_time` + `end_time`)
-- `staffing_requirement` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, unique on `tenant_id` + `desk_id` + `timeslot` + `specialization`)
-- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, FK → `agent`)
+- `timeslot` (`tenant_id`, `desk_id`, FK → `desk`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `date` + `start_time` + `end_time` where `schedule_id IS NULL`). Rows with `schedule_id IS NULL` are live input data; rows with a `schedule_id` are accepted schedule snapshots.
+- `staffing_requirement` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `timeslot` + `specialization` where `schedule_id IS NULL`). Same live-vs-snapshot distinction as `timeslot`.
+- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `agent`). Assignments only exist as part of an accepted schedule.
 - `constraint_weights` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` — one row per desk)
 - `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`)
 
