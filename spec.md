@@ -46,11 +46,16 @@ The service is **multi-tenant** and **multi-desk**. Tenant identity and authenti
                                 └─────────────┘
 ```
 
-The backend is organised into three packages mirroring the standard layered pattern:
+The backend is organised into the following packages:
 
-- **`model`** — JPA entities and Timefold planning model annotations.
+- **`model`** — JPA entities, Timefold planning model annotations, and enums.
+- **`repository`** — Spring Data JPA repositories (one per entity).
 - **`service`** — Business logic, solver lifecycle management, and transaction orchestration.
 - **`controller`** — REST endpoints that accept and return JSON.
+- **`dto`** — Request and response DTOs for all API endpoints.
+- **`integration`** — BambooHR client interface, implementations (mock and HTTP), and refresh service.
+- **`solver`** — Timefold `ConstraintProvider` implementation.
+- **`config`** — Cross-cutting concerns: tenant filter, tenant context holder, CORS configuration.
 
 ### 3.1 Multi-Tenancy
 
@@ -396,6 +401,7 @@ classDiagram
         +int underallocationHardLimitPct
         +HardSoftScore score
         +ScheduleStatus status
+        +String errorMessage
         +OffsetDateTime createdAt
         «RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED»
     }
@@ -485,7 +491,7 @@ The `Agent` entity holds only BambooHR-sourced data. Desk-specific configuration
 
 Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. The same agent may be assigned to multiple desks, each with independent specializations and contracted hours.
 
-**Specialization requirement:** Every desk-agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. Freshly assigned agents have no specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active desk-agent lacks specializations (see section 7.9).
+**Specialization requirement:** Every desk-agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. Freshly assigned agents have no specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active desk-agent lacks specializations (see section 7.11).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -822,7 +828,7 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks` | List all desks for the tenant. Returns a flat JSON array (not paginated — bounded by business constraints; a tenant typically has fewer than 20 desks). Each object: `{ "id": "uuid", "name": "Inbound Sales", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. |
-| `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "..." }`. Name must be unique per tenant. Returns `201` with the created desk. |
+| `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. `name` is required; `description` and `defaultContractedHoursPerDay` are optional (default 8.0). Name must be unique per tenant. Returns `201` with the created desk. Also auto-creates a `constraint_weights` row with defaults for this desk (section 5.11). |
 | `GET` | `/desks/{deskId}` | Get desk by id. |
 | `PUT` | `/desks/{deskId}` | Update desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. All fields are optional — omitted fields keep their current values. Name must remain unique per tenant. |
 | `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data: desk-agents (and their preferences, exceptions), specializations, timeslots, staffing requirements, constraint weights, and any non-accepted in-memory schedule. |
@@ -835,9 +841,9 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
 | `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. Returns `400` if any agent is already assigned to this desk. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the desk's `defaultContractedHoursPerDay` is used. |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `200` with the updated DeskAgentResponse. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. Returns `200` with the updated DeskAgentResponse. If not set, the desk's `defaultContractedHoursPerDay` is used. |
 
 **Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response):
 
@@ -871,9 +877,25 @@ Agent records originate from BambooHR. These endpoints are **tenant-level** — 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
-| `GET` | `/agents/{id}` | Get agent by id. Returns the tenant-level agent record (BambooHR fields). |
-| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). Returns `200` with the full list of agents for the tenant after the refresh completes (same shape as `GET /agents` but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). This avoids requiring a separate GET call after every refresh. |
+| `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). Each item uses the agent response format below. |
+| `GET` | `/agents/{agentId}` | Get agent by id. Returns `200` with the agent response format below. |
+| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). Returns `200` with the full list of agents for the tenant after the refresh completes (same shape as `GET /agents` items but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). This avoids requiring a separate GET call after every refresh. |
+
+**Agent response format** (used by all tenant-level agent endpoints):
+
+```json
+{
+  "id": "uuid",
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "department": "Support",
+  "jobTitle": "Senior Agent",
+  "active": true,
+  "lastRefreshedAt": "2026-02-24T10:00:00Z"
+}
+```
+
+The `bamboohrId` is not exposed in the API — it is an internal mapping key used only during BambooHR refresh.
 
 ### 7.4 Agent Days Off
 
@@ -881,8 +903,8 @@ Days off are refreshed from BambooHR (section 9) and are read-only. These endpoi
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents/{id}/days-off` | List days off for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date` and `type` (MANDATORY or PTO). |
-| `GET` | `/days-off` | List all agent days off, optionally filtered by date range (`from`, `to`). Paginated. Useful for the schedule setup page to show availability across all agents for a given period. |
+| `GET` | `/agents/{agentId}/days-off` | List days off for an agent. Optionally filtered by date range via query parameters (`from`, `to`). Returns a flat JSON array. Each object: `{ "id": "uuid", "date": "2026-03-01", "type": "PTO" }`. |
+| `GET` | `/days-off` | List all agent days off, optionally filtered by date range (`from`, `to`). Paginated. Useful for the schedule setup page to show availability across all agents for a given period. Each item: `{ "id": "uuid", "agent": { "id": "uuid", "name": "Jane Smith" }, "date": "2026-03-01", "type": "MANDATORY" }`. |
 
 ### 7.5 Specializations
 
@@ -901,7 +923,7 @@ Desk-scoped. Preferences are specific to an agent within a desk. Handled by `Des
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/agents/{agentId}/preferences` | List **raw** preference records for an agent on this desk. Optionally filtered by date range via query parameters. Always includes all standing preferences for the desk-agent alongside any date-specific (weekly) preferences in the range. Each record includes `dayOfWeek`, `date` (null for standing), and `isStanding`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.8). |
+| `GET` | `/desks/{deskId}/agents/{agentId}/preferences` | List **raw** preference records for an agent on this desk. Optionally filtered by date range via query parameters. Always includes all standing preferences for the desk-agent alongside any date-specific (weekly) preferences in the range. Returns a flat JSON array. Each object: `{ "id": "uuid", "dayOfWeek": "MONDAY", "date": null, "isStanding": true, "preferredStartTime": "09:00", "preferredBreakTime": "12:30" }`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.8). |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/preferences` | Create or update preferences for an agent on this desk (batch). Each entry includes `dayOfWeek`, `date` (null for standing), `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server deletes any previous standing preference for that same desk-agent-day before saving the new one. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}/preferences/{id}` | Delete a preference by its id. If the deleted preference was standing, the desk-agent will have no standing default for that day of week until a new one is set. |
 
@@ -911,7 +933,7 @@ Desk-scoped. Exceptions allow a desk-agent's contracted hours to be overridden o
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/agents/{agentId}/exceptions` | List exception records for an agent on this desk. Optionally filtered by date range via query parameters (`from`, `to`). Returns each record with `date`, `contractedHoursOverride`, and `reason`. |
+| `GET` | `/desks/{deskId}/agents/{agentId}/exceptions` | List exception records for an agent on this desk. Optionally filtered by date range via query parameters (`from`, `to`). Returns a flat JSON array. Each object: `{ "id": "uuid", "date": "2026-03-01", "contractedHoursOverride": 4.0, "reason": "Part-time study" }`. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/exceptions` | Create or update exceptions for an agent on this desk (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same desk-agent and date are replaced. Returns `400` (error code `VALIDATION_FAILED`) if an exception conflicts with a day off on the same date. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}/exceptions/{date}` | Delete the exception for the specified date. The desk-agent reverts to their standard contracted hours for that day. |
 
@@ -954,9 +976,9 @@ Desk-scoped. Timeslots must be generated and persisted **before** staffing requi
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/timeslots` | List timeslots for this desk. Query parameters `from` and `to` filter by date range (both required — open-ended listing is not supported since the result set could be very large). Returns a **flat JSON array** (not paginated) of timeslot objects ordered by date then start time. The maximum result size is bounded by the 31-day period limit × slots per day (e.g. 31 × 40 = 1,240 rows at 15-min increments). Each object: `{ "id": "uuid", "date": "2026-02-23", "startTime": "08:00", "endTime": "08:15" }`. |
-| `POST` | `/desks/{deskId}/timeslots/generate` | Generate timeslots for the given parameters and persist them. Request body: `{ "periodStartDate": "2026-02-23", "periodEndDate": "2026-02-27", "startTime": "08:00", "endTime": "18:00", "incrementMinutes": 15 }`. Creates one timeslot per increment per day in the date range. If timeslots already exist for any date in the range on this desk, they are **deleted and regenerated** — any staffing requirements referencing the old timeslots for those dates are also deleted. Returns the generated timeslots. Returns `400` (error code `VALIDATION_FAILED`) if `incrementMinutes` is not 15, 30, or 60, or if the time range is not evenly divisible by the increment. |
-| `DELETE` | `/desks/{deskId}/timeslots` | Delete all timeslots (and their associated staffing requirements) for the given date range. Query parameters `from` and `to` are required. Returns `409 Conflict` if any of the affected timeslots are referenced by an accepted schedule. |
+| `GET` | `/desks/{deskId}/timeslots` | List timeslots for this desk. Returns **live data only** (`schedule_id IS NULL`); accepted schedule snapshots are accessed via the schedule endpoints. Query parameters `from` and `to` filter by date range (both required — open-ended listing is not supported since the result set could be very large). Returns a **flat JSON array** (not paginated) of timeslot objects ordered by date then start time. The maximum result size is bounded by the 31-day period limit × slots per day (e.g. 31 × 40 = 1,240 rows at 15-min increments). Each object: `{ "id": "uuid", "date": "2026-02-23", "startTime": "08:00", "endTime": "08:15" }`. |
+| `POST` | `/desks/{deskId}/timeslots/generate` | Generate timeslots for the given parameters and persist them. Request body: `{ "periodStartDate": "2026-02-23", "periodEndDate": "2026-02-27", "startTime": "08:00", "endTime": "18:00", "incrementMinutes": 15 }`. Creates one timeslot per increment per day in the date range. If timeslots already exist for any date in the range on this desk, they are **deleted and regenerated** — any staffing requirements referencing the old timeslots for those dates are also deleted. Returns `201` with the generated timeslots as a flat JSON array (same format as `GET .../timeslots`). Returns `400` (error code `VALIDATION_FAILED`) if `incrementMinutes` is not 15, 30, or 60, or if the time range is not evenly divisible by the increment. |
+| `DELETE` | `/desks/{deskId}/timeslots` | Delete all timeslots (and their associated staffing requirements) for the given date range. Query parameters `from` and `to` are required. Returns `204 No Content` on success. Returns `409 Conflict` if any of the affected timeslots are referenced by an accepted schedule. |
 
 ### 7.10 Staffing Requirements
 
@@ -964,7 +986,7 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). |
+| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item uses the same format as the staffing requirements response body below. |
 | `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
 | `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. |
 
@@ -1343,6 +1365,7 @@ All refreshes are **user-initiated** — there is no automatic or scheduled back
 
 | Property | Description | Default |
 |---|---|---|
+| `cors.allowed-origins` | Comma-separated list of allowed CORS origins (section 3.3) | `http://localhost:3000` |
 | `bamboohr.mock` | Use in-memory mock client | `true` |
 | `bamboohr.api-key` | BambooHR API key (required when mock=false) | — |
 | `bamboohr.subdomain` | BambooHR company subdomain | — |
