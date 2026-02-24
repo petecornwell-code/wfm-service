@@ -103,7 +103,7 @@ All timeslots in a given solution share a uniform duration. Supported values:
 
 ### 4.2 Time Range
 
-The contiguous window of time to be covered, expressed as a start time and end time (e.g. 08:00–18:00). Timeslots are **generated** by subdividing this range into intervals of the configured increment. For example, 08:00–18:00 at 15-minute increments produces 40 timeslots per day.
+The contiguous window of time to be covered, expressed as a start time and end time (e.g. 08:00–18:00). Timeslots are **generated and persisted** by subdividing this range into intervals of the configured increment for each day in the date range. For example, 08:00–18:00 at 15-minute increments produces 40 timeslots per day. Timeslots must exist in the database **before** staffing requirements can be entered — they are a prerequisite for the demand grid. See section 7.9 for the generation endpoint.
 
 ### 4.3 Specializations
 
@@ -203,7 +203,7 @@ The break start time must align to a configured boundary:
 | `ON_HALF_HOUR` | 10:00, 10:30, 11:00, 11:30 |
 | `ON_QUARTER_HOUR` | 10:00, 10:15, 10:30, 10:45 |
 
-The default is `ON_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.10) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
+The default is `ON_HOUR`. Preferred break times (section 4.5) are stored **without** alignment validation — an agent may submit any valid time. Alignment is checked at **solve time**: if an agent's effective preferred break time does not conform to the schedule's active alignment, the pre-solve validation (section 7.11) flags the offending preferences and the solve is blocked until they are corrected. In practice, the alignment setting rarely changes for a given tenant.
 
 #### 4.6.5 Break clustering penalty (soft)
 
@@ -481,7 +481,7 @@ Represents an agent's assignment to a desk, together with that desk's configurat
 
 ### 5.5 Timeslot
 
-A timeslot is a single time interval within the coverage window. Timeslots are **generated** from the configured time range and increment — they are not created manually. A timeslot is specialization-agnostic; multiple agents with different specializations may be needed in the same timeslot. Timeslots are desk-scoped.
+A timeslot is a single time interval within the coverage window. Timeslots are **generated and persisted to the database** before staffing requirements or the solver can reference them (see section 7.9). They are not created manually — the user specifies a date range, time range, and increment, and the system generates all timeslots automatically. A timeslot is specialization-agnostic; multiple agents with different specializations may be needed in the same timeslot. Timeslots are desk-scoped.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -852,17 +852,27 @@ Desk-scoped. Each desk has its own constraint weight configuration.
 | `GET` | `/desks/{deskId}/constraint-weights` | Get constraint weights for this desk |
 | `PUT` | `/desks/{deskId}/constraint-weights` | Update constraint weights for this desk (partial updates allowed; omitted fields keep defaults) |
 
-### 7.9 Staffing Requirements
+### 7.9 Timeslots
 
-Desk-scoped.
+Desk-scoped. Timeslots must be generated and persisted **before** staffing requirements can be entered. They define the time grid against which demand is specified.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/desks/{deskId}/timeslots` | List timeslots for this desk. Optional query parameters `from` and `to` filter by date range. Returns timeslots ordered by date then start time. |
+| `POST` | `/desks/{deskId}/timeslots/generate` | Generate timeslots for the given parameters and persist them. Request body: `{ "periodStartDate": "2026-02-23", "periodEndDate": "2026-02-27", "startTime": "08:00", "endTime": "18:00", "incrementMinutes": 15 }`. Creates one timeslot per increment per day in the date range. If timeslots already exist for any date in the range on this desk, they are **deleted and regenerated** — any staffing requirements referencing the old timeslots for those dates are also deleted. Returns the generated timeslots. Returns `400` (error code `VALIDATION_FAILED`) if `incrementMinutes` is not 15, 30, or 60, or if the time range is not evenly divisible by the increment. |
+| `DELETE` | `/desks/{deskId}/timeslots` | Delete all timeslots (and their associated staffing requirements) for the given date range. Query parameters `from` and `to` are required. Returns `409 Conflict` if any of the affected timeslots are referenced by an accepted schedule. |
+
+### 7.10 Staffing Requirements
+
+Desk-scoped. Timeslots must exist before staffing requirements can be created (see section 7.9).
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. |
 | `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
-| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level). The calculation and persistence of the resulting requirements is executed in a **single transaction** — either all requirements are saved or none are, ensuring no partial state. |
+| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level). The calculation and persistence of the resulting requirements is executed in a **single transaction** — either all requirements are saved or none are, ensuring no partial state. Timeslots for the target date range must already exist. |
 
-### 7.10 Solver
+### 7.11 Solver
 
 Desk-scoped. Each desk runs its own independent solver.
 
@@ -902,7 +912,7 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 **Transaction scopes.** Since non-accepted schedules are held entirely in memory (section 5.12), the solve lifecycle does not involve database transactions until acceptance:
 
-1. **Pre-solve phase** — covers everything from receiving the `POST /desks/{deskId}/schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading desk-agents/specializations/preferences/days off/exceptions from the database (read-only), generating timeslots, expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. If any step fails (validation error, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
+1. **Pre-solve phase** — covers everything from receiving the `POST /desks/{deskId}/schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading existing timeslots and staffing requirements from the database, loading desk-agents/specializations/preferences/days off/exceptions from the database (all read-only), expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. Timeslots must already exist in the database (generated via `POST /desks/{deskId}/timeslots/generate`, section 7.9). If any step fails (validation error, no timeslots found, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
 
 2. **Solve phase** — once the pre-solve phase completes successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), the in-memory schedule status is updated to `COMPLETED` or `STOPPED` and the final assignments and score are retained in memory for the user to review.
 
@@ -914,6 +924,8 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 **Pre-solve validation:** `POST /desks/{deskId}/schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
+- Timeslots must exist for this desk covering every day of the schedule period. *(`details[].field`: `"timeslots"`.)*
+- The schedule's `incrementMinutes`, `startTime`, and `endTime` must match the existing timeslot structure. If the timeslots were generated with a 15-minute increment from 08:00–18:00, the schedule must use the same values. *(`details[].field`: `"incrementMinutes"` / `"startTime"` / `"endTime"`.)*
 - Every active desk-agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"deskAgent.specializations"`, with the affected agent identified.)*
 - At least one staffing requirement must exist for this desk for the target period.
 - At least one active desk-agent must be available (i.e. not on a day off for every day of the period).
@@ -1040,7 +1052,7 @@ The schedule can be exported as a multi-tab spreadsheet (`.xlsx`). Each tab corr
 
 Constraint violations (section 8.4) are not included in the spreadsheet — they are diagnostic data consumed via the API and displayed in the UI.
 
-Export is triggered via a dedicated endpoint (see section 7.10). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+Export is triggered via a dedicated endpoint (see section 7.11). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ## 9. BambooHR Integration
 
@@ -1140,6 +1152,7 @@ src/main/java/com/wfm/
 │   ├── DeskAgentController.java
 │   ├── AgentDayOffController.java
 │   ├── SpecializationController.java
+│   ├── TimeslotController.java
 │   ├── StaffingRequirementController.java
 │   ├── ConstraintWeightsController.java
 │   └── ScheduleController.java
@@ -1258,14 +1271,20 @@ Manages per-agent, per-day contracted hours overrides for the selected desk (sec
 
 ### 12.7 Staffing Requirements Page
 
-Defines how many agents are needed per timeslot per specialization for the selected desk (sections 4.4, 7.9). Desk-scoped.
+Defines how many agents are needed per timeslot per specialization for the selected desk (sections 4.4, 7.9, 7.10). Desk-scoped. The page has two phases: first, generate the timeslot grid; then, enter demand against those timeslots.
 
 | Control | Type | Description |
 |---|---|---|
-| Period picker | Date range picker | Selects the target date range. Loads existing requirements via `GET /desks/{deskId}/staffing-requirements?from={date}&to={date}`. |
+| **Timeslot configuration** | | |
+| Period picker | Date range picker | Selects the target date range. |
+| Time range start | Time picker | Coverage window start (e.g. 08:00). |
+| Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
+| Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
+| Generate timeslots button | Button | Generates timeslots for the selected date range, time range, and increment via `POST /desks/{deskId}/timeslots/generate`. If timeslots already exist for this date range, shows a warning that regenerating will delete any existing staffing requirements for those dates. On success, the demand grid below is populated with the generated timeslots. |
+| **Demand entry** | | |
 | Input mode toggle | Tab or radio group | Switches between **Direct input** and **Erlang X calculation**. |
 | **Direct input mode** | | |
-| Demand grid | Editable table | Rows: timeslots (generated from the time range and increment). Columns: one per specialization (for this desk). Cells contain the required agent count (integer input). |
+| Demand grid | Editable table | Rows: timeslots (loaded from the database via `GET /desks/{deskId}/timeslots?from={date}&to={date}`). Columns: one per specialization (for this desk). Cells contain the required agent count (integer input). Pre-populated with existing requirements if any, via `GET /desks/{deskId}/staffing-requirements?from={date}&to={date}`. |
 | Copy day | Button + day selector | Copies one day's demand profile to other selected days to speed up entry. |
 | Save button | Button | Persists via `POST /desks/{deskId}/staffing-requirements`. |
 | **Erlang X mode** | | |
@@ -1285,7 +1304,7 @@ Displays and adjusts per-desk constraint weights (sections 4.7, 5.11, 7.8). Desk
 
 ### 12.9 Schedule Setup Page
 
-Configures solver inputs and triggers a solve run for the selected desk (sections 4.1, 4.2, 4.6, 7.10). Desk-scoped.
+Configures solver inputs and triggers a solve run for the selected desk (sections 4.1, 4.2, 4.6, 7.11). Desk-scoped.
 
 | Control | Type | Description |
 |---|---|---|
@@ -1366,7 +1385,7 @@ Corresponds to section 8.4.
 
 - ~~**Contracted hours: does the value include or exclude break time?**~~ **Resolved.** Contracted hours **exclude** break time. An agent's contracted hours represent assigned (non-break) working time only. Break time is additional — e.g. a full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. This is now stated explicitly in sections 5.4, 5.12, and 6.
 
-- ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.10 has been updated accordingly.
+- ~~**Coverage window vs. contracted hours + break pre-solve validation.**~~ **Resolved.** Since contracted hours exclude break time, the coverage window must be ≥ `contractedHoursPerDay + (breakDurationMinutes / 60)` for agents whose shift includes a break. The formula in section 7.11 has been updated accordingly.
 
 - ~~**"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.**~~ **Resolved.** (a) No dummy agent — every seat must be filled. (b) Contracted hours remains a hard constraint — every agent must work exactly their contracted hours. (c) Under-allocation is handled by a new "Bulk under-allocation limit" constraint: a **soft penalty** that scales linearly with the shortfall between total predicted demand hours and total contracted agent hours, plus a configurable **hard floor** (`underallocationHardLimitPct`, default 70%) below which the schedule is infeasible. (d) Both over-allocation (`overallocationHardLimitPct`) and under-allocation (`underallocationHardLimitPct`) limits are configurable per schedule. See sections 5.12 and 6.
 
