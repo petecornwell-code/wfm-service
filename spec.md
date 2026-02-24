@@ -62,7 +62,8 @@ The backend is organised into the following packages:
 All data is scoped to a tenant via a `tenant_id` column (`BIGINT`) present on every tenant-owned table. The value is assigned and supplied by the external AI service platform — WFM Service never generates tenant ids itself.
 
 - **Inbound requests** — The platform authenticates each request and forwards the resolved `tenant_id` to WFM Service via the HTTP header `X-Tenant-ID`. A Spring `OncePerRequestFilter` (`TenantFilter`) reads this header, parses it as a `Long`, and stores the value in a `ThreadLocal` holder (`TenantContext`). All service and repository code retrieves the current tenant id from `TenantContext.getTenantId()`. If the header is missing or not a valid long, the filter returns `400 Bad Request`. The filter is registered in the package layout under `config/TenantFilter.java` and the thread-local holder under `config/TenantContext.java`.
-- **Async thread propagation** — The solver runs on a separate thread (section 7.11). Since `ThreadLocal` values do not propagate to child threads, the `SolverService` must capture the `tenant_id` from `TenantContext` on the request thread and explicitly set it on the solver thread before execution (e.g. in a `Runnable` wrapper). The same applies to any other async operations (e.g. `@Async` methods).
+- **Thread-local lifecycle** — `TenantFilter` must clear the `ThreadLocal` in a `finally` block after the filter chain completes (i.e. after `filterChain.doFilter` returns or throws). Servlet containers reuse threads from a pool — failing to clear the `ThreadLocal` can leak a tenant context into an unrelated subsequent request (a classic Spring security/data-isolation bug).
+- **Async thread propagation** — The solver runs on a separate thread (section 7.11). Since `ThreadLocal` values do not propagate to child threads, the `SolverService` must capture the `tenant_id` from `TenantContext` on the request thread and explicitly set it on the solver thread before execution (e.g. in a `Runnable` wrapper that sets the value in a `try` block and clears it in `finally`). The same applies to any other async operations (e.g. `@Async` methods).
 - **Data isolation** — Every query filters by `tenant_id`. An entity created by one tenant is never visible to another.
 - **Database strategy** — Shared schema, shared tables, discriminated by `tenant_id`. No per-tenant schemas or databases.
 
@@ -458,6 +459,8 @@ A desk represents a distinct contact-centre capability (e.g. "Inbound Sales", "T
 | `description` | `String` | Free-text description of this desk's purpose or capability (optional) |
 | `defaultContractedHoursPerDay` | `BigDecimal` | Desk-level default contracted daily hours excluding break time (default 8.0). Used as the fallback for any desk-agent whose `contractedHoursPerDay` is not explicitly set. Can be overridden per solve run via the schedule configuration. |
 
+**`BigDecimal` convention.** All `BigDecimal` hour fields across the domain model (`contractedHoursPerDay`, `defaultContractedHoursPerDay`, `breakBlockedHours`, `breakMinShiftHours`, `contractedHoursOverride`) use a standard scale of **2 decimal places** and are stored as `NUMERIC(5,2)` in PostgreSQL (max 999.99, sufficient for any hours value). Arithmetic and comparison operations in Java must use `compareTo()` — never `equals()` — because `BigDecimal.equals` is scale-sensitive (`new BigDecimal("8.0").equals(new BigDecimal("8.00"))` returns `false`). Service code should normalise values to scale 2 with `HALF_UP` rounding on input.
+
 ### 5.2 Specialization
 
 A reference entity representing a named area of expertise (e.g. "Billing", "Technical Support", "Sales"). Specializations are **desk-scoped** — each desk defines its own set of specializations independently.
@@ -646,6 +649,8 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
+**JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as **two integer columns** in the database (e.g. `spec_match_weight_hard_score INT`, `spec_match_weight_soft_score INT`). Use a JPA `AttributeConverter<HardSoftScore, String>` that serialises to `"hard/soft"` format, or — preferably — map each weight as an `@Embeddable` with `@AttributeOverrides` to control column names. The `constraint_weights` table therefore has 28 integer columns (14 weights × 2 components). The `schedule` table stores its solver score the same way (`hard_score INT`, `soft_score INT`).
+
 ### 5.12 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run. Each schedule belongs to a specific desk.
@@ -690,9 +695,11 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 4. **`FAILED`** — the solver threw an unrecoverable exception during execution. The schedule retains whatever partial data was available (score may be `null`, assignments may be empty). A failed schedule can only be **rejected** (not accepted). The user must fix any underlying issue and re-run the solver.
 5. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period on this desk. At most **one** accepted schedule may exist per desk for any given date — if two schedules share even a single day, they overlap. Accepting a new schedule that overlaps with an existing accepted schedule on the same desk **deletes the old schedule entirely** (including all its snapshot data). For example, if schedule A covers Mon–Fri and schedule B covers Thu–Sun, accepting B deletes A in full (Mon–Wed data is lost). The user should re-run a solve for Mon–Wed if separate coverage is needed.
 
+**JPA and Timefold dual-annotation model.** `Schedule` carries both `@Entity` and `@PlanningSolution`; `AgentAssignment` carries both `@Entity` and `@PlanningEntity`. During solving, Timefold mutates the `deskAgent` planning variable on `AgentAssignment` thousands of times per second. If these entities were attached to a Hibernate persistence context, dirty checking would destroy solver performance. Therefore, the entire planning solution — `Schedule`, all `AgentAssignment` instances, and all problem-fact collections — must be **detached from (or never attached to) the JPA persistence context** while the solver is running. In practice the pre-solve phase loads all required data via Spring Data repositories (which close the persistence context at the end of the `@Transactional` read), assembles a detached `Schedule` object, and hands it to the solver. The entities become JPA-managed again only during the accept transaction, when a **new** persistence context merges/persists them. Timefold's best-solution cloning also requires that collection fields (e.g. `DeskAgent.secondarySpecializations`) are plain `java.util` collections, not Hibernate proxy wrappers — the pre-solve assembly step should copy Hibernate collections into `ArrayList`/`HashSet` to avoid `LazyInitializationException` during cloning.
+
 **In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its solver-generated data (agent assignments, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, timeslots, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
-**Implementation:** The in-memory store is a `ConcurrentHashMap<UUID, Schedule>` keyed by **schedule ID**, held as a Spring-managed singleton bean (`InMemoryScheduleStore`). A secondary index `ConcurrentHashMap<UUID, UUID>` maps **desk ID → schedule ID** to enforce the one-non-accepted-schedule-per-desk invariant and to look up a desk's current schedule. Both maps are updated atomically when schedules are created, accepted, or rejected.
+**Implementation:** The in-memory store is held as a Spring-managed singleton bean (`InMemoryScheduleStore`) containing a `ConcurrentHashMap<UUID, Schedule>` keyed by **schedule ID** and a secondary index `ConcurrentHashMap<UUID, UUID>` mapping **desk ID → schedule ID** to enforce the one-non-accepted-schedule-per-desk invariant. Because operations that modify both maps must be atomic (e.g. creating a schedule must check the desk index *and* insert into both maps without a race), `InMemoryScheduleStore` guards all mutating methods with a single `ReentrantLock`. Read-only lookups by schedule ID may use the `ConcurrentHashMap` directly without the lock. The lock is held only for the in-memory map operations (nanoseconds), never across database calls or solver invocations.
 
 Schedules in `RUNNING`, `COMPLETED`, `STOPPED`, and `FAILED` status are held **entirely in memory** — they are not written to the database. The database only contains `ACCEPTED` schedules. This means:
 
@@ -710,12 +717,12 @@ Agent assignments only ever exist as part of an accepted schedule — they alway
 
 When a schedule is accepted (section 7.11), the accept transaction:
 1. Persists the `Schedule` record.
-2. Copies the live timeslots for the schedule's date range into snapshot rows with `schedule_id` set.
-3. Copies the live staffing requirements for those timeslots into snapshot rows with `schedule_id` set, pointing to the snapshot timeslots.
-4. Writes the solver's agent assignments with `schedule_id` set, pointing to the snapshot timeslots.
+2. Copies the live timeslots for the schedule's date range into snapshot rows (new UUIDs) with `schedule_id` set. Builds a **remapping table** (`Map<UUID, UUID>`) from live timeslot ID → snapshot timeslot ID.
+3. Copies the live staffing requirements for those timeslots into snapshot rows with `schedule_id` set, using the remapping table to point each snapshot requirement at its corresponding **snapshot** timeslot (not the live timeslot).
+4. Writes the solver's agent assignments with `schedule_id` set, using the same remapping table to point each assignment at its corresponding **snapshot** timeslot. The in-memory `AgentAssignment` objects reference the live `Timeslot` instances that were loaded during the pre-solve phase; the accept logic must remap these references.
 5. All four steps execute in a single transaction.
 
-**Acceptance and persistence:** When a schedule is accepted (`PUT /schedules/{id}/accept`), the complete schedule — including the `Schedule` record, all generated timeslots, all agent assignments, staffing requirement snapshots, and the final score — is written to the database in a single transaction. This is the **only point** at which schedule data touches the database. Once persisted, the schedule is removed from the in-memory store.
+**Acceptance and persistence:** When a schedule is accepted (`PUT /desks/{deskId}/schedules/{id}/accept`), the complete schedule — including the `Schedule` record, all generated timeslots, all agent assignments, staffing requirement snapshots, and the final score — is written to the database in a single transaction. This is the **only point** at which schedule data touches the database. Once persisted, the schedule is removed from the in-memory store.
 
 **Rejection:** Rejecting a schedule simply discards it from the in-memory store. No database operation is required since the schedule was never persisted.
 
@@ -756,6 +763,18 @@ All endpoints are served under the base path `/api/v1`. Every request is scoped 
 |---|---|---|---|
 | `limit` | `int` | `50` | Maximum number of items to return (1–200). |
 | `cursor` | `String` | *(none)* | Opaque cursor returned by a previous response. When omitted the server returns the first page. |
+
+**Ordering.** Each paginated endpoint uses a deterministic sort order. The cursor encodes the position within that order. Since primary keys are random UUIDs (v4) and do not provide meaningful ordering, each endpoint defines its own sort key:
+
+| Endpoint | Sort order | Cursor key |
+|---|---|---|
+| `GET /desks/{deskId}/agents` | Agent name (asc), then `desk_agent.id` | `(name, id)` |
+| `GET /agents` | Agent name (asc), then `agent.id` | `(name, id)` |
+| `GET /days-off` | Date (asc), agent name (asc), then `agent_day_off.id` | `(date, name, id)` |
+| `GET /desks/{deskId}/staffing-requirements` | Timeslot date (asc), timeslot start time (asc), specialization name (asc), then `staffing_requirement.id` | `(date, startTime, specName, id)` |
+| `GET /desks/{deskId}/schedules` | `created_at` (desc), then `schedule.id` | `(createdAt, id)` |
+
+The `id` tiebreaker ensures a total order even when the primary sort fields have duplicates. The cursor is a Base64-encoded JSON object containing the sort key values of the last item on the current page. The server decodes the cursor and applies a `WHERE` clause to seek past it (keyset pagination), avoiding `OFFSET`-based skipping.
 
 Paginated responses use a standard envelope:
 
@@ -840,7 +859,7 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
-| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. Returns `400` if any agent is already assigned to this desk. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
+| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. The operation is **all-or-nothing**: if any agent in the list is invalid (does not exist, inactive, or already assigned to this desk), the entire request fails with `400` and no agents are assigned. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `200` with the updated DeskAgentResponse. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. Returns `200` with the updated DeskAgentResponse. If not set, the desk's `defaultContractedHoursPerDay` is used. |
@@ -1062,7 +1081,7 @@ Desk-scoped. Each desk runs its own independent solver.
 |---|---|---|
 | `POST` | `/desks/{deskId}/schedules/solve` | Start a solve run for this desk (async). Request body contains schedule configuration (see below). Returns `202 Accepted` with a schedule summary (see summary format below). The solver begins asynchronously; the client should poll `GET /desks/{deskId}/schedules/{id}` for progress. |
 | `GET` | `/desks/{deskId}/schedules` | List schedules for this desk. Paginated. Returns summary records (see summary format below) without the full output views. Includes both accepted schedules (from the database) and the current non-accepted schedule (from memory, if one exists). Used by the "Past schedules list" in the Schedule Setup page. |
-| `GET` | `/desks/{deskId}/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). Serves from the in-memory store for non-accepted schedules and from the database for accepted schedules. |
+| `GET` | `/desks/{deskId}/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). Serves from the in-memory store for non-accepted schedules and from the database for accepted schedules. Supports an optional `date` query parameter (e.g. `?date=2026-02-24`) that filters the staffing summary, agent schedule, and preference report to a single day — reducing the response payload by up to 31×. When omitted, all days in the schedule period are returned. Constraint violations are always returned in full regardless of the date filter. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/stop` | Terminate a running solve early. Returns `200` with the updated schedule summary (status will be `STOPPED`). Returns `409 Conflict` if the schedule is not in `RUNNING` status. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/accept` | Accept this schedule as the active schedule for its period on this desk. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Persists the complete schedule (including all timeslots, assignments, and score) to the database in a single transaction and removes it from the in-memory store. If another accepted schedule exists for an overlapping date range on this desk, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED`, `STOPPED`, or `FAILED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
@@ -1121,6 +1140,14 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 3. **Accept transaction** — when the user accepts the schedule via `PUT /desks/{deskId}/schedules/{id}/accept`, the complete schedule and all its associated data are written to the database in a **single transaction**. If this transaction fails, the schedule remains in memory with its `COMPLETED` or `STOPPED` status and the user can retry acceptance. This is the only phase that performs database writes for schedule data.
 
 **Failure recovery.** Since non-accepted schedules exist only in memory, a server crash or restart simply loses any in-progress or completed-but-not-accepted schedules. No database cleanup is needed — there are no orphaned records to recover. The concurrent-solve check is also held in memory (per desk), so a restart naturally clears it. The user must re-run the solver after a restart.
+
+**Solver configuration.** The solver is configured via `solverConfig.xml` (or Timefold's programmatic API) placed on the classpath. The configuration should define at minimum:
+
+1. **Construction heuristic** — `FIRST_FIT_DECREASING` (or `FIRST_FIT`) to build an initial solution quickly. Ordering planning entities by day + timeslot start time helps the construction heuristic produce a reasonable starting point.
+2. **Local search phase** — `LATE_ACCEPTANCE` or `TABU_SEARCH` (Timefold defaults). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector (swap + change) is appropriate.
+3. **Termination** — time-based (see below).
+
+The `solverConfig.xml` is a required project artifact. Solver tuning (phase order, move filters, entity/value sorters) is expected to evolve as the team benchmarks with realistic data.
 
 **Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is retained in memory. This is functionally equivalent to the user calling `PUT /desks/{deskId}/schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
 
@@ -1468,7 +1495,12 @@ src/main/java/com/wfm/
 
 ## 11. Database
 
-PostgreSQL is the sole data store. Hibernate generates the schema from the JPA entity annotations. A migration tool (Flyway or Liquibase) should be added before the first production deployment.
+PostgreSQL is the sole data store. Schema management uses **Flyway** (or Liquibase) from day one — not Hibernate DDL auto-generation — because several data integrity constraints cannot be expressed through JPA annotations alone:
+
+- **Partial unique indexes** — `agent_preference` requires two partial unique indexes (`WHERE is_standing = true` and `WHERE is_standing = false`); `timeslot` and `staffing_requirement` require partial unique indexes (`WHERE schedule_id IS NULL`). Hibernate's DDL generator cannot create partial indexes.
+- **`BigDecimal` column precision** — All `BigDecimal` hour fields use `NUMERIC(5,2)` (see below). Flyway migrations ensure consistent column definitions.
+
+During local development, Hibernate's `ddl-auto=validate` may be used to verify that entity mappings are compatible with the Flyway-managed schema.
 
 Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scoped tables additionally carry a `desk_id UUID NOT NULL` column. All queries filter on `tenant_id` (and `desk_id` where applicable) to enforce data isolation (see sections 3.1 and 3.2).
 
