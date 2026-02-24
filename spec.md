@@ -1757,3 +1757,661 @@ The following items are out of scope for the initial release but are anticipated
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
 - **Cross-desk conflict detection.** Warn or prevent scheduling the same agent on overlapping timeslots across different desks. Currently handled operationally by the BPO (section 3.2).
 - **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
+
+---
+
+## Appendix I — Future Clients: Customizing the Code
+
+> **Status:** This appendix describes a **future enhancement** — a plugin architecture that allows clients to extend WFM Service with custom constraints, handlers, and business logic without modifying the core codebase. None of the mechanisms described here are part of the initial release. They are documented now to ensure the core architecture does not preclude extensibility.
+
+### I.1 Overview
+
+Different BPO clients have different scheduling rules. One client may require that no agent works more than 3 consecutive days without a rest day. Another may need a "mentor pairing" rule that co-schedules junior and senior agents. Rather than adding every client-specific rule to the core constraint set (section 6), the system should support a **plugin model** where custom constraints, pre-solve validators, and post-solve handlers can be developed, packaged, and loaded independently.
+
+The plugin architecture has three tiers, in order of increasing capability:
+
+| Tier | Mechanism | Restart required | Use case |
+|---|---|---|---|
+| **Configuration-only** | Existing `ConstraintWeights` (section 5.11) | No | Adjust weight, disable, or promote/demote built-in constraints |
+| **Compiled plugin** | JAR on the classpath, discovered via `ServiceLoader` | Yes (redeploy) | Add new constraints, validators, or handlers that ship with the deployment |
+| **Hot-loaded plugin** | JAR uploaded at runtime, loaded via a custom `ClassLoader` | No | Add or update constraints without restarting the server |
+
+### I.2 Custom Constraint SPI
+
+#### I.2.1 The `CustomConstraint` interface
+
+A custom constraint is a class that implements a single-method service provider interface. The interface exposes enough metadata for the system to register the constraint with the solver, create a corresponding `ConstraintWeights` entry, and display it in the UI.
+
+```java
+package com.wfm.solver.plugin;
+
+import ai.timefold.solver.core.api.score.stream.ConstraintFactory;
+import ai.timefold.solver.core.api.score.stream.Constraint;
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+
+/**
+ * Service provider interface for client-supplied scheduling constraints.
+ * Implementations are discovered via {@link java.util.ServiceLoader}.
+ */
+public interface CustomConstraint {
+
+    /**
+     * A unique, stable identifier for this constraint (e.g. "acme.max-consecutive-days").
+     * Used as the constraint name in Timefold and as the key in ConstraintWeights.
+     * Must not collide with built-in constraint names (section 6).
+     */
+    String name();
+
+    /** Human-readable description shown in the Constraint Weights UI. */
+    String description();
+
+    /** The default score level and weight for this constraint. */
+    HardSoftScore defaultWeight();
+
+    /**
+     * Define the constraint using Timefold's Constraint Streams API.
+     * The implementation has access to all planning facts on the Schedule
+     * (agents, timeslots, assignments, preferences, days off, exceptions).
+     *
+     * @param factory the Timefold constraint factory
+     * @return a fully defined Constraint
+     */
+    Constraint define(ConstraintFactory factory);
+}
+```
+
+#### I.2.2 Composing built-in and custom constraints
+
+The core `ScheduleConstraintProvider` composes the built-in constraint set with any discovered `CustomConstraint` implementations:
+
+```java
+package com.wfm.solver;
+
+import ai.timefold.solver.core.api.score.stream.ConstraintProvider;
+import ai.timefold.solver.core.api.score.stream.ConstraintFactory;
+import ai.timefold.solver.core.api.score.stream.Constraint;
+import com.wfm.solver.plugin.CustomConstraint;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.ServiceLoader;
+
+public class ScheduleConstraintProvider implements ConstraintProvider {
+
+    @Override
+    public Constraint[] defineConstraints(ConstraintFactory factory) {
+        List<Constraint> all = new ArrayList<>();
+
+        // Built-in constraints (section 6)
+        all.add(agentDayOff(factory));
+        all.add(specializationMatch(factory));
+        all.add(oneAssignmentPerTimeslot(factory));
+        all.add(exactlyOneBreak(factory));
+        // ... remaining built-in constraints ...
+
+        // Discover and add custom constraints via ServiceLoader
+        ServiceLoader<CustomConstraint> plugins = ServiceLoader.load(
+            CustomConstraint.class,
+            Thread.currentThread().getContextClassLoader()
+        );
+        for (CustomConstraint plugin : plugins) {
+            all.add(plugin.define(factory));
+        }
+
+        return all.toArray(new Constraint[0]);
+    }
+
+    // Built-in constraint methods ...
+    private Constraint agentDayOff(ConstraintFactory factory) { /* ... */ }
+    private Constraint specializationMatch(ConstraintFactory factory) { /* ... */ }
+    // ...
+}
+```
+
+By using `Thread.currentThread().getContextClassLoader()` rather than the default classloader, the `ServiceLoader` will discover providers on both the application classpath **and** any dynamically loaded plugin classloaders (see section I.4).
+
+#### I.2.3 Example: "Maximum consecutive working days" constraint
+
+A client requires that no agent works more than 5 consecutive days without a day off. This is a hard constraint.
+
+**File:** `acme-wfm-plugins/src/main/java/com/acme/wfm/MaxConsecutiveDaysConstraint.java`
+
+```java
+package com.acme.wfm;
+
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+import ai.timefold.solver.core.api.score.stream.Constraint;
+import ai.timefold.solver.core.api.score.stream.ConstraintFactory;
+import com.wfm.model.AgentAssignment;
+import com.wfm.solver.plugin.CustomConstraint;
+
+import java.time.LocalDate;
+
+import static ai.timefold.solver.core.api.score.stream.ConstraintCollectors.*;
+import static ai.timefold.solver.core.api.score.stream.Joiners.*;
+
+public class MaxConsecutiveDaysConstraint implements CustomConstraint {
+
+    private static final int MAX_CONSECUTIVE_DAYS = 5;
+
+    @Override
+    public String name() {
+        return "acme.max-consecutive-days";
+    }
+
+    @Override
+    public String description() {
+        return "An agent must not be assigned to work more than "
+             + MAX_CONSECUTIVE_DAYS + " consecutive days without a day off.";
+    }
+
+    @Override
+    public HardSoftScore defaultWeight() {
+        return HardSoftScore.ofHard(1);
+    }
+
+    @Override
+    public Constraint define(ConstraintFactory factory) {
+        // Group assignments by desk-agent, collect distinct working dates,
+        // then penalise any sequence of > MAX_CONSECUTIVE_DAYS consecutive dates.
+        return factory.forEach(AgentAssignment.class)
+            .groupBy(
+                AgentAssignment::getDeskAgent,
+                toSet(a -> a.getTimeslot().getDate())
+            )
+            .filter((deskAgent, workingDates) ->
+                hasConsecutiveRun(workingDates, MAX_CONSECUTIVE_DAYS))
+            .penalize(HardSoftScore.ONE_HARD)
+            .asConstraint(name());
+    }
+
+    private boolean hasConsecutiveRun(java.util.Set<LocalDate> dates, int max) {
+        // Sort dates, scan for runs longer than max
+        var sorted = dates.stream().sorted().toList();
+        int run = 1;
+        for (int i = 1; i < sorted.size(); i++) {
+            if (sorted.get(i).equals(sorted.get(i - 1).plusDays(1))) {
+                run++;
+                if (run > max) return true;
+            } else {
+                run = 1;
+            }
+        }
+        return false;
+    }
+}
+```
+
+**ServiceLoader registration:** `META-INF/services/com.wfm.solver.plugin.CustomConstraint`
+
+```
+com.acme.wfm.MaxConsecutiveDaysConstraint
+```
+
+#### I.2.4 Example: "Mentor pairing" soft constraint
+
+A client wants to co-schedule a junior agent alongside a senior agent during the junior's first month. This is a soft constraint — the solver tries but may override when demand requires it.
+
+```java
+package com.acme.wfm;
+
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+import ai.timefold.solver.core.api.score.stream.Constraint;
+import ai.timefold.solver.core.api.score.stream.ConstraintFactory;
+import com.wfm.model.AgentAssignment;
+import com.wfm.solver.plugin.CustomConstraint;
+
+import static ai.timefold.solver.core.api.score.stream.Joiners.*;
+
+public class MentorPairingConstraint implements CustomConstraint {
+
+    @Override
+    public String name() {
+        return "acme.mentor-pairing";
+    }
+
+    @Override
+    public String description() {
+        return "Junior agents (job title contains 'Junior') should be "
+             + "co-scheduled with a senior agent in the same timeslot.";
+    }
+
+    @Override
+    public HardSoftScore defaultWeight() {
+        return HardSoftScore.ofSoft(3);
+    }
+
+    @Override
+    public Constraint define(ConstraintFactory factory) {
+        // For every junior agent assignment, check that at least one
+        // senior agent is assigned to the same timeslot.
+        return factory.forEach(AgentAssignment.class)
+            .filter(a -> a.getDeskAgent().getAgent().getJobTitle()
+                          .contains("Junior"))
+            .ifNotExists(
+                AgentAssignment.class,
+                equal(a -> a.getTimeslot(), a -> a.getTimeslot()),
+                filtering((junior, other) ->
+                    other.getDeskAgent().getAgent().getJobTitle()
+                         .contains("Senior"))
+            )
+            .penalize(HardSoftScore.ONE_SOFT)
+            .asConstraint(name());
+    }
+}
+```
+
+### I.3 Custom Handlers SPI
+
+Beyond constraints, clients may need to hook into the schedule lifecycle — for example, to run a custom validation before solving, post-process assignments after solving, or trigger an external notification when a schedule is accepted. A second SPI covers these extension points.
+
+#### I.3.1 The `ScheduleLifecycleHandler` interface
+
+```java
+package com.wfm.solver.plugin;
+
+import com.wfm.model.Schedule;
+import java.util.List;
+
+/**
+ * Lifecycle hooks for the solve pipeline.
+ * Implementations are discovered via ServiceLoader.
+ * Multiple handlers may be active; they execute in ServiceLoader discovery order.
+ */
+public interface ScheduleLifecycleHandler {
+
+    /** Unique identifier for this handler (e.g. "acme.slack-notifier"). */
+    String name();
+
+    /** Human-readable description shown in the Plugin Management UI. */
+    String description();
+
+    /**
+     * Called after standard pre-solve validation passes but before the solver starts.
+     * The handler may inspect the assembled Schedule and return validation errors.
+     * If any handler returns a non-empty list, the solve is blocked and the errors
+     * are included in the 400 response alongside the standard validation details.
+     *
+     * @param schedule the fully assembled (but not yet solving) Schedule
+     * @return list of validation error messages (empty = OK)
+     */
+    default List<String> onPreSolve(Schedule schedule) {
+        return List.of();
+    }
+
+    /**
+     * Called after the solver finishes (status COMPLETED or STOPPED) but before
+     * the schedule is made available for accept/reject. The handler may mutate
+     * the schedule (e.g. annotate assignments with custom metadata) or perform
+     * side effects (e.g. log analytics).
+     *
+     * @param schedule the completed Schedule with final assignments and score
+     */
+    default void onPostSolve(Schedule schedule) { }
+
+    /**
+     * Called after a schedule is accepted and persisted to the database.
+     * Runs outside the accept transaction (after commit) so database state is
+     * guaranteed consistent. Use for notifications, exports, or integrations.
+     *
+     * @param schedule the accepted Schedule
+     */
+    default void onAccepted(Schedule schedule) { }
+
+    /**
+     * Called after a schedule is rejected and removed from the in-memory store.
+     *
+     * @param scheduleId the ID of the rejected schedule
+     */
+    default void onRejected(java.util.UUID scheduleId) { }
+}
+```
+
+#### I.3.2 Handler discovery and execution in `SolverService`
+
+```java
+package com.wfm.service;
+
+import com.wfm.solver.plugin.ScheduleLifecycleHandler;
+import java.util.ServiceLoader;
+import java.util.List;
+import java.util.ArrayList;
+
+public class SolverService {
+
+    private final List<ScheduleLifecycleHandler> handlers;
+
+    public SolverService(/* ... other dependencies ... */) {
+        // Discover all registered handlers at startup (or on plugin reload)
+        this.handlers = new ArrayList<>();
+        ServiceLoader.load(
+            ScheduleLifecycleHandler.class,
+            Thread.currentThread().getContextClassLoader()
+        ).forEach(handlers::add);
+    }
+
+    private List<String> runPreSolveHandlers(Schedule schedule) {
+        List<String> errors = new ArrayList<>();
+        for (ScheduleLifecycleHandler handler : handlers) {
+            try {
+                errors.addAll(handler.onPreSolve(schedule));
+            } catch (Exception e) {
+                errors.add("Plugin '" + handler.name() + "' failed: " + e.getMessage());
+            }
+        }
+        return errors;
+    }
+
+    private void runPostSolveHandlers(Schedule schedule) {
+        for (ScheduleLifecycleHandler handler : handlers) {
+            try {
+                handler.onPostSolve(schedule);
+            } catch (Exception e) {
+                // Log but do not fail — post-solve handlers are best-effort
+                log.warn("Post-solve handler '{}' failed: {}", handler.name(), e.getMessage());
+            }
+        }
+    }
+
+    // onAccepted and onRejected follow the same pattern
+}
+```
+
+#### I.3.3 Example: Slack notification on schedule acceptance
+
+```java
+package com.acme.wfm;
+
+import com.wfm.model.Schedule;
+import com.wfm.solver.plugin.ScheduleLifecycleHandler;
+
+public class SlackNotificationHandler implements ScheduleLifecycleHandler {
+
+    @Override
+    public String name() {
+        return "acme.slack-notifier";
+    }
+
+    @Override
+    public String description() {
+        return "Posts a summary to the #scheduling Slack channel "
+             + "when a schedule is accepted.";
+    }
+
+    @Override
+    public void onAccepted(Schedule schedule) {
+        String message = String.format(
+            "Schedule accepted for desk %s (%s to %s). Score: %s. Feasible: %s.",
+            schedule.getDeskId(),
+            schedule.getPeriodStartDate(),
+            schedule.getPeriodEndDate(),
+            schedule.getScore(),
+            schedule.getScore() != null && schedule.getScore().isFeasible()
+        );
+        // SlackClient is packaged in the plugin JAR or resolved via SPI
+        SlackClient.postMessage("#scheduling", message);
+    }
+}
+```
+
+### I.4 Dynamic Plugin Loading (Hot-Load)
+
+For environments where server restarts are costly (e.g. production with active solves on other desks), plugins can be loaded at runtime without restarting the JVM.
+
+#### I.4.1 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Spring Boot JVM                        │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────────────────────┐       │
+│  │ Application  │    │      PluginManager            │       │
+│  │ ClassLoader  │    │  ┌─────────────────────────┐  │       │
+│  │              │    │  │ PluginClassLoader (A)    │  │       │
+│  │ Core WFM     │    │  │  acme-constraints.jar   │  │       │
+│  │ classes      │    │  └─────────────────────────┘  │       │
+│  │              │    │  ┌─────────────────────────┐  │       │
+│  │              │    │  │ PluginClassLoader (B)    │  │       │
+│  │              │    │  │  beta-handlers.jar       │  │       │
+│  │              │    │  └─────────────────────────┘  │       │
+│  └──────────────┘    └──────────────────────────────┘       │
+│         ▲                        ▲                          │
+│         │ parent                 │ parent                   │
+│         └────────────────────────┘                          │
+│                                                             │
+│  plugins/                                                   │
+│  ├── acme-constraints-1.2.jar                               │
+│  └── beta-handlers-0.3.jar                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Each plugin JAR gets its own `URLClassLoader` with the application classloader as its parent. This ensures the plugin can see core WFM classes (`CustomConstraint`, `ScheduleLifecycleHandler`, domain model) but is isolated from other plugins.
+
+#### I.4.2 `PluginManager` implementation sketch
+
+```java
+package com.wfm.plugin;
+
+import com.wfm.solver.plugin.CustomConstraint;
+import com.wfm.solver.plugin.ScheduleLifecycleHandler;
+
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class PluginManager {
+
+    private final Path pluginDir;
+    private final Map<String, LoadedPlugin> plugins = new ConcurrentHashMap<>();
+
+    public PluginManager(Path pluginDir) {
+        this.pluginDir = pluginDir;
+    }
+
+    /**
+     * Load (or reload) a plugin JAR. The JAR must contain
+     * META-INF/services entries for CustomConstraint and/or
+     * ScheduleLifecycleHandler.
+     */
+    public PluginDescriptor loadPlugin(Path jarPath) throws IOException {
+        // Unload previous version if present
+        String jarName = jarPath.getFileName().toString();
+        unloadPlugin(jarName);
+
+        // Create an isolated classloader for this plugin
+        URLClassLoader pluginClassLoader = new URLClassLoader(
+            new URL[]{ jarPath.toUri().toURL() },
+            getClass().getClassLoader()  // parent = application classloader
+        );
+
+        // Discover SPIs within the plugin JAR
+        List<CustomConstraint> constraints = new ArrayList<>();
+        ServiceLoader.load(CustomConstraint.class, pluginClassLoader)
+            .forEach(constraints::add);
+
+        List<ScheduleLifecycleHandler> handlers = new ArrayList<>();
+        ServiceLoader.load(ScheduleLifecycleHandler.class, pluginClassLoader)
+            .forEach(handlers::add);
+
+        LoadedPlugin loaded = new LoadedPlugin(
+            jarName, pluginClassLoader, constraints, handlers
+        );
+        plugins.put(jarName, loaded);
+
+        // Rebuild the solver's constraint and handler registries
+        refreshRegistries();
+
+        return loaded.describe();
+    }
+
+    /** Unload a plugin, closing its classloader. */
+    public void unloadPlugin(String jarName) throws IOException {
+        LoadedPlugin existing = plugins.remove(jarName);
+        if (existing != null) {
+            existing.classLoader().close();
+            refreshRegistries();
+        }
+    }
+
+    /** Return all custom constraints across all loaded plugins. */
+    public List<CustomConstraint> allConstraints() {
+        return plugins.values().stream()
+            .flatMap(p -> p.constraints().stream())
+            .toList();
+    }
+
+    /** Return all lifecycle handlers across all loaded plugins. */
+    public List<ScheduleLifecycleHandler> allHandlers() {
+        return plugins.values().stream()
+            .flatMap(p -> p.handlers().stream())
+            .toList();
+    }
+
+    private void refreshRegistries() {
+        // Notify SolverService and ScheduleService to pick up the new
+        // constraint/handler lists. Uses Spring's ApplicationEventPublisher
+        // so components can react without tight coupling.
+    }
+
+    record LoadedPlugin(
+        String jarName,
+        URLClassLoader classLoader,
+        List<CustomConstraint> constraints,
+        List<ScheduleLifecycleHandler> handlers
+    ) {
+        PluginDescriptor describe() {
+            return new PluginDescriptor(
+                jarName,
+                constraints.stream().map(c -> new PluginDescriptor.Item(
+                    c.name(), c.description(), "CONSTRAINT",
+                    c.defaultWeight().toString()
+                )).toList(),
+                handlers.stream().map(h -> new PluginDescriptor.Item(
+                    h.name(), h.description(), "HANDLER", null
+                )).toList()
+            );
+        }
+    }
+}
+```
+
+#### I.4.3 Safety constraints for hot-loaded plugins
+
+| Concern | Mitigation |
+|---|---|
+| **Plugin references stale domain model** | The plugin's parent classloader is the application classloader — plugin code always resolves core WFM classes from the running application. A plugin compiled against an older version of the SPI will fail fast at `ServiceLoader.load()` if method signatures changed. |
+| **Plugin crashes the solver** | Each `CustomConstraint.define()` call is wrapped in a try-catch during constraint composition. A failing plugin constraint is logged, skipped, and reported in the plugin health status. Solver continues with remaining constraints. |
+| **Plugin leaks resources** | `URLClassLoader.close()` on unload releases JAR file handles. Plugins must not start threads or hold references outside their scope. The `PluginManager` enforces this contract. |
+| **Hot-load during active solve** | Plugins are loaded into the registry but take effect only on the **next** solve run — a running solver's constraint set is immutable once started. The plugin management API returns a warning if a solve is in progress: *"Plugin will take effect on the next solve run."* |
+| **Name collision** | `PluginManager.loadPlugin()` validates that no custom constraint `name()` collides with a built-in constraint name (section 6) or another loaded plugin's constraint. Collisions are rejected with a descriptive error. |
+
+#### I.4.4 Plugin REST API
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/plugins` | List all loaded plugins with their constraints and handlers. Returns a flat JSON array. Each item includes the JAR filename, load timestamp, and the constraints/handlers it provides. |
+| `POST` | `/plugins` | Upload and load a plugin JAR. Accepts `multipart/form-data` with a single `.jar` file. Validates the JAR contains at least one `CustomConstraint` or `ScheduleLifecycleHandler` SPI entry. Returns `201` with the plugin descriptor. Returns `400` if the JAR is invalid or contains name collisions. Returns `409` if a plugin with the same filename is already loaded (use `PUT` to replace). |
+| `PUT` | `/plugins/{jarName}` | Replace an existing plugin with a new version. Unloads the old version and loads the new one. Same validation as `POST`. Returns `200` with the updated plugin descriptor. |
+| `DELETE` | `/plugins/{jarName}` | Unload a plugin and remove it from the plugin directory. Returns `204 No Content`. Returns `409` if a solve is currently running that uses constraints from this plugin (the solve must finish first). |
+| `GET` | `/plugins/{jarName}` | Get details for a specific loaded plugin. Returns `200` with the plugin descriptor. |
+
+**Plugin descriptor response format:**
+
+```json
+{
+  "jarName": "acme-constraints-1.2.jar",
+  "loadedAt": "2026-02-24T14:30:00Z",
+  "constraints": [
+    {
+      "name": "acme.max-consecutive-days",
+      "description": "An agent must not work more than 5 consecutive days.",
+      "type": "CONSTRAINT",
+      "defaultWeight": "0hard/1soft"
+    }
+  ],
+  "handlers": [
+    {
+      "name": "acme.slack-notifier",
+      "description": "Posts to Slack when a schedule is accepted.",
+      "type": "HANDLER"
+    }
+  ],
+  "status": "ACTIVE"
+}
+```
+
+#### I.4.5 Integration with `ConstraintWeights`
+
+When a plugin providing custom constraints is loaded, the system must make those constraints configurable per desk — just like built-in constraints.
+
+**Automatic weight registration:** When `PluginManager.loadPlugin()` discovers a `CustomConstraint`, it checks whether a corresponding weight entry exists in the `constraint_weights` table for each desk. If not, it inserts one using the constraint's `defaultWeight()`. This happens lazily — weights are created for a desk the first time it runs a solve after the plugin is loaded, not eagerly for all desks.
+
+**`ConstraintWeights` extension:** Custom constraint weights are stored in a separate table (`custom_constraint_weight`) rather than adding columns to the existing `constraint_weights` table:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier |
+| `deskId` | `UUID` | Desk identifier |
+| `constraintName` | `String` | The custom constraint's `name()` value |
+| `hardScore` | `int` | Hard score component |
+| `softScore` | `int` | Soft score component |
+| `enabled` | `boolean` | Whether this constraint is active for this desk (default `true`) |
+
+This row-per-constraint design avoids schema changes when plugins are added or removed.
+
+**API extension:** The existing `GET/PUT /desks/{deskId}/constraint-weights` endpoints are extended to include a `customWeights` section in the response and accept updates to custom weights:
+
+```json
+{
+  "specMatchWeight": { "hardScore": 1, "softScore": 0 },
+  "... built-in weights ...": "...",
+
+  "customWeights": [
+    {
+      "constraintName": "acme.max-consecutive-days",
+      "description": "An agent must not work more than 5 consecutive days.",
+      "hardScore": 1,
+      "softScore": 0,
+      "enabled": true,
+      "source": "acme-constraints-1.2.jar"
+    }
+  ]
+}
+```
+
+### I.5 Plugin Management UI
+
+A new top-level page (tenant-scoped, not desk-scoped) for managing plugins. Accessible from the sidebar.
+
+#### I.5.1 Plugin List Page
+
+| Control | Type | Description |
+|---|---|---|
+| Plugin table | Table | Columns: **JAR name**, **Status** (Active / Error badge), **Loaded at** (timestamp), **Constraints** (count), **Handlers** (count). One row per loaded plugin. |
+| Upload plugin | Button + file picker | Opens a file picker filtered to `.jar` files. On selection, uploads via `POST /plugins`. Displays a progress indicator during upload and validation. On success, the new plugin appears in the table. On failure, shows the validation error (e.g. "No CustomConstraint or ScheduleLifecycleHandler found in JAR", "Constraint name 'acme.max-consecutive-days' collides with existing plugin"). |
+| Update plugin | Button (per row) | Opens a file picker to upload a replacement JAR. Uses `PUT /plugins/{jarName}`. Shows a confirmation dialog: *"Updating this plugin will replace the current version. The new version will take effect on the next solve run."* |
+| Remove plugin | Icon button (per row) | Removes the plugin via `DELETE /plugins/{jarName}`. Shows a confirmation dialog: *"Removing this plugin will disable its constraints and handlers. Existing accepted schedules are not affected."* Disabled if a solve is running that uses this plugin's constraints. |
+| Expand row | Accordion | Expands to show the full list of constraints and handlers provided by the plugin. Each constraint shows: name, description, default weight, type (hard/soft). Each handler shows: name, description, and which lifecycle hooks it implements (pre-solve, post-solve, on-accepted, on-rejected). |
+
+#### I.5.2 Per-Desk Custom Constraint Configuration
+
+Custom constraint weights appear alongside built-in weights on the Constraint Weights page (section 12.8). The existing weights table is extended with a **"Custom Constraints"** section below the built-in constraints.
+
+| Control | Type | Description |
+|---|---|---|
+| Custom constraints section | Collapsible group | Visually separated from built-in constraints with a heading: **"Custom Constraints (from plugins)"**. Only visible when at least one plugin with constraints is loaded. |
+| Constraint row | Table row | Same columns as built-in constraints: **Name**, **Description**, **Level** (Hard/Soft dropdown), **Weight** (numeric input), plus an **Enabled** toggle. The **Source** column shows which plugin JAR provides this constraint. |
+| Enabled toggle | Switch (per row) | Enables or disables this custom constraint for this desk. When disabled, the constraint is excluded from the solver entirely (not just given zero weight). This allows a desk to opt out of a client-specific constraint without removing the plugin globally. |
+| Save button | Button | Persists all custom weight changes via `PUT /desks/{deskId}/constraint-weights` (same endpoint, extended payload). |
+
+#### I.5.3 Plugin Health and Diagnostics
+
+| Control | Type | Description |
+|---|---|---|
+| Plugin health indicator | Status badge (global header) | A small indicator in the application header showing plugin health. Green = all plugins healthy. Amber = one or more plugins have warnings (e.g. loaded but unused by any desk). Red = a plugin failed to load or a constraint threw an exception during the last solve. Clicking navigates to the Plugin List page. |
+| Error log (per plugin) | Expandable panel | Shows recent errors from the plugin: failed constraint evaluations (caught during solving), handler exceptions, classloading issues. Entries include timestamp, error message, and stack trace (collapsed by default). Errors are held in a bounded in-memory ring buffer (last 100 entries per plugin). |
+| Solve report integration | Link | When a solve completes, the Constraint Violations tab (section 12.10.4) includes custom constraint violations alongside built-in ones. Custom constraints are visually tagged with their source plugin name so the user can trace violations back to the plugin that defined them. |
