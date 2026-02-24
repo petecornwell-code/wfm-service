@@ -127,7 +127,18 @@ The number of agents required **per timeslot, per specialization**. Because call
 Demand can be:
 
 1. **Directly input** — the customer provides agent counts per timeslot per specialization.
-2. **Calculated via Erlang X** — Erlang X extends Erlang C by accounting for caller abandonment and redials, producing more accurate staffing numbers. The calculation is performed per timeslot per specialization before the solver is invoked. The minimal input parameters are:
+2. **Calculated via Erlang X** — Erlang X extends Erlang C by accounting for caller abandonment and redials, producing more accurate staffing numbers. The calculation is performed per timeslot per specialization before the solver is invoked.
+
+   **Algorithm:** The implementation uses the iterative approach described in the Erlang X model (sometimes called "Extended Erlang C" or "Erlang A with retrials"). The algorithm:
+   1. Starts with the Erlang C staffing estimate for the given call volume, AHT, and service level.
+   2. Calculates the probability of abandonment given caller patience (exponential patience distribution).
+   3. Adjusts the offered load upward by `retryRate` × the number of abandoned calls (retrials re-enter the queue).
+   4. Iterates steps 2–3 until the retrial-adjusted staffing count converges (change < 1 agent between iterations).
+   5. Returns the smallest integer number of agents that meets the `serviceLevelTarget` within `serviceLevelThreshold`.
+
+   A reference implementation is available in the open-source Python library [erlang](https://pypi.org/project/erlang/) (function `erlang_x`). The Java implementation should produce equivalent results. If no suitable Java library is available, the algorithm should be implemented directly using the formulas above, with Erlang C probability computed via the Jagerman formula to avoid factorial overflow.
+
+   The minimal input parameters are:
 
    | Parameter | Type | Unit | Description |
    |---|---|---|---|
@@ -379,6 +390,7 @@ classDiagram
         +int underallocationHardLimitPct
         +HardSoftScore score
         +ScheduleStatus status
+        «RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED»
     }
 
     Desk "1" *-- "* " DeskAgent
@@ -649,15 +661,17 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.10) |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
-| `score` | `HardSoftScore` | Populated by solver |
-| `status` | `enum(RUNNING, COMPLETED, STOPPED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below) |
+| `score` | `HardSoftScore` | Populated by solver. `null` while `RUNNING` if no solution found yet, and `null` if `FAILED`. |
+| `status` | `enum(RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below) |
+| `errorMessage` | `String` | `null` unless status is `FAILED`. Contains the exception message from the solver failure. |
 
 **Schedule lifecycle.** A schedule progresses through the following states:
 
 1. **`RUNNING`** — the solver is actively working. The schedule can be stopped (`PUT /schedules/{id}/stop`) but not accepted or rejected.
 2. **`COMPLETED`** — the solver has finished. The scheduler reviews the results. The schedule can be **accepted** or **rejected**.
 3. **`STOPPED`** — the solver was terminated early. Treated the same as `COMPLETED` for accept/reject purposes.
-4. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period on this desk. At most **one** schedule may be accepted per overlapping date range per desk. Accepting a new schedule for the same period on the same desk automatically replaces the previously accepted one (the old schedule is deleted from the database).
+4. **`FAILED`** — the solver threw an unrecoverable exception during execution. The schedule retains whatever partial data was available (score may be `null`, assignments may be empty). A failed schedule can only be **rejected** (not accepted). The user must fix any underlying issue and re-run the solver.
+5. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period on this desk. At most **one** schedule may be accepted per overlapping date range per desk. Accepting a new schedule for the same period on the same desk automatically replaces the previously accepted one (the old schedule is deleted from the database).
 
 **In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its solver-generated data (agent assignments, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, timeslots, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
@@ -808,7 +822,7 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
 | `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. Returns `400` if any agent is already assigned to this desk. Returns the created desk-agent records. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. If not set, the desk's `defaultContractedHoursPerDay` is used. |
 
 ### 7.3 Agents (Tenant-Level)
@@ -885,9 +899,73 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. |
-| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. The payload contains the complete set of requirements for the specified date range — any existing requirements for that range not present in the payload are **deleted**. This is a full replace, not a merge. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
-| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs (call volume forecast, AHT, patience, retry rate, service level). The calculation and persistence of the resulting requirements is executed in a **single transaction** — either all requirements are saved or none are, ensuring no partial state. Timeslots for the target date range must already exist. |
+| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated. Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). |
+| `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Returns `400` (error code `VALIDATION_FAILED`) if any referenced timeslot or specialization does not exist. |
+| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. |
+
+**Request body for `POST /desks/{deskId}/staffing-requirements`:**
+
+```json
+{
+  "requirements": [
+    {
+      "timeslotId": "uuid-of-timeslot",
+      "specializationId": "uuid-of-specialization",
+      "requiredAgents": 8
+    },
+    {
+      "timeslotId": "uuid-of-another-timeslot",
+      "specializationId": "uuid-of-specialization",
+      "requiredAgents": 12
+    }
+  ]
+}
+```
+
+Each entry references a timeslot by its `id` (timeslots must already exist in the database) and a specialization by its `id` (must belong to this desk). The combination of `timeslotId` + `specializationId` must be unique within the payload. All existing live staffing requirements whose timeslot falls within the date range implied by the payload are deleted before the new requirements are inserted — this is a full replace, not a merge.
+
+**Request body for `POST /desks/{deskId}/staffing-requirements/erlang-x`:**
+
+```json
+{
+  "from": "2026-02-23",
+  "to": "2026-02-27",
+  "parameters": [
+    {
+      "timeslotId": "uuid-of-timeslot",
+      "specializationId": "uuid-of-specialization",
+      "callVolume": 500,
+      "aht": 180.0,
+      "patience": 60.0,
+      "retryRate": 20.0,
+      "serviceLevelTarget": 80.0,
+      "serviceLevelThreshold": 20
+    }
+  ]
+}
+```
+
+Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the `requiredAgents` count for each entry and persists the results as staffing requirements with `source = ERLANG_X`. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
+
+**Response body (both endpoints):**
+
+```json
+{
+  "requirements": [
+    {
+      "id": "uuid",
+      "timeslotId": "uuid",
+      "specializationId": "uuid",
+      "date": "2026-02-23",
+      "startTime": "08:00",
+      "endTime": "08:15",
+      "specializationName": "Billing",
+      "requiredAgents": 8,
+      "source": "DIRECT"
+    }
+  ]
+}
+```
 
 ### 7.11 Solver
 
@@ -900,7 +978,7 @@ Desk-scoped. Each desk runs its own independent solver.
 | `GET` | `/desks/{deskId}/schedules/{id}` | Get schedule with output views: staffing summary, agent schedule, preference report, and constraint violations (section 8). Serves from the in-memory store for non-accepted schedules and from the database for accepted schedules. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/stop` | Terminate a running solve early. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/accept` | Accept this schedule as the active schedule for its period on this desk. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Persists the complete schedule (including all timeslots, assignments, and score) to the database in a single transaction and removes it from the in-memory store. If another accepted schedule exists for an overlapping date range on this desk, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
-| `PUT` | `/desks/{deskId}/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
+| `PUT` | `/desks/{deskId}/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED`, `STOPPED`, or `FAILED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
 | `GET` | `/desks/{deskId}/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Request body for `POST /desks/{deskId}/schedules/solve`:**
@@ -931,7 +1009,7 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 1. **Pre-solve phase** — covers everything from receiving the `POST /desks/{deskId}/schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading existing timeslots and staffing requirements from the database, loading desk-agents/specializations/preferences/days off/exceptions from the database (all read-only), expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. Timeslots must already exist in the database (generated via `POST /desks/{deskId}/timeslots/generate`, section 7.9). If any step fails (validation error, no timeslots found, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
 
-2. **Solve phase** — once the pre-solve phase completes successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), the in-memory schedule status is updated to `COMPLETED` or `STOPPED` and the final assignments and score are retained in memory for the user to review.
+2. **Solve phase** — once the pre-solve phase completes successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), the in-memory schedule status is updated to `COMPLETED` or `STOPPED` and the final assignments and score are retained in memory for the user to review. If the solver throws an uncaught exception, the schedule status is set to `FAILED`, an error message is captured on the schedule object, and the schedule remains in the in-memory store so the user can see the failure and reject it (freeing the desk for a new solve).
 
 3. **Accept transaction** — when the user accepts the schedule via `PUT /desks/{deskId}/schedules/{id}/accept`, the complete schedule and all its associated data are written to the database in a **single transaction**. If this transaction fails, the schedule remains in memory with its `COMPLETED` or `STOPPED` status and the user can retry acceptance. This is the only phase that performs database writes for schedule data.
 
@@ -954,6 +1032,40 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 ## 8. Schedule Output
 
 When a solve completes (or while in progress), `GET /desks/{deskId}/schedules/{id}` returns the full schedule along with derived output views. These views are also available as a multi-tab spreadsheet export.
+
+**Response structure for `GET /desks/{deskId}/schedules/{id}`:**
+
+```json
+{
+  "id": "uuid",
+  "deskId": "uuid",
+  "status": "COMPLETED",
+  "periodStartDate": "2026-02-23",
+  "periodEndDate": "2026-02-27",
+  "startTime": "08:00",
+  "endTime": "18:00",
+  "incrementMinutes": 15,
+  "breakDurationMinutes": 60,
+  "breakBlockedHours": 1.0,
+  "breakMinShiftHours": 4,
+  "breakStartAlignment": "ON_HOUR",
+  "breakClusterThresholdPct": 20,
+  "defaultContractedHoursPerDay": 8.0,
+  "overallocationHardLimitPct": 130,
+  "underallocationHardLimitPct": 70,
+  "score": { "hardScore": 0, "softScore": -42 },
+  "feasible": true,
+  "violatedHardConstraints": [],
+  "createdAt": "2026-02-24T10:30:00Z",
+
+  "staffingSummary": [ ... ],
+  "agentSchedule": [ ... ],
+  "preferenceReport": { "entries": [ ... ], "summary": { ... } },
+  "constraintViolations": [ ... ]
+}
+```
+
+The top-level fields are the schedule configuration and solver result. The four output view arrays are defined in sections 8.1–8.4 below. While the solver is `RUNNING`, the output views reflect the current best solution and may change on subsequent polls — the `score` field always reflects the most recent best score. When `status` is `RUNNING`, the `score` may be `null` if the solver has not yet found any feasible solution.
 
 ### 8.1 Staffing Summary
 
@@ -1077,7 +1189,9 @@ Export is triggered via a dedicated endpoint (see section 7.11). The response st
 
 Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table up to date with the BambooHR employee directory via user-initiated refreshes.
 
-The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant. Employee-to-tenant mapping is handled by the BPO's operational processes and reflected in the department or custom field data within BambooHR.
+The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant.
+
+**Tenant-to-employee mapping:** Each BambooHR employee record contains a custom field (`wfmTenantId`) that identifies which tenant the employee belongs to. The `BambooRefreshService` filters the employee list by this field, importing only employees whose `wfmTenantId` matches the requesting tenant's `tenant_id`. The custom field is maintained by the BPO in BambooHR as part of their onboarding process. If the field is missing or unrecognised, the employee is skipped during refresh.
 
 ### 9.2 Data Source
 
@@ -1093,7 +1207,25 @@ public interface BambooHRClient {
 }
 ```
 
-`BambooTimeOff` represents a single day-off record: employee id, date, and type (`MANDATORY` or `PTO`).
+**`BambooEmployee` fields:**
+
+| Field | Type | Mapped to |
+|---|---|---|
+| `id` | `String` | `Agent.bamboohrId` |
+| `displayName` | `String` | `Agent.name` |
+| `workEmail` | `String` | `Agent.email` |
+| `department` | `String` | `Agent.department` |
+| `jobTitle` | `String` | `Agent.jobTitle` |
+| `status` | `String` | `Agent.active` (`"Active"` → `true`, all other values → `false`) |
+| `wfmTenantId` | `String` | Used for tenant filtering during refresh; not persisted on Agent |
+
+**`BambooTimeOff`** represents a single day-off record:
+
+| Field | Type | Mapped to |
+|---|---|---|
+| `employeeId` | `String` | Matched to `Agent.bamboohrId` |
+| `date` | `LocalDate` | `AgentDayOff.date` |
+| `type` | `String` | `AgentDayOff.type` (`"holiday"` / `"mandatory"` → `MANDATORY`, all other types → `PTO`) |
 
 Two implementations:
 
@@ -1348,12 +1480,12 @@ Displays solver output for a given schedule on the selected desk (section 8). Sh
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: desk name, schedule period, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped/accepted). Shows an **"Accepted"** badge when the schedule has been accepted. |
+| Schedule header | Read-only panel | Displays: desk name, schedule period, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped/failed/accepted). Shows an **"Accepted"** badge when accepted or an **error banner** when failed (displaying `errorMessage`). |
 | Non-optimal banner | Alert banner | Displayed prominently at the top of the page when `feasible == false`. Shows the text **"NON-OPTIMAL SOLUTION"** followed by a bulleted list of every violated hard constraint name (from `violatedHardConstraints`). Styled as a warning/error banner (e.g. red or amber background) so it is immediately visible. Hidden when the solution is feasible. |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /desks/{deskId}/schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /desks/{deskId}/schedules/{id}` for status and intermediate scores. |
-| Accept button | Primary button | Visible when the schedule status is `COMPLETED` or `STOPPED`. Accepts this schedule as the active schedule for its period on this desk via `PUT /desks/{deskId}/schedules/{id}/accept`. If the solution is **not feasible** (`feasible == false`), clicking the button opens a confirmation dialog (see below) before proceeding. On success, the schedule status changes to `ACCEPTED`, the button is replaced by the accepted badge, and the reject button is hidden. |
-| Reject button | Destructive/secondary button | Visible when the schedule status is `COMPLETED` or `STOPPED`. Opens a confirmation dialog: *"Are you sure you want to reject this schedule? It will be permanently deleted."* On confirmation, calls `PUT /desks/{deskId}/schedules/{id}/reject` and navigates back to the Schedule Setup page. |
+| Accept button | Primary button | Visible when the schedule status is `COMPLETED` or `STOPPED` (hidden for `FAILED`). Accepts this schedule as the active schedule for its period on this desk via `PUT /desks/{deskId}/schedules/{id}/accept`. If the solution is **not feasible** (`feasible == false`), clicking the button opens a confirmation dialog (see below) before proceeding. On success, the schedule status changes to `ACCEPTED`, the button is replaced by the accepted badge, and the reject button is hidden. |
+| Reject button | Destructive/secondary button | Visible when the schedule status is `COMPLETED`, `STOPPED`, or `FAILED`. Opens a confirmation dialog: *"Are you sure you want to reject this schedule? It will be permanently deleted."* On confirmation, calls `PUT /desks/{deskId}/schedules/{id}/reject` and navigates back to the Schedule Setup page. For `FAILED` schedules, rejecting is the only way to clear the failed solve and allow a new one. |
 | Non-optimal accept confirmation | Modal dialog | Shown only when the user clicks **Accept** on a non-feasible schedule. Displays: **"This schedule has hard constraint violations and is not optimal. Are you sure you want to accept it?"** with a summary of violated hard constraints. Two buttons: **"Accept anyway"** (proceeds with accept) and **"Cancel"** (returns to the results page). |
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /desks/{deskId}/schedules/{id}/export`. |
 | Results tabs | Tab bar | Four tabs as described below. |
