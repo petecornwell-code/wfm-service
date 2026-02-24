@@ -56,7 +56,7 @@ The backend is organised into three packages mirroring the standard layered patt
 
 All data is scoped to a tenant via a `tenant_id` column (`BIGINT`) present on every tenant-owned table. The value is assigned and supplied by the external AI service platform — WFM Service never generates tenant ids itself.
 
-- **Inbound requests** — The platform authenticates each request and forwards the resolved `tenant_id` to WFM Service (e.g. via a request header or token claim). The exact mechanism is owned by the platform and is out of scope for this document.
+- **Inbound requests** — The platform authenticates each request and forwards the resolved `tenant_id` to WFM Service via the HTTP header `X-Tenant-ID`. A Spring `OncePerRequestFilter` (`TenantFilter`) reads this header, parses it as a `Long`, and stores the value in a `ThreadLocal` holder (`TenantContext`). All service and repository code retrieves the current tenant id from `TenantContext.getTenantId()`. If the header is missing or not a valid long, the filter returns `400 Bad Request`. The filter is registered in the package layout under `config/TenantFilter.java` and the thread-local holder under `config/TenantContext.java`.
 - **Data isolation** — Every query filters by `tenant_id`. An entity created by one tenant is never visible to another.
 - **Database strategy** — Shared schema, shared tables, discriminated by `tenant_id`. No per-tenant schemas or databases.
 
@@ -391,6 +391,7 @@ classDiagram
         +int underallocationHardLimitPct
         +HardSoftScore score
         +ScheduleStatus status
+        +OffsetDateTime createdAt
         «RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED»
     }
 
@@ -645,7 +646,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `startTime` | `LocalTime` | Coverage window start |
 | `endTime` | `LocalTime` | Coverage window end |
 | `periodStartDate` | `LocalDate` | First day of the schedule period |
-| `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous and can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
+| `periodEndDate` | `LocalDate` | Last day of the schedule period (inclusive). The period must be contiguous, at least 1 day, and at most **31 days** (i.e. `periodEndDate − periodStartDate + 1 ≤ 31`). It can span any range of days (e.g. Mon–Fri, Mon–Thu, Sat–Sun, or a full Mon–Sun week). Timeslots are generated for every day from `periodStartDate` to `periodEndDate`. |
 | `breakBlockedHours` | `double` | Hours blocked at the start and end of an agent's shift where breaks are forbidden (default 1.0). Fractional values are supported (e.g. 0.5 for 30 minutes). |
 | `breakDurationMinutes` | `int` | Length of each agent's break in minutes (default 60). Must be a multiple of `incrementMinutes`. |
 | `breakMinShiftHours` | `BigDecimal` | Contracted hours must strictly exceed this threshold for a break to be assigned (default 4.0). An agent with exactly this many hours or fewer gets no break. Uses `BigDecimal` for consistency with other hour-based fields (e.g. a threshold of 4.5 is valid). |
@@ -664,8 +665,9 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver. `null` while `RUNNING` if no solution found yet, and `null` if `FAILED`. |
-| `status` | `enum(RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below) |
+| `status` | `enum(RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below). Persisted as a database column for accepted schedules. |
 | `errorMessage` | `String` | `null` unless status is `FAILED`. Contains the exception message from the solver failure. |
+| `createdAt` | `OffsetDateTime` | Timestamp when the solve was initiated. Set once during the pre-solve phase and never modified. Persisted to the database when the schedule is accepted. |
 
 **Schedule lifecycle.** A schedule progresses through the following states:
 
@@ -729,7 +731,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 ## 7. API
 
-All endpoints are served under the base path `/api/v1`. Every request is scoped to a single tenant — the `tenant_id` is extracted from the authenticated context provided by the AI service platform (see section 3.1). Responses only include data belonging to the requesting tenant.
+All endpoints are served under the base path `/api/v1`. Every request is scoped to a single tenant — the `tenant_id` is extracted from the `X-Tenant-ID` request header by `TenantFilter` (see section 3.1). Responses only include data belonging to the requesting tenant.
 
 **Desk-scoped endpoints** are nested under `/desks/{deskId}` and operate on data belonging to that specific desk. **Tenant-level endpoints** (desk management, agent records, agent days off, and BambooHR refresh) do not require a desk context.
 
@@ -853,12 +855,13 @@ Desk-scoped. Each desk defines its own set of specializations.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk |
-| `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk |
+| `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `201` with the created specialization. |
+| `PUT` | `/desks/{deskId}/specializations/{id}` | Rename a specialization. Request body: `{ "name": "..." }`. Name must be unique per desk. Returns `200` with the updated specialization. |
 | `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any desk-agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
 
 ### 7.6 Agent Preferences
 
-Desk-scoped. Preferences are specific to an agent within a desk.
+Desk-scoped. Preferences are specific to an agent within a desk. Handled by `DeskAgentController` (same controller as section 7.2, since endpoints share the `/desks/{deskId}/agents/{agentId}` prefix).
 
 | Method | Path | Description |
 |---|---|---|
@@ -868,7 +871,7 @@ Desk-scoped. Preferences are specific to an agent within a desk.
 
 ### 7.7 Agent Exceptions
 
-Desk-scoped. Exceptions allow a desk-agent's contracted hours to be overridden on specific dates, with a mandatory reason (section 5.10).
+Desk-scoped. Exceptions allow a desk-agent's contracted hours to be overridden on specific dates, with a mandatory reason (section 5.10). Handled by `DeskAgentController` (same controller as sections 7.2 and 7.6).
 
 | Method | Path | Description |
 |---|---|---|
@@ -1021,6 +1024,7 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 **Pre-solve validation:** `POST /desks/{deskId}/schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
+- The schedule period must be between 1 and 31 days (`periodEndDate − periodStartDate + 1 ≤ 31`). *(`details[].field`: `"periodEndDate"`.)*
 - Timeslots must exist for this desk covering every day of the schedule period. *(`details[].field`: `"timeslots"`.)*
 - The schedule's `incrementMinutes`, `startTime`, and `endTime` must match the existing timeslot structure. If the timeslots were generated with a 15-minute increment from 08:00–18:00, the schedule must use the same values. *(`details[].field`: `"incrementMinutes"` / `"startTime"` / `"endTime"`.)*
 - Every active desk-agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"deskAgent.specializations"`, with the affected agent identified.)*
@@ -1081,7 +1085,7 @@ A per-day comparison of **predicted** staffing hours (derived from staffing requ
 | `predictedHours` | `BigDecimal` | Sum of `requiredAgents × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `actualHours` | `BigDecimal` | Sum of `(assigned agents) × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `deltaHours` | `BigDecimal` | `actualHours − predictedHours` (positive = overstaffed, negative = understaffed) |
-| `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100` |
+| `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100`. If `predictedHours` is zero, `coveragePct` is `null` (not applicable — there was no demand for that specialization/day). |
 
 A `totals` row per day aggregates across all specializations. A grand-total row aggregates across all days.
 
@@ -1241,6 +1245,7 @@ Two implementations:
 
 All refreshes are **user-initiated** — there is no automatic or scheduled background refresh. A refresh is triggered explicitly via `POST /api/v1/agents/refresh` (typically by clicking the Refresh button on the Agents page). This ensures the user is always in control of when external data is pulled into the system.
 
+- **Concurrency guard** — Only one refresh may run at a time per tenant. The service holds an in-memory `ConcurrentHashMap<Long, Boolean>` keyed by `tenant_id`. When a refresh is requested, the service attempts `putIfAbsent(tenantId, true)`. If a refresh is already in progress for the tenant, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this tenant."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
 - **Days off refresh** — The refresh also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
@@ -1315,6 +1320,9 @@ src/main/java/com/wfm/
 │   ├── MockBambooHRClient.java
 │   ├── HttpBambooHRClient.java
 │   └── BambooRefreshService.java
+├── config/
+│   ├── TenantFilter.java
+│   └── TenantContext.java
 ├── solver/
 │   └── ScheduleConstraintProvider.java
 └── WfmApplication.java
@@ -1461,7 +1469,7 @@ Configures solver inputs and triggers a solve run for the selected desk (section
 | Control | Type | Description |
 |---|---|---|
 | Schedule period start | Date picker | Selects the first day of the schedule period (`periodStartDate`). |
-| Schedule period end | Date picker | Selects the last day of the schedule period (`periodEndDate`). Must be on or after the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
+| Schedule period end | Date picker | Selects the last day of the schedule period (`periodEndDate`). Must be on or after the start date and at most 31 days from the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
 | Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
@@ -1493,7 +1501,7 @@ Displays solver output for a given schedule on the selected desk (section 8). Sh
 | Export to Excel button | Button | Downloads the `.xlsx` export via `GET /desks/{deskId}/schedules/{id}/export`. |
 | Results tabs | Tab bar | Four tabs as described below. |
 
-#### 12.8.1 Staffing Summary Tab
+#### 12.10.1 Staffing Summary Tab
 
 Corresponds to section 8.1.
 
@@ -1502,7 +1510,7 @@ Corresponds to section 8.1.
 | Summary table | Table | Columns: **Day**, **Specialization**, **Predicted hours**, **Actual hours**, **Delta hours**, **Coverage %**. Colour-coded: green for fully staffed or overstaffed, amber for slightly understaffed, red for significantly understaffed. Includes per-day totals and a weekly grand-total row. |
 | Day filter | Dropdown or button group | Filters the table to a single day or shows all days. |
 
-#### 12.8.2 Agent Schedule Tab
+#### 12.10.2 Agent Schedule Tab
 
 Corresponds to section 8.2.
 
@@ -1513,7 +1521,7 @@ Corresponds to section 8.2.
 | Agent search / filter | Text input | Filters the grid to agents whose name matches the search text. |
 | Legend | Inline legend | Explains cell colours: primary match, secondary match, break, unassigned. |
 
-#### 12.8.3 Preference Report Tab
+#### 12.10.3 Preference Report Tab
 
 Corresponds to section 8.3.
 
@@ -1523,7 +1531,7 @@ Corresponds to section 8.3.
 | Summary counters | Read-only panel | Displays `totalPreferences`, `startTimeHonouredCount`, `breakTimeHonouredCount`, and `overallHonouredPct`. |
 | Filter: overridden only | Toggle | Filters the table to show only rows where at least one preference was overridden. |
 
-#### 12.8.4 Constraint Violations Tab
+#### 12.10.4 Constraint Violations Tab
 
 Corresponds to section 8.4.
 
