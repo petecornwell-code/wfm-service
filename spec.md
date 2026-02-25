@@ -69,7 +69,7 @@ Within a tenant, all scheduling work is organised into **desks**. A desk represe
 
 - **Desk scoping** — Most data is scoped to both `tenant_id` and `desk_id`. The `desk_id` (`UUID`) acts as a second-level partition key on every desk-scoped table, exactly like `tenant_id` acts at the tenant level.
 - **Tenant-level data** — Two categories of data remain at the tenant level (scoped by `tenant_id` only, no `desk_id`):
-  1. **Agent records** — imported from BambooHR via `POST /agents/refresh`. An agent is a person who exists at the tenant level.
+  1. **Agent records** — imported from BambooHR via `POST /desks/{deskId}/agents/refresh`. An agent is a person who exists at the tenant level.
   2. **Agent days off** — also sourced from BambooHR. A day off reflects the person's absence and applies regardless of desk.
 - **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
 - **Desk context in the API** — All desk-scoped endpoints require a `deskId` path parameter or are nested under a desk resource. Desk management endpoints (`/desks`) require only tenant context. See section 7 for details.
@@ -857,10 +857,11 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
-| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. The operation is **all-or-nothing**: if any agent in the list is invalid (does not exist, inactive, or already assigned to this desk), the entire request fails with `400` and no agents are assigned. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
+| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. An agent may only belong to **one desk** — if any agent in the list is already assigned to **any** desk (including this one), the entire request fails with `400` and no agents are assigned. The operation is **all-or-nothing**: if any agent in the list is invalid (does not exist, inactive, or already assigned), the entire request fails with `400` and no agents are assigned. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. Returns `409 Conflict` if the desk has a non-accepted schedule (the agent may be part of an in-progress solve). |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `200` with the updated DeskAgentResponse. Returns `400` if any specialization does not belong to this desk, or if the primary is included in the secondary list. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. Returns `200` with the updated DeskAgentResponse. If not set, the desk's `defaultContractedHoursPerDay` is used. |
+| `POST` | `/desks/{deskId}/agents/refresh` | Trigger a desk-scoped refresh of agent data from BambooHR (section 9.4). Uses the desk's `name` as the BambooHR `project` filter to pull only employees assigned to this desk. Returns `200` with the full list of desk-agents after the refresh completes (same shape as `GET /desks/{deskId}/agents` items but **not paginated** — returns all desk-agents in a flat array so the UI can replace its local state in one shot). Returns `409 Conflict` if a refresh is already in progress for this desk. |
 
 **Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response):
 
@@ -896,7 +897,6 @@ Agent records originate from BambooHR. These endpoints are **tenant-level** — 
 |---|---|---|
 | `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). Each item uses the agent response format below. |
 | `GET` | `/agents/{agentId}` | Get agent by id. Returns `200` with the agent response format below. |
-| `POST` | `/agents/refresh` | Trigger a refresh of agent data from BambooHR. All refreshes are user-initiated (section 9.4). Returns `200` with the full list of agents for the tenant after the refresh completes (same shape as `GET /agents` items but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). This avoids requiring a separate GET call after every refresh. |
 
 **Agent response format** (used by all tenant-level agent endpoints):
 
@@ -1329,7 +1329,7 @@ Export is triggered via a dedicated endpoint (see section 7.11). The response st
 
 ### 9.1 Overview
 
-Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table up to date with the BambooHR employee directory via user-initiated refreshes.
+Agent data is sourced from BambooHR via its REST API. The integration keeps the local `agent` table up to date with the BambooHR employee directory via **desk-scoped, user-initiated refreshes**. Each refresh targets a single desk, using the desk's name to filter BambooHR employees by their `project` custom field.
 
 The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant.
 
@@ -1346,11 +1346,13 @@ Initially the BambooHR client will operate against an **in-memory mock** that re
 
 ```java
 public interface BambooHRClient {
-    List<BambooEmployee> listEmployees();
+    List<BambooEmployee> listEmployees(String wfmTenantId, String project);
     BambooEmployee getEmployee(String bamboohrId);
     List<BambooTimeOff> listTimeOff(String wfmTenantId, LocalDate from, LocalDate to);
 }
 ```
+
+`listEmployees` returns only employees whose `wfmTenantId` matches the tenant **and** whose `project` matches the desk name. `getEmployee` remains unfiltered (direct lookup by BambooHR ID). `listTimeOff` is tenant-scoped — days off apply across all desks (section 5.9).
 
 **`BambooEmployee` fields:**
 
@@ -1382,13 +1384,14 @@ Two implementations:
 
 ### 9.4 Refresh Behaviour
 
-All refreshes are **user-initiated** — there is no automatic or scheduled background refresh. A refresh is triggered explicitly via `POST /api/v1/agents/refresh` (typically by clicking the Refresh button on the Agents page). This ensures the user is always in control of when external data is pulled into the system.
+All refreshes are **desk-scoped** and **user-initiated** — there is no automatic or scheduled background refresh. A refresh is triggered explicitly via `POST /api/v1/desks/{deskId}/agents/refresh` (typically by clicking the Refresh button on the Desk Agents page). The service uses the desk's `name` as the BambooHR `project` filter, pulling only employees assigned to that desk. This ensures the user is always in control of when external data is pulled into the system.
 
-- **Concurrency guard** — Only one refresh may run at a time per tenant. The service holds an in-memory `ConcurrentHashMap<Long, Boolean>` keyed by `tenant_id`. When a refresh is requested, the service attempts `putIfAbsent(tenantId, true)`. If a refresh is already in progress for the tenant, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this tenant."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
-- **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
+- **Concurrency guard** — Only one refresh may run at a time per desk. The service holds an in-memory `ConcurrentHashMap<UUID, Boolean>` keyed by `desk_id`. When a refresh is requested, the service attempts `putIfAbsent(deskId, true)`. If a refresh is already in progress for this desk, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this desk."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
+- **Employee retrieval** — The service calls `listEmployees(wfmTenantId, desk.name)` to fetch only employees matching the tenant and the desk's BambooHR project. This means each desk refresh pulls a targeted subset of the BPO's workforce rather than all employees.
+- **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted into the tenant-level `agent` table; existing employees have their name, email, department, and job title updated. Employees present in the previous refresh for this desk but no longer returned by BambooHR are marked `active = false` (soft-delete).
+- **Desk assignment** — Every employee returned by `listEmployees` for this desk is automatically assigned to the desk: a `DeskAgent` record is created if one does not already exist (with no specializations — those must still be assigned manually). If the agent is already assigned to a different desk, the refresh logs a warning and skips the desk assignment for that agent — the administrator must resolve the conflict manually.
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
-- **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). The `wfmTenantId` parameter ensures only time-off records for the current tenant's employees are returned. Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
-- **Desk assignment** — During refresh, the `BambooRefreshService` reads each employee's `project` custom field and matches it (case-insensitive) against `Desk.name` within the tenant. If a matching desk is found and the agent is not already assigned to it, a `DeskAgent` record is created (with no specializations — those must still be assigned manually). If the agent is already assigned to a different desk whose name no longer matches their `project` value, the existing assignment is **not** automatically removed — a mismatch is logged as a warning for the administrator to resolve manually. If the `project` field is blank or does not match any desk, the agent is imported without a desk assignment.
+- **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Days off are **tenant-level** (not desk-scoped) so this call uses `wfmTenantId` only. Returned day-off records are upserted into the `agent_day_off` table for the agents returned by this refresh, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
 - **Transaction scope** — The entire refresh (agent upserts + desk assignment upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
 
 ### 9.5 Configuration
@@ -1572,7 +1575,7 @@ Manages agents assigned to the selected desk — their assignment, specializatio
 | Desk agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours/day, active status, last refreshed timestamp. Shows only agents assigned to the selected desk, fetched via `GET /desks/{deskId}/agents`. Sortable and filterable. |
 | Assign agents button | Button | Opens a modal listing unassigned tenant agents (fetched via `GET /agents` minus those already assigned to this desk). The user selects one or more agents and confirms. Assigns via `POST /desks/{deskId}/agents`. |
 | Remove agent button | Icon button (per row) | Removes the agent from this desk via `DELETE /desks/{deskId}/agents/{agentId}`. Shows a confirmation dialog since this also deletes the agent's desk-scoped preferences and exceptions. Disabled if a non-accepted schedule exists for this desk. |
-| Refresh from BambooHR button | Button | Triggers `POST /agents/refresh` (tenant-level). Displays a loading indicator while the refresh runs and reloads the table on completion. Newly imported agents are not automatically assigned to any desk. |
+| Refresh from BambooHR button | Button | Triggers `POST /desks/{deskId}/agents/refresh` (desk-scoped). Displays a loading indicator while the refresh runs and reloads the table on completion. Imported agents are automatically assigned to this desk (section 9.4). |
 | Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
 | Edit specializations (per agent) | Inline or modal form | **Primary specialization:** single-select dropdown populated from this desk's specializations list. **Secondary specializations:** multi-select control populated from this desk's specializations list (excluding the selected primary). Saves via `PUT /desks/{deskId}/agents/{agentId}/specializations`. |
 | Edit contracted hours (per agent) | Inline edit or modal | Numeric input for the agent's contracted hours per day on this desk. Displays the desk default if no override is set. Saves via `PUT /desks/{deskId}/agents/{agentId}/contracted-hours`. |
