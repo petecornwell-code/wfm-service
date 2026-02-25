@@ -71,7 +71,7 @@ Within a tenant, all scheduling work is organised into **desks**. A desk represe
 - **Tenant-level data** — Two categories of data remain at the tenant level (scoped by `tenant_id` only, no `desk_id`):
   1. **Agent records** — imported from BambooHR via `POST /agents/refresh`. An agent is a person who exists at the tenant level.
   2. **Agent days off** — also sourced from BambooHR. A day off reflects the person's absence and applies regardless of desk.
-- **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. An agent may be assigned to **at most one desk** at a time. Desk assignment is expected to be driven by a parameter from BambooHR (see open issue in section 13).
+- **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
 - **Desk context in the API** — All desk-scoped endpoints require a `deskId` path parameter or are nested under a desk resource. Desk management endpoints (`/desks`) require only tenant context. See section 7 for details.
 - **Single-desk constraint** — Because each agent is assigned to exactly one desk, cross-desk scheduling conflicts cannot occur.
 - **Desk selection in the UI** — Before navigating to any scheduling page, the user selects a desk from a desk picker (section 12.1). All subsequent pages operate within that desk's context.
@@ -488,7 +488,7 @@ The `Agent` entity holds only BambooHR-sourced data. Desk-specific configuration
 
 ### 5.4 DeskAgent
 
-Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. An agent may be assigned to **at most one desk** at a time. Desk assignment is expected to be driven by a parameter from BambooHR (see open issue in section 13).
+Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
 
 **Specialization requirement:** Every desk-agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. Freshly assigned agents have no specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active desk-agent lacks specializations (see section 7.11).
 
@@ -1333,7 +1333,10 @@ Agent data is sourced from BambooHR via its REST API. The integration keeps the 
 
 The service is operated by a single **BPO (Business Process Outsourcer)** that manages agents on behalf of multiple clients. Each client is represented by a `tenant_id` in WFM Service. All agents are stored in **one shared BambooHR instance** managed by the BPO — there is not a separate BambooHR account per tenant.
 
-**Tenant-to-employee mapping:** Each BambooHR employee record contains a custom field (`wfmTenantId`) that identifies which tenant the employee belongs to. The `BambooRefreshService` filters the employee list by this field, importing only employees whose `wfmTenantId` matches the requesting tenant's `tenant_id`. The custom field is maintained by the BPO in BambooHR as part of their onboarding process. If the field is missing or unrecognised, the employee is skipped during refresh.
+**Tenant-to-employee mapping:** Each BambooHR employee record contains two custom fields maintained by the BPO as part of their onboarding process:
+
+- **`wfmTenantId`** — identifies which tenant the employee belongs to. The `BambooRefreshService` filters the employee list by this field, importing only employees whose `wfmTenantId` matches the requesting tenant's `tenant_id`. If the field is missing or unrecognised, the employee is skipped during refresh.
+- **`project`** — identifies which desk the employee is assigned to, matched (case-insensitive) to `Desk.name` within the tenant. If the field is blank or does not match any desk, the agent is imported without a desk assignment. See section 9.4 for desk assignment behaviour during refresh.
 
 ### 9.2 Data Source
 
@@ -1345,7 +1348,7 @@ Initially the BambooHR client will operate against an **in-memory mock** that re
 public interface BambooHRClient {
     List<BambooEmployee> listEmployees();
     BambooEmployee getEmployee(String bamboohrId);
-    List<BambooTimeOff> listTimeOff(LocalDate from, LocalDate to);
+    List<BambooTimeOff> listTimeOff(String wfmTenantId, LocalDate from, LocalDate to);
 }
 ```
 
@@ -1360,6 +1363,7 @@ public interface BambooHRClient {
 | `jobTitle` | `String` | `Agent.jobTitle` |
 | `status` | `String` | `Agent.active` (`"Active"` → `true`, all other values → `false`) |
 | `wfmTenantId` | `String` | Used for tenant filtering during refresh; not persisted on Agent |
+| `project` | `String` | BambooHR custom field identifying the agent's desk. Matched (case-insensitive) to `Desk.name` for automatic desk assignment during refresh. If blank or no matching desk exists, the agent is imported without a desk assignment. Not persisted on Agent. |
 
 **`BambooTimeOff`** represents a single day-off record:
 
@@ -1383,8 +1387,9 @@ All refreshes are **user-initiated** — there is no automatic or scheduled back
 - **Concurrency guard** — Only one refresh may run at a time per tenant. The service holds an in-memory `ConcurrentHashMap<Long, Boolean>` keyed by `tenant_id`. When a refresh is requested, the service attempts `putIfAbsent(tenantId, true)`. If a refresh is already in progress for the tenant, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this tenant."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted; existing employees have their name, email, department, and job title updated. Employees no longer present in BambooHR are marked `active = false` (soft-delete).
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
-- **Days off refresh** — The refresh also calls `listTimeOff` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
-- **Transaction scope** — The entire refresh (agent upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
+- **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). The `wfmTenantId` parameter ensures only time-off records for the current tenant's employees are returned. Returned day-off records are upserted into the `agent_day_off` table, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
+- **Desk assignment** — During refresh, the `BambooRefreshService` reads each employee's `project` custom field and matches it (case-insensitive) against `Desk.name` within the tenant. If a matching desk is found and the agent is not already assigned to it, a `DeskAgent` record is created (with no specializations — those must still be assigned manually). If the agent is already assigned to a different desk whose name no longer matches their `project` value, the existing assignment is **not** automatically removed — a mismatch is logged as a warning for the administrator to resolve manually. If the `project` field is blank or does not match any desk, the agent is imported without a desk assignment.
+- **Transaction scope** — The entire refresh (agent upserts + desk assignment upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
 
 ### 9.5 Configuration
 
@@ -1716,13 +1721,13 @@ Corresponds to section 8.4.
 
 - ~~**"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.**~~ **Resolved.** (a) No dummy agent — every seat must be filled. (b) Contracted hours remains a hard constraint — every agent must work exactly their contracted hours. (c) Under-allocation is handled by a new "Bulk under-allocation limit" constraint: a **soft penalty** that scales linearly with the shortfall between total predicted demand hours and total contracted agent hours, plus a configurable **hard floor** (`underallocationHardLimitPct`, default 70%) below which the schedule is infeasible. (d) Both over-allocation (`overallocationHardLimitPct`) and under-allocation (`underallocationHardLimitPct`) limits are configurable per schedule. See sections 5.12 and 6.
 
-- **Desk-to-BambooHR mapping.** The spec assumes agents are assigned to desks within WFM Service, but the BambooHR employee record exposes `department` (and potentially other fields). Does a WFM "desk" correspond to a BambooHR department, a custom field, or some other construct? This mapping determines how agents are filtered and grouped during refresh. Resolve with SME.
+- ~~**Desk-to-BambooHR mapping.**~~ **Resolved.** A WFM "desk" maps to the BambooHR custom field `project`. During refresh, the employee's `project` value is matched (case-insensitive) to `Desk.name` within the tenant. See sections 9.1, 9.3, and 9.4.
 
 - **PTO type classification.** BambooHR time-off records include a `type` string (section 9.3). The current mapping treats `"holiday"` / `"mandatory"` as `MANDATORY` and everything else as `PTO`. What are the actual PTO type values returned by BambooHR, and does the type affect scheduling beyond the current binary classification? For example, should half-day PTO reduce contracted hours rather than block the entire day? Resolve with SME.
 
-- **Per-agent time-off retrieval by desk.** The `BambooHRClient.listTimeOff(from, to)` method currently returns all time-off records across all employees for a date range. During refresh, these are matched to agents by `bamboohrId`. However, agents are assigned to desks locally — BambooHR has no desk concept. Given the open question about desk-to-BambooHR mapping (above), how should the refresh determine which agents belong to which desk? Currently desk assignment is a manual local step (section 5.4). If this is correct, confirm; if the intent is to auto-assign agents to desks based on a BambooHR field, the mapping must be defined. Resolve with SME.
+- ~~**Per-agent time-off retrieval by desk.**~~ **Resolved.** `BambooHRClient.listTimeOff` now accepts a `wfmTenantId` parameter to filter time-off records by tenant (section 9.3). Desk assignment is determined by the `project` custom field on each employee record, matched to `Desk.name` (section 9.4). Days off remain tenant-level (not desk-scoped).
 
-- **Agent-to-desk assignment from BambooHR.** An agent may be assigned to at most one desk (sections 3.2, 5.4). The desk assignment is expected to be driven by a parameter in BambooHR, but the specific field (e.g. department, custom field, job title) has not been identified. Until this is resolved, desk assignment remains a manual step in WFM Service. Resolve with SME.
+- ~~**Agent-to-desk assignment from BambooHR.**~~ **Resolved.** The BambooHR custom field `project` identifies the agent's desk. During refresh, it is matched (case-insensitive) to `Desk.name` within the tenant. If matched, a `DeskAgent` record is auto-created. Manual assignment via the API remains available. See sections 3.2, 5.4, and 9.4.
 
 ## 14. API Versioning
 
