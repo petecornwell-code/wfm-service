@@ -71,9 +71,9 @@ Within a tenant, all scheduling work is organised into **desks**. A desk represe
 - **Tenant-level data** — Two categories of data remain at the tenant level (scoped by `tenant_id` only, no `desk_id`):
   1. **Agent records** — imported from BambooHR via `POST /agents/refresh`. An agent is a person who exists at the tenant level.
   2. **Agent days off** — also sourced from BambooHR. A day off reflects the person's absence and applies regardless of desk.
-- **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. The same agent may be assigned to multiple desks with different configurations in each.
+- **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. An agent may be assigned to **at most one desk** at a time. Desk assignment is expected to be driven by a parameter from BambooHR (see open issue in section 13).
 - **Desk context in the API** — All desk-scoped endpoints require a `deskId` path parameter or are nested under a desk resource. Desk management endpoints (`/desks`) require only tenant context. See section 7 for details.
-- **Cross-desk overlap** — An agent assigned to multiple desks may be scheduled on two desks for the same timeslot if both desks solve concurrently. This is **by design** — the BPO manages this operationally (e.g. by not assigning the same agent to desks with overlapping hours, or by staggering solve runs). Cross-desk conflict detection is listed as a future enhancement (section 16).
+- **Single-desk constraint** — Because each agent is assigned to exactly one desk, cross-desk scheduling conflicts cannot occur.
 - **Desk selection in the UI** — Before navigating to any scheduling page, the user selects a desk from a desk picker (section 12.1). All subsequent pages operate within that desk's context.
 
 ### 3.3 CORS
@@ -414,7 +414,7 @@ classDiagram
     DeskAgent "* " --> "1" Agent
     DeskAgent "1" --> "1" Specialization : primarySpecialization
     DeskAgent "1" --> "1..*" Specialization : secondarySpecializations
-    note for DeskAgent "Unique on (desk, agent).\nDesk-specific agent configuration."
+    note for DeskAgent "Unique on (desk, agent).\nUnique on (tenant, agent) — one desk per agent.\nDesk-specific agent configuration."
 
     StaffingRequirement "* " --> "1" Timeslot
     StaffingRequirement "* " --> "1" Specialization
@@ -488,7 +488,7 @@ The `Agent` entity holds only BambooHR-sourced data. Desk-specific configuration
 
 ### 5.4 DeskAgent
 
-Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. The same agent may be assigned to multiple desks, each with independent specializations and contracted hours.
+Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. An agent may be assigned to **at most one desk** at a time. Desk assignment is expected to be driven by a parameter from BambooHR (see open issue in section 13).
 
 **Specialization requirement:** Every desk-agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. Freshly assigned agents have no specializations — an administrator must assign them via the UI or API before scheduling. The solver will refuse to start if any active desk-agent lacks specializations (see section 7.11).
 
@@ -502,7 +502,9 @@ Represents an agent's assignment to a desk, together with that desk's configurat
 | `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover for this desk (managed locally, one or more) |
 | `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours for this desk, **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Nullable — if not set, the desk's `Desk.defaultContractedHoursPerDay` (section 5.1) is used. |
 
-**Uniqueness constraint:** Unique on (`desk`, `agent`) — an agent may be assigned to a given desk at most once.
+**Uniqueness constraints:**
+- Unique on (`desk`, `agent`) — an agent may be assigned to a given desk at most once.
+- Unique on (`tenant`, `agent`) — an agent may be assigned to **at most one desk** across the entire tenant. This enforces the single-desk rule: each desk has a unique set of agents with no overlap.
 
 ### 5.5 Timeslot
 
@@ -555,7 +557,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 
 ### 5.8 AgentPreference
 
-An agent's scheduling preferences for a specific desk. Standing preferences define recurring defaults per day of week; weekly preferences override the standing default for a specific date. These are loaded as problem facts and referenced by soft constraints during solving. Preferences are **desk-scoped** — the same agent may have different preferences on different desks.
+An agent's scheduling preferences for a specific desk. Standing preferences define recurring defaults per day of week; weekly preferences override the standing default for a specific date. These are loaded as problem facts and referenced by soft constraints during solving. Preferences are **desk-scoped** — they belong to the agent's assigned desk.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -595,7 +597,7 @@ A day on which an agent is unavailable for scheduling. Days off are refreshed fr
 
 ### 5.10 AgentException
 
-A per-agent, per-desk, per-day override that allows an agent to work different contracted hours than their standard `contractedHoursPerDay` on a specific date. Exceptions are used to accommodate individual circumstances — for example, an agent who is a part-time student and can only work 4 hours on certain days, or an agent with childcare responsibilities requiring a shorter shift. Exceptions are **desk-scoped** — the same agent may have different exceptions on different desks.
+A per-agent, per-desk, per-day override that allows an agent to work different contracted hours than their standard `contractedHoursPerDay` on a specific date. Exceptions are used to accommodate individual circumstances — for example, an agent who is a part-time student and can only work 4 hours on certain days, or an agent with childcare responsibilities requiring a shorter shift. Exceptions are **desk-scoped** — they belong to the agent's assigned desk.
 
 Exceptions are **pre-solve inputs** — they must be configured before the solver is run. The solver uses the exception's `contractedHoursOverride` in place of the desk-agent's normal contracted hours for that day when evaluating the "Contracted hours" constraint (section 6).
 
@@ -1510,7 +1512,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 
 **Desk-scoped tables** (`tenant_id` + `desk_id`):
 
-- `desk_agent` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, FK → `specialization` for primary, `contracted_hours_per_day`, unique on `tenant_id` + `desk_id` + `agent`)
+- `desk_agent` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, FK → `specialization` for primary, `contracted_hours_per_day`, unique on `tenant_id` + `desk_id` + `agent`, unique on `tenant_id` + `agent` — enforces one desk per agent)
 - `desk_agent_secondary_specialization` (join table: FK → `desk_agent`, FK → `specialization`)
 - `specialization` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` + `name`)
 - `agent_preference` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `day_of_week`, `date`, `is_standing`; partial unique on `tenant_id` + `desk_id` + `agent` + `day_of_week` where `is_standing = true`; partial unique on `tenant_id` + `desk_id` + `agent` + `date` where `is_standing = false`)
@@ -1720,6 +1722,8 @@ Corresponds to section 8.4.
 
 - **Per-agent time-off retrieval by desk.** The `BambooHRClient.listTimeOff(from, to)` method currently returns all time-off records across all employees for a date range. During refresh, these are matched to agents by `bamboohrId`. However, agents are assigned to desks locally — BambooHR has no desk concept. Given the open question about desk-to-BambooHR mapping (above), how should the refresh determine which agents belong to which desk? Currently desk assignment is a manual local step (section 5.4). If this is correct, confirm; if the intent is to auto-assign agents to desks based on a BambooHR field, the mapping must be defined. Resolve with SME.
 
+- **Agent-to-desk assignment from BambooHR.** An agent may be assigned to at most one desk (sections 3.2, 5.4). The desk assignment is expected to be driven by a parameter in BambooHR, but the specific field (e.g. department, custom field, job title) has not been identified. Until this is resolved, desk assignment remains a manual step in WFM Service. Resolve with SME.
+
 ## 14. API Versioning
 
 All endpoints are served under `/api/v1`. The following versioning strategy applies:
@@ -1757,7 +1761,6 @@ The following items are out of scope for the initial release but are anticipated
 - **Schedule comparison.** Allow side-by-side comparison of two completed schedules for the same period before accepting one.
 - **Structured logging and observability.** Add structured JSON logging, solve-duration metrics, constraint violation counters, and integration with an observability platform (e.g. OpenTelemetry).
 - **Database indexing strategy.** Define composite indexes for high-frequency query patterns (`tenant_id` + date-range filters on preferences, days off, exceptions, timeslots, and staffing requirements).
-- **Cross-desk conflict detection.** Warn or prevent scheduling the same agent on overlapping timeslots across different desks. Currently handled operationally by the BPO (section 3.2).
 - **Multi-zone tenant support.** Extend the time model to support tenants operating across multiple time zones.
 
 ---
