@@ -18,6 +18,7 @@ The service is **multi-tenant** and **multi-desk**. Tenant identity and authenti
 
 | Layer | Technology |
 |---|---|
+| Build | Gradle (Kotlin DSL) |
 | UI | React |
 | API / Controllers | Spring Boot (Java 21+) |
 | Business Logic / Services | Spring Boot |
