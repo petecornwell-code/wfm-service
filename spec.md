@@ -1717,6 +1717,12 @@ Corresponds to section 8.4.
 
 - ~~**"Every seat must be filled" vs contracted hours — over-allocation and under-allocation.**~~ **Resolved.** (a) No dummy agent — every seat must be filled. (b) Contracted hours remains a hard constraint — every agent must work exactly their contracted hours. (c) Under-allocation is handled by a new "Bulk under-allocation limit" constraint: a **soft penalty** that scales linearly with the shortfall between total predicted demand hours and total contracted agent hours, plus a configurable **hard floor** (`underallocationHardLimitPct`, default 70%) below which the schedule is infeasible. (d) Both over-allocation (`overallocationHardLimitPct`) and under-allocation (`underallocationHardLimitPct`) limits are configurable per schedule. See sections 5.12 and 6.
 
+- **Desk-to-BambooHR mapping.** The spec assumes agents are assigned to desks within WFM Service, but the BambooHR employee record exposes `department` (and potentially other fields). Does a WFM "desk" correspond to a BambooHR department, a custom field, or some other construct? This mapping determines how agents are filtered and grouped during refresh. Resolve with SME.
+
+- **PTO type classification.** BambooHR time-off records include a `type` string (section 9.3). The current mapping treats `"holiday"` / `"mandatory"` as `MANDATORY` and everything else as `PTO`. What are the actual PTO type values returned by BambooHR, and does the type affect scheduling beyond the current binary classification? For example, should half-day PTO reduce contracted hours rather than block the entire day? Resolve with SME.
+
+- **Per-agent time-off retrieval by desk.** The `BambooHRClient.listTimeOff(from, to)` method currently returns all time-off records across all employees for a date range. During refresh, these are matched to agents by `bamboohrId`. However, agents are assigned to desks locally — BambooHR has no desk concept. Given the open question about desk-to-BambooHR mapping (above), how should the refresh determine which agents belong to which desk? Currently desk assignment is a manual local step (section 5.4). If this is correct, confirm; if the intent is to auto-assign agents to desks based on a BambooHR field, the mapping must be defined. Resolve with SME.
+
 ## 14. API Versioning
 
 All endpoints are served under `/api/v1`. The following versioning strategy applies:
