@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<solver xmlns="https://timefold.ai/xsd/solver" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://timefold.ai/xsd/solver https://timefold.ai/xsd/solver/solver.xsd">
+
+    <solutionClass>com.wfm.model.Schedule</solutionClass>
+    <entityClass>com.wfm.model.AgentAssignment</entityClass>
+
+    <scoreDirectorFactory>
+        <constraintProviderClass>com.wfm.solver.ScheduleConstraintProvider</constraintProviderClass>
+    </scoreDirectorFactory>
+
+    <!-- Construction heuristic: build initial solution quickly -->
+    <constructionHeuristic>
+        <constructionHeuristicType>FIRST_FIT_DECREASING</constructionHeuristicType>
+    </constructionHeuristic>
+
+    <!-- Local search: improve the solution -->
+    <localSearch>
+        <termination>
+            <!-- Default 5 minutes; overridden by solver.time-limit property -->
+            <spentLimit>PT5M</spentLimit>
+        </termination>
+    </localSearch>
+
+</solver>

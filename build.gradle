@@ -1,0 +1,49 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.2'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.wfm'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // Database
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Flyway
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
+    // Timefold Solver
+    implementation platform('ai.timefold.solver:timefold-solver-bom:1.16.0')
+    implementation 'ai.timefold.solver:timefold-solver-spring-boot-starter'
+
+    // Apache POI for spreadsheet export
+    implementation 'org.apache.poi:poi-ooxml:5.3.0'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'ai.timefold.solver:timefold-solver-test'
+    testRuntimeOnly 'com.h2database:h2'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
