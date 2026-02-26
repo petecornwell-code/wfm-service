@@ -25,6 +25,7 @@ The service is **multi-tenant** and **multi-desk**. Tenant identity and authenti
 | ORM | Hibernate (via Spring Data JPA) |
 | Database | PostgreSQL |
 | Solver | Timefold Solver (Java) |
+| Spreadsheet Export | Apache POI |
 | Agent Data Source | BambooHR REST API |
 
 ## 3. Architecture
@@ -1325,7 +1326,7 @@ The schedule can be exported as a multi-tab spreadsheet (`.xlsx`). Each tab corr
 
 Constraint violations (section 8.4) are not included in the spreadsheet — they are diagnostic data consumed via the API and displayed in the UI.
 
-Export is triggered via a dedicated endpoint (see section 7.11). The response streams the `.xlsx` file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
+Export is triggered via a dedicated endpoint (see section 7.11). The `.xlsx` file is generated using **Apache POI** (the `XSSFWorkbook` API for `.xlsx` format). The response streams the file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ## 9. BambooHR Integration
 
