@@ -824,7 +824,7 @@ Endpoints with small, bounded result sets (e.g. per-agent filtered by date range
 | `400` | `VALIDATION_FAILED` | Request body or query parameters fail validation (e.g. missing required fields, invalid values, pre-solve validation failures). The `details` array lists each failing check. |
 | `404` | `NOT_FOUND` | The requested entity does not exist or does not belong to the requesting tenant. |
 | `409` | `CONFLICT` | The request conflicts with current state (e.g. a solve is already running for the desk, or an entity cannot be deleted because it is in use). |
-| `409` | `REFRESH_IN_PROGRESS` | A BambooHR refresh is already in progress for this tenant (section 9.4). |
+| `409` | `REFRESH_IN_PROGRESS` | A BambooHR refresh is already in progress for this desk (section 9.4). |
 | `422` | `UNPROCESSABLE_ENTITY` | The request is syntactically valid but semantically invalid (e.g. a staffing requirement references a non-existent specialization). |
 | `500` | `INTERNAL_ERROR` | An unexpected server error occurred. The `message` field contains a generic description; details are logged server-side. |
 
@@ -853,6 +853,8 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 ### 7.2 Desk Agents
 
 Manages which agents are assigned to a desk and their desk-specific configuration (specializations, contracted hours). These endpoints are **desk-scoped**.
+
+**Path parameter convention:** All `{agentId}` path parameters in this section refer to the **`Agent.id`** (the tenant-level agent UUID), not the `DeskAgent.id`. The server resolves the desk-agent record internally using the combination of `deskId` + `agentId`.
 
 | Method | Path | Description |
 |---|---|---|
@@ -895,7 +897,7 @@ Agent records originate from BambooHR. These endpoints are **tenant-level** — 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). Each item uses the agent response format below. |
+| `GET` | `/agents` | List all agents for the tenant. Paginated. Optional query parameters: `search` filters by name (case-insensitive substring match); `unassigned=true` returns only agents **not currently assigned to any desk** (useful for the assign-agents modal). Each item uses the agent response format below. |
 | `GET` | `/agents/{agentId}` | Get agent by id. Returns `200` with the agent response format below. |
 
 **Agent response format** (used by all tenant-level agent endpoints):
@@ -1391,7 +1393,7 @@ All refreshes are **desk-scoped** and **user-initiated** — there is no automat
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted into the tenant-level `agent` table; existing employees have their name, email, department, and job title updated. Employees present in the previous refresh for this desk but no longer returned by BambooHR are marked `active = false` (soft-delete).
 - **Desk assignment** — Every employee returned by `listEmployees` for this desk is automatically assigned to the desk: a `DeskAgent` record is created if one does not already exist (with no specializations — those must still be assigned manually). If the agent is already assigned to a different desk, the refresh logs a warning and skips the desk assignment for that agent — the administrator must resolve the conflict manually.
 - **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh.
-- **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Days off are **tenant-level** (not desk-scoped) so this call uses `wfmTenantId` only. Returned day-off records are upserted into the `agent_day_off` table for the agents returned by this refresh, matched by (`agent`, `date`). Days off no longer present in BambooHR for the refreshed date range are deleted.
+- **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Days off are **tenant-level** (not desk-scoped) so this call uses `wfmTenantId` only. Returned day-off records are upserted into the `agent_day_off` table for the agents returned by this refresh, matched by (`agent`, `date`). For **only those agents**, days off within the refreshed date range that are no longer present in BambooHR are deleted. Days off for agents not included in this desk's refresh are never touched.
 - **Transaction scope** — The entire refresh (agent upserts + desk assignment upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
 
 ### 9.5 Configuration
@@ -1573,7 +1575,7 @@ Manages agents assigned to the selected desk — their assignment, specializatio
 | Control | Type | Description |
 |---|---|---|
 | Desk agent table | Table | Columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours/day, active status, last refreshed timestamp. Shows only agents assigned to the selected desk, fetched via `GET /desks/{deskId}/agents`. Sortable and filterable. |
-| Assign agents button | Button | Opens a modal listing unassigned tenant agents (fetched via `GET /agents` minus those already assigned to this desk). The user selects one or more agents and confirms. Assigns via `POST /desks/{deskId}/agents`. |
+| Assign agents button | Button | Opens a modal listing unassigned tenant agents (fetched via `GET /agents?unassigned=true`). The user selects one or more agents and confirms. Assigns via `POST /desks/{deskId}/agents`. |
 | Remove agent button | Icon button (per row) | Removes the agent from this desk via `DELETE /desks/{deskId}/agents/{agentId}`. Shows a confirmation dialog since this also deletes the agent's desk-scoped preferences and exceptions. Disabled if a non-accepted schedule exists for this desk. |
 | Refresh from BambooHR button | Button | Triggers `POST /desks/{deskId}/agents/refresh` (desk-scoped). Displays a loading indicator while the refresh runs and reloads the table on completion. Imported agents are automatically assigned to this desk (section 9.4). |
 | Active/inactive filter | Toggle or dropdown | Filters the table to show active agents, inactive agents, or all. Defaults to active only. |
