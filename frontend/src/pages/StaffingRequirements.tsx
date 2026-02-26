@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { timeslots as timeslotApi, staffingRequirements as srApi } from '../api/client'
+import { timeslots as timeslotApi } from '../api/client'
 
 export default function StaffingRequirements() {
   const { deskId } = useParams<{ deskId: string }>()
