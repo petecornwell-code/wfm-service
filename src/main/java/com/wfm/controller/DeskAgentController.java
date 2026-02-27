@@ -1,5 +1,7 @@
 package com.wfm.controller;
 
+import com.wfm.dto.DeskAgentResponse;
+import com.wfm.dto.PaginatedResponse;
 import com.wfm.model.AgentPreference;
 import com.wfm.model.DeskAgent;
 import com.wfm.integration.BambooRefreshService;
@@ -35,11 +37,12 @@ public class DeskAgentController {
     }
 
     @GetMapping
-    public List<DeskAgent> listDeskAgents(@PathVariable UUID deskId,
+    public PaginatedResponse<DeskAgentResponse> listDeskAgents(@PathVariable UUID deskId,
                                           @RequestParam(required = false) String search,
                                           @RequestParam(required = false) String cursor,
                                           @RequestParam(required = false, defaultValue = "50") int limit) {
-        return deskAgentService.listDeskAgents(deskId, search, cursor, limit);
+        List<DeskAgentResponse> agents = deskAgentService.listDeskAgentResponses(deskId, search, cursor, limit);
+        return new PaginatedResponse<>(agents, null, false);
     }
 
     @PostMapping
@@ -72,9 +75,9 @@ public class DeskAgentController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<Void> refreshFromBamboo(@PathVariable UUID deskId) {
+    public List<DeskAgentResponse> refreshFromBamboo(@PathVariable UUID deskId) {
         bambooRefreshService.refreshDeskAgents(deskId);
-        return ResponseEntity.ok().build();
+        return deskAgentService.listDeskAgentResponses(deskId, null, null, 500);
     }
 
     // --- Preferences ---

@@ -2,6 +2,7 @@ package com.wfm.repository;
 
 import com.wfm.model.DeskAgent;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,8 +13,10 @@ import java.util.UUID;
 @Repository
 public interface DeskAgentRepository extends JpaRepository<DeskAgent, UUID> {
 
+    @EntityGraph(attributePaths = {"agent", "primarySpecialization", "secondarySpecializations"})
     List<DeskAgent> findByTenantIdAndDeskId(long tenantId, UUID deskId, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"agent", "primarySpecialization", "secondarySpecializations"})
     List<DeskAgent> findByTenantIdAndDeskId(long tenantId, UUID deskId);
 
     Optional<DeskAgent> findByTenantIdAndDeskIdAndAgent_Id(long tenantId, UUID deskId, UUID agentId);
