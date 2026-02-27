@@ -20,6 +20,25 @@ const CONSTRAINT_LABELS: Record<string, string> = {
   bulkUnderallocationHardWeight: 'Bulk Under-allocation (Hard)',
 }
 
+// Spec defaults (section 5.11)
+const CONSTRAINT_DEFAULTS: Record<string, Score> = {
+  agentDayOffWeight: { hardScore: 1, softScore: 0 },
+  specMatchWeight: { hardScore: 1, softScore: 0 },
+  noOverlapWeight: { hardScore: 1, softScore: 0 },
+  exactlyOneBreakWeight: { hardScore: 1, softScore: 0 },
+  breakDurationWeight: { hardScore: 1, softScore: 0 },
+  breakBlockedWindowWeight: { hardScore: 1, softScore: 0 },
+  breakAlignmentWeight: { hardScore: 1, softScore: 0 },
+  preferPrimaryWeight: { hardScore: 0, softScore: 1 },
+  honourStartTimeWeight: { hardScore: 0, softScore: 1 },
+  honourBreakTimeWeight: { hardScore: 0, softScore: 1 },
+  breakClusteringWeight: { hardScore: 0, softScore: 2 },
+  contractedHoursWeight: { hardScore: 1, softScore: 0 },
+  bulkOverallocationLimitWeight: { hardScore: 1, softScore: 0 },
+  bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
+  bulkUnderallocationHardWeight: { hardScore: 1, softScore: 0 },
+}
+
 export default function ConstraintWeightsPage() {
   const { deskId } = useParams<{ deskId: string }>()
   const [weights, setWeights] = useState<ConstraintWeightsData | null>(null)
@@ -49,7 +68,7 @@ export default function ConstraintWeightsPage() {
         </thead>
         <tbody>
           {Object.entries(CONSTRAINT_LABELS).map(([key, label]) => {
-            const score = (weights as Record<string, Score>)[key] || { hardScore: 0, softScore: 0 }
+            const score = (weights as Record<string, Score>)[key] || CONSTRAINT_DEFAULTS[key]
             return (
               <tr key={key}>
                 <td>{label}</td>
