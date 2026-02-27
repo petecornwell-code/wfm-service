@@ -1642,15 +1642,15 @@ Displays and adjusts per-desk constraint weights (sections 4.7, 5.11, 7.8). Desk
 
 ### 12.9 Schedule Setup Page
 
-Configures solver inputs and triggers a solve run for the selected desk (sections 4.1, 4.2, 4.6, 7.11). Desk-scoped.
+Configures solver inputs and triggers a solve run for the selected desk (sections 4.1, 4.2, 4.6, 7.11). Desk-scoped. The five timeslot parameters (period start/end, time range start/end, increment) are **pre-populated** from the values last used on the Staffing Requirements page for this desk (persisted in the browser's local storage). The user can still override them before solving.
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule period start | Date picker | Selects the first day of the schedule period (`periodStartDate`). |
-| Schedule period end | Date picker | Selects the last day of the schedule period (`periodEndDate`). Must be on or after the start date and at most 31 days from the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). |
-| Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
-| Time range start | Time picker | Coverage window start (e.g. 08:00). |
-| Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
+| Schedule period start | Date picker | Selects the first day of the schedule period (`periodStartDate`). Pre-populated from Staffing Requirements if previously set. |
+| Schedule period end | Date picker | Selects the last day of the schedule period (`periodEndDate`). Must be on or after the start date and at most 31 days from the start date. The period must be contiguous (e.g. Mon–Fri, Thu–Sun, Mon–Sun). Pre-populated from Staffing Requirements if previously set. |
+| Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. Pre-populated from Staffing Requirements if previously set. |
+| Time range start | Time picker | Coverage window start (e.g. 08:00). Pre-populated from Staffing Requirements if previously set. |
+| Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. Pre-populated from Staffing Requirements if previously set. |
 | Break blocked hours | Numeric input | Hours at the start and end of a shift where breaks are forbidden (default 1.0). Accepts fractional values (e.g. 0.5 for 30 minutes). |
 | Break duration | Dropdown or numeric input | Break length in minutes (default 60). Options are filtered to multiples of the selected timeslot increment (e.g. 30, 45, 60 for a 15-min increment). |
 | Minimum shift for break | Numeric input | Contracted hours must strictly exceed this value for a break to be assigned (default 4). Agents with exactly this many hours or fewer get no break. |

@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { schedules } from '../api/client'
+import { loadTimeslotParams } from '../timeslotParams'
 
 export default function ScheduleSetup() {
   const { deskId } = useParams<{ deskId: string }>()
   const navigate = useNavigate()
+  const saved = deskId ? loadTimeslotParams(deskId) : {}
 
-  const [periodStart, setPeriodStart] = useState('')
-  const [periodEnd, setPeriodEnd] = useState('')
-  const [startTime, setStartTime] = useState('08:00')
-  const [endTime, setEndTime] = useState('18:00')
-  const [increment, setIncrement] = useState(15)
+  const [periodStart, setPeriodStart] = useState(saved.periodStart ?? '')
+  const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? '')
+  const [startTime, setStartTime] = useState(saved.startTime ?? '08:00')
+  const [endTime, setEndTime] = useState(saved.endTime ?? '18:00')
+  const [increment, setIncrement] = useState(saved.increment ?? 15)
   const [breakBlocked, setBreakBlocked] = useState(1.0)
   const [breakDuration, setBreakDuration] = useState(60)
   const [breakMinShift, setBreakMinShift] = useState(4.0)

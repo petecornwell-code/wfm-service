@@ -2,19 +2,28 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { timeslots as timeslotApi, specializations as specApi } from '../api/client'
 import type { Timeslot, Specialization } from '../api/client'
+import { saveTimeslotParams, loadTimeslotParams } from '../timeslotParams'
 
 export default function StaffingRequirements() {
   const { deskId } = useParams<{ deskId: string }>()
-  const [periodStart, setPeriodStart] = useState('')
-  const [periodEnd, setPeriodEnd] = useState('')
-  const [startTime, setStartTime] = useState('08:00')
-  const [endTime, setEndTime] = useState('18:00')
-  const [increment, setIncrement] = useState(15)
+  const saved = deskId ? loadTimeslotParams(deskId) : {}
+  const [periodStart, setPeriodStart] = useState(saved.periodStart ?? '')
+  const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? '')
+  const [startTime, setStartTime] = useState(saved.startTime ?? '08:00')
+  const [endTime, setEndTime] = useState(saved.endTime ?? '18:00')
+  const [increment, setIncrement] = useState(saved.increment ?? 15)
   const [slots, setSlots] = useState<Timeslot[]>([])
   const [specs, setSpecs] = useState<Specialization[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+
+  // Persist timeslot params per-desk so Schedule Setup can pre-populate
+  useEffect(() => {
+    if (deskId) {
+      saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
+    }
+  }, [deskId, periodStart, periodEnd, startTime, endTime, increment])
 
   // Load specializations once
   useEffect(() => {
