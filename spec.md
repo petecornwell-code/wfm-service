@@ -992,7 +992,7 @@ Each weight is a `HardSoftScore` object. To promote a constraint from soft to ha
 
 ### 7.9 Timeslots
 
-Desk-scoped. Timeslots must be generated and persisted **before** staffing requirements can be entered. They define the time grid against which demand is specified.
+Desk-scoped. Timeslots define the time grid against which demand is specified. They are generated **on-demand** — the frontend calls the generate endpoint automatically when the user configures the period, time range, and increment on the Staffing Requirements page. No explicit "Generate" button is needed; the grid appears as soon as valid parameters are set. The generate endpoint is idempotent in the sense that it deletes any existing timeslots for the date range before creating new ones.
 
 | Method | Path | Description |
 |---|---|---|
@@ -1155,7 +1155,7 @@ The `solverConfig.xml` is a required project artifact. Solver tuning (phase orde
 **Pre-solve validation:** `POST /desks/{deskId}/schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
 - The schedule period must be between 1 and 31 days (`periodEndDate − periodStartDate + 1 ≤ 31`). *(`details[].field`: `"periodEndDate"`.)*
-- Timeslots must exist for this desk covering every day of the schedule period. *(`details[].field`: `"timeslots"`.)*
+- Timeslots must exist for this desk covering every day of the schedule period. (Timeslots are normally generated on-demand from the Staffing Requirements page; see section 7.9.) *(`details[].field`: `"timeslots"`.)*
 - The schedule's `incrementMinutes`, `startTime`, and `endTime` must match the existing timeslot structure. If the timeslots were generated with a 15-minute increment from 08:00–18:00, the schedule must use the same values. *(`details[].field`: `"incrementMinutes"` / `"startTime"` / `"endTime"`.)*
 - Every active desk-agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"deskAgent.specializations"`, with the affected agent identified.)*
 - Every desk-agent's effective contracted hours (accounting for exceptions) must be a multiple of `incrementMinutes / 60`. For example, with 15-minute increments, 7.5 hours is valid (30 slots) but 7.6 is not. *(`details[].field`: `"deskAgent.contractedHoursPerDay"`, with the affected agent identified.)*
@@ -1610,7 +1610,7 @@ Manages per-agent, per-day contracted hours overrides for the selected desk (sec
 
 ### 12.7 Staffing Requirements Page
 
-Defines how many agents are needed per timeslot per specialization for the selected desk (sections 4.4, 7.9, 7.10). Desk-scoped. The page has two phases: first, generate the timeslot grid; then, enter demand against those timeslots.
+Defines how many agents are needed per timeslot per specialization for the selected desk (sections 4.4, 7.9, 7.10). Desk-scoped. The user configures the period, time range, and increment; timeslots are generated **on-demand** (automatically via `POST /desks/{deskId}/timeslots/generate`) as soon as all parameters are set, and the demand grid appears immediately.
 
 | Control | Type | Description |
 |---|---|---|
@@ -1619,7 +1619,7 @@ Defines how many agents are needed per timeslot per specialization for the selec
 | Time range start | Time picker | Coverage window start (e.g. 08:00). |
 | Time range end | Time picker | Coverage window end (e.g. 18:00). Must be after start. |
 | Timeslot increment | Dropdown | Options: 15 minutes, 30 minutes, 60 minutes. |
-| Generate timeslots button | Button | Generates timeslots for the selected date range, time range, and increment via `POST /desks/{deskId}/timeslots/generate`. If timeslots already exist for this date range, shows a warning that regenerating will delete any existing staffing requirements for those dates. On success, the demand grid below is populated with the generated timeslots. |
+| *(On-demand generation)* | Automatic | When all five parameters above are set, timeslots are generated automatically via `POST /desks/{deskId}/timeslots/generate` (debounced). If timeslots already exist for this date range, they are regenerated (which deletes any existing staffing requirements for those dates). The demand grid below is populated with the generated timeslots. No explicit "Generate" button is needed. |
 | **Demand entry** | | |
 | Input mode toggle | Tab or radio group | Switches between **Direct input** and **Erlang X calculation**. |
 | **Direct input mode** | | |
