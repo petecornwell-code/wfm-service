@@ -90,11 +90,28 @@ Override via environment variables (e.g. `SPRING_DATASOURCE_URL`) or a local `ap
 
 ## IntelliJ IDEA Ultimate Setup
 
-### 1. Import the Project
+### 1. Clone and Import the Project
 
-1. **File > Open** and select the `wfm-service` root directory.
-2. IntelliJ will detect the Gradle build. Click **Trust Project** when prompted.
+#### Option A — Clone from within IntelliJ (recommended for first time)
+
+1. From the **Welcome Screen**, click **Get from VCS** (or **File > New > Project from Version Control** if a project is already open).
+2. In the **URL** field, enter: `https://github.com/petecornwell-code/wfm-service.git`
+3. Choose a local **Directory** where the repo will be cloned.
+4. Click **Clone**. IntelliJ will clone the repo and open it automatically.
+5. Click **Trust Project** when prompted.
+6. Wait for Gradle sync to complete (watch the progress bar in the bottom-right).
+
+#### Option B — Open an already-cloned repo
+
+1. If you already cloned the repo via the command line (`git clone https://github.com/petecornwell-code/wfm-service.git`), use **File > Open** and select the `wfm-service` root directory.
+2. Click **Trust Project** when prompted.
 3. Wait for Gradle sync to complete (watch the progress bar in the bottom-right).
+
+#### Switching branches
+
+1. Click the branch name in the bottom-right status bar (or use **Git > Branches**).
+2. Select the branch you want (e.g. `main`) and choose **Checkout**.
+3. To fetch the latest changes from the remote, use **Git > Fetch** (Ctrl+T) or **Git > Pull**.
 
 ### 2. Verify JDK
 
