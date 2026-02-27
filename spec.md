@@ -648,7 +648,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
-**JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as **two integer columns** in the database (e.g. `spec_match_weight_hard_score INT`, `spec_match_weight_soft_score INT`). Use a JPA `AttributeConverter<HardSoftScore, String>` that serialises to `"hard/soft"` format, or — preferably — map each weight as an `@Embeddable` with `@AttributeOverrides` to control column names. The `constraint_weights` table therefore has 28 integer columns (14 weights × 2 components). The `schedule` table stores its solver score the same way (`hard_score INT`, `soft_score INT`).
+**JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 15 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
 
 ### 5.12 Schedule (Planning Solution)
 
@@ -1532,7 +1532,7 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 - `staffing_requirement` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `timeslot` + `specialization` where `schedule_id IS NULL`). Same live-vs-snapshot distinction as `timeslot`.
 - `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `desk_agent`, FK → `agent`). Assignments only exist as part of an accepted schedule. Stores FKs to both `desk_agent` (the planning variable) and `agent` (denormalised for query convenience).
 - `constraint_weights` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` — one row per desk)
-- `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`, `status`, `increment_minutes`, `start_time`, `end_time`, `period_start_date`, `period_end_date`, `break_blocked_hours`, `break_duration_minutes`, `break_min_shift_hours`, `break_start_alignment`, `break_cluster_threshold_pct`, `default_contracted_hours_per_day`, `overallocation_hard_limit_pct`, `underallocation_hard_limit_pct`, `hard_score`, `soft_score`, `error_message`, `created_at`). Only `ACCEPTED` schedules are written to this table.
+- `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`, `status`, `increment_minutes`, `start_time`, `end_time`, `period_start_date`, `period_end_date`, `break_blocked_hours`, `break_duration_minutes`, `break_min_shift_hours`, `break_start_alignment`, `break_cluster_threshold_pct`, `default_contracted_hours_per_day`, `overallocation_hard_limit_pct`, `underallocation_hard_limit_pct`, `score`, `error_message`, `created_at`). Only `ACCEPTED` schedules are written to this table.
 
 ## 12. React UI
 
