@@ -17,5 +17,7 @@ public interface SpecializationRepository extends JpaRepository<Specialization, 
 
     boolean existsByTenantIdAndDeskIdAndName(long tenantId, UUID deskId, String name);
 
+    Optional<Specialization> findByTenantIdAndDeskIdAndName(long tenantId, UUID deskId, String name);
+
     void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }
