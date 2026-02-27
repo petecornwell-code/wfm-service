@@ -7,6 +7,7 @@ import ai.timefold.solver.core.api.domain.solution.PlanningSolution;
 import ai.timefold.solver.core.api.domain.solution.ProblemFactCollectionProperty;
 import ai.timefold.solver.core.api.domain.valuerange.ValueRangeProvider;
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+import ai.timefold.solver.jpa.api.score.buildin.hardsoft.HardSoftScoreConverter;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -72,7 +73,8 @@ public class Schedule {
     private int underallocationHardLimitPct = 70;
 
     @PlanningScore
-    @Column(name = "hard_score", insertable = false, updatable = false)
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "score", insertable = false, updatable = false)
     private HardSoftScore score;
 
     @Enumerated(EnumType.STRING)

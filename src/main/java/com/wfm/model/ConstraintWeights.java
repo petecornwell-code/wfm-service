@@ -3,6 +3,7 @@ package com.wfm.model;
 import ai.timefold.solver.core.api.domain.constraintweight.ConstraintConfiguration;
 import ai.timefold.solver.core.api.domain.constraintweight.ConstraintWeight;
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+import ai.timefold.solver.jpa.api.score.buildin.hardsoft.HardSoftScoreConverter;
 import jakarta.persistence.*;
 import java.util.UUID;
 
@@ -24,48 +25,78 @@ public class ConstraintWeights {
     private UUID deskId;
 
     @ConstraintWeight("Agent day off")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "agent_day_off_weight")
     private HardSoftScore agentDayOffWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Specialization match")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "spec_match_weight")
     private HardSoftScore specMatchWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("One assignment per timeslot")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "no_overlap_weight")
     private HardSoftScore noOverlapWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Exactly one break")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "exactly_one_break_weight")
     private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Break duration")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "break_duration_weight")
     private HardSoftScore breakDurationWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Break blocked window")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "break_blocked_window_weight")
     private HardSoftScore breakBlockedWindowWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Break start alignment")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "break_alignment_weight")
     private HardSoftScore breakAlignmentWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Prefer primary specialization")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "prefer_primary_weight")
     private HardSoftScore preferPrimaryWeight = HardSoftScore.ofSoft(1);
 
     @ConstraintWeight("Honour preferred start time")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "honour_start_time_weight")
     private HardSoftScore honourStartTimeWeight = HardSoftScore.ofSoft(1);
 
     @ConstraintWeight("Honour preferred break time")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "honour_break_time_weight")
     private HardSoftScore honourBreakTimeWeight = HardSoftScore.ofSoft(1);
 
     @ConstraintWeight("Break clustering")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "break_clustering_weight")
     private HardSoftScore breakClusteringWeight = HardSoftScore.ofSoft(2);
 
     @ConstraintWeight("Contracted hours")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "contracted_hours_weight")
     private HardSoftScore contractedHoursWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Bulk over-allocation limit")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "bulk_overallocation_limit_weight")
     private HardSoftScore bulkOverallocationLimitWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Bulk under-allocation soft")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "bulk_underallocation_soft_weight")
     private HardSoftScore bulkUnderallocationSoftWeight = HardSoftScore.ofSoft(1);
 
     @ConstraintWeight("Bulk under-allocation hard")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "bulk_underallocation_hard_weight")
     private HardSoftScore bulkUnderallocationHardWeight = HardSoftScore.ofHard(1);
 
     public ConstraintWeights() {}
