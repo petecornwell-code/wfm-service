@@ -57,6 +57,9 @@ public class SolverService {
         // TODO: 6. Start solver asynchronously via SolverManager
         // TODO: 7. Return schedule summary (202)
 
+        if (schedule.getId() == null) {
+            schedule.setId(UUID.randomUUID());
+        }
         schedule.setStatus(ScheduleStatus.RUNNING);
         schedule.setTenantId(TenantContext.getTenantId());
         schedule.setDeskId(deskId);
