@@ -4,6 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,11 +20,14 @@ public class TimeslotGeneratorService {
 
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
+    private final EntityManager entityManager;
 
     public TimeslotGeneratorService(TimeslotRepository timeslotRepository,
-                                    StaffingRequirementRepository staffingRequirementRepository) {
+                                    StaffingRequirementRepository staffingRequirementRepository,
+                                    EntityManager entityManager) {
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
+        this.entityManager = entityManager;
     }
 
     public List<Timeslot> listTimeslots(UUID deskId, LocalDate from, LocalDate to) {
@@ -48,6 +52,12 @@ public class TimeslotGeneratorService {
         staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, periodStart, periodEnd);
         timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetween(
                 tenantId, deskId, periodStart, periodEnd);
+
+        // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
+        // processes inserts before deletes in the same flush, which would hit the
+        // unique constraint on (tenant_id, desk_id, date, start_time, end_time).
+        entityManager.flush();
+        entityManager.clear();
 
         // Generate one timeslot per increment per day
         List<Timeslot> timeslots = new ArrayList<>();
