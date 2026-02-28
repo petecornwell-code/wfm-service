@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wfm.dto.PaginatedResponse;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,7 +87,7 @@ public final class CursorPagination {
         if (results.size() <= limit) {
             return new PaginatedResponse<>(results, null, false);
         }
-        List<T> page = results.subList(0, limit);
+        List<T> page = List.copyOf(results.subList(0, limit));
         T lastItem = page.get(page.size() - 1);
         String nextCursor = encode(cursorExtractor.apply(lastItem));
         return new PaginatedResponse<>(page, nextCursor, true);
