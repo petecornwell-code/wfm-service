@@ -20,6 +20,7 @@ Create a custom Jackson serializer/deserializer for `HardSoftScore` that produce
 Register via a Jackson module `@Bean`.
 **Files:** new `HardSoftScoreSerializer.java`, new `HardSoftScoreDeserializer.java`, new `JacksonConfig.java` (or add to existing config)
 **Depends on:** nothing
+**Depended on by:** nothing directly — this is a defensive safety net. All controllers use DTOs with plain `ScoreDto` fields, so Jackson never serializes `HardSoftScore` in normal operation. The serializer protects against accidental raw entity leaks.
 **Ref:** TODO §1.5
 
 ### Task 3 — BigDecimal Normalization Utility
@@ -107,7 +108,7 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 - Wire `ConstraintWeightsController` to use `ConstraintWeightsDto` instead of raw entity
 - Convert between JPA entity (`HardSoftScore` fields) and DTO (`ScoreDto` fields) in service layer
 **Files:** `ConstraintWeightsService.java`, `ConstraintWeightsController.java`
-**Depends on:** Task 2 (HardSoftScore serializer — needed because `ConstraintWeights` entity uses `HardSoftScore` internally), Task 4 (ConstraintWeightsDto)
+**Depends on:** Task 4 (ConstraintWeightsDto). Note: does NOT need Task 2 — the controller uses `ConstraintWeightsDto` (with plain `ScoreDto`), and the JPA entity uses `HardSoftScoreConverter` for DB persistence, so Jackson never serializes `HardSoftScore` on this path.
 **Ref:** TODO §9
 
 ### Task 13 — AgentPreferenceService: Complete Methods
