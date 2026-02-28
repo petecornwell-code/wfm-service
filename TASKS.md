@@ -35,7 +35,7 @@ Create missing DTOs, fix existing ones:
 - Fix: `StaffingRequirementRequest.items` → `requirements`, `ErlangXRequest.items` → `parameters`
 - Add typed output view sub-DTOs inside `ScheduleDetailResponse` (StaffingSummaryEntry, AgentScheduleEntry, PreferenceReportEntry, ConstraintViolationEntry, etc.)
 **Files:** `dto/` package — multiple new and modified files
-**Depends on:** Task 2 (HardSoftScore serializer for ConstraintWeightsDto and ScheduleSummary.ScoreDto)
+**Depends on:** nothing (DTOs use their own `ScoreDto` records, not `HardSoftScore` directly)
 **Ref:** TODO §1.2, §1.3
 
 ### Task 5 — Model Fixes
@@ -75,9 +75,10 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 1 (exception handler), Task 4 (DTOs)
 **Ref:** TODO §6
 
-### Task 9 — AgentService: Implement Listing
+### Task 9 — AgentService: Implement Listing + DTO Wiring
 - `listAgents()`: query by tenantId, search filter (case-insensitive name), `unassigned=true` filter, cursor pagination
-- Wire `AgentController` to use `PaginatedResponse<AgentResponse>`
+- Wire `AgentController.listAgents()` to return `PaginatedResponse<AgentResponse>`
+- Wire `AgentController.getAgent()` to return `AgentResponse` instead of raw `Agent` (currently leaks `bamboohrId`)
 **Files:** `AgentService.java`, `AgentController.java`, `AgentRepository.java`
 **Depends on:** Task 4 (DTOs), Task 6 (pagination)
 **Ref:** TODO §4
@@ -102,10 +103,11 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Ref:** TODO §5
 
 ### Task 12 — ConstraintWeightsService: Implement Update
-- `updateWeights()`: load existing (or defaults), apply partial update, save
+- `updateWeights()`: load existing (or defaults), apply partial update (omitted fields keep current values), save
 - Wire `ConstraintWeightsController` to use `ConstraintWeightsDto` instead of raw entity
+- Convert between JPA entity (`HardSoftScore` fields) and DTO (`ScoreDto` fields) in service layer
 **Files:** `ConstraintWeightsService.java`, `ConstraintWeightsController.java`
-**Depends on:** Task 2 (HardSoftScore serializer), Task 4 (ConstraintWeightsDto)
+**Depends on:** Task 2 (HardSoftScore serializer — needed because `ConstraintWeights` entity uses `HardSoftScore` internally), Task 4 (ConstraintWeightsDto)
 **Ref:** TODO §9
 
 ### Task 13 — AgentPreferenceService: Complete Methods
@@ -133,7 +135,8 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 ### Task 15 — TimeslotController: Add Typed DTO and Accepted Schedule Check
 - Replace `Map<String, Object>` with `GenerateTimeslotsRequest` in generate endpoint
 - Add 409 Conflict check for accepted schedules on delete endpoint
-- Use `TimeslotResponse` DTO for responses
+- Use `TimeslotResponse` DTO for all responses (list, generate, delete)
+- `GET .../timeslots` also returns raw `Timeslot` entity — use `TimeslotResponse`
 **Files:** `TimeslotController.java`, `TimeslotGeneratorService.java`
 **Depends on:** Task 1, Task 4
 **Ref:** TODO §10
@@ -180,6 +183,7 @@ Ensure all entities are detached from persistence context.
 **Ref:** TODO §1.7, §13
 
 ### Task 20 — Solver Lifecycle (Start/Stop/Callbacks)
+- Check no existing non-accepted schedule for this desk (409 Conflict via `InMemoryScheduleStore.hasDeskSchedule`)
 - Inject Timefold `SolverManager`, start solver asynchronously
 - Propagate tenant context to solver thread via `ThreadLocal` wrapper
 - Handle completion callback (status → COMPLETED, capture score)
@@ -287,6 +291,8 @@ Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
 **Depends on:** nothing
 **Ref:** TODO §16
 
+**Note:** `HttpBambooHRClient` (TODO §16) is intentionally excluded — all three methods throw `UnsupportedOperationException` and should be implemented when real BambooHR credentials are available.
+
 ---
 
 ## Phase 7: Frontend
@@ -391,26 +397,35 @@ Implement all four tab contents with proper TypeScript interfaces:
 ## Summary: Dependency Graph
 
 ```
-Phase 1 (Tasks 1-6): Foundation — no dependencies, can parallelize
+Phase 1 (Tasks 1-6): Foundation — no inter-phase deps, all 6 parallelizable
   ↓
-Phase 2 (Tasks 7-14): CRUD Services — depend on Phase 1
+Phase 2 (Tasks 7-14): CRUD Services — depend on Phase 1 only
+  ↓ (frontend tasks depend on these, but solver does NOT)
+Phase 3 (Tasks 15-17): Staffing — depends on Phase 1 only (not Phase 2)
   ↓
-Phase 3 (Tasks 15-17): Staffing — depends on Phase 2
-  ↓
-Phase 4 (Tasks 18-22): Solver — depends on Phase 1 + 2
-  ↓
+Phase 4 (Tasks 18-22): Solver — depends on Phase 1 only (not Phase 2/3)
+  ↓               ↘ (Task 22 branches from 19, parallel with 20)
 Phase 5 (Tasks 23-28): Schedule Management — depends on Phase 4
   ↓
-Phase 6 (Tasks 29-30): BambooHR — depends on Task 1 only
+Phase 6 (Tasks 29-30): BambooHR — depends on Task 1 only (independent of Phases 2-5)
   ↓
-Phase 7 (Tasks 31-41): Frontend — depends on corresponding backend tasks
+Phase 7 (Tasks 31-41): Frontend — each task depends on its corresponding backend task
 ```
 
-**Critical path:** Tasks 1 → 4 → 10 → 18 → 19 → 20 → 22 → 25 → 26
+**Key insight:** Phases 2, 3, 4, and 6 all depend only on Phase 1 and can start in parallel once Phase 1 is done. Phase 5 is the only phase that requires Phase 4 completion. Frontend tasks (Phase 7) each wait only on their specific backend dependency.
+
+**Critical path (longest chain):**
+`1 → 18 → 19 → 22 → 25 → 24` (6 tasks, solver → output views → detail endpoint)
+
+Alternate long chains:
+- `1 → 18 → 19 → 20 → 26` (5 tasks, solver lifecycle → accept schedule)
+- `1 → 18 → 19 → 20 → 21 → 40` (6 tasks, solver → DTO wiring → frontend results)
 
 **Parallelizable within phases:**
 - Phase 1: All 6 tasks can run in parallel
 - Phase 2: Tasks 7-14 can mostly run in parallel (share Task 1/4 deps)
-- Phase 4: Task 22 (constraints) can run in parallel with Tasks 18-20 (lifecycle)
-- Phase 6: Independent of Phases 3-5
+- Phase 3: Can run in parallel with Phases 2 and 4
+- Phase 4: Task 22 (constraints) can run in parallel with Task 20 (lifecycle) — both branch from Task 19
+- Phase 5: Tasks 23+27 can start immediately; Tasks 24, 26, 28 depend on specific Phase 4/5 predecessors
+- Phase 6: Independent of Phases 2-5 — can start as soon as Task 1 is done
 - Phase 7: Each frontend task can start as soon as its backend dependency completes
