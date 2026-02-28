@@ -29,12 +29,83 @@ public class ScheduleDetailResponse {
     private String errorMessage;
     private OffsetDateTime createdAt;
     private List<String> violatedHardConstraints;
-    private List<Object> staffingSummary;
-    private List<Object> agentSchedule;
-    private Object preferenceReport;
-    private List<Object> constraintViolations;
+    private List<StaffingSummaryEntry> staffingSummary;
+    private List<AgentScheduleEntry> agentSchedule;
+    private PreferenceReport preferenceReport;
+    private List<ConstraintViolationEntry> constraintViolations;
 
-    // Getters and setters for all fields
+    // --- Output view sub-DTOs ---
+
+    public record StaffingSummaryEntry(
+            LocalDate date,
+            String specializationName,
+            BigDecimal predictedHours,
+            BigDecimal actualHours,
+            BigDecimal deltaHours,
+            BigDecimal coveragePct
+    ) {}
+
+    public record AgentScheduleEntry(
+            UUID agentId,
+            String agentName,
+            LocalDate date,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            BigDecimal totalHours,
+            List<AssignmentDetail> assignments,
+            List<BreakDetail> breaks
+    ) {}
+
+    public record AssignmentDetail(
+            UUID timeslotId,
+            LocalTime startTime,
+            LocalTime endTime,
+            String specializationName,
+            String matchType
+    ) {}
+
+    public record BreakDetail(LocalTime startTime, LocalTime endTime) {}
+
+    public record PreferenceReport(
+            List<PreferenceReportEntry> entries,
+            PreferenceSummary summary
+    ) {}
+
+    public record PreferenceReportEntry(
+            UUID agentId,
+            String agentName,
+            LocalDate date,
+            String preferenceSource,
+            LocalTime preferredStartTime,
+            LocalTime actualStartTime,
+            boolean startTimeHonoured,
+            LocalTime preferredBreakTime,
+            LocalTime actualBreakTime,
+            boolean breakTimeHonoured
+    ) {}
+
+    public record PreferenceSummary(
+            int totalPreferences,
+            int startTimeHonouredCount,
+            int breakTimeHonouredCount,
+            BigDecimal overallHonouredPct
+    ) {}
+
+    public record ConstraintViolationEntry(
+            String constraintName,
+            String level,
+            ScheduleSummary.ScoreDto weight,
+            List<ViolationDetail> violations
+    ) {}
+
+    public record ViolationDetail(
+            String agentName,
+            String timeslot,
+            String description
+    ) {}
+
+    // --- Getters and setters ---
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getDeskId() { return deskId; }
@@ -77,12 +148,12 @@ public class ScheduleDetailResponse {
     public void setCreatedAt(OffsetDateTime v) { this.createdAt = v; }
     public List<String> getViolatedHardConstraints() { return violatedHardConstraints; }
     public void setViolatedHardConstraints(List<String> v) { this.violatedHardConstraints = v; }
-    public List<Object> getStaffingSummary() { return staffingSummary; }
-    public void setStaffingSummary(List<Object> v) { this.staffingSummary = v; }
-    public List<Object> getAgentSchedule() { return agentSchedule; }
-    public void setAgentSchedule(List<Object> v) { this.agentSchedule = v; }
-    public Object getPreferenceReport() { return preferenceReport; }
-    public void setPreferenceReport(Object v) { this.preferenceReport = v; }
-    public List<Object> getConstraintViolations() { return constraintViolations; }
-    public void setConstraintViolations(List<Object> v) { this.constraintViolations = v; }
+    public List<StaffingSummaryEntry> getStaffingSummary() { return staffingSummary; }
+    public void setStaffingSummary(List<StaffingSummaryEntry> v) { this.staffingSummary = v; }
+    public List<AgentScheduleEntry> getAgentSchedule() { return agentSchedule; }
+    public void setAgentSchedule(List<AgentScheduleEntry> v) { this.agentSchedule = v; }
+    public PreferenceReport getPreferenceReport() { return preferenceReport; }
+    public void setPreferenceReport(PreferenceReport v) { this.preferenceReport = v; }
+    public List<ConstraintViolationEntry> getConstraintViolations() { return constraintViolations; }
+    public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
 }

@@ -7,7 +7,7 @@ import java.util.UUID;
 public record ErlangXRequest(
         LocalDate from,
         LocalDate to,
-        List<Item> items
+        List<Item> parameters
 ) {
     public record Item(
             UUID timeslotId,

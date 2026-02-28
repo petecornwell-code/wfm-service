@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record StaffingRequirementRequest(
-        List<Item> items
+        List<Item> requirements
 ) {
     public record Item(
             UUID timeslotId,

@@ -33,7 +33,7 @@ public class AgentAssignment {
 
     @PlanningVariable(valueRangeProviderRefs = "deskAgentRange")
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "desk_agent_id")
+    @JoinColumn(name = "desk_agent_id", nullable = false)
     private DeskAgent deskAgent;
 
     @ManyToOne(fetch = FetchType.LAZY)

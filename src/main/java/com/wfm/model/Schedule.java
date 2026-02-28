@@ -74,7 +74,7 @@ public class Schedule {
 
     @PlanningScore
     @Convert(converter = HardSoftScoreConverter.class)
-    @Column(name = "score", insertable = false, updatable = false)
+    @Column(name = "score")
     private HardSoftScore score;
 
     @Enumerated(EnumType.STRING)
