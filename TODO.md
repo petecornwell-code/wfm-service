@@ -16,8 +16,17 @@ Organized by layer, then by priority within each section.
 - [ ] Map uncaught exceptions → 500 `INTERNAL_ERROR`
 - **Files:** new `GlobalExceptionHandler.java`; existing `ErrorResponse.java` (already defined, never used)
 
-### 1.2 Response DTO Layer (MISSING)
-Raw JPA entities are returned from almost every endpoint, leaking `tenantId`, `bamboohrId`, `deskId`, `scheduleId`. Need response DTOs for:
+### 1.2 Response DTO Layer (PARTIALLY EXISTS — UNUSED)
+Several DTOs already exist in `com.wfm.dto` but are **never used by any controller** — controllers return raw JPA entities instead:
+- `SolveRequest` — exists but `ScheduleController.startSolve()` accepts raw `Schedule` entity
+- `ScheduleSummary` — exists but `ScheduleController.listSchedules()` returns `List<Schedule>`
+- `ScheduleDetailResponse` — exists but `ScheduleController.getScheduleDetail()` returns raw `Schedule`
+- `ConstraintWeightsDto` — exists but `ConstraintWeightsController` returns raw `ConstraintWeights`
+- `StaffingRequirementRequest` — exists but `StaffingRequirementController` accepts raw `Object`
+- `StaffingRequirementResponse` — exists but not returned by any endpoint
+- `ErrorResponse` — exists but no global exception handler uses it
+
+Raw JPA entities are returned from almost every endpoint, leaking `tenantId`, `bamboohrId`, `deskId`, `scheduleId`. Additional response DTOs needed:
 - [ ] `DeskResponse` — `{ id, name, description, defaultContractedHoursPerDay }`
 - [ ] `AgentResponse` — `{ id, name, email, department, jobTitle, active, lastRefreshedAt }` (no `bamboohrId`)
 - [ ] `AgentDayOffResponse` — `{ id, date, type }` (per-agent) and `{ id, agent: {id, name}, date, type }` (list-all)
@@ -25,7 +34,8 @@ Raw JPA entities are returned from almost every endpoint, leaking `tenantId`, `b
 - [ ] `TimeslotResponse` — `{ id, date, startTime, endTime }` (no `tenantId`/`deskId`/`scheduleId`)
 - [ ] `PreferenceResponse` — `{ id, dayOfWeek, date, isStanding, preferredStartTime, preferredBreakTime }`
 - [ ] `ExceptionResponse` — `{ id, date, contractedHoursOverride, reason }`
-- [ ] Strongly typed output view DTOs for `ScheduleDetailResponse` (currently uses `List<Object>` / `Object`)
+- [ ] Strongly typed output view sub-DTOs for `ScheduleDetailResponse` (currently uses `List<Object>` / `Object` for staffingSummary, agentSchedule, preferenceReport, constraintViolations)
+- [ ] Wire all existing DTOs into their respective controllers
 
 ### 1.3 Request DTO Layer (MISSING / WRONG)
 Several controllers use `Map<String, Object>` or raw `Object` as request bodies instead of typed DTOs:
@@ -49,6 +59,18 @@ The `PaginatedResponse` DTO exists but no endpoint actually computes cursors or 
 
 ### 1.5 HardSoftScore Serialization (BROKEN)
 - [ ] Timefold's `HardSoftScore` serializes as `"1hard/0soft"` (string) by default. Spec requires `{ "hardScore": 1, "softScore": 0 }`. Add a custom Jackson serializer/deserializer, or use `ConstraintWeightsDto` consistently.
+
+### 1.6 BigDecimal Normalization (MISSING — Cross-Cutting)
+Spec §5.1 mandates: *"Service code should normalise values to scale 2 with `HALF_UP` rounding on input."* and *"Arithmetic and comparison operations in Java must use `compareTo()` — never `equals()`."*
+- [ ] Create a utility method for normalizing `BigDecimal` to scale 2 with `HALF_UP`.
+- [ ] Apply normalization on input in: `DeskService` (defaultContractedHoursPerDay), `DeskAgentService` (contractedHoursPerDay), `AgentExceptionService` (contractedHoursOverride), `SolverService` (breakBlockedHours, breakMinShiftHours, defaultContractedHoursPerDay).
+- [ ] Audit all BigDecimal comparisons — replace any `.equals()` with `.compareTo() == 0`.
+
+### 1.7 Pre-Solve Entity Preparation (MISSING)
+Spec §5.12 requires careful entity handling before solver execution:
+- [ ] **Hibernate proxy unwrapping** — Copy Hibernate proxy collections (`DeskAgent.secondarySpecializations`, etc.) into plain `ArrayList`/`HashSet` during pre-solve assembly. Timefold's best-solution cloning cannot clone Hibernate proxies.
+- [ ] **Entity detachment** — Ensure all planning solution entities are detached from the JPA persistence context before handing to the solver. The `@Transactional(readOnly = true)` scope should close the persistence context after loading.
+- [ ] **Tenant context propagation** — Capture `TenantContext.getTenantId()` on the request thread and set it on the solver thread in a `try/finally` block (ThreadLocal doesn't propagate to child threads).
 
 ---
 
@@ -150,7 +172,15 @@ The `PaginatedResponse` DTO exists but no endpoint actually computes cursors or 
 
 ---
 
-## 10. Staffing Requirements (Spec §7.10)
+## 10. Timeslots (Spec §7.9)
+
+### TimeslotController
+- [ ] `POST .../timeslots/generate` — accepts `Map<String, Object>` with unsafe casts instead of a typed `GenerateTimeslotsRequest` DTO.
+- [ ] `DELETE .../timeslots` — missing 409 Conflict check when affected timeslots are referenced by an accepted schedule (spec §7.9: *"Returns 409 Conflict if any of the affected timeslots are referenced by an accepted schedule."*).
+
+---
+
+## 11. Staffing Requirements (Spec §7.10)
 
 ### StaffingRequirementService — ALL THREE METHODS ARE STUBS
 - [ ] **`listRequirements`** — implement: query live requirements (schedule_id IS NULL), pagination, date range filter, return enriched format with joined timeslot/specialization data.
@@ -163,7 +193,7 @@ The `PaginatedResponse` DTO exists but no endpoint actually computes cursors or 
 
 ---
 
-## 11. Erlang X Algorithm (Spec §4.4)
+## 12. Erlang X Algorithm (Spec §4.4)
 
 ### ErlangXService
 - [ ] **`calculateRequiredAgents`** — complete stub (returns 0). Implement the full Erlang X (Extended Erlang C) algorithm:
@@ -175,7 +205,7 @@ The `PaginatedResponse` DTO exists but no endpoint actually computes cursors or 
 
 ---
 
-## 12. Solver (Spec §6, §7.11)
+## 13. Solver (Spec §6, §7.11)
 
 ### ScheduleConstraintProvider — ALL 15 CONSTRAINTS ARE STUBS
 Each constraint method has the correct name but penalizes all assignments unconditionally instead of implementing the actual logic:
@@ -229,7 +259,15 @@ Each constraint method has the correct name but penalizes all assignments uncond
 
 ---
 
-## 13. Schedule Management (Spec §7.11)
+## 14. Schedule Management (Spec §7.11)
+
+### ScheduleController — WRONG DTOs
+All endpoints use raw `Schedule` JPA entity instead of the existing DTOs:
+- [ ] `startSolve()` — accepts `@RequestBody Schedule` instead of `SolveRequest` DTO. Should return `ScheduleSummary` with `202 Accepted`.
+- [ ] `listSchedules()` — returns `List<Schedule>` instead of `PaginatedResponse<ScheduleSummary>`.
+- [ ] `getScheduleDetail()` — returns raw `Schedule` instead of `ScheduleDetailResponse` (with output views).
+- [ ] `stopSolve()` — returns raw `Schedule` instead of `ScheduleSummary`.
+- [ ] `acceptSchedule()` — returns raw `Schedule`. Spec unclear on response format but should at minimum not leak internal fields.
 
 ### ScheduleService
 - [ ] **`listSchedules`** — complete stub (returns empty list). Implement: merge in-memory schedule (if exists for this desk) with database accepted schedules, cursor-based pagination, return `ScheduleSummary` format.
@@ -238,11 +276,11 @@ Each constraint method has the correct name but penalizes all assignments uncond
 - [ ] **`rejectSchedule`** — partially implemented (removes from store). Missing: validate status is COMPLETED/STOPPED/FAILED (409 if RUNNING).
 
 ### Schedule.score Bug
-- [ ] **`score` column has `insertable = false, updatable = false`** — the score will never be written to the database when a schedule is accepted. Remove these attributes.
+- [ ] **`score` column has `insertable = false, updatable = false`** — the score will never be written to the database when a schedule is accepted. Remove these attributes. (Also listed in §17.)
 
 ---
 
-## 14. Schedule Output Views (Spec §8)
+## 15. Schedule Output Views (Spec §8)
 
 ### ScheduleOutputService — ALL FOUR METHODS ARE STUBS
 - [ ] **`buildStaffingSummary`** — compute per-day, per-specialization: predictedHours, actualHours, deltaHours, coveragePct. Include per-day totals row and grand-total row. Null coveragePct when predictedHours is zero.
@@ -258,7 +296,7 @@ Each constraint method has the correct name but penalizes all assignments uncond
 
 ---
 
-## 15. BambooHR Integration (Spec §9)
+## 16. BambooHR Integration (Spec §9)
 
 ### BambooRefreshService
 - [ ] **Soft-delete removed employees** — agents present in previous refresh but absent from current should be marked `active = false`.
@@ -268,6 +306,7 @@ Each constraint method has the correct name but penalizes all assignments uncond
 - [ ] **Transaction scope** — BambooHR API calls are currently inside `@Transactional`. Spec says external API calls happen before the transaction; only DB writes should be transactional.
 - [ ] **Case-insensitive desk name matching** — spec says `project` field matched case-insensitively to `Desk.name`.
 - [ ] **Cross-desk conflict logging** — when an agent is already assigned to a different desk, log a warning and skip (currently doesn't distinguish this desk vs another desk).
+- [ ] **Error mapping** — `IllegalStateException` from concurrency guard maps to 500 by default. Should be mapped to 409 `REFRESH_IN_PROGRESS` in the global exception handler (or throw a custom exception that the handler catches).
 
 ### HttpBambooHRClient — EXPECTED STUB
 - [ ] All three methods throw `UnsupportedOperationException`. Implement when real BambooHR credentials are available.
@@ -277,19 +316,19 @@ Each constraint method has the correct name but penalizes all assignments uncond
 
 ---
 
-## 16. Model / Schema Gaps
+## 17. Model / Schema Gaps
 
-- [ ] **`Schedule.score`** — remove `insertable = false, updatable = false` (see §13 above).
-- [ ] **`AgentAssignment.deskAgent`** — JPA column not marked `nullable = false`. Spec says planning variable is not nullable.
-- [ ] **`AgentPreference`** — no uniqueness constraints on `@Table`. Need partial unique indexes via Flyway: `(desk_id, agent_id, day_of_week) WHERE is_standing = true` and `(desk_id, agent_id, date) WHERE is_standing = false`.
-- [ ] **`Timeslot`** — need partial unique index via Flyway: `(tenant_id, desk_id, date, start_time, end_time) WHERE schedule_id IS NULL`.
-- [ ] **`StaffingRequirement`** — need partial unique index via Flyway: `(tenant_id, desk_id, timeslot_id, specialization_id) WHERE schedule_id IS NULL`.
+- [ ] **`Schedule.score`** — remove `insertable = false, updatable = false` (see §14 above).
+- [ ] **`AgentAssignment.deskAgent`** — JPA column not marked `nullable = false`. Spec says planning variable is not nullable. Note: DB column intentionally allows NULL for `ON DELETE SET NULL` referential integrity, but JPA annotation should enforce non-null for application logic.
+- ~~**`AgentPreference`** partial unique indexes~~ — **ALREADY EXISTS** in `V1__initial_schema.sql` (lines 85-92): `idx_agent_preference_standing` and `idx_agent_preference_weekly`.
+- ~~**`Timeslot`** partial unique index~~ — **ALREADY EXISTS** in `V1__initial_schema.sql` (lines 182-184): `idx_timeslot_live`.
+- ~~**`StaffingRequirement`** partial unique index~~ — **ALREADY EXISTS** in `V1__initial_schema.sql` (lines 201-203): `idx_staffing_requirement_live`.
 
 ---
 
-## 17. Frontend
+## 18. Frontend
 
-### 17.1 Critical (Core Features Non-Functional)
+### 18.1 Critical (Core Features Non-Functional)
 
 - [ ] **Schedule Results: all four tab contents are empty stubs** — Staffing Summary, Agent Schedule, Preference Report, Constraint Violations show only placeholder text. Need TypeScript interfaces for output view types (currently `unknown[]`).
 - [ ] **Staffing Requirements: no save button** — demand grid values cannot be persisted. Grid inputs are uncontrolled (`defaultValue`). Need state tracking, save button calling `POST /desks/{deskId}/staffing-requirements`.
@@ -302,8 +341,9 @@ Each constraint method has the correct name but penalizes all assignments uncond
 - [ ] **Agent Exceptions: not editable** — read-only table, no date picker, no inputs, no save. API methods exist but are never called.
 - [ ] **Desk Management: no edit desk** — `PUT /desks/{id}` never called, no inline/modal edit form.
 
-### 17.2 High Priority
+### 18.2 High Priority
 
+- [ ] **Sidebar missing Desk Management link** — Desk Management page (`/desk-management`) is only accessible from the DeskSelector page. Spec §12.2 says it should be *"accessible from the desk selector or via the sidebar"*. The sidebar nav in `App.tsx:DeskLayout` does not include a link.
 - [ ] **No Erlang X calculation mode** on Staffing Requirements page (spec §12.7).
 - [ ] **No validation summary panel** on Schedule Setup page (spec §12.9).
 - [ ] **No past schedules list** on Schedule Setup page (`GET /desks/{deskId}/schedules` never called).
@@ -316,7 +356,7 @@ Each constraint method has the correct name but penalizes all assignments uncond
 - [ ] **Constraint Weights: no reset to defaults button**.
 - [ ] **Error handling: all errors except timeslot generation are silently swallowed** (`console.error` only). API client discards `error.details[]` and `error.code` from the structured error envelope.
 
-### 17.3 Medium Priority
+### 18.3 Medium Priority
 
 - [ ] Desk Management: missing "number of assigned agents" column.
 - [ ] Desk Management: delete not disabled when desk has accepted schedules.

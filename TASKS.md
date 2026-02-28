@@ -1,0 +1,416 @@
+# WFM Service — Ordered Implementation Tasks
+
+Tasks ordered by dependency: foundations first, then consumers.
+Each task builds on completed predecessors.
+
+---
+
+## Phase 1: Foundation (Infrastructure & Model Fixes)
+
+### Task 1 — Global Exception Handler
+Create `GlobalExceptionHandler.java` (`@RestControllerAdvice`) using the existing `ErrorResponse.java` DTO.
+Map: `IllegalArgumentException` → 400, entity-not-found → 404, conflict → 409, unprocessable → 422, uncaught → 500.
+Add custom exceptions: `EntityNotFoundException`, `ConflictException`, `RefreshInProgressException`.
+**Files:** new `GlobalExceptionHandler.java`, new exception classes, existing `ErrorResponse.java`
+**Depends on:** nothing
+**Ref:** TODO §1.1
+
+### Task 2 — HardSoftScore JSON Serializer
+Create a custom Jackson serializer/deserializer for `HardSoftScore` that produces `{ "hardScore": 1, "softScore": 0 }` instead of Timefold's default `"1hard/0soft"` string.
+Register via a Jackson module `@Bean`.
+**Files:** new `HardSoftScoreSerializer.java`, new `HardSoftScoreDeserializer.java`, new `JacksonConfig.java` (or add to existing config)
+**Depends on:** nothing
+**Ref:** TODO §1.5
+
+### Task 3 — BigDecimal Normalization Utility
+Create a utility method `BigDecimals.normalize(BigDecimal value)` that returns `value.setScale(2, RoundingMode.HALF_UP)`.
+Audit and fix all BigDecimal `.equals()` usages → `.compareTo() == 0`.
+**Files:** new `BigDecimals.java` utility class
+**Depends on:** nothing
+**Ref:** TODO §1.6
+
+### Task 4 — Request & Response DTOs
+Create missing DTOs, fix existing ones:
+- Create: `DeskRequest`, `DeskResponse`, `AgentResponse`, `AgentDayOffResponse`, `SpecializationResponse`, `TimeslotResponse`, `PreferenceResponse`, `ExceptionResponse`, `AssignAgentsRequest`, `SetSpecializationsRequest`, `SetContractedHoursRequest`, `GenerateTimeslotsRequest`
+- Fix: `StaffingRequirementRequest.items` → `requirements`, `ErlangXRequest.items` → `parameters`
+- Add typed output view sub-DTOs inside `ScheduleDetailResponse` (StaffingSummaryEntry, AgentScheduleEntry, PreferenceReportEntry, ConstraintViolationEntry, etc.)
+**Files:** `dto/` package — multiple new and modified files
+**Depends on:** Task 2 (HardSoftScore serializer for ConstraintWeightsDto and ScheduleSummary.ScoreDto)
+**Ref:** TODO §1.2, §1.3
+
+### Task 5 — Model Fixes
+- `Schedule.score`: remove `insertable = false, updatable = false`
+- `AgentAssignment.deskAgent`: add `nullable = false` to `@JoinColumn`
+**Files:** `Schedule.java`, `AgentAssignment.java`
+**Depends on:** nothing
+**Ref:** TODO §17
+
+### Task 6 — Cursor-Based Pagination Utility
+Implement generic keyset pagination: Base64 JSON cursor encoding/decoding, `WHERE` clause builder for keyset conditions.
+Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
+**Files:** new `CursorPagination.java` utility, modify `PaginatedResponse.java`
+**Depends on:** nothing
+**Ref:** TODO §1.4
+
+---
+
+## Phase 2: Core CRUD Services (Bottom-Up)
+
+### Task 7 — DeskService: Complete CRUD
+- `createDesk()`: add unique name validation, default `defaultContractedHoursPerDay` to 8.0, normalize BigDecimal
+- `getDesk()`: throw 404 instead of returning null
+- `updateDesk()`: implement partial update, unique name validation
+- `deleteDesk()`: check accepted schedules (409), cascade-delete all desk data, remove in-memory schedule
+- Wire `DeskController` to use `DeskRequest`/`DeskResponse` DTOs
+**Files:** `DeskService.java`, `DeskController.java`
+**Depends on:** Task 1 (exception handler), Task 3 (BigDecimal normalization), Task 4 (DTOs)
+**Ref:** TODO §2
+
+### Task 8 — SpecializationService: Complete CRUD
+- `createSpecialization()`: add unique name validation per desk
+- `updateSpecialization()`: implement rename with unique name validation
+- `deleteSpecialization()`: check references by desk-agents and staffing requirements (409)
+- Wire `SpecializationController` to use `SpecializationResponse` DTO
+**Files:** `SpecializationService.java`, `SpecializationController.java`
+**Depends on:** Task 1 (exception handler), Task 4 (DTOs)
+**Ref:** TODO §6
+
+### Task 9 — AgentService: Implement Listing
+- `listAgents()`: query by tenantId, search filter (case-insensitive name), `unassigned=true` filter, cursor pagination
+- Wire `AgentController` to use `PaginatedResponse<AgentResponse>`
+**Files:** `AgentService.java`, `AgentController.java`, `AgentRepository.java`
+**Depends on:** Task 4 (DTOs), Task 6 (pagination)
+**Ref:** TODO §4
+
+### Task 10 — DeskAgentService: Complete All Methods
+- `assignAgents()`: validate agents exist/active, single-desk check, all-or-nothing, return `DeskAgentResponse[]`
+- `removeDeskAgent()`: 409 if non-accepted schedule exists, cascade-delete preferences + exceptions, 404 if not found
+- `setSpecializations()`: validate specializations belong to desk, primary not in secondary, return `DeskAgentResponse`
+- `setContractedHours()`: normalize BigDecimal, return `DeskAgentResponse`
+- `listDeskAgents`/`listDeskAgentResponses`: implement search, cursor pagination
+- Wire `DeskAgentController`: use typed DTOs for assign, specializations, contracted-hours endpoints
+**Files:** `DeskAgentService.java`, `DeskAgentController.java`
+**Depends on:** Task 1, Task 3, Task 4, Task 6
+**Ref:** TODO §3
+
+### Task 11 — AgentDayOffService: Complete Methods
+- `listDaysOffForAgent()`: implement `from`/`to` date range filtering
+- `listAllDaysOff()`: query all days off for tenant, pagination, date range, enriched format
+- Wire `AgentDayOffController` to use `AgentDayOffResponse` and `PaginatedResponse`
+**Files:** `AgentDayOffService.java`, `AgentDayOffController.java`, `AgentDayOffRepository.java`
+**Depends on:** Task 4, Task 6
+**Ref:** TODO §5
+
+### Task 12 — ConstraintWeightsService: Implement Update
+- `updateWeights()`: load existing (or defaults), apply partial update, save
+- Wire `ConstraintWeightsController` to use `ConstraintWeightsDto` instead of raw entity
+**Files:** `ConstraintWeightsService.java`, `ConstraintWeightsController.java`
+**Depends on:** Task 2 (HardSoftScore serializer), Task 4 (ConstraintWeightsDto)
+**Ref:** TODO §9
+
+### Task 13 — AgentPreferenceService: Complete Methods
+- `savePreferences()`: set tenantId/deskId, standing replacement logic, derive dayOfWeek from date, save, return full list
+- `deletePreference()`: validate ownership, delete, 404
+- `listPreferences()`: date range filtering (all standing + weekly in range)
+- Wire controller to use `PreferenceResponse` DTO
+**Files:** `AgentPreferenceService.java`, `DeskAgentController.java`
+**Depends on:** Task 1, Task 4
+**Ref:** TODO §7
+
+### Task 14 — AgentExceptionService: Complete Methods
+- `saveExceptions()`: validate no conflict with days off (400), upsert by (desk, agent, date), normalize BigDecimal, validate reason
+- `deleteException()`: delete by desk+agent+date, 404
+- `listExceptions()`: date range filtering
+- Wire controller to use `ExceptionResponse` DTO
+**Files:** `AgentExceptionService.java`, `DeskAgentController.java`
+**Depends on:** Task 1, Task 3, Task 4
+**Ref:** TODO §8
+
+---
+
+## Phase 3: Staffing & Timeslots
+
+### Task 15 — TimeslotController: Add Typed DTO and Accepted Schedule Check
+- Replace `Map<String, Object>` with `GenerateTimeslotsRequest` in generate endpoint
+- Add 409 Conflict check for accepted schedules on delete endpoint
+- Use `TimeslotResponse` DTO for responses
+**Files:** `TimeslotController.java`, `TimeslotGeneratorService.java`
+**Depends on:** Task 1, Task 4
+**Ref:** TODO §10
+
+### Task 16 — ErlangXService: Implement Algorithm
+Full Erlang X (Extended Erlang C) implementation:
+1. Erlang C baseline via Jagerman formula
+2. Abandonment probability
+3. Retrial-adjusted load
+4. Convergence loop
+5. Return smallest integer meeting service level
+**Files:** `ErlangXService.java`
+**Depends on:** nothing
+**Ref:** TODO §12
+
+### Task 17 — StaffingRequirementService: Complete All Methods
+- `listRequirements()`: query live (schedule_id IS NULL), pagination, date range filter, enriched response
+- `saveRequirements()`: validate timeslots/specializations, derive date range, delete+insert in transaction
+- `calculateErlangX()`: parse request, call ErlangXService, persist results
+- Wire `StaffingRequirementController`: replace `Object` with `StaffingRequirementRequest`/`ErlangXRequest`/`StaffingRequirementResponse`
+**Files:** `StaffingRequirementService.java`, `StaffingRequirementController.java`
+**Depends on:** Task 4 (DTOs), Task 6 (pagination), Task 16 (ErlangXService)
+**Ref:** TODO §11
+
+---
+
+## Phase 4: Solver
+
+### Task 18 — Pre-Solve Validation (12 Checks)
+Implement all validation checks from spec §7.11 in `SolverService.startSolve()`:
+Period length, timeslots exist, increment/time match, specializations assigned, contracted hours divisible, staffing requirements exist, active agents available, break duration valid, break alignment conformance, coverage window check, exception/day-off conflict, specialization coverage.
+Return all failures in `ErrorResponse.details[]`.
+**Files:** `SolverService.java`
+**Depends on:** Task 1 (exception handler for structured validation errors)
+**Ref:** TODO §13 (SolverService.startSolve)
+
+### Task 19 — Pre-Solve Data Loading & Entity Preparation
+Load all problem facts from database: desk-agents, specializations, timeslots, staffing requirements, preferences, days off, exceptions, constraint weights.
+Expand staffing requirements into `AgentAssignment` planning entities.
+Unwrap Hibernate proxy collections into plain `ArrayList`/`HashSet`.
+Ensure all entities are detached from persistence context.
+**Files:** `SolverService.java`
+**Depends on:** Task 18 (validation completes first)
+**Ref:** TODO §1.7, §13
+
+### Task 20 — Solver Lifecycle (Start/Stop/Callbacks)
+- Inject Timefold `SolverManager`, start solver asynchronously
+- Propagate tenant context to solver thread via `ThreadLocal` wrapper
+- Handle completion callback (status → COMPLETED, capture score)
+- Handle failure callback (status → FAILED, capture error message)
+- `stopSolve()`: validate RUNNING status, terminate solver, status → STOPPED
+- Set `createdAt` timestamp
+**Files:** `SolverService.java`
+**Depends on:** Task 19 (data loading)
+**Ref:** TODO §13
+
+### Task 21 — Wire ScheduleController to DTOs
+- `startSolve()`: accept `SolveRequest` instead of `Schedule`, return `ScheduleSummary` (202)
+- `listSchedules()`: return `PaginatedResponse<ScheduleSummary>`
+- `getScheduleDetail()`: return `ScheduleDetailResponse`
+- `stopSolve()`: return `ScheduleSummary`
+**Files:** `ScheduleController.java`
+**Depends on:** Task 4 (DTOs), Task 20 (solver works)
+**Ref:** TODO §14
+
+### Task 22 — Implement All 15 Solver Constraints
+Replace all stub constraints with real logic in `ScheduleConstraintProvider`:
+
+**Hard (10):** Agent day off, Specialization match, One assignment per timeslot, Exactly one break, Break duration, Break blocked window, Break start alignment, Contracted hours, Bulk over-allocation limit, Bulk under-allocation hard.
+
+**Soft (5):** Prefer primary specialization, Honour preferred start time, Honour preferred break time, Break clustering, Bulk under-allocation soft.
+**Files:** `ScheduleConstraintProvider.java`
+**Depends on:** Task 19 (entity model is correct for solver)
+**Ref:** TODO §13
+
+---
+
+## Phase 5: Schedule Management
+
+### Task 23 — ScheduleService.listSchedules
+Merge in-memory schedule (if exists for desk) with database accepted schedules.
+Apply cursor-based pagination. Return `ScheduleSummary` format.
+**Files:** `ScheduleService.java`
+**Depends on:** Task 6 (pagination), Task 21 (DTOs)
+**Ref:** TODO §14
+
+### Task 24 — ScheduleService.getScheduleDetail
+Implement `?date` query parameter filter. Call `ScheduleOutputService` for all four output views.
+Add tenant/desk validation on in-memory path.
+**Files:** `ScheduleService.java`
+**Depends on:** Task 25 (output views)
+**Ref:** TODO §14
+
+### Task 25 — Schedule Output Views (4 views)
+Implement all four `ScheduleOutputService` methods:
+1. `buildStaffingSummary()`: per-day per-specialization predicted vs actual hours, coverage %, totals
+2. `buildAgentSchedule()`: per-agent per-day shifts, assignments with matchType, breaks
+3. `buildPreferenceReport()`: per-agent per-day preference resolution, honoured flags, summary counters
+4. `buildConstraintViolations()`: extract from Timefold score explanation, group by constraint
+**Files:** `ScheduleOutputService.java`
+**Depends on:** Task 22 (constraints produce meaningful violations)
+**Ref:** TODO §15
+
+### Task 26 — ScheduleService.acceptSchedule (MOST COMPLEX)
+1. Validate status COMPLETED/STOPPED (409 otherwise)
+2. Snapshot live timeslots → new IDs with schedule_id
+3. Snapshot staffing requirements → remap to snapshot timeslots
+4. Write agent assignments → remap to snapshot timeslots
+5. Delete overlapping accepted schedules for same desk/date range
+6. Persist everything in single transaction
+7. Set status ACCEPTED, remove from in-memory store
+**Files:** `ScheduleService.java`, `ScheduleRepository.java`, `TimeslotRepository.java`, `StaffingRequirementRepository.java`, `AgentAssignmentRepository.java`
+**Depends on:** Task 5 (Schedule.score column fix), Task 20 (solver produces results to accept)
+**Ref:** TODO §14
+
+### Task 27 — ScheduleService.rejectSchedule
+Add status validation (COMPLETED/STOPPED/FAILED only, 409 if RUNNING).
+**Files:** `ScheduleService.java`
+**Depends on:** Task 1 (exception handler)
+**Ref:** TODO §14
+
+### Task 28 — Schedule Excel Export
+Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
+- Tab 1: Staffing Summary
+- Tab 2: Agent Schedule
+- Tab 3: Preference Report
+**Files:** `ScheduleExportService.java`
+**Depends on:** Task 25 (output views provide the data)
+**Ref:** TODO §15
+
+---
+
+## Phase 6: BambooHR Improvements
+
+### Task 29 — BambooRefreshService Fixes
+1. Soft-delete removed employees (mark `active = false`)
+2. Day-off upsert by (agent, date) to avoid unique constraint violations
+3. Stale day-off deletion for refreshed agents
+4. Case-insensitive type mapping (`"holiday"`, `"mandatory"` → MANDATORY)
+5. Move API calls before `@Transactional` boundary
+6. Case-insensitive desk name matching
+7. Cross-desk conflict logging (warn + skip)
+8. Throw custom exception for concurrency guard → 409 `REFRESH_IN_PROGRESS`
+**Files:** `BambooRefreshService.java`
+**Depends on:** Task 1 (exception handler for 409 mapping)
+**Ref:** TODO §16
+
+### Task 30 — MockBambooHRClient: Add Test Day-Off Data
+`listTimeOff()` currently returns empty list. Add some test day-off records.
+**Files:** `MockBambooHRClient.java`
+**Depends on:** nothing
+**Ref:** TODO §16
+
+---
+
+## Phase 7: Frontend
+
+### Task 31 — Frontend Error Handling Infrastructure
+- Parse full `ErrorResponse` (code, message, details[]) in API client
+- Replace `console.error` with user-visible error toasts/banners
+- Add loading states to all pages
+**Depends on:** Task 1 (backend error responses)
+**Ref:** TODO §18.2
+
+### Task 32 — Desk Agents: Functional Buttons
+- Assign button: modal with unassigned agents (`GET /agents?unassigned=true`), multi-select, `POST /desks/{deskId}/agents`
+- Remove button per row: confirmation dialog, `DELETE /desks/{deskId}/agents/{agentId}`
+- Edit specializations: inline/modal dropdowns, `PUT .../specializations`
+- Edit contracted hours: inline input, `PUT .../contracted-hours`
+- Active/inactive filter (default active only)
+- Days off view per agent
+- Missing columns: job title, last refreshed
+**Depends on:** Task 10 (backend endpoints work)
+**Ref:** TODO §18.1, §18.2
+
+### Task 33 — Staffing Requirements: Full Implementation
+- Pre-populate demand grid from `GET /desks/{deskId}/staffing-requirements`
+- Controlled inputs with state tracking
+- Save button → `POST /desks/{deskId}/staffing-requirements`
+- Erlang X mode with parameter inputs
+- Copy day button
+**Depends on:** Task 17 (backend endpoints work)
+**Ref:** TODO §18.1, §18.2
+
+### Task 34 — Agent Preferences: Editable
+- Agent selector dropdown (not raw UUID)
+- Date range picker
+- Editable grid with time pickers
+- Standing checkbox per row
+- Save button → `PUT .../preferences`
+- Delete updates local state
+**Depends on:** Task 13 (backend endpoints work)
+**Ref:** TODO §18.1
+
+### Task 35 — Agent Exceptions: Editable
+- Agent selector dropdown
+- Date range picker
+- Editable grid with numeric inputs for override hours
+- Reason text input (required when override set)
+- Standard hours column, day-off awareness (greyed-out days)
+- Save button → `PUT .../exceptions`
+**Depends on:** Task 14 (backend endpoints work)
+**Ref:** TODO §18.1
+
+### Task 36 — Desk Management: Edit & Polish
+- Edit desk form (inline or modal) → `PUT /desks/{deskId}`
+- `defaultContractedHoursPerDay` field in create form
+- "Number of assigned agents" column
+- Disable delete when desk has accepted schedules
+**Depends on:** Task 7 (backend endpoints work)
+**Ref:** TODO §18.1, §18.3
+
+### Task 37 — Specializations: Rename & Delete Guards
+- Rename capability → `PUT .../specializations/{id}`
+- Delete disabled/warned when in use
+- Confirmation dialog for delete
+**Depends on:** Task 8 (backend endpoints work)
+**Ref:** TODO §18.3
+
+### Task 38 — Constraint Weights: Polish
+- Description column and level (Hard/Soft) dropdown
+- Reset to defaults button
+**Depends on:** Task 12 (backend endpoints work)
+**Ref:** TODO §18.2, §18.3
+
+### Task 39 — Schedule Setup: Pre-Solve Enhancements
+- Validation summary panel (agent count, specializations, missing data warnings)
+- Past schedules list (`GET /desks/{deskId}/schedules`)
+- Break duration filtered to multiples of increment
+**Depends on:** Task 23 (listSchedules works)
+**Ref:** TODO §18.2, §18.3
+
+### Task 40 — Schedule Results: Output View Tabs
+Implement all four tab contents with proper TypeScript interfaces:
+1. Staffing Summary table (colour-coded, day filter, totals)
+2. Agent Schedule grid (per-day, colour by match type, breaks, tooltip)
+3. Preference Report table (honoured flags, summary counters, filter)
+4. Constraint Violations table (expandable, filter by level)
+- Non-optimal banner with violated hard constraints
+- Progress indicator while solver is running
+- Proper accept confirmation dialog for non-optimal solutions
+**Depends on:** Task 25 (backend output views), Task 21 (ScheduleDetailResponse)
+**Ref:** TODO §18.1, §18.2, §18.3
+
+### Task 41 — Navigation & UI Polish
+- Sidebar: add Desk Management link
+- Active desk indicator in header (desk name instead of "WFM Service")
+- Hardcoded tenant ID → configurable (dropdown or input)
+- Export error handling
+**Depends on:** nothing
+**Ref:** TODO §18.2, §18.3
+
+---
+
+## Summary: Dependency Graph
+
+```
+Phase 1 (Tasks 1-6): Foundation — no dependencies, can parallelize
+  ↓
+Phase 2 (Tasks 7-14): CRUD Services — depend on Phase 1
+  ↓
+Phase 3 (Tasks 15-17): Staffing — depends on Phase 2
+  ↓
+Phase 4 (Tasks 18-22): Solver — depends on Phase 1 + 2
+  ↓
+Phase 5 (Tasks 23-28): Schedule Management — depends on Phase 4
+  ↓
+Phase 6 (Tasks 29-30): BambooHR — depends on Task 1 only
+  ↓
+Phase 7 (Tasks 31-41): Frontend — depends on corresponding backend tasks
+```
+
+**Critical path:** Tasks 1 → 4 → 10 → 18 → 19 → 20 → 22 → 25 → 26
+
+**Parallelizable within phases:**
+- Phase 1: All 6 tasks can run in parallel
+- Phase 2: Tasks 7-14 can mostly run in parallel (share Task 1/4 deps)
+- Phase 4: Task 22 (constraints) can run in parallel with Tasks 18-20 (lifecycle)
+- Phase 6: Independent of Phases 3-5
+- Phase 7: Each frontend task can start as soon as its backend dependency completes
