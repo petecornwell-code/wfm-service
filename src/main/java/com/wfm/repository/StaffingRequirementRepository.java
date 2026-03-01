@@ -37,4 +37,6 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
     void deleteByTenantIdAndDeskIdAndScheduleIdIsNull(long tenantId, UUID deskId);
 
     void deleteByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
+
+    boolean existsBySpecialization_Id(UUID specializationId);
 }

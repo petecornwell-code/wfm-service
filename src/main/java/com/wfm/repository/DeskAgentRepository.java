@@ -4,6 +4,7 @@ import com.wfm.model.DeskAgent;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -28,4 +29,12 @@ public interface DeskAgentRepository extends JpaRepository<DeskAgent, UUID> {
     void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 
     long countByTenantIdAndDeskId(long tenantId, UUID deskId);
+
+    @Query("SELECT CASE WHEN COUNT(da) > 0 THEN true ELSE false END FROM DeskAgent da " +
+           "WHERE da.primarySpecialization.id = :specId")
+    boolean existsByPrimarySpecialization_Id(UUID specId);
+
+    @Query("SELECT CASE WHEN COUNT(da) > 0 THEN true ELSE false END FROM DeskAgent da " +
+           "JOIN da.secondarySpecializations s WHERE s.id = :specId")
+    boolean existsBySecondarySpecializationsContaining(UUID specId);
 }

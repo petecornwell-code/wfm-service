@@ -1,5 +1,7 @@
 package com.wfm.controller;
 
+import com.wfm.dto.DeskRequest;
+import com.wfm.dto.DeskResponse;
 import com.wfm.model.Desk;
 import com.wfm.service.DeskService;
 import org.springframework.http.HttpStatus;
@@ -20,31 +22,37 @@ public class DeskController {
     }
 
     @GetMapping
-    public List<Desk> listDesks() {
-        return deskService.listDesks();
+    public List<DeskResponse> listDesks() {
+        return deskService.listDesks().stream().map(this::toResponse).toList();
     }
 
     @PostMapping
-    public ResponseEntity<Desk> createDesk(@RequestBody Desk desk) {
-        Desk created = deskService.createDesk(desk);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    public ResponseEntity<DeskResponse> createDesk(@RequestBody DeskRequest request) {
+        Desk created = deskService.createDesk(request.name(), request.description(),
+                request.defaultContractedHoursPerDay());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created));
     }
 
     @GetMapping("/{deskId}")
-    public ResponseEntity<Desk> getDesk(@PathVariable UUID deskId) {
-        Desk desk = deskService.getDesk(deskId);
-        return desk != null ? ResponseEntity.ok(desk) : ResponseEntity.notFound().build();
+    public DeskResponse getDesk(@PathVariable UUID deskId) {
+        return toResponse(deskService.getDesk(deskId));
     }
 
     @PutMapping("/{deskId}")
-    public ResponseEntity<Desk> updateDesk(@PathVariable UUID deskId, @RequestBody Desk updates) {
-        Desk updated = deskService.updateDesk(deskId, updates);
-        return updated != null ? ResponseEntity.ok(updated) : ResponseEntity.notFound().build();
+    public DeskResponse updateDesk(@PathVariable UUID deskId, @RequestBody DeskRequest request) {
+        Desk updated = deskService.updateDesk(deskId, request.name(), request.description(),
+                request.defaultContractedHoursPerDay());
+        return toResponse(updated);
     }
 
     @DeleteMapping("/{deskId}")
     public ResponseEntity<Void> deleteDesk(@PathVariable UUID deskId) {
         deskService.deleteDesk(deskId);
         return ResponseEntity.noContent().build();
+    }
+
+    private DeskResponse toResponse(Desk desk) {
+        return new DeskResponse(desk.getId(), desk.getName(), desk.getDescription(),
+                desk.getDefaultContractedHoursPerDay());
     }
 }

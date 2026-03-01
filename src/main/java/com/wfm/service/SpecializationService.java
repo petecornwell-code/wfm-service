@@ -1,6 +1,8 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.exception.ConflictException;
+import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Specialization;
 import com.wfm.repository.DeskAgentRepository;
 import com.wfm.repository.SpecializationRepository;
@@ -32,9 +34,17 @@ public class SpecializationService {
 
     @Transactional
     public Specialization createSpecialization(UUID deskId, String name) {
-        // TODO: validate unique name per desk
+        long tenantId = TenantContext.getTenantId();
+
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Specialization name is required");
+        }
+        if (specializationRepository.existsByTenantIdAndDeskIdAndName(tenantId, deskId, name)) {
+            throw new ConflictException("A specialization with name '" + name + "' already exists for this desk");
+        }
+
         Specialization spec = new Specialization();
-        spec.setTenantId(TenantContext.getTenantId());
+        spec.setTenantId(tenantId);
         spec.setDeskId(deskId);
         spec.setName(name);
         return specializationRepository.save(spec);
@@ -42,12 +52,38 @@ public class SpecializationService {
 
     @Transactional
     public Specialization updateSpecialization(UUID deskId, UUID id, String name) {
-        // TODO: implement
-        return null;
+        long tenantId = TenantContext.getTenantId();
+
+        Specialization spec = specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Specialization", id));
+
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Specialization name is required");
+        }
+        if (!name.equals(spec.getName())
+                && specializationRepository.existsByTenantIdAndDeskIdAndName(tenantId, deskId, name)) {
+            throw new ConflictException("A specialization with name '" + name + "' already exists for this desk");
+        }
+
+        spec.setName(name);
+        return specializationRepository.save(spec);
     }
 
     @Transactional
     public void deleteSpecialization(UUID deskId, UUID id) {
-        // TODO: check references from desk-agents and staffing requirements
+        long tenantId = TenantContext.getTenantId();
+
+        Specialization spec = specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Specialization", id));
+
+        if (deskAgentRepository.existsByPrimarySpecialization_Id(id)
+                || deskAgentRepository.existsBySecondarySpecializationsContaining(id)) {
+            throw new ConflictException("Cannot delete specialization that is assigned to agents");
+        }
+        if (staffingRequirementRepository.existsBySpecialization_Id(id)) {
+            throw new ConflictException("Cannot delete specialization that is referenced by staffing requirements");
+        }
+
+        specializationRepository.delete(spec);
     }
 }

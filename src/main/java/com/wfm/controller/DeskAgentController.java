@@ -1,9 +1,6 @@
 package com.wfm.controller;
 
-import com.wfm.dto.DeskAgentResponse;
-import com.wfm.dto.PaginatedResponse;
-import com.wfm.model.AgentPreference;
-import com.wfm.model.DeskAgent;
+import com.wfm.dto.*;
 import com.wfm.integration.BambooRefreshService;
 import com.wfm.service.AgentExceptionService;
 import com.wfm.service.AgentPreferenceService;
@@ -14,7 +11,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -46,9 +42,9 @@ public class DeskAgentController {
     }
 
     @PostMapping
-    public ResponseEntity<List<DeskAgent>> assignAgents(@PathVariable UUID deskId,
-                                                        @RequestBody Map<String, List<UUID>> body) {
-        List<DeskAgent> assigned = deskAgentService.assignAgents(deskId, body.get("agentIds"));
+    public ResponseEntity<List<DeskAgentResponse>> assignAgents(@PathVariable UUID deskId,
+                                                                 @RequestBody AssignAgentsRequest request) {
+        List<DeskAgentResponse> assigned = deskAgentService.assignAgents(deskId, request.agentIds());
         return ResponseEntity.status(HttpStatus.CREATED).body(assigned);
     }
 
@@ -59,19 +55,18 @@ public class DeskAgentController {
     }
 
     @PutMapping("/{agentId}/specializations")
-    public ResponseEntity<DeskAgent> setSpecializations(@PathVariable UUID deskId,
-                                                        @PathVariable UUID agentId,
-                                                        @RequestBody Map<String, Object> body) {
-        // TODO: parse primarySpecializationId and secondarySpecializationIds from body
-        return ResponseEntity.ok().build();
+    public DeskAgentResponse setSpecializations(@PathVariable UUID deskId,
+                                                 @PathVariable UUID agentId,
+                                                 @RequestBody SetSpecializationsRequest request) {
+        return deskAgentService.setSpecializations(deskId, agentId,
+                request.primarySpecializationId(), request.secondarySpecializationIds());
     }
 
     @PutMapping("/{agentId}/contracted-hours")
-    public ResponseEntity<DeskAgent> setContractedHours(@PathVariable UUID deskId,
-                                                        @PathVariable UUID agentId,
-                                                        @RequestBody Map<String, Object> body) {
-        // TODO: parse contractedHoursPerDay from body
-        return ResponseEntity.ok().build();
+    public DeskAgentResponse setContractedHours(@PathVariable UUID deskId,
+                                                 @PathVariable UUID agentId,
+                                                 @RequestBody SetContractedHoursRequest request) {
+        return deskAgentService.setContractedHours(deskId, agentId, request.contractedHoursPerDay());
     }
 
     @PostMapping("/refresh")
@@ -83,17 +78,17 @@ public class DeskAgentController {
     // --- Preferences ---
 
     @GetMapping("/{agentId}/preferences")
-    public List<AgentPreference> listPreferences(@PathVariable UUID deskId,
-                                                 @PathVariable UUID agentId,
-                                                 @RequestParam(required = false) String from,
-                                                 @RequestParam(required = false) String to) {
+    public List<PreferenceResponse> listPreferences(@PathVariable UUID deskId,
+                                                     @PathVariable UUID agentId,
+                                                     @RequestParam(required = false) String from,
+                                                     @RequestParam(required = false) String to) {
         return agentPreferenceService.listPreferences(deskId, agentId, from, to);
     }
 
     @PutMapping("/{agentId}/preferences")
-    public List<AgentPreference> savePreferences(@PathVariable UUID deskId,
-                                                 @PathVariable UUID agentId,
-                                                 @RequestBody List<AgentPreference> preferences) {
+    public List<PreferenceResponse> savePreferences(@PathVariable UUID deskId,
+                                                     @PathVariable UUID agentId,
+                                                     @RequestBody List<PreferenceResponse> preferences) {
         return agentPreferenceService.savePreferences(deskId, agentId, preferences);
     }
 
@@ -108,17 +103,17 @@ public class DeskAgentController {
     // --- Exceptions ---
 
     @GetMapping("/{agentId}/exceptions")
-    public List<?> listExceptions(@PathVariable UUID deskId,
-                                  @PathVariable UUID agentId,
-                                  @RequestParam(required = false) String from,
-                                  @RequestParam(required = false) String to) {
+    public List<ExceptionResponse> listExceptions(@PathVariable UUID deskId,
+                                                   @PathVariable UUID agentId,
+                                                   @RequestParam(required = false) String from,
+                                                   @RequestParam(required = false) String to) {
         return agentExceptionService.listExceptions(deskId, agentId, from, to);
     }
 
     @PutMapping("/{agentId}/exceptions")
-    public List<?> saveExceptions(@PathVariable UUID deskId,
-                                  @PathVariable UUID agentId,
-                                  @RequestBody List<com.wfm.model.AgentException> exceptions) {
+    public List<ExceptionResponse> saveExceptions(@PathVariable UUID deskId,
+                                                   @PathVariable UUID agentId,
+                                                   @RequestBody List<ExceptionResponse> exceptions) {
         return agentExceptionService.saveExceptions(deskId, agentId, exceptions);
     }
 

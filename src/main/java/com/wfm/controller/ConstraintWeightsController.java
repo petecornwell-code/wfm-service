@@ -1,8 +1,7 @@
 package com.wfm.controller;
 
-import com.wfm.model.ConstraintWeights;
+import com.wfm.dto.ConstraintWeightsDto;
 import com.wfm.service.ConstraintWeightsService;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -18,14 +17,13 @@ public class ConstraintWeightsController {
     }
 
     @GetMapping
-    public ConstraintWeights getWeights(@PathVariable UUID deskId) {
+    public ConstraintWeightsDto getWeights(@PathVariable UUID deskId) {
         return constraintWeightsService.getWeights(deskId);
     }
 
     @PutMapping
-    public ResponseEntity<ConstraintWeights> updateWeights(@PathVariable UUID deskId,
-                                                            @RequestBody ConstraintWeights updates) {
-        ConstraintWeights saved = constraintWeightsService.updateWeights(deskId, updates);
-        return saved != null ? ResponseEntity.ok(saved) : ResponseEntity.notFound().build();
+    public ConstraintWeightsDto updateWeights(@PathVariable UUID deskId,
+                                               @RequestBody ConstraintWeightsDto updates) {
+        return constraintWeightsService.updateWeights(deskId, updates);
     }
 }

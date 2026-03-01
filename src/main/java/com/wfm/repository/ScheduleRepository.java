@@ -21,4 +21,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     @Query("SELECT s FROM Schedule s WHERE s.tenantId = :tenantId AND s.deskId = :deskId " +
            "AND s.periodStartDate <= :endDate AND s.periodEndDate >= :startDate")
     List<Schedule> findOverlapping(long tenantId, UUID deskId, LocalDate startDate, LocalDate endDate);
+
+    boolean existsByTenantIdAndDeskIdAndStatus(long tenantId, UUID deskId,
+                                                com.wfm.model.ScheduleStatus status);
 }

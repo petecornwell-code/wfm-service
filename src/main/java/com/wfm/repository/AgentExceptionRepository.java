@@ -24,4 +24,6 @@ public interface AgentExceptionRepository extends JpaRepository<AgentException, 
             long tenantId, UUID deskId, LocalDate from, LocalDate to);
 
     void deleteByTenantIdAndDeskIdAndAgent_Id(long tenantId, UUID deskId, UUID agentId);
+
+    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }

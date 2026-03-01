@@ -22,4 +22,9 @@ public interface AgentPreferenceRepository extends JpaRepository<AgentPreference
     List<AgentPreference> findByTenantIdAndDeskId(long tenantId, UUID deskId);
 
     void deleteByTenantIdAndDeskIdAndAgent_Id(long tenantId, UUID deskId, UUID agentId);
+
+    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
+
+    List<AgentPreference> findByTenantIdAndDeskIdAndAgent_IdAndIsStandingTrueAndDayOfWeek(
+            long tenantId, UUID deskId, UUID agentId, java.time.DayOfWeek dayOfWeek);
 }
