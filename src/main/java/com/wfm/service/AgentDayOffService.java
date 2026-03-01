@@ -47,12 +47,31 @@ public class AgentDayOffService {
         int clamped = CursorPagination.clampLimit(limit);
         Pageable pageable = PageRequest.of(0, clamped + 1, Sort.by("date", "id"));
 
+        Map<String, String> cursorValues = CursorPagination.decode(cursor);
+        boolean hasCursor = !cursorValues.isEmpty();
+
         List<AgentDayOff> daysOff;
         if (from != null && to != null) {
-            daysOff = agentDayOffRepository.findByTenantIdAndDateBetween(
-                    tenantId, LocalDate.parse(from), LocalDate.parse(to), pageable);
+            LocalDate fromDate = LocalDate.parse(from);
+            LocalDate toDate = LocalDate.parse(to);
+            if (hasCursor) {
+                LocalDate cursorDate = LocalDate.parse(cursorValues.get("date"));
+                UUID cursorId = UUID.fromString(cursorValues.get("id"));
+                daysOff = agentDayOffRepository.findByTenantIdAndDateBetweenAfterCursor(
+                        tenantId, fromDate, toDate, cursorDate, cursorId, pageable);
+            } else {
+                daysOff = agentDayOffRepository.findByTenantIdAndDateBetween(
+                        tenantId, fromDate, toDate, pageable);
+            }
         } else {
-            daysOff = agentDayOffRepository.findByTenantId(tenantId, pageable);
+            if (hasCursor) {
+                LocalDate cursorDate = LocalDate.parse(cursorValues.get("date"));
+                UUID cursorId = UUID.fromString(cursorValues.get("id"));
+                daysOff = agentDayOffRepository.findByTenantIdAfterCursor(
+                        tenantId, cursorDate, cursorId, pageable);
+            } else {
+                daysOff = agentDayOffRepository.findByTenantId(tenantId, pageable);
+            }
         }
 
         List<AgentDayOffResponse> responses = daysOff.stream()

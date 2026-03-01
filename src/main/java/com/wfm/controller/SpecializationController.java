@@ -1,5 +1,6 @@
 package com.wfm.controller;
 
+import com.wfm.dto.SpecializationResponse;
 import com.wfm.model.Specialization;
 import com.wfm.service.SpecializationService;
 import org.springframework.http.HttpStatus;
@@ -21,28 +22,32 @@ public class SpecializationController {
     }
 
     @GetMapping
-    public List<Specialization> listSpecializations(@PathVariable UUID deskId) {
-        return specializationService.listSpecializations(deskId);
+    public List<SpecializationResponse> listSpecializations(@PathVariable UUID deskId) {
+        return specializationService.listSpecializations(deskId).stream()
+                .map(this::toResponse).toList();
     }
 
     @PostMapping
-    public ResponseEntity<Specialization> createSpecialization(@PathVariable UUID deskId,
-                                                                @RequestBody Map<String, String> body) {
+    public ResponseEntity<SpecializationResponse> createSpecialization(@PathVariable UUID deskId,
+                                                                        @RequestBody Map<String, String> body) {
         Specialization created = specializationService.createSpecialization(deskId, body.get("name"));
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Specialization> updateSpecialization(@PathVariable UUID deskId,
-                                                                @PathVariable UUID id,
-                                                                @RequestBody Map<String, String> body) {
-        Specialization updated = specializationService.updateSpecialization(deskId, id, body.get("name"));
-        return updated != null ? ResponseEntity.ok(updated) : ResponseEntity.notFound().build();
+    public SpecializationResponse updateSpecialization(@PathVariable UUID deskId,
+                                                        @PathVariable UUID id,
+                                                        @RequestBody Map<String, String> body) {
+        return toResponse(specializationService.updateSpecialization(deskId, id, body.get("name")));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteSpecialization(@PathVariable UUID deskId, @PathVariable UUID id) {
         specializationService.deleteSpecialization(deskId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    private SpecializationResponse toResponse(Specialization spec) {
+        return new SpecializationResponse(spec.getId(), spec.getName());
     }
 }

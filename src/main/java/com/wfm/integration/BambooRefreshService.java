@@ -1,6 +1,8 @@
 package com.wfm.integration;
 
 import com.wfm.config.TenantContext;
+import com.wfm.exception.EntityNotFoundException;
+import com.wfm.exception.RefreshInProgressException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,14 +52,14 @@ public class BambooRefreshService {
     @Transactional
     public void refreshDeskAgents(UUID deskId) {
         if (refreshInProgress.putIfAbsent(deskId, true) != null) {
-            throw new IllegalStateException("A BambooHR refresh is already in progress for this desk.");
+            throw new RefreshInProgressException("A BambooHR refresh is already in progress for this desk.");
         }
         try {
             long tenantId = TenantContext.getTenantId();
 
             // 1. Look up desk to get its name (used as BambooHR project filter)
             Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
-                    .orElseThrow(() -> new IllegalArgumentException("Desk not found: " + deskId));
+                    .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
 
             // 2. Ensure a default "Basic" specialization exists for this desk
             Specialization defaultSpec = specializationRepository
