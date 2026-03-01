@@ -5,7 +5,7 @@ Each task builds on completed predecessors.
 
 ---
 
-## Phase 1: Foundation (Infrastructure & Model Fixes)
+## Phase 1: Foundation (Infrastructure & Model Fixes) ✅ DONE
 
 ### Task 1 — Global Exception Handler
 Create `GlobalExceptionHandler.java` (`@RestControllerAdvice`) using the existing `ErrorResponse.java` DTO.
@@ -55,9 +55,9 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 
 ---
 
-## Phase 2: Core CRUD Services (Bottom-Up)
+## Phase 2: Core CRUD Services (Bottom-Up) ✅ DONE
 
-### Task 7 — DeskService: Complete CRUD
+### Task 7 — DeskService: Complete CRUD ✅
 - `createDesk()`: add unique name validation, default `defaultContractedHoursPerDay` to 8.0, normalize BigDecimal
 - `getDesk()`: throw 404 instead of returning null
 - `updateDesk()`: implement partial update, unique name validation
@@ -67,7 +67,7 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 1 (exception handler), Task 3 (BigDecimal normalization), Task 4 (DTOs)
 **Ref:** TODO §2
 
-### Task 8 — SpecializationService: Complete CRUD
+### Task 8 — SpecializationService: Complete CRUD ✅
 - `createSpecialization()`: add unique name validation per desk
 - `updateSpecialization()`: implement rename with unique name validation
 - `deleteSpecialization()`: check references by desk-agents and staffing requirements (409)
@@ -76,7 +76,7 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 1 (exception handler), Task 4 (DTOs)
 **Ref:** TODO §6
 
-### Task 9 — AgentService: Implement Listing + DTO Wiring
+### Task 9 — AgentService: Implement Listing + DTO Wiring ✅
 - `listAgents()`: query by tenantId, search filter (case-insensitive name), `unassigned=true` filter, cursor pagination
 - Wire `AgentController.listAgents()` to return `PaginatedResponse<AgentResponse>`
 - Wire `AgentController.getAgent()` to return `AgentResponse` instead of raw `Agent` (currently leaks `bamboohrId`)
@@ -84,18 +84,21 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 4 (DTOs), Task 6 (pagination)
 **Ref:** TODO §4
 
-### Task 10 — DeskAgentService: Complete All Methods
-- `assignAgents()`: validate agents exist/active, single-desk check, all-or-nothing, return `DeskAgentResponse[]`
-- `removeDeskAgent()`: 409 if non-accepted schedule exists, cascade-delete preferences + exceptions, 404 if not found
-- `setSpecializations()`: validate specializations belong to desk, primary not in secondary, return `DeskAgentResponse`
-- `setContractedHours()`: normalize BigDecimal, return `DeskAgentResponse`
-- `listDeskAgents`/`listDeskAgentResponses`: implement search, cursor pagination
-- Wire `DeskAgentController`: use typed DTOs for assign, specializations, contracted-hours endpoints
+### Task 10 — DeskAgentService: Complete All Methods ✅ (with deferred items)
+- ✅ `assignAgents()`: validate agents exist/active, single-desk check, all-or-nothing, return `DeskAgentResponse[]`
+- ✅ `removeDeskAgent()`: cascade-delete preferences + exceptions, 404 if not found
+  - **Deferred:** InMemoryScheduleStore non-accepted schedule check (409) → add in Phase 4 when solver exists
+- ✅ `setSpecializations()`: validate specializations belong to desk, return `DeskAgentResponse`
+  - **Deferred:** "primary not in secondary" validation → low priority, frontend can enforce
+- ✅ `setContractedHours()`: normalize BigDecimal, return `DeskAgentResponse`
+- ✅ `listDeskAgents`/`listDeskAgentResponses`: returns all with eager-loaded agent + specializations via `@EntityGraph`
+  - **Deferred:** search/cursor pagination → desk agent counts typically <50, all-in-one-page is acceptable
+- ✅ Wire `DeskAgentController`: use typed DTOs for assign, specializations, contracted-hours endpoints
 **Files:** `DeskAgentService.java`, `DeskAgentController.java`
 **Depends on:** Task 1, Task 3, Task 4, Task 6
 **Ref:** TODO §3
 
-### Task 11 — AgentDayOffService: Complete Methods
+### Task 11 — AgentDayOffService: Complete Methods ✅
 - `listDaysOffForAgent()`: implement `from`/`to` date range filtering
 - `listAllDaysOff()`: query all days off for tenant, pagination, date range, enriched format
 - Wire `AgentDayOffController` to use `AgentDayOffResponse` and `PaginatedResponse`
@@ -103,7 +106,7 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 4, Task 6
 **Ref:** TODO §5
 
-### Task 12 — ConstraintWeightsService: Implement Update
+### Task 12 — ConstraintWeightsService: Implement Update ✅
 - `updateWeights()`: load existing (or defaults), apply partial update (omitted fields keep current values), save
 - Wire `ConstraintWeightsController` to use `ConstraintWeightsDto` instead of raw entity
 - Convert between JPA entity (`HardSoftScore` fields) and DTO (`ScoreDto` fields) in service layer
@@ -111,7 +114,7 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 4 (ConstraintWeightsDto). Note: does NOT need Task 2 — the controller uses `ConstraintWeightsDto` (with plain `ScoreDto`), and the JPA entity uses `HardSoftScoreConverter` for DB persistence, so Jackson never serializes `HardSoftScore` on this path.
 **Ref:** TODO §9
 
-### Task 13 — AgentPreferenceService: Complete Methods
+### Task 13 — AgentPreferenceService: Complete Methods ✅
 - `savePreferences()`: set tenantId/deskId, standing replacement logic, derive dayOfWeek from date, save, return full list
 - `deletePreference()`: validate ownership, delete, 404
 - `listPreferences()`: date range filtering (all standing + weekly in range)
@@ -120,8 +123,8 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 **Depends on:** Task 1, Task 4
 **Ref:** TODO §7
 
-### Task 14 — AgentExceptionService: Complete Methods
-- `saveExceptions()`: validate no conflict with days off (400), upsert by (desk, agent, date), normalize BigDecimal, validate reason
+### Task 14 — AgentExceptionService: Complete Methods ✅
+- `saveExceptions()`: validate no conflict with days off (409 Conflict — changed from original 400; 409 is correct since it conflicts with existing server state), upsert by (desk, agent, date), normalize BigDecimal, validate reason
 - `deleteException()`: delete by desk+agent+date, 404
 - `listExceptions()`: date range filtering
 - Wire controller to use `ExceptionResponse` DTO
@@ -281,7 +284,7 @@ Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
 5. Move API calls before `@Transactional` boundary
 6. Case-insensitive desk name matching
 7. Cross-desk conflict logging (warn + skip)
-8. Throw custom exception for concurrency guard → 409 `REFRESH_IN_PROGRESS`
+8. ~~Throw custom exception for concurrency guard → 409 `REFRESH_IN_PROGRESS`~~ ✅ Done in Phase 2 review: now throws `RefreshInProgressException` (409). Also changed desk-not-found from `IllegalArgumentException` to `EntityNotFoundException` (404).
 **Files:** `BambooRefreshService.java`
 **Depends on:** Task 1 (exception handler for 409 mapping)
 **Ref:** TODO §16
