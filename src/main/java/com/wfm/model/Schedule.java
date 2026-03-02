@@ -5,6 +5,7 @@ import ai.timefold.solver.core.api.domain.solution.PlanningEntityCollectionPrope
 import ai.timefold.solver.core.api.domain.solution.PlanningScore;
 import ai.timefold.solver.core.api.domain.solution.PlanningSolution;
 import ai.timefold.solver.core.api.domain.solution.ProblemFactCollectionProperty;
+import ai.timefold.solver.core.api.domain.solution.ProblemFactProperty;
 import ai.timefold.solver.core.api.domain.valuerange.ValueRangeProvider;
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.jpa.api.score.buildin.hardsoft.HardSoftScoreConverter;
@@ -216,4 +217,15 @@ public class Schedule {
 
     public List<AgentAssignment> getAssignments() { return assignments; }
     public void setAssignments(List<AgentAssignment> assignments) { this.assignments = assignments; }
+
+    @ProblemFactProperty
+    @Transient
+    public ScheduleConfig getScheduleConfig() {
+        return new ScheduleConfig(
+                incrementMinutes, startTime, endTime,
+                breakDurationMinutes, breakMinShiftHours, breakBlockedHours,
+                breakStartAlignment, breakClusterThresholdPct,
+                defaultContractedHoursPerDay,
+                overallocationHardLimitPct, underallocationHardLimitPct);
+    }
 }

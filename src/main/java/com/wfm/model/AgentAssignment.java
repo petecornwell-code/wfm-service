@@ -31,9 +31,9 @@ public class AgentAssignment {
     @JoinColumn(name = "specialization_id", nullable = false)
     private Specialization requiredSpecialization;
 
-    @PlanningVariable(valueRangeProviderRefs = "deskAgentRange")
+    @PlanningVariable(valueRangeProviderRefs = "deskAgentRange", nullable = true)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "desk_agent_id", nullable = false)
+    @JoinColumn(name = "desk_agent_id")
     private DeskAgent deskAgent;
 
     @ManyToOne(fetch = FetchType.LAZY)

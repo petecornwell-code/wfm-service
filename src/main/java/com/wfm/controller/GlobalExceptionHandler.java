@@ -5,6 +5,7 @@ import com.wfm.dto.ErrorResponse.Error;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
+import com.wfm.exception.PreSolveValidationException;
 import com.wfm.exception.RefreshInProgressException;
 import com.wfm.exception.UnprocessableException;
 import org.slf4j.Logger;
@@ -40,6 +41,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Malformed request body", List.of());
+    }
+
+    @ExceptionHandler(PreSolveValidationException.class)
+    public ResponseEntity<ErrorResponse> handlePreSolveValidation(PreSolveValidationException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", ex.getMessage(), ex.getDetails());
     }
 
     @ExceptionHandler(EntityNotFoundException.class)

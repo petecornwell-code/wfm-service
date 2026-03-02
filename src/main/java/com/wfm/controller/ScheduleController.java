@@ -1,5 +1,7 @@
 package com.wfm.controller;
 
+import com.wfm.dto.ScheduleSummary;
+import com.wfm.dto.SolveRequest;
 import com.wfm.model.Schedule;
 import com.wfm.service.ScheduleExportService;
 import com.wfm.service.ScheduleService;
@@ -30,17 +32,18 @@ public class ScheduleController {
     }
 
     @PostMapping("/solve")
-    public ResponseEntity<Schedule> startSolve(@PathVariable UUID deskId,
-                                                @RequestBody Schedule solveRequest) {
+    public ResponseEntity<ScheduleSummary> startSolve(@PathVariable UUID deskId,
+                                                       @RequestBody SolveRequest solveRequest) {
         Schedule schedule = solverService.startSolve(deskId, solveRequest);
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(schedule);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(toSummary(schedule));
     }
 
     @GetMapping
-    public List<Schedule> listSchedules(@PathVariable UUID deskId,
-                                        @RequestParam(required = false) String cursor,
-                                        @RequestParam(required = false, defaultValue = "50") int limit) {
-        return scheduleService.listSchedules(deskId, cursor, limit);
+    public List<ScheduleSummary> listSchedules(@PathVariable UUID deskId,
+                                                @RequestParam(required = false) String cursor,
+                                                @RequestParam(required = false, defaultValue = "50") int limit) {
+        return scheduleService.listSchedules(deskId, cursor, limit).stream()
+                .map(this::toSummary).toList();
     }
 
     @GetMapping("/{id}")
@@ -52,15 +55,15 @@ public class ScheduleController {
     }
 
     @PutMapping("/{id}/stop")
-    public ResponseEntity<Schedule> stopSolve(@PathVariable UUID deskId, @PathVariable UUID id) {
+    public ResponseEntity<ScheduleSummary> stopSolve(@PathVariable UUID deskId, @PathVariable UUID id) {
         Schedule schedule = solverService.stopSolve(deskId, id);
-        return schedule != null ? ResponseEntity.ok(schedule) : ResponseEntity.notFound().build();
+        return ResponseEntity.ok(toSummary(schedule));
     }
 
     @PutMapping("/{id}/accept")
-    public ResponseEntity<Schedule> acceptSchedule(@PathVariable UUID deskId, @PathVariable UUID id) {
+    public ResponseEntity<ScheduleSummary> acceptSchedule(@PathVariable UUID deskId, @PathVariable UUID id) {
         Schedule schedule = scheduleService.acceptSchedule(deskId, id);
-        return schedule != null ? ResponseEntity.ok(schedule) : ResponseEntity.notFound().build();
+        return ResponseEntity.ok(toSummary(schedule));
     }
 
     @PutMapping("/{id}/reject")
@@ -79,5 +82,19 @@ public class ScheduleController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=schedule-" + id + ".xlsx")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
+    }
+
+    private ScheduleSummary toSummary(Schedule s) {
+        ScheduleSummary.ScoreDto scoreDto = null;
+        Boolean feasible = null;
+        if (s.getScore() != null) {
+            scoreDto = new ScheduleSummary.ScoreDto(s.getScore().hardScore(), s.getScore().softScore());
+            feasible = s.getScore().hardScore() >= 0;
+        }
+        return new ScheduleSummary(
+                s.getId(), s.getDeskId(), s.getStatus().name(),
+                s.getPeriodStartDate(), s.getPeriodEndDate(),
+                s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
+                scoreDto, feasible, s.getCreatedAt());
     }
 }
