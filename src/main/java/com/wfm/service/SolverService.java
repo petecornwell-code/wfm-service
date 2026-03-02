@@ -171,6 +171,9 @@ public class SolverService {
                 schedule.getId(), detachedDeskAgents.size(), timeslots.size(),
                 staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
                 resolvedPreferences.size());
+        log.debug("Constraint weights — unassigned={}, dayOff={}, specMatch={}, contracted={}",
+                weights.getUnassignedAssignmentWeight(), weights.getAgentDayOffWeight(),
+                weights.getSpecMatchWeight(), weights.getContractedHoursWeight());
 
         // 11. Populate the schedule with all collections
         schedule.setConstraintWeights(weights);

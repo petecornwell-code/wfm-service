@@ -115,6 +115,9 @@ public class ConstraintWeights {
     public UUID getDeskId() { return deskId; }
     public void setDeskId(UUID deskId) { this.deskId = deskId; }
 
+    public HardSoftScore getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
+    public void setUnassignedAssignmentWeight(HardSoftScore unassignedAssignmentWeight) { this.unassignedAssignmentWeight = unassignedAssignmentWeight; }
+
     public HardSoftScore getAgentDayOffWeight() { return agentDayOffWeight; }
     public void setAgentDayOffWeight(HardSoftScore agentDayOffWeight) { this.agentDayOffWeight = agentDayOffWeight; }
 
