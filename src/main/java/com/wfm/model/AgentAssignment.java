@@ -3,10 +3,11 @@ package com.wfm.model;
 import ai.timefold.solver.core.api.domain.entity.PlanningEntity;
 import ai.timefold.solver.core.api.domain.lookup.PlanningId;
 import ai.timefold.solver.core.api.domain.variable.PlanningVariable;
+import com.wfm.solver.AgentAssignmentDifficultyComparator;
 import jakarta.persistence.*;
 import java.util.UUID;
 
-@PlanningEntity
+@PlanningEntity(difficultyComparatorClass = AgentAssignmentDifficultyComparator.class)
 @Entity
 @Table(name = "agent_assignment")
 public class AgentAssignment {
