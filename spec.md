@@ -362,6 +362,7 @@ classDiagram
         +UUID id
         +long tenantId
         +UUID deskId
+        +HardSoftScore unassignedAssignmentWeight
         +HardSoftScore specMatchWeight
         +HardSoftScore noOverlapWeight
         +HardSoftScore exactlyOneBreakWeight
@@ -629,6 +630,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `id` | `UUID` | — | Primary key |
 | `tenantId` | `long` | — | Tenant identifier (from platform) |
 | `deskId` | `UUID` | — | Desk identifier; unique together with `tenantId` — one row per desk |
+| `unassignedAssignmentWeight` | `HardSoftScore` | `hard(1)` | Unassigned assignment — penalizes seats left without an agent |
 | `agentDayOffWeight` | `HardSoftScore` | `hard(1)` | Agent day off |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
 | `noOverlapWeight` | `HardSoftScore` | `hard(1)` | One assignment per timeslot |
@@ -751,6 +753,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 | Constraint | Default Level | Description |
 |---|---|---|
+| Unassigned assignment | Hard | Every agent assignment (seat) must be filled with a desk-agent. Since the planning variable is nullable (to allow the solver to explore partial solutions), this constraint provides the incentive to assign all seats. Each unassigned seat incurs a hard penalty. |
 | Agent day off | Hard | An agent must not be assigned to any timeslot on a day they have a day off (mandatory or PTO). |
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | One assignment per timeslot | Hard | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. |
@@ -988,6 +991,7 @@ Desk-scoped. Each desk has its own constraint weight configuration.
 
 ```json
 {
+  "unassignedAssignmentWeight": { "hardScore": 1, "softScore": 0 },
   "agentDayOffWeight": { "hardScore": 1, "softScore": 0 },
   "specMatchWeight": { "hardScore": 1, "softScore": 0 },
   "noOverlapWeight": { "hardScore": 1, "softScore": 0 },

@@ -24,6 +24,11 @@ public class ConstraintWeights {
     @Column(name = "desk_id", nullable = false)
     private UUID deskId;
 
+    @ConstraintWeight("Unassigned assignment")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "unassigned_assignment_weight")
+    private HardSoftScore unassignedAssignmentWeight = HardSoftScore.ofHard(1);
+
     @ConstraintWeight("Agent day off")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "agent_day_off_weight")

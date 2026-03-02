@@ -16,6 +16,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
         return new Constraint[] {
+            unassignedAssignment(factory),
             agentDayOff(factory),
             specializationMatch(factory),
             oneAssignmentPerTimeslot(factory),
@@ -37,6 +38,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // ============================================================
     //  HARD CONSTRAINTS
     // ============================================================
+
+    /**
+     * 0. Unassigned assignment — every seat must be filled with an agent.
+     * Without this, nullable planning variables left as null yield 0 penalty,
+     * so the solver has no incentive to assign agents.
+     */
+    private Constraint unassignedAssignment(ConstraintFactory factory) {
+        return factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getDeskAgent() == null)
+                .penalizeConfigurable()
+                .asConstraint("Unassigned assignment");
+    }
 
     /**
      * 1. Agent day off — agent must not be assigned on a day they have off.
