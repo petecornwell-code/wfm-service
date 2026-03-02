@@ -154,7 +154,7 @@ Demand can be:
    | `serviceLevelTarget` | `double` | % (0–100) | Target percentage of calls answered within `serviceLevelThreshold` |
    | `serviceLevelThreshold` | `int` | seconds | Maximum acceptable wait time for the service level target (e.g. 20 seconds for "80% of calls answered within 20 seconds") |
 
-   Each row in the Erlang X request applies to a single timeslot and specialization. The output is the calculated `requiredAgents` count for that combination.
+   Each row in the Erlang X request applies to a single timeslot and specialization. The output is the calculated `requiredHours` for that combination (agent count × timeslot duration in hours).
 
 ### 4.5 Agent Preferences
 
@@ -318,7 +318,7 @@ classDiagram
         +long tenantId
         +UUID deskId
         +UUID scheduleId
-        +int requiredAgents
+        +BigDecimal requiredHours
         +Source source
     }
 
@@ -533,12 +533,12 @@ Represents the demand for a given specialization in a given timeslot. There is o
 | `scheduleId` | `UUID` | Nullable. `NULL` = live input data (user-editable). Non-null = snapshot belonging to an accepted schedule. |
 | `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
-| `requiredAgents` | `int` | Number of concurrent agents needed |
+| `requiredHours` | `BigDecimal` | Total staff-hours of coverage needed for this timeslot and specialization |
 | `source` | `enum(DIRECT, ERLANG_X)` | How the value was determined |
 
-**Generating seats:** For each StaffingRequirement, the system creates `requiredAgents` AgentAssignment instances for that timeslot and specialization. This is a direct 1-to-N expansion — no averaging or division needed.
+**Generating seats:** For each StaffingRequirement, the system converts `requiredHours` to an agent count (`agents = requiredHours × 60 / timeslotIncrementMinutes`, rounded to nearest integer) and creates that many AgentAssignment instances for that timeslot and specialization.
 
-Example: Monday 09:00–09:15 needs 8 Billing agents and 3 Tech Support agents → the system generates **8 + 3 = 11 AgentAssignment** instances for that single timeslot. Across 40 timeslots in a day, the total seat count varies per slot based on the individual StaffingRequirement values.
+Example: Monday 09:00–09:15 (15-min slot) needs 2.0 Billing hours and 0.75 Tech Support hours → the system calculates `2.0 × 60/15 = 8` Billing agents and `0.75 × 60/15 = 3` Tech Support agents, generating **8 + 3 = 11 AgentAssignment** instances for that single timeslot.
 
 ### 5.7 AgentAssignment (Planning Entity)
 
@@ -764,7 +764,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
 | Contracted hours | Hard | Every desk-agent must be assigned exactly their contracted hours per day (from `DeskAgent.contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any desk-agent whose contracted hours are not a multiple of the increment. |
-| Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each desk-agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ (requiredAgents × incrementMinutes / 60)` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
+| Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each desk-agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ requiredHours` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
 | Bulk under-allocation limit | Soft / Hard | When **total predicted demand hours** are less than **total contracted agent hours** for the schedule period, a **soft penalty** scales linearly with the gap. If demand falls below `underallocationHardLimitPct` (default 70%) of contracted hours, a **hard** violation is triggered. Same definitions of "total contracted agent hours" and "total predicted demand hours" as the over-allocation constraint above. Example: contracted hours = 200, limit = 70% → demand below 140 hours is a hard violation; demand between 140–200 hours incurs a soft penalty proportional to the shortfall. This is also evaluated as a **pre-solve check**. |
 
 
@@ -1024,7 +1024,7 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredAgents", "source" }`). |
+| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredHours", "source" }`). |
 | `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `200` with the response body below. Returns `404 Not Found` (error code `NOT_FOUND`) if any referenced timeslot or specialization does not exist. Returns `400` (error code `VALIDATION_FAILED`) if the payload contains duplicate `timeslotId` + `specializationId` combinations. |
 | `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. Returns `200` with the response body below. |
 
@@ -1036,12 +1036,12 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
     {
       "timeslotId": "uuid-of-timeslot",
       "specializationId": "uuid-of-specialization",
-      "requiredAgents": 8
+      "requiredHours": 2.0
     },
     {
       "timeslotId": "uuid-of-another-timeslot",
       "specializationId": "uuid-of-specialization",
-      "requiredAgents": 12
+      "requiredHours": 3.0
     }
   ]
 }
@@ -1070,7 +1070,7 @@ Each entry references a timeslot by its `id` (timeslots must already exist in th
 }
 ```
 
-Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the `requiredAgents` count for each entry and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredAgents = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredAgents = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
+Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the required agent count for each entry, converts to `requiredHours` (agents × timeslot duration in hours), and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredHours = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredHours = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
 
 **Response body (both endpoints):**
 
@@ -1085,7 +1085,7 @@ Each entry provides Erlang X input parameters (section 4.4) for a single timeslo
       "startTime": "08:00",
       "endTime": "08:15",
       "specializationName": "Billing",
-      "requiredAgents": 8,
+      "requiredHours": 2.0,
       "source": "DIRECT"
     }
   ]
@@ -1239,7 +1239,7 @@ A per-day comparison of **predicted** staffing hours (derived from staffing requ
 |---|---|---|
 | `date` | `LocalDate` | Day |
 | `specialization` | `String` | Specialization name |
-| `predictedHours` | `BigDecimal` | Sum of `requiredAgents × incrementMinutes / 60` across all timeslots for that day and specialization |
+| `predictedHours` | `BigDecimal` | Sum of `requiredHours` across all timeslots for that day and specialization |
 | `actualHours` | `BigDecimal` | Sum of `(assigned agents) × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `deltaHours` | `BigDecimal` | `actualHours − predictedHours` (positive = overstaffed, negative = understaffed) |
 | `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100`. If `predictedHours` is zero, `coveragePct` is `null` (not applicable — there was no demand for that specialization/day). |

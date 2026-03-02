@@ -4,7 +4,7 @@ import { timeslots as timeslotApi, specializations as specApi, staffingRequireme
 import type { Timeslot, Specialization, StaffingRequirementItem } from '../api/client'
 import { saveTimeslotParams, loadTimeslotParams } from '../timeslotParams'
 
-// Key for demand state: "timeslotId:specializationId" → requiredAgents
+// Key for demand state: "timeslotId:specializationId" → requiredHours
 type DemandMap = Record<string, number>
 
 function demandKey(timeslotId: string, specId: string) {
@@ -48,7 +48,7 @@ export default function StaffingRequirements() {
       const resp = await srApi.list(deskId, { from: periodStart, to: periodEnd })
       const loaded: DemandMap = {}
       for (const item of resp.data) {
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredAgents
+        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours
       }
       setDemand(loaded)
     } catch {
@@ -111,7 +111,7 @@ export default function StaffingRequirements() {
         for (const spec of specs) {
           const val = demand[demandKey(slot.id, spec.id)] ?? 0
           if (val > 0) {
-            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredAgents: val })
+            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredHours: val })
           }
         }
       }
@@ -174,7 +174,7 @@ export default function StaffingRequirements() {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
                       {specs.map(s => (
-                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name}</th>
+                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name} (hrs)</th>
                       ))}
                     </tr>
                   </thead>
@@ -184,10 +184,10 @@ export default function StaffingRequirements() {
                         <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
                         {specs.map(s => (
                           <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
-                            <input type="number" min={0}
+                            <input type="number" min={0} step={0.25}
                               value={demand[demandKey(slot.id, s.id)] ?? 0}
-                              onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseInt(e.target.value) || 0))}
-                              style={{ width: '60px', textAlign: 'center' }} />
+                              onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseFloat(e.target.value) || 0))}
+                              style={{ width: '70px', textAlign: 'center' }} />
                           </td>
                         ))}
                       </tr>

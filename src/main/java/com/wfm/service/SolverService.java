@@ -655,7 +655,15 @@ public class SolverService {
                                                       List<StaffingRequirement> staffingRequirements) {
         List<AgentAssignment> assignments = new ArrayList<>();
         for (StaffingRequirement sr : staffingRequirements) {
-            for (int i = 0; i < sr.getRequiredAgents(); i++) {
+            // Convert requiredHours to agent count: agents = hours / (slotMinutes / 60)
+            long slotMinutes = java.time.temporal.ChronoUnit.MINUTES.between(
+                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
+            int requiredAgents = sr.getRequiredHours()
+                    .multiply(BigDecimal.valueOf(60))
+                    .divide(BigDecimal.valueOf(slotMinutes), 0, java.math.RoundingMode.HALF_UP)
+                    .intValue();
+
+            for (int i = 0; i < requiredAgents; i++) {
                 AgentAssignment a = new AgentAssignment();
                 a.setId(UUID.randomUUID());
                 a.setTenantId(tenantId);

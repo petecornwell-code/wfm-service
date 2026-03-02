@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
+import java.math.BigDecimal;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
@@ -142,7 +143,7 @@ public class StaffingRequirementService {
             sr.setDeskId(deskId);
             sr.setTimeslot(timeslotMap.get(item.timeslotId()));
             sr.setSpecialization(specMap.get(item.specializationId()));
-            sr.setRequiredAgents(item.requiredAgents());
+            sr.setRequiredHours(item.requiredHours());
             sr.setSource(StaffingSource.DIRECT);
             saved.add(staffingRequirementRepository.save(sr));
         }
@@ -191,12 +192,19 @@ public class StaffingRequirementService {
                     item.callVolume(), item.aht(), item.patience(),
                     item.retryRate(), item.serviceLevelTarget(), item.serviceLevelThreshold());
 
+            // Convert agent count to hours: hours = agents × timeslotDuration(hours)
+            Timeslot ts = timeslotMap.get(item.timeslotId());
+            long slotMinutes = java.time.temporal.ChronoUnit.MINUTES.between(ts.getStartTime(), ts.getEndTime());
+            BigDecimal requiredHours = BigDecimal.valueOf(requiredAgents)
+                    .multiply(BigDecimal.valueOf(slotMinutes))
+                    .divide(BigDecimal.valueOf(60), 4, java.math.RoundingMode.HALF_UP);
+
             StaffingRequirement sr = new StaffingRequirement();
             sr.setTenantId(tenantId);
             sr.setDeskId(deskId);
-            sr.setTimeslot(timeslotMap.get(item.timeslotId()));
+            sr.setTimeslot(ts);
             sr.setSpecialization(specMap.get(item.specializationId()));
-            sr.setRequiredAgents(requiredAgents);
+            sr.setRequiredHours(requiredHours);
             sr.setSource(StaffingSource.ERLANG_X);
             saved.add(staffingRequirementRepository.save(sr));
         }
@@ -215,7 +223,7 @@ public class StaffingRequirementService {
                 t.getStartTime(),
                 t.getEndTime(),
                 s.getName(),
-                sr.getRequiredAgents(),
+                sr.getRequiredHours(),
                 sr.getSource().name()
         );
     }
