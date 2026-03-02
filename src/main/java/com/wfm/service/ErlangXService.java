@@ -36,14 +36,12 @@ public class ErlangXService {
         double slTarget = serviceLevelTarget / 100.0;
 
         // Iterative Erlang X: adjust offered load by retrials until convergence
-        double offeredLoad = callVolume * aht; // in seconds (total work)
         double adjustedCallVolume = callVolume;
 
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
             double trafficIntensity = adjustedCallVolume * aht / 3600.0; // in Erlangs (per hour)
 
-            int agents = findMinAgents(trafficIntensity, adjustedCallVolume, aht, patience,
-                    slTarget, serviceLevelThreshold);
+            int agents = findMinAgents(trafficIntensity, aht, patience, slTarget, serviceLevelThreshold);
 
             // Calculate abandonment with this staffing level
             double erlangCProb = erlangCProbability(agents, trafficIntensity);
@@ -69,19 +67,18 @@ public class ErlangXService {
 
         // Final pass with converged load
         double trafficIntensity = adjustedCallVolume * aht / 3600.0;
-        return findMinAgents(trafficIntensity, adjustedCallVolume, aht, patience,
-                slTarget, serviceLevelThreshold);
+        return findMinAgents(trafficIntensity, aht, patience, slTarget, serviceLevelThreshold);
     }
 
     /**
      * Find the smallest number of agents that meets the service level target.
      */
-    private int findMinAgents(double trafficIntensity, double callVolume, double aht,
+    private int findMinAgents(double trafficIntensity, double aht,
                                double patience, double slTarget, int slThreshold) {
         int minAgents = Math.max(1, (int) Math.ceil(trafficIntensity));
 
         for (int n = minAgents; n <= MAX_AGENTS; n++) {
-            double sl = serviceLevel(n, trafficIntensity, callVolume, aht, patience, slThreshold);
+            double sl = serviceLevel(n, trafficIntensity, aht, patience, slThreshold);
             if (sl >= slTarget) {
                 return n;
             }
@@ -93,7 +90,7 @@ public class ErlangXService {
      * Calculate the service level (fraction of calls answered within threshold)
      * using the Erlang X model (Erlang C with abandonment).
      */
-    private double serviceLevel(int agents, double trafficIntensity, double callVolume,
+    private double serviceLevel(int agents, double trafficIntensity,
                                  double aht, double patience, int slThreshold) {
         if (agents <= trafficIntensity) {
             return 0.0;
@@ -109,14 +106,13 @@ public class ErlangXService {
         // Adjusted service level accounts for callers who abandon before slThreshold
         if (patience > 0) {
             double abandonRate = 1.0 / patience;
+            double mu = (agents - trafficIntensity) / aht; // service excess rate
             // Fraction who abandon before being answered within threshold
             double pAbandonBeforeThreshold = erlangC *
-                    (abandonRate / (abandonRate + (agents - trafficIntensity) / aht)) *
-                    (1.0 - Math.exp(-(abandonRate + (agents - trafficIntensity) / aht) * slThreshold));
+                    (abandonRate / (abandonRate + mu)) *
+                    (1.0 - Math.exp(-(abandonRate + mu) * slThreshold));
 
-            // Service level = 1 - P(wait > t) - but abandoning callers are removed from denominator
-            // Simplified: SL = 1 - P(wait > t and not abandoned)
-            return 1.0 - pWaitExceeds + pAbandonBeforeThreshold;
+            return Math.min(1.0, 1.0 - pWaitExceeds + pAbandonBeforeThreshold);
         }
 
         return 1.0 - pWaitExceeds;

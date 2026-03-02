@@ -94,6 +94,17 @@ public class StaffingRequirementService {
             return new StaffingRequirementResponse(List.of());
         }
 
+        // Validate uniqueness of timeslot+specialization combinations in the payload
+        Set<String> seen = new HashSet<>();
+        for (StaffingRequirementRequest.Item item : request.requirements()) {
+            String key = item.timeslotId() + ":" + item.specializationId();
+            if (!seen.add(key)) {
+                throw new IllegalArgumentException(
+                        "Duplicate timeslot+specialization combination: timeslotId=" + item.timeslotId()
+                        + ", specializationId=" + item.specializationId());
+            }
+        }
+
         // Load all referenced timeslots and specializations, validate they exist
         Map<UUID, Timeslot> timeslotMap = new HashMap<>();
         Map<UUID, Specialization> specMap = new HashMap<>();
