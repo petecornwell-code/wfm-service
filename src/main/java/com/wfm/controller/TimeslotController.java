@@ -1,5 +1,7 @@
 package com.wfm.controller;
 
+import com.wfm.dto.GenerateTimeslotsRequest;
+import com.wfm.dto.TimeslotResponse;
 import com.wfm.model.Timeslot;
 import com.wfm.service.TimeslotGeneratorService;
 import org.springframework.http.HttpStatus;
@@ -7,9 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -23,24 +23,26 @@ public class TimeslotController {
     }
 
     @GetMapping
-    public List<Timeslot> listTimeslots(@PathVariable UUID deskId,
-                                        @RequestParam String from,
-                                        @RequestParam String to) {
-        return timeslotGeneratorService.listTimeslots(deskId, LocalDate.parse(from), LocalDate.parse(to));
+    public List<TimeslotResponse> listTimeslots(@PathVariable UUID deskId,
+                                                 @RequestParam String from,
+                                                 @RequestParam String to) {
+        return timeslotGeneratorService.listTimeslots(deskId, LocalDate.parse(from), LocalDate.parse(to))
+                .stream().map(this::toResponse).toList();
     }
 
     @PostMapping("/generate")
-    public ResponseEntity<List<Timeslot>> generateTimeslots(@PathVariable UUID deskId,
-                                                             @RequestBody Map<String, Object> body) {
+    public ResponseEntity<List<TimeslotResponse>> generateTimeslots(@PathVariable UUID deskId,
+                                                                      @RequestBody GenerateTimeslotsRequest request) {
         List<Timeslot> generated = timeslotGeneratorService.generateTimeslots(
                 deskId,
-                LocalDate.parse((String) body.get("periodStartDate")),
-                LocalDate.parse((String) body.get("periodEndDate")),
-                LocalTime.parse((String) body.get("startTime")),
-                LocalTime.parse((String) body.get("endTime")),
-                (Integer) body.get("incrementMinutes")
+                request.periodStartDate(),
+                request.periodEndDate(),
+                request.startTime(),
+                request.endTime(),
+                request.incrementMinutes()
         );
-        return ResponseEntity.status(HttpStatus.CREATED).body(generated);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(generated.stream().map(this::toResponse).toList());
     }
 
     @DeleteMapping
@@ -49,5 +51,9 @@ public class TimeslotController {
                                                  @RequestParam String to) {
         timeslotGeneratorService.deleteTimeslots(deskId, LocalDate.parse(from), LocalDate.parse(to));
         return ResponseEntity.noContent().build();
+    }
+
+    private TimeslotResponse toResponse(Timeslot ts) {
+        return new TimeslotResponse(ts.getId(), ts.getDate(), ts.getStartTime(), ts.getEndTime());
     }
 }

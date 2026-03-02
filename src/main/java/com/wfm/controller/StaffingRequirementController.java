@@ -1,11 +1,9 @@
 package com.wfm.controller;
 
-import com.wfm.model.StaffingRequirement;
+import com.wfm.dto.*;
 import com.wfm.service.StaffingRequirementService;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -19,25 +17,24 @@ public class StaffingRequirementController {
     }
 
     @GetMapping
-    public List<StaffingRequirement> listRequirements(@PathVariable UUID deskId,
-                                                       @RequestParam(required = false) String from,
-                                                       @RequestParam(required = false) String to,
-                                                       @RequestParam(required = false) String cursor,
-                                                       @RequestParam(required = false, defaultValue = "50") int limit) {
+    public PaginatedResponse<StaffingRequirementResponse.Item> listRequirements(
+            @PathVariable UUID deskId,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false, defaultValue = "50") int limit) {
         return staffingRequirementService.listRequirements(deskId, from, to, cursor, limit);
     }
 
     @PostMapping
-    public ResponseEntity<?> saveRequirements(@PathVariable UUID deskId,
-                                              @RequestBody Object body) {
-        // TODO: parse StaffingRequirementRequest, delegate to service
-        return ResponseEntity.ok().build();
+    public StaffingRequirementResponse saveRequirements(@PathVariable UUID deskId,
+                                                         @RequestBody StaffingRequirementRequest request) {
+        return staffingRequirementService.saveRequirements(deskId, request);
     }
 
     @PostMapping("/erlang-x")
-    public ResponseEntity<?> calculateErlangX(@PathVariable UUID deskId,
-                                              @RequestBody Object body) {
-        // TODO: parse ErlangXRequest, delegate to service
-        return ResponseEntity.ok().build();
+    public StaffingRequirementResponse calculateErlangX(@PathVariable UUID deskId,
+                                                         @RequestBody ErlangXRequest request) {
+        return staffingRequirementService.calculateErlangX(deskId, request);
     }
 }

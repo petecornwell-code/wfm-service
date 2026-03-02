@@ -1,7 +1,10 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.exception.ConflictException;
+import com.wfm.model.ScheduleStatus;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
 import jakarta.persistence.EntityManager;
@@ -20,13 +23,16 @@ public class TimeslotGeneratorService {
 
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
+    private final ScheduleRepository scheduleRepository;
     private final EntityManager entityManager;
 
     public TimeslotGeneratorService(TimeslotRepository timeslotRepository,
                                     StaffingRequirementRepository staffingRequirementRepository,
+                                    ScheduleRepository scheduleRepository,
                                     EntityManager entityManager) {
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
+        this.scheduleRepository = scheduleRepository;
         this.entityManager = entityManager;
     }
 
@@ -79,6 +85,14 @@ public class TimeslotGeneratorService {
     @Transactional
     public void deleteTimeslots(UUID deskId, LocalDate from, LocalDate to) {
         long tenantId = TenantContext.getTenantId();
+
+        // Check for accepted schedules overlapping the date range
+        boolean hasAccepted = scheduleRepository.findOverlapping(tenantId, deskId, from, to)
+                .stream().anyMatch(s -> s.getStatus() == ScheduleStatus.ACCEPTED);
+        if (hasAccepted) {
+            throw new ConflictException("Cannot delete timeslots referenced by an accepted schedule");
+        }
+
         // Delete staffing requirements first (FK to timeslot), then timeslots
         staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, from, to);
         timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetween(tenantId, deskId, from, to);
