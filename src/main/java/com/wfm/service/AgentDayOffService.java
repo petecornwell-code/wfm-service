@@ -30,10 +30,10 @@ public class AgentDayOffService {
 
         List<AgentDayOff> daysOff;
         if (from != null && to != null) {
-            daysOff = agentDayOffRepository.findByTenantIdAndAgent_IdAndDateBetween(
+            daysOff = agentDayOffRepository.findByTenantIdAndAgent_IdAndDateBetweenOrderByDateAsc(
                     tenantId, agentId, LocalDate.parse(from), LocalDate.parse(to));
         } else {
-            daysOff = agentDayOffRepository.findByTenantIdAndAgent_Id(tenantId, agentId);
+            daysOff = agentDayOffRepository.findByTenantIdAndAgent_IdOrderByDateAsc(tenantId, agentId);
         }
 
         return daysOff.stream()

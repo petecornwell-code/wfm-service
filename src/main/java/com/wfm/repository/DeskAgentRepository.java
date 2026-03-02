@@ -20,6 +20,7 @@ public interface DeskAgentRepository extends JpaRepository<DeskAgent, UUID> {
     @EntityGraph(attributePaths = {"agent", "primarySpecialization", "secondarySpecializations"})
     List<DeskAgent> findByTenantIdAndDeskId(long tenantId, UUID deskId);
 
+    @EntityGraph(attributePaths = {"agent", "primarySpecialization", "secondarySpecializations"})
     Optional<DeskAgent> findByTenantIdAndDeskIdAndAgent_Id(long tenantId, UUID deskId, UUID agentId);
 
     Optional<DeskAgent> findByTenantIdAndAgent_Id(long tenantId, UUID agentId);

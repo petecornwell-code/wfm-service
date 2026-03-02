@@ -14,9 +14,9 @@ import java.util.UUID;
 @Repository
 public interface AgentDayOffRepository extends JpaRepository<AgentDayOff, UUID> {
 
-    List<AgentDayOff> findByTenantIdAndAgent_Id(long tenantId, UUID agentId);
+    List<AgentDayOff> findByTenantIdAndAgent_IdOrderByDateAsc(long tenantId, UUID agentId);
 
-    List<AgentDayOff> findByTenantIdAndAgent_IdAndDateBetween(
+    List<AgentDayOff> findByTenantIdAndAgent_IdAndDateBetweenOrderByDateAsc(
             long tenantId, UUID agentId, LocalDate from, LocalDate to);
 
     @EntityGraph(attributePaths = {"agent"})

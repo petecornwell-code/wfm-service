@@ -71,7 +71,7 @@ public class AgentExceptionService {
             }
 
             // Check for conflict with days off
-            if (!agentDayOffRepository.findByTenantIdAndAgent_IdAndDateBetween(
+            if (!agentDayOffRepository.findByTenantIdAndAgent_IdAndDateBetweenOrderByDateAsc(
                     tenantId, agentId, ex.date(), ex.date()).isEmpty()) {
                 throw new ConflictException("Agent has a day off on " + ex.date()
                         + "; cannot create exception");

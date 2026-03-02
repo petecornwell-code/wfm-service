@@ -13,4 +13,6 @@ public interface AgentAssignmentRepository extends JpaRepository<AgentAssignment
     List<AgentAssignment> findByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
 
     void deleteByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
+
+    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }

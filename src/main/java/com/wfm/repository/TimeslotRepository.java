@@ -22,4 +22,6 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, UUID> {
     void deleteByTenantIdAndDeskIdAndScheduleIdIsNull(long tenantId, UUID deskId);
 
     List<Timeslot> findByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
+
+    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }

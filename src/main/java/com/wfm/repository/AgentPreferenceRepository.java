@@ -27,4 +27,7 @@ public interface AgentPreferenceRepository extends JpaRepository<AgentPreference
 
     List<AgentPreference> findByTenantIdAndDeskIdAndAgent_IdAndIsStandingTrueAndDayOfWeek(
             long tenantId, UUID deskId, UUID agentId, java.time.DayOfWeek dayOfWeek);
+
+    java.util.Optional<AgentPreference> findByTenantIdAndDeskIdAndAgent_IdAndIsStandingFalseAndDate(
+            long tenantId, UUID deskId, UUID agentId, LocalDate date);
 }

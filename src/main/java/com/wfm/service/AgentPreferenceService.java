@@ -81,17 +81,23 @@ public class AgentPreferenceService {
                     entity.setStanding(true);
                 }
             } else {
-                // Weekly: date-specific preference
+                // Weekly: upsert by (tenant, desk, agent, date)
                 if (pref.date() == null) {
                     throw new IllegalArgumentException("date is required for weekly preferences");
                 }
-                entity = new AgentPreference();
-                entity.setTenantId(tenantId);
-                entity.setDeskId(deskId);
-                entity.setAgent(agent);
-                entity.setDate(pref.date());
-                entity.setDayOfWeek(pref.date().getDayOfWeek());
-                entity.setStanding(false);
+                entity = agentPreferenceRepository
+                        .findByTenantIdAndDeskIdAndAgent_IdAndIsStandingFalseAndDate(
+                                tenantId, deskId, agentId, pref.date())
+                        .orElseGet(() -> {
+                            AgentPreference ap = new AgentPreference();
+                            ap.setTenantId(tenantId);
+                            ap.setDeskId(deskId);
+                            ap.setAgent(agent);
+                            ap.setDate(pref.date());
+                            ap.setDayOfWeek(pref.date().getDayOfWeek());
+                            ap.setStanding(false);
+                            return ap;
+                        });
             }
 
             entity.setPreferredStartTime(pref.preferredStartTime());

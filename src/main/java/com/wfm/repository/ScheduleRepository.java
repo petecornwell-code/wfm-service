@@ -24,4 +24,6 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
 
     boolean existsByTenantIdAndDeskIdAndStatus(long tenantId, UUID deskId,
                                                 com.wfm.model.ScheduleStatus status);
+
+    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }

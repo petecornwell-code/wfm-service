@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,7 +100,7 @@ public class BambooRefreshService {
                     deskAgent.setDeskId(deskId);
                     deskAgent.setAgent(agent);
                     deskAgent.setPrimarySpecialization(defaultSpec);
-                    deskAgent.setSecondarySpecializations(List.of(defaultSpec));
+                    deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(defaultSpec)));
                     deskAgent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
                     deskAgentRepository.save(deskAgent);
                 }
@@ -108,6 +109,15 @@ public class BambooRefreshService {
             // 5. Refresh days off for the lookahead window
             LocalDate from = LocalDate.now();
             LocalDate to = from.plusWeeks(lookaheadWeeks);
+
+            // Delete existing days off in the window for all agents on this desk,
+            // then re-insert from BambooHR (avoids unique constraint violations on repeated refresh)
+            for (BambooEmployee emp : employees) {
+                agentRepository.findByTenantIdAndBamboohrId(tenantId, emp.id())
+                        .ifPresent(agent -> agentDayOffRepository.deleteByAgent_IdAndDateBetween(
+                                agent.getId(), from, to));
+            }
+
             List<BambooTimeOff> timeOffs = bambooHRClient.listTimeOff(String.valueOf(tenantId), from, to);
             for (BambooTimeOff timeOff : timeOffs) {
                 agentRepository.findByTenantIdAndBamboohrId(tenantId, timeOff.employeeId())
@@ -116,7 +126,9 @@ public class BambooRefreshService {
                             dayOff.setTenantId(tenantId);
                             dayOff.setAgent(agent);
                             dayOff.setDate(timeOff.date());
-                            dayOff.setType("MANDATORY".equals(timeOff.type())
+                            String type = timeOff.type();
+                            dayOff.setType("MANDATORY".equalsIgnoreCase(type)
+                                    || "holiday".equalsIgnoreCase(type)
                                     ? DayOffType.MANDATORY : DayOffType.PTO);
                             agentDayOffRepository.save(dayOff);
                         });

@@ -27,6 +27,7 @@ public class DeskService {
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final AgentAssignmentRepository agentAssignmentRepository;
     private final InMemoryScheduleStore inMemoryScheduleStore;
 
     public DeskService(DeskRepository deskRepository,
@@ -38,6 +39,7 @@ public class DeskService {
                        StaffingRequirementRepository staffingRequirementRepository,
                        AgentPreferenceRepository agentPreferenceRepository,
                        AgentExceptionRepository agentExceptionRepository,
+                       AgentAssignmentRepository agentAssignmentRepository,
                        InMemoryScheduleStore inMemoryScheduleStore) {
         this.deskRepository = deskRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
@@ -48,6 +50,7 @@ public class DeskService {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.agentAssignmentRepository = agentAssignmentRepository;
         this.inMemoryScheduleStore = inMemoryScheduleStore;
     }
 
@@ -126,10 +129,16 @@ public class DeskService {
         }
 
         // Cascade-delete all desk-scoped data (order matters for FK constraints)
+        // 1. Agent-scoped desk data
         agentPreferenceRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         agentExceptionRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
-        staffingRequirementRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNull(tenantId, deskId);
-        timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNull(tenantId, deskId);
+        // 2. Schedule-scoped data (assignments before desk-agents, requirements before timeslots)
+        agentAssignmentRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        staffingRequirementRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        timeslotRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        // 3. Schedules themselves
+        scheduleRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        // 4. Structural data
         deskAgentRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         specializationRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         constraintWeightsRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
