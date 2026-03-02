@@ -554,7 +554,7 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `scheduleId` | `UUID` | The accepted schedule this assignment belongs to (NOT NULL — assignments only exist as part of a persisted schedule) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
-| `deskAgent` | `DeskAgent` | **Planning variable** (`@PlanningVariable`, not nullable) — assigned by the solver. Every seat must be filled; the solver will never leave a seat unassigned. The `@ValueRangeProvider` is `Schedule.deskAgents` (section 5.12). Using `DeskAgent` (rather than `Agent`) gives constraints direct access to desk-specific configuration: specializations, contracted hours, and the underlying `Agent` record. When an accepted schedule is persisted to the database, the `agent_assignment` row stores FKs to both `desk_agent` and `agent` for query convenience. |
+| `deskAgent` | `DeskAgent` | **Planning variable** (`@PlanningVariable`, nullable) — assigned by the solver. The planning variable is `nullable = true` to allow Timefold's construction heuristic to initialize assignments incrementally (starting from null). In the final solution, every seat should be filled — all constraints filter out unassigned (null) entities. The `@ValueRangeProvider` is `Schedule.deskAgents` (section 5.12). Using `DeskAgent` (rather than `Agent`) gives constraints direct access to desk-specific configuration: specializations, contracted hours, and the underlying `Agent` record. When an accepted schedule is persisted to the database, the `agent_assignment` row stores FKs to both `desk_agent` and `agent` for query convenience. |
 
 ### 5.8 AgentPreference
 
@@ -650,6 +650,23 @@ The "One agent per seat" constraint is structural (enforced by the planning vari
 
 **JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 15 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
 
+### 5.11a AgentDayConfig (Problem Fact)
+
+A pre-computed per-agent-day configuration record used as a problem fact during solving. The `SolverService` generates one `AgentDayConfig` for each eligible desk-agent on each day of the schedule period (excluding days off). This resolves the effective contracted hours — accounting for `AgentException` overrides — so that constraints can access them via a single join without needing to look up exceptions at runtime.
+
+| Field | Type | Notes |
+|---|---|---|
+| `deskAgentId` | `UUID` | The desk-agent this config applies to |
+| `date` | `LocalDate` | The day this config applies to |
+| `effectiveHours` | `BigDecimal` | Pre-computed contracted hours for this agent-day. Uses `AgentException.contractedHoursOverride` if one exists for this (agent, date); else `DeskAgent.contractedHoursPerDay`; else `Schedule.defaultContractedHoursPerDay`. |
+| `incrementMinutes` | `int` | Copied from schedule config for constraint convenience |
+| `breakDurationMinutes` | `int` | Copied from schedule config |
+| `breakMinShiftHours` | `BigDecimal` | Copied from schedule config |
+| `breakBlockedHours` | `BigDecimal` | Copied from schedule config |
+| `breakStartAlignment` | `BreakAlignment` | Copied from schedule config |
+
+Constraints that need per-agent-day effective hours (contracted hours, all break constraints) join `AgentDayConfig` instead of `ScheduleConfig`. Constraints that only need schedule-wide configuration (e.g. preference constraints) may still use `ScheduleConfig`.
+
 ### 5.12 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run. Each schedule belongs to a specific desk.
@@ -676,9 +693,10 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `specializations` | `List<Specialization>` | Problem facts — desk's specializations |
 | `deskAgents` | `List<DeskAgent>` | Problem facts and **`@ValueRangeProvider`** for the `AgentAssignment.deskAgent` planning variable. **Only desk-agents whose underlying `Agent.active` is `true` and who have specializations assigned** are loaded. "Active" is determined solely by the `Agent.active` flag (set by BambooHR refresh). Inactive agents and desk-agents without specializations are excluded at input time, not by constraint. |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
-| `agentPreferences` | `List<AgentPreference>` | Problem facts |
+| `agentPreferences` | `List<AgentPreference>` | Problem facts — **resolved** effective preferences per agent-day (see §5.8 resolver). Standing and weekly preferences are resolved during pre-solve; each entry has an exact `date` set. |
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
 | `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.10) |
+| `agentDayConfigs` | `List<AgentDayConfig>` | Problem facts — pre-computed per-agent-day effective hours and break config (section 5.11a). Generated by SolverService during pre-solve phase. |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `score` | `HardSoftScore` | Populated by solver. `null` while `RUNNING` if no solution found yet, and `null` if `FAILED`. |
@@ -1430,6 +1448,8 @@ src/main/java/com/wfm/
 │   ├── AgentException.java
 │   ├── AgentAssignment.java
 │   ├── ConstraintWeights.java
+│   ├── ScheduleConfig.java            (record: immutable schedule config for constraint access)
+│   ├── AgentDayConfig.java            (record: per-agent-day effective hours + break config)
 │   ├── Schedule.java
 │   ├── DayOffType.java              (enum: MANDATORY, PTO)
 │   ├── ScheduleStatus.java          (enum: RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)

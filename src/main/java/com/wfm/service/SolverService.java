@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -30,6 +31,7 @@ public class SolverService {
 
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
+    private final DeskRepository deskRepository;
     private final DeskAgentRepository deskAgentRepository;
     private final SpecializationRepository specializationRepository;
     private final TimeslotRepository timeslotRepository;
@@ -41,6 +43,7 @@ public class SolverService {
 
     public SolverService(InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
+                         DeskRepository deskRepository,
                          DeskAgentRepository deskAgentRepository,
                          SpecializationRepository specializationRepository,
                          TimeslotRepository timeslotRepository,
@@ -51,6 +54,7 @@ public class SolverService {
                          ConstraintWeightsRepository constraintWeightsRepository) {
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
+        this.deskRepository = deskRepository;
         this.deskAgentRepository = deskAgentRepository;
         this.specializationRepository = specializationRepository;
         this.timeslotRepository = timeslotRepository;
@@ -76,10 +80,14 @@ public class SolverService {
                     + "Stop it (if running) and accept or reject it before starting a new solve.");
         }
 
-        // 2. Build Schedule from request with defaults
-        Schedule schedule = buildSchedule(tenantId, deskId, request);
+        // 2. Load desk for defaultContractedHoursPerDay inheritance
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk not found: " + deskId));
 
-        // 3. Load all problem facts from database
+        // 3. Build Schedule from request with defaults, inheriting from Desk if needed
+        Schedule schedule = buildSchedule(tenantId, deskId, request, desk);
+
+        // 4. Load all problem facts from database
         List<DeskAgent> allDeskAgents = deskAgentRepository.findByTenantIdAndDeskId(tenantId, deskId);
         List<Specialization> specializations = specializationRepository.findByTenantIdAndDeskId(tenantId, deskId);
         List<Timeslot> timeslots = timeslotRepository
@@ -114,7 +122,7 @@ public class SolverService {
                 tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
         // Load preferences for this desk
-        List<AgentPreference> preferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
         // Load constraint weights
         ConstraintWeights weights = constraintWeightsRepository.findByTenantIdAndDeskId(tenantId, deskId)
@@ -125,33 +133,53 @@ public class SolverService {
                     return cw;
                 });
 
-        // 4. Run pre-solve validation (12 checks from spec §7.11)
+        // 5. Run pre-solve validation (12 checks from spec §7.11)
+        // Note: validation uses ALL preferences (before resolution) to check alignment
         runPreSolveValidation(schedule, allDeskAgents, timeslots, staffingRequirements,
-                eligibleDeskAgents, allDaysOff, exceptions, preferences);
+                eligibleDeskAgents, allDaysOff, exceptions, allPreferences);
 
-        // 5. Detach Hibernate proxy collections into plain ArrayList/HashSet
+        // 6. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
+        List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule);
+
+        // 7. Build lookup maps for days off and exceptions
+        Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
+        for (AgentDayOff d : allDaysOff) {
+            agentDaysOffMap.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
+        }
+        Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap = new HashMap<>();
+        for (AgentException ex : exceptions) {
+            agentExceptionMap.computeIfAbsent(ex.getAgent().getId(), k -> new HashMap<>())
+                    .put(ex.getDate(), ex.getContractedHoursOverride());
+        }
+
+        // 8. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
+        List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
+                eligibleDeskAgents, schedule, agentDaysOffMap, agentExceptionMap);
+
+        // 9. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<DeskAgent> detachedDeskAgents = new ArrayList<>();
         for (DeskAgent da : eligibleDeskAgents) {
             da.setSecondarySpecializations(new ArrayList<>(da.getSecondarySpecializations()));
             detachedDeskAgents.add(da);
         }
 
-        // 6. Expand staffing requirements into AgentAssignment planning entities
+        // 10. Expand staffing requirements into AgentAssignment planning entities
         List<AgentAssignment> assignments = expandAssignments(
                 tenantId, deskId, schedule.getId(), staffingRequirements);
 
-        // 7. Populate the schedule with all collections
+        // 11. Populate the schedule with all collections
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(new ArrayList<>(specializations));
         schedule.setDeskAgents(detachedDeskAgents);
         schedule.setTimeslots(new ArrayList<>(timeslots));
         schedule.setStaffingRequirements(new ArrayList<>(staffingRequirements));
-        schedule.setAgentPreferences(new ArrayList<>(preferences));
+        schedule.setAgentPreferences(new ArrayList<>(resolvedPreferences));
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
+        schedule.setAgentDayConfigs(agentDayConfigs);
         schedule.setAssignments(assignments);
 
-        // 8. Store in memory and start solver asynchronously
+        // 12. Store in memory and start solver asynchronously
         inMemoryStore.put(schedule);
 
         long solverTenantId = tenantId;
@@ -165,7 +193,10 @@ public class SolverService {
                     // Best solution update — schedule object is mutated in place by solver
                 },
                 (Schedule finalBestSolution) -> {
-                    finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
+                    // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
+                    if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
+                        finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
+                    }
                     inMemoryStore.put(finalBestSolution);
                     TenantContext.clear();
                 },
@@ -188,15 +219,16 @@ public class SolverService {
             throw new ConflictException("Schedule is not running (status: " + schedule.getStatus() + ")");
         }
 
-        solverManager.terminateEarly(scheduleId);
+        // Set STOPPED before terminateEarly so the finalBestSolution callback won't overwrite
         schedule.setStatus(ScheduleStatus.STOPPED);
+        solverManager.terminateEarly(scheduleId);
         inMemoryStore.put(schedule);
         return schedule;
     }
 
     // --- Schedule builder ---
 
-    private Schedule buildSchedule(long tenantId, UUID deskId, SolveRequest request) {
+    private Schedule buildSchedule(long tenantId, UUID deskId, SolveRequest request, Desk desk) {
         if (request.periodStartDate() == null || request.periodEndDate() == null
                 || request.startTime() == null || request.endTime() == null) {
             throw new IllegalArgumentException(
@@ -227,11 +259,129 @@ public class SolverService {
             s.setBreakStartAlignment(BreakAlignment.valueOf(request.breakStartAlignment()));
         }
         if (request.breakClusterThresholdPct() != null) s.setBreakClusterThresholdPct(request.breakClusterThresholdPct());
-        if (request.defaultContractedHoursPerDay() != null) s.setDefaultContractedHoursPerDay(request.defaultContractedHoursPerDay());
+
+        // defaultContractedHoursPerDay: use request value, else inherit from Desk (spec §5.12)
+        if (request.defaultContractedHoursPerDay() != null) {
+            s.setDefaultContractedHoursPerDay(request.defaultContractedHoursPerDay());
+        } else {
+            s.setDefaultContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
+        }
+
         if (request.overallocationHardLimitPct() != null) s.setOverallocationHardLimitPct(request.overallocationHardLimitPct());
         if (request.underallocationHardLimitPct() != null) s.setUnderallocationHardLimitPct(request.underallocationHardLimitPct());
 
         return s;
+    }
+
+    // --- Preference resolution (spec §5.8) ---
+
+    /**
+     * Resolves preferences per agent-day within the schedule period.
+     * For each agent-day: if a weekly (non-standing) preference exists for that date
+     * AND has at least one non-null preference field, use it; else fall back to the
+     * standing preference for that day of week; else no preference.
+     * Returns date-specific preferences (isStanding=false, date set) so constraints
+     * can match on exact dates without needing standing/weekly resolution logic.
+     */
+    private List<AgentPreference> resolvePreferences(List<AgentPreference> allPreferences,
+                                                     Schedule schedule) {
+        // Index standing and weekly preferences by agent
+        Map<UUID, Map<DayOfWeek, AgentPreference>> standingByAgent = new HashMap<>();
+        Map<UUID, Map<LocalDate, AgentPreference>> weeklyByAgent = new HashMap<>();
+
+        for (AgentPreference p : allPreferences) {
+            UUID agentId = p.getAgent().getId();
+            if (p.isStanding()) {
+                standingByAgent.computeIfAbsent(agentId, k -> new HashMap<>())
+                        .put(p.getDayOfWeek(), p);
+            } else if (p.getDate() != null) {
+                weeklyByAgent.computeIfAbsent(agentId, k -> new HashMap<>())
+                        .put(p.getDate(), p);
+            }
+        }
+
+        Set<UUID> allAgentIds = new HashSet<>();
+        allAgentIds.addAll(standingByAgent.keySet());
+        allAgentIds.addAll(weeklyByAgent.keySet());
+
+        List<AgentPreference> resolved = new ArrayList<>();
+
+        for (UUID agentId : allAgentIds) {
+            Map<DayOfWeek, AgentPreference> standing = standingByAgent.getOrDefault(agentId, Map.of());
+            Map<LocalDate, AgentPreference> weekly = weeklyByAgent.getOrDefault(agentId, Map.of());
+
+            for (LocalDate d = schedule.getPeriodStartDate();
+                 !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
+
+                AgentPreference weeklyPref = weekly.get(d);
+                boolean weeklyHasData = weeklyPref != null
+                        && (weeklyPref.getPreferredStartTime() != null
+                        || weeklyPref.getPreferredBreakTime() != null);
+
+                AgentPreference effective;
+                if (weeklyHasData) {
+                    effective = weeklyPref;
+                } else {
+                    effective = standing.get(d.getDayOfWeek());
+                }
+
+                if (effective == null) continue;
+                if (effective.getPreferredStartTime() == null && effective.getPreferredBreakTime() == null) continue;
+
+                // Create a date-specific resolved preference so constraints match on exact date
+                AgentPreference rp = new AgentPreference();
+                rp.setId(effective.getId());
+                rp.setTenantId(effective.getTenantId());
+                rp.setDeskId(effective.getDeskId());
+                rp.setAgent(effective.getAgent());
+                rp.setDayOfWeek(d.getDayOfWeek());
+                rp.setDate(d);
+                rp.setStanding(false);
+                rp.setPreferredStartTime(effective.getPreferredStartTime());
+                rp.setPreferredBreakTime(effective.getPreferredBreakTime());
+                resolved.add(rp);
+            }
+        }
+
+        return resolved;
+    }
+
+    // --- Pre-compute AgentDayConfig problem facts ---
+
+    private List<AgentDayConfig> computeAgentDayConfigs(
+            List<DeskAgent> eligibleDeskAgents,
+            Schedule schedule,
+            Map<UUID, Set<LocalDate>> agentDaysOffMap,
+            Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap) {
+
+        List<AgentDayConfig> configs = new ArrayList<>();
+
+        for (DeskAgent da : eligibleDeskAgents) {
+            UUID agentId = da.getAgent().getId();
+            Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
+            Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
+
+            for (LocalDate d = schedule.getPeriodStartDate();
+                 !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
+
+                if (dayOffSet.contains(d)) continue;
+
+                BigDecimal effectiveHours = getEffectiveHours(da, d, exMap, schedule);
+                if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+                configs.add(new AgentDayConfig(
+                        da.getId(),
+                        d,
+                        effectiveHours,
+                        schedule.getIncrementMinutes(),
+                        schedule.getBreakDurationMinutes(),
+                        schedule.getBreakMinShiftHours(),
+                        schedule.getBreakBlockedHours(),
+                        schedule.getBreakStartAlignment()));
+            }
+        }
+
+        return configs;
     }
 
     // --- Pre-solve validation (12 checks from spec §7.11) ---

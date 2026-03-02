@@ -123,6 +123,10 @@ public class Schedule {
     @Transient
     private List<AgentException> agentExceptions = new ArrayList<>();
 
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<AgentDayConfig> agentDayConfigs = new ArrayList<>();
+
     @PlanningEntityCollectionProperty
     @Transient
     private List<AgentAssignment> assignments = new ArrayList<>();
@@ -214,6 +218,9 @@ public class Schedule {
 
     public List<AgentException> getAgentExceptions() { return agentExceptions; }
     public void setAgentExceptions(List<AgentException> agentExceptions) { this.agentExceptions = agentExceptions; }
+
+    public List<AgentDayConfig> getAgentDayConfigs() { return agentDayConfigs; }
+    public void setAgentDayConfigs(List<AgentDayConfig> agentDayConfigs) { this.agentDayConfigs = agentDayConfigs; }
 
     public List<AgentAssignment> getAssignments() { return assignments; }
     public void setAssignments(List<AgentAssignment> assignments) { this.assignments = assignments; }

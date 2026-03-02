@@ -86,9 +86,10 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 4. Exactly one break — agents whose contracted hours strictly exceed
+     * 4. Exactly one break — agents whose effective contracted hours strictly exceed
      * breakMinShiftHours must have exactly one contiguous gap (break).
      * Agents at or below the threshold must have no gap.
+     * Uses AgentDayConfig for exception-aware effective hours.
      */
     private Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -97,13 +98,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         a -> a.getDeskAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
-                .join(ScheduleConfig.class)
-                .filter((daId, date, assignments, config) -> {
-                    BigDecimal effectiveHours = getEffectiveHoursFromAssignments(assignments, config);
-                    if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) return false;
-
-                    boolean needsBreak = effectiveHours.compareTo(config.breakMinShiftHours()) > 0;
-                    int gapCount = countContiguousGaps(assignments, config.incrementMinutes());
+                .join(AgentDayConfig.class,
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignments, dayConfig) -> {
+                    BigDecimal effectiveHours = dayConfig.effectiveHours();
+                    boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
+                    int gapCount = countContiguousGaps(assignments, dayConfig.incrementMinutes());
 
                     if (needsBreak) {
                         return gapCount != 1;
@@ -111,13 +112,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         return gapCount != 0;
                     }
                 })
-                .penalizeConfigurable((daId, date, assignments, config) -> 1)
+                .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Exactly one break");
     }
 
     /**
      * 5. Break duration — the single contiguous gap must be exactly
      * breakDurationMinutes / incrementMinutes timeslots long.
+     * Uses AgentDayConfig for exception-aware effective hours.
      */
     private Constraint breakDuration(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -126,25 +128,27 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         a -> a.getDeskAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
-                .join(ScheduleConfig.class)
-                .filter((daId, date, assignments, config) -> {
-                    BigDecimal effectiveHours = getEffectiveHoursFromAssignments(assignments, config);
-                    if (effectiveHours == null) return false;
-                    boolean needsBreak = effectiveHours.compareTo(config.breakMinShiftHours()) > 0;
+                .join(AgentDayConfig.class,
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignments, dayConfig) -> {
+                    BigDecimal effectiveHours = dayConfig.effectiveHours();
+                    boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    int expectedSlots = config.breakDurationMinutes() / config.incrementMinutes();
-                    List<Integer> gapLengths = getGapLengths(assignments, config.incrementMinutes());
+                    int expectedSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
+                    List<Integer> gapLengths = getGapLengths(assignments, dayConfig.incrementMinutes());
                     if (gapLengths.size() != 1) return false; // exactlyOneBreak handles the count
                     return gapLengths.get(0) != expectedSlots;
                 })
-                .penalizeConfigurable((daId, date, assignments, config) -> 1)
+                .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break duration");
     }
 
     /**
      * 6. Break blocked window — break must not fall within the first or last
      * N hours of the agent's shift.
+     * Uses AgentDayConfig for exception-aware effective hours.
      */
     private Constraint breakBlockedWindow(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -153,36 +157,38 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         a -> a.getDeskAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
-                .join(ScheduleConfig.class)
-                .filter((daId, date, assignments, config) -> {
-                    BigDecimal effectiveHours = getEffectiveHoursFromAssignments(assignments, config);
-                    if (effectiveHours == null) return false;
-                    boolean needsBreak = effectiveHours.compareTo(config.breakMinShiftHours()) > 0;
+                .join(AgentDayConfig.class,
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignments, dayConfig) -> {
+                    BigDecimal effectiveHours = dayConfig.effectiveHours();
+                    boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, config.incrementMinutes());
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes());
                     if (breakStart == null) return false;
-                    int breakSlots = config.breakDurationMinutes() / config.incrementMinutes();
-                    LocalTime breakEnd = breakStart.plusMinutes((long) breakSlots * config.incrementMinutes());
+                    int breakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
+                    LocalTime breakEnd = breakStart.plusMinutes((long) breakSlots * dayConfig.incrementMinutes());
 
                     LocalTime shiftStart = getShiftStart(assignments);
                     LocalTime shiftEnd = getShiftEnd(assignments);
                     if (shiftStart == null || shiftEnd == null) return false;
 
-                    long blockedMinutes = config.breakBlockedHours()
+                    long blockedMinutes = dayConfig.breakBlockedHours()
                             .multiply(BigDecimal.valueOf(60)).longValue();
                     LocalTime blockedStartEnd = shiftStart.plusMinutes(blockedMinutes);
                     LocalTime blockedEndStart = shiftEnd.minusMinutes(blockedMinutes);
 
                     return breakStart.isBefore(blockedStartEnd) || breakEnd.isAfter(blockedEndStart);
                 })
-                .penalizeConfigurable((daId, date, assignments, config) -> 1)
+                .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break blocked window");
     }
 
     /**
      * 7. Break start alignment — break must start on a timeslot boundary
      * matching the configured alignment.
+     * Uses AgentDayConfig for exception-aware effective hours.
      */
     private Constraint breakStartAlignment(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -191,55 +197,51 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         a -> a.getDeskAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
-                .join(ScheduleConfig.class)
-                .filter((daId, date, assignments, config) -> {
-                    BigDecimal effectiveHours = getEffectiveHoursFromAssignments(assignments, config);
-                    if (effectiveHours == null) return false;
-                    boolean needsBreak = effectiveHours.compareTo(config.breakMinShiftHours()) > 0;
+                .join(AgentDayConfig.class,
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignments, dayConfig) -> {
+                    BigDecimal effectiveHours = dayConfig.effectiveHours();
+                    boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, config.incrementMinutes());
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes());
                     if (breakStart == null) return false;
 
-                    return !isAligned(breakStart, config.breakStartAlignment());
+                    return !isAligned(breakStart, dayConfig.breakStartAlignment());
                 })
-                .penalizeConfigurable((daId, date, assignments, config) -> 1)
+                .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break start alignment");
     }
 
     /**
      * 12. Contracted hours — every desk-agent must be assigned exactly their
-     * contracted hours per day. Penalty proportional to deviation.
+     * effective contracted hours per day (accounting for exceptions via AgentDayConfig).
+     * Penalty proportional to deviation in timeslot count.
      */
     private Constraint contractedHours(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent(),
+                        a -> a.getDeskAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         count())
-                .join(ScheduleConfig.class)
-                .filter((da, date, assignmentCount, config) -> {
-                    BigDecimal effectiveHours = da.getContractedHoursPerDay() != null
-                            ? da.getContractedHoursPerDay()
-                            : config.defaultContractedHoursPerDay();
-                    if (effectiveHours == null) return false;
+                .join(AgentDayConfig.class,
+                        equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, cnt) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignmentCount, dayConfig) -> {
                     BigDecimal actualHours = BigDecimal.valueOf(assignmentCount)
-                            .multiply(BigDecimal.valueOf(config.incrementMinutes()))
+                            .multiply(BigDecimal.valueOf(dayConfig.incrementMinutes()))
                             .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-                    return actualHours.compareTo(effectiveHours) != 0;
+                    return actualHours.compareTo(dayConfig.effectiveHours()) != 0;
                 })
-                .penalizeConfigurable((da, date, count, config) -> {
-                    BigDecimal effectiveHours = da.getContractedHoursPerDay() != null
-                            ? da.getContractedHoursPerDay()
-                            : config.defaultContractedHoursPerDay();
-                    if (effectiveHours == null) return 0;
+                .penalizeConfigurable((daId, date, count, dayConfig) -> {
                     BigDecimal actualHours = BigDecimal.valueOf(count)
-                            .multiply(BigDecimal.valueOf(config.incrementMinutes()))
+                            .multiply(BigDecimal.valueOf(dayConfig.incrementMinutes()))
                             .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-                    return Math.abs(actualHours.subtract(effectiveHours)
+                    return Math.abs(actualHours.subtract(dayConfig.effectiveHours())
                             .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(config.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
                             .intValue());
                 })
                 .asConstraint("Contracted hours");
@@ -292,20 +294,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     /**
      * 9. Honour preferred start time — penalise assigning an agent to a
      * timeslot before their preferred start time for that day.
+     * Preferences are pre-resolved (weekly vs standing) by SolverService,
+     * so all preferences have an exact date set.
      */
     private Constraint honourPreferredStartTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
                 .join(AgentPreference.class,
-                        equal(a -> a.getDeskAgent().getAgent().getId(), p -> p.getAgent().getId()))
+                        equal(a -> a.getDeskAgent().getAgent().getId(), p -> p.getAgent().getId()),
+                        equal(a -> a.getTimeslot().getDate(), AgentPreference::getDate))
                 .filter((a, p) -> {
                     if (p.getPreferredStartTime() == null) return false;
-                    if (p.isStanding()) {
-                        return a.getTimeslot().getDate().getDayOfWeek() == p.getDayOfWeek()
-                                && a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
-                    }
-                    return a.getTimeslot().getDate().equals(p.getDate())
-                            && a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
+                    return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
                 })
                 .penalizeConfigurable((a, p) -> 1)
                 .asConstraint("Honour preferred start time");
@@ -314,6 +314,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     /**
      * 10. Honour preferred break time — penalise when an agent's break
      * does not start at their preferred break time.
+     * Preferences are pre-resolved by SolverService with exact dates.
      */
     private Constraint honourPreferredBreakTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -324,14 +325,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         toList())
                 .join(AgentPreference.class,
                         equal((da, date, assignments) -> da.getAgent().getId(),
-                                p -> p.getAgent().getId()))
+                                p -> p.getAgent().getId()),
+                        equal((da, date, assignments) -> date,
+                                AgentPreference::getDate))
                 .filter((da, date, assignments, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
-                    if (pref.isStanding()) {
-                        if (date.getDayOfWeek() != pref.getDayOfWeek()) return false;
-                    } else {
-                        if (!date.equals(pref.getDate())) return false;
-                    }
                     int increment = deriveIncrement(assignments);
                     LocalTime breakStart = findBreakStart(assignments, increment);
                     if (breakStart == null) return false;
@@ -368,16 +366,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // ============================================================
     //  HELPER METHODS
     // ============================================================
-
-    private BigDecimal getEffectiveHoursFromAssignments(List<AgentAssignment> assignments,
-                                                         ScheduleConfig config) {
-        if (assignments == null || assignments.isEmpty()) return null;
-        DeskAgent da = assignments.get(0).getDeskAgent();
-        if (da == null) return null;
-        return da.getContractedHoursPerDay() != null
-                ? da.getContractedHoursPerDay()
-                : config.defaultContractedHoursPerDay();
-    }
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();
