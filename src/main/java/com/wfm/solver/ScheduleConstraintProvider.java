@@ -42,18 +42,19 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
     /**
      * 0. Unassigned assignment — every seat must be filled with an agent.
-     * Without this, nullable planning variables left as null yield 0 penalty,
-     * so the solver has no incentive to assign agents.
      *
-     * Uses a hardcoded high penalty (not penalizeConfigurable) for two reasons:
-     * 1. The penalty must dominate other per-entity penalties (especially contracted
-     *    hours, which can reach ~32 hard per individual assignment during CH) so the
-     *    construction heuristic always prefers assigning *some* agent over leaving
-     *    a seat empty.
-     * 2. A non-configurable penalty avoids any constraint-weight-lookup issues.
+     * Must use forEachIncludingUnassigned() because Timefold's forEach()
+     * excludes entities whose planning variable is null. Without this,
+     * null-assigned entities are invisible to all constraint streams,
+     * producing a 0-penalty score that the CH always prefers over any
+     * real assignment.
+     *
+     * The penalty (1000 hard) must dominate per-entity penalties from other
+     * constraints (especially contracted hours, which can reach ~32 hard
+     * during CH when an agent has only 1 of 32 needed slots assigned).
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
+        return factory.forEachIncludingUnassigned(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() == null)
                 .penalize(HardSoftScore.ofHard(1000))
                 .asConstraint("Unassigned assignment");
