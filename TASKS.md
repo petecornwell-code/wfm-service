@@ -167,6 +167,15 @@ Full Erlang X (Extended Erlang C) implementation:
 **Depends on:** Task 4 (DTOs), Task 6 (pagination), Task 16 (ErlangXService)
 **Ref:** TODO §11
 
+### Codebase Review Fixes (Post-Phase 3)
+The following cross-cutting fixes were identified and applied during a comprehensive codebase review:
+- ✅ **BambooRefreshService:** immutable `List.of()` → mutable `ArrayList` for JPA-managed collection; delete-before-insert for days-off; case-insensitive type comparison
+- ✅ **DeskService.deleteDesk:** expanded cascade to delete ALL desk-scoped data (agent assignments, all timeslots/requirements, schedule records) in FK-safe order, not just live data
+- ✅ **AgentPreferenceService:** weekly preference upsert by (tenant, desk, agent, date, isStanding=false) to prevent duplicate records
+- ✅ **DeskAgentRepository:** added `@EntityGraph` to `findByTenantIdAndDeskIdAndAgent_Id` to prevent N+1 lazy loading
+- ✅ **AgentDayOffRepository/Service:** added `OrderByDateAsc` sort to per-agent query methods for deterministic results
+- ✅ **Spec updated:** §7.1 DELETE desk now documents FK-safe cascade delete order
+
 ---
 
 ## Phase 4: Solver
@@ -280,9 +289,9 @@ Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
 
 ### Task 29 — BambooRefreshService Fixes
 1. Soft-delete removed employees (mark `active = false`)
-2. Day-off upsert by (agent, date) to avoid unique constraint violations
-3. Stale day-off deletion for refreshed agents
-4. Case-insensitive type mapping (`"holiday"`, `"mandatory"` → MANDATORY)
+2. ~~Day-off upsert by (agent, date) to avoid unique constraint violations~~ ✅ Done in Phase 3 review: delete-before-insert for days-off in lookahead window
+3. ~~Stale day-off deletion for refreshed agents~~ ✅ Done in Phase 3 review: deletes existing days-off per agent before re-inserting
+4. ~~Case-insensitive type mapping (`"holiday"`, `"mandatory"` → MANDATORY)~~ ✅ Done in Phase 3 review: equalsIgnoreCase for both type values
 5. Move API calls before `@Transactional` boundary
 6. Case-insensitive desk name matching
 7. Cross-desk conflict logging (warn + skip)
