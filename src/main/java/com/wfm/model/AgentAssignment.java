@@ -1,6 +1,7 @@
 package com.wfm.model;
 
 import ai.timefold.solver.core.api.domain.entity.PlanningEntity;
+import ai.timefold.solver.core.api.domain.lookup.PlanningId;
 import ai.timefold.solver.core.api.domain.variable.PlanningVariable;
 import jakarta.persistence.*;
 import java.util.UUID;
@@ -10,6 +11,7 @@ import java.util.UUID;
 @Table(name = "agent_assignment")
 public class AgentAssignment {
 
+    @PlanningId
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
