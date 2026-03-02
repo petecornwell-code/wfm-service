@@ -54,7 +54,17 @@ public class TimeslotGeneratorService {
 
         long tenantId = TenantContext.getTenantId();
 
-        // Delete existing staffing requirements then timeslots for the date range
+        // Check if existing timeslots already match the requested parameters.
+        // If so, return them as-is to preserve linked staffing requirements.
+        List<Timeslot> existing = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, periodStart, periodEnd);
+
+        if (timeslotsMatch(existing, periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+            return existing;
+        }
+
+        // Parameters changed or no timeslots exist — delete and recreate
         staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, periodStart, periodEnd);
         timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetween(
                 tenantId, deskId, periodStart, periodEnd);
@@ -80,6 +90,35 @@ public class TimeslotGeneratorService {
         }
 
         return timeslotRepository.saveAll(timeslots);
+    }
+
+    /**
+     * Check if existing timeslots exactly match the requested generation parameters.
+     * Verifies date coverage, start/end times, and increment are all consistent.
+     */
+    private boolean timeslotsMatch(List<Timeslot> existing, LocalDate periodStart, LocalDate periodEnd,
+                                   LocalTime startTime, LocalTime endTime, int incrementMinutes) {
+        if (existing.isEmpty()) return false;
+
+        // Calculate expected count: days × slots-per-day
+        long days = ChronoUnit.DAYS.between(periodStart, periodEnd) + 1;
+        long slotsPerDay = startTime.until(endTime, ChronoUnit.MINUTES) / incrementMinutes;
+        long expectedCount = days * slotsPerDay;
+
+        if (existing.size() != expectedCount) return false;
+
+        // Verify first and last timeslots match the expected boundaries
+        Timeslot first = existing.get(0);
+        Timeslot last = existing.get(existing.size() - 1);
+
+        if (!first.getDate().equals(periodStart)) return false;
+        if (!first.getStartTime().equals(startTime)) return false;
+        if (!last.getDate().equals(periodEnd)) return false;
+        if (!last.getEndTime().equals(endTime)) return false;
+
+        // Verify increment by checking first timeslot's duration
+        long actualIncrement = first.getStartTime().until(first.getEndTime(), ChronoUnit.MINUTES);
+        return actualIncrement == incrementMinutes;
     }
 
     @Transactional
