@@ -134,34 +134,36 @@ Create a reusable `CursorPagination` utility or extend `PaginatedResponse`.
 
 ---
 
-## Phase 3: Staffing & Timeslots
+## Phase 3: Staffing & Timeslots ✅ DONE
 
-### Task 15 — TimeslotController: Add Typed DTO and Accepted Schedule Check
-- Replace `Map<String, Object>` with `GenerateTimeslotsRequest` in generate endpoint
-- Add 409 Conflict check for accepted schedules on delete endpoint
-- Use `TimeslotResponse` DTO for all responses (list, generate, delete)
-- `GET .../timeslots` also returns raw `Timeslot` entity — use `TimeslotResponse`
+### Task 15 — TimeslotController: Add Typed DTO and Accepted Schedule Check ✅
+- ✅ Replace `Map<String, Object>` with `GenerateTimeslotsRequest` in generate endpoint
+- ✅ Add 409 Conflict check for accepted schedules on delete endpoint
+- ✅ Use `TimeslotResponse` DTO for all responses (list, generate, delete)
+- ✅ `GET .../timeslots` also returns raw `Timeslot` entity — use `TimeslotResponse`
 **Files:** `TimeslotController.java`, `TimeslotGeneratorService.java`
 **Depends on:** Task 1, Task 4
 **Ref:** TODO §10
 
-### Task 16 — ErlangXService: Implement Algorithm
+### Task 16 — ErlangXService: Implement Algorithm ✅
 Full Erlang X (Extended Erlang C) implementation:
-1. Erlang C baseline via Jagerman formula
-2. Abandonment probability
-3. Retrial-adjusted load
-4. Convergence loop
-5. Return smallest integer meeting service level
+1. ✅ Erlang C baseline via Jagerman formula
+2. ✅ Abandonment probability (exponential patience model)
+3. ✅ Retrial-adjusted load
+4. ✅ Convergence loop (max 100 iterations)
+5. ✅ Return smallest integer meeting service level
 **Files:** `ErlangXService.java`
 **Depends on:** nothing
 **Ref:** TODO §12
 
-### Task 17 — StaffingRequirementService: Complete All Methods
-- `listRequirements()`: query live (schedule_id IS NULL), pagination, date range filter, enriched response
-- `saveRequirements()`: validate timeslots/specializations, derive date range, delete+insert in transaction
-- `calculateErlangX()`: parse request, call ErlangXService, persist results
-- Wire `StaffingRequirementController`: replace `Object` with `StaffingRequirementRequest`/`ErlangXRequest`/`StaffingRequirementResponse`
-**Files:** `StaffingRequirementService.java`, `StaffingRequirementController.java`
+### Task 17 — StaffingRequirementService: Complete All Methods ✅
+- ✅ `listRequirements()`: cursor-based pagination with 4-part sort key (date, startTime, specName, id), JOIN FETCH for eager loading, date range filter
+- ✅ `saveRequirements()`: validate timeslots/specializations exist and belong to desk, validate uniqueness of timeslot+spec combos, derive date range from payload, delete+insert in single tx
+- ✅ `calculateErlangX()`: parse ErlangXRequest, call ErlangXService per item, persist with ERLANG_X source, delete+insert for from/to range
+- ✅ Wire `StaffingRequirementController`: typed DTOs for all 3 endpoints
+- **Spec change:** §7.10 POST save: updated from 400 to 404 for missing timeslot/specialization references (consistent with EntityNotFoundException pattern). Added 400 for duplicate timeslot+spec combos.
+- **Known limitation:** JOIN FETCH + Pageable triggers Hibernate in-memory pagination on first page (no cursor). Acceptable for bounded data sets.
+**Files:** `StaffingRequirementService.java`, `StaffingRequirementController.java`, `StaffingRequirementRepository.java`
 **Depends on:** Task 4 (DTOs), Task 6 (pagination), Task 16 (ErlangXService)
 **Ref:** TODO §11
 
