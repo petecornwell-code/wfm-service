@@ -167,6 +167,11 @@ public class SolverService {
         List<AgentAssignment> assignments = expandAssignments(
                 tenantId, deskId, schedule.getId(), staffingRequirements);
 
+        log.debug("Solver input — schedule={}, deskAgents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
+                schedule.getId(), detachedDeskAgents.size(), timeslots.size(),
+                staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
+                resolvedPreferences.size());
+
         // 11. Populate the schedule with all collections
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(new ArrayList<>(specializations));
@@ -180,6 +185,9 @@ public class SolverService {
         schedule.setAssignments(assignments);
 
         // 12. Store in memory and start solver asynchronously
+        log.info("Starting solver — schedule={}, period={} to {}, assignments={}",
+                schedule.getId(), schedule.getPeriodStartDate(), schedule.getPeriodEndDate(),
+                assignments.size());
         inMemoryStore.put(schedule);
 
         long solverTenantId = tenantId;
@@ -190,9 +198,13 @@ public class SolverService {
                     return schedule;
                 },
                 (Schedule bestSolution) -> {
-                    // Best solution update — schedule object is mutated in place by solver
+                    log.debug("Solver best solution update — schedule={}, score={}",
+                            bestSolution.getId(), bestSolution.getScore());
                 },
                 (Schedule finalBestSolution) -> {
+                    log.info("Solver finished — schedule={}, score={}, status={}",
+                            finalBestSolution.getId(), finalBestSolution.getScore(),
+                            finalBestSolution.getStatus());
                     // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
                     if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
                         finalBestSolution.setStatus(ScheduleStatus.COMPLETED);

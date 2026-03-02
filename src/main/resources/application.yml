@@ -42,6 +42,17 @@ timefold:
   solver:
     solver-config-xml: solverConfig.xml
 
+# Logging — solver debug output
+logging:
+  level:
+    ai.timefold.solver.core: INFO
+    ai.timefold.solver.core.impl.constructionheuristic: DEBUG
+    ai.timefold.solver.core.impl.localsearch: DEBUG
+    ai.timefold.solver.core.impl.phase: DEBUG
+    ai.timefold.solver.core.impl.solver: DEBUG
+    com.wfm.service.SolverService: DEBUG
+    com.wfm.solver: DEBUG
+
 # Actuator
 management:
   endpoints:
