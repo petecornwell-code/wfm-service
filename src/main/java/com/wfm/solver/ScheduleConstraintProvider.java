@@ -49,14 +49,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * producing a 0-penalty score that the CH always prefers over any
      * real assignment.
      *
-     * The penalty (1000 hard) must dominate per-entity penalties from other
-     * constraints (especially contracted hours, which can reach ~32 hard
-     * during CH when an agent has only 1 of 32 needed slots assigned).
+     * The configurable weight (default 1000hard) must dominate per-entity
+     * penalties from other constraints — especially contracted hours, which
+     * can reach ~32 hard during CH when an agent has only 1 of 32 needed
+     * slots assigned.
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() == null)
-                .penalize(HardSoftScore.ofHard(1000))
+                .penalizeConfigurable()
                 .asConstraint("Unassigned assignment");
     }
 
