@@ -1,5 +1,6 @@
 package com.wfm.solver;
 
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
 import com.wfm.model.*;
 
@@ -43,11 +44,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 0. Unassigned assignment — every seat must be filled with an agent.
      * Without this, nullable planning variables left as null yield 0 penalty,
      * so the solver has no incentive to assign agents.
+     *
+     * Uses a hardcoded high penalty (not penalizeConfigurable) for two reasons:
+     * 1. The penalty must dominate other per-entity penalties (especially contracted
+     *    hours, which can reach ~32 hard per individual assignment during CH) so the
+     *    construction heuristic always prefers assigning *some* agent over leaving
+     *    a seat empty.
+     * 2. A non-configurable penalty avoids any constraint-weight-lookup issues.
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() == null)
-                .penalizeConfigurable()
+                .penalize(HardSoftScore.ofHard(1000))
                 .asConstraint("Unassigned assignment");
     }
 
