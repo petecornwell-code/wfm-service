@@ -196,5 +196,5 @@ export interface Score { hardScore: number; softScore: number }
 export interface ConstraintWeightsData { [key: string]: Score }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
 export interface ScheduleSummary { id: string; deskId: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; createdAt: string }
-export interface ScheduleDetail extends ScheduleSummary { staffingSummary: unknown[]; agentSchedule: unknown[]; preferenceReport: unknown; constraintViolations: unknown[]; violatedHardConstraints: string[]; errorMessage?: string }
+export interface ScheduleDetail extends ScheduleSummary { staffingSummary: unknown[]; agentSchedule: unknown[]; preferenceReport: unknown; constraintViolations: unknown[]; violatedHardConstraints: string[]; warnings?: string[]; errorMessage?: string }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean }

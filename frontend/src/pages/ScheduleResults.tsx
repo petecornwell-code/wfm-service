@@ -80,11 +80,27 @@ export default function ScheduleResults() {
           )}
         </div>
 
+        {schedule.warnings && schedule.warnings.length > 0 && (
+          <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', padding: '0.75rem', borderRadius: '6px', marginTop: '0.75rem' }}>
+            <strong>CAPACITY WARNING</strong>
+            <ul style={{ marginTop: '0.25rem', paddingLeft: '1.25rem' }}>
+              {schedule.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
+        )}
+
         {schedule.feasible === false && schedule.violatedHardConstraints?.length > 0 && (
           <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginTop: '0.75rem' }}>
             <strong>NON-OPTIMAL SOLUTION</strong>
             <ul style={{ marginTop: '0.25rem', paddingLeft: '1.25rem' }}>
-              {schedule.violatedHardConstraints.map(c => <li key={c}>{c}</li>)}
+              {schedule.violatedHardConstraints.map(c => (
+                <li key={c}>
+                  {c}
+                  {c === 'Unassigned assignment' && schedule.warnings && schedule.warnings.length > 0 && (
+                    <span style={{ color: '#92400e' }}> — demand exceeds available agent-hours (see warning above)</span>
+                  )}
+                </li>
+              ))}
             </ul>
           </div>
         )}

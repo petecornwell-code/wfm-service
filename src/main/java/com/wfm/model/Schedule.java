@@ -131,6 +131,9 @@ public class Schedule {
     @Transient
     private List<AgentAssignment> assignments = new ArrayList<>();
 
+    @Transient
+    private List<String> warnings = new ArrayList<>();
+
     public Schedule() {}
 
     // --- Getters and setters ---
@@ -224,6 +227,9 @@ public class Schedule {
 
     public List<AgentAssignment> getAssignments() { return assignments; }
     public void setAssignments(List<AgentAssignment> assignments) { this.assignments = assignments; }
+
+    public List<String> getWarnings() { return warnings; }
+    public void setWarnings(List<String> warnings) { this.warnings = warnings; }
 
     @ProblemFactProperty
     @Transient

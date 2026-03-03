@@ -156,6 +156,9 @@ public class SolverService {
         List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
                 eligibleDeskAgents, schedule, agentDaysOffMap, agentExceptionMap);
 
+        // 8b. Compute capacity warnings (demand vs supply)
+        computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
+
         // 9. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<DeskAgent> detachedDeskAgents = new ArrayList<>();
         for (DeskAgent da : eligibleDeskAgents) {
@@ -397,6 +400,56 @@ public class SolverService {
         }
 
         return configs;
+    }
+
+    // --- Capacity warnings (demand vs supply analysis) ---
+
+    private void computeCapacityWarnings(Schedule schedule,
+                                          List<StaffingRequirement> staffingRequirements,
+                                          List<AgentDayConfig> agentDayConfigs) {
+        int incrementMinutes = schedule.getIncrementMinutes();
+
+        // Sum total demand slots from staffing requirements
+        long totalDemandSlots = 0;
+        BigDecimal totalDemandHours = BigDecimal.ZERO;
+        for (StaffingRequirement sr : staffingRequirements) {
+            long slotMinutes = ChronoUnit.MINUTES.between(
+                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
+            int requiredAgents = sr.getRequiredHours()
+                    .multiply(BigDecimal.valueOf(60))
+                    .divide(BigDecimal.valueOf(slotMinutes), 0, RoundingMode.HALF_UP)
+                    .intValue();
+            totalDemandSlots += requiredAgents;
+            totalDemandHours = totalDemandHours.add(sr.getRequiredHours());
+        }
+
+        // Sum total supply slots from agent day configs
+        long totalSupplySlots = 0;
+        BigDecimal totalSupplyHours = BigDecimal.ZERO;
+        for (AgentDayConfig adc : agentDayConfigs) {
+            BigDecimal effectiveHours = adc.effectiveHours();
+            long slots = effectiveHours
+                    .multiply(BigDecimal.valueOf(60))
+                    .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.FLOOR)
+                    .longValue();
+            totalSupplySlots += slots;
+            totalSupplyHours = totalSupplyHours.add(effectiveHours);
+        }
+
+        List<String> warnings = new ArrayList<>();
+        if (totalDemandSlots > totalSupplySlots) {
+            long deficit = totalDemandSlots - totalSupplySlots;
+            warnings.add(String.format(
+                    "Demand (%s hrs, %d slots) exceeds supply (%s hrs, %d slots) by %d slots. "
+                    + "The solver will produce the best partial schedule, but at least %d assignment(s) will remain unassigned.",
+                    totalDemandHours.setScale(2, RoundingMode.HALF_UP), totalDemandSlots,
+                    totalSupplyHours.setScale(2, RoundingMode.HALF_UP), totalSupplySlots,
+                    deficit, deficit));
+            log.warn("Capacity warning for schedule {}: demand={} slots, supply={} slots, deficit={}",
+                    schedule.getId(), totalDemandSlots, totalSupplySlots, deficit);
+        }
+
+        schedule.setWarnings(warnings);
     }
 
     // --- Pre-solve validation (12 checks from spec §7.11) ---

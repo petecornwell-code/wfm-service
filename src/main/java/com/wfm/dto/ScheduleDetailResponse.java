@@ -33,6 +33,7 @@ public class ScheduleDetailResponse {
     private List<AgentScheduleEntry> agentSchedule;
     private PreferenceReport preferenceReport;
     private List<ConstraintViolationEntry> constraintViolations;
+    private List<String> warnings;
 
     // --- Output view sub-DTOs ---
 
@@ -160,4 +161,6 @@ public class ScheduleDetailResponse {
     public void setPreferenceReport(PreferenceReport v) { this.preferenceReport = v; }
     public List<ConstraintViolationEntry> getConstraintViolations() { return constraintViolations; }
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
+    public List<String> getWarnings() { return warnings; }
+    public void setWarnings(List<String> v) { this.warnings = v; }
 }

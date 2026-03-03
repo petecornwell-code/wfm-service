@@ -338,6 +338,7 @@ public class ScheduleOutputService {
                     String agentName = null;
                     UUID timeslotId = null;
                     String timeslotLabel = null;
+                    String specName = null;
 
                     for (Object justification : match.getIndictedObjectList()) {
                         if (justification instanceof AgentAssignment aa) {
@@ -349,11 +350,20 @@ public class ScheduleOutputService {
                             timeslotLabel = aa.getTimeslot().getDate() + " "
                                     + aa.getTimeslot().getStartTime() + "-"
                                     + aa.getTimeslot().getEndTime();
+                            if (aa.getRequiredSpecialization() != null) {
+                                specName = aa.getRequiredSpecialization().getName();
+                            }
                         }
                     }
 
-                    violations.add(new ViolationDetail(agentId, agentName, timeslotId, timeslotLabel,
-                            constraintName + " violation" + (agentName != null ? " for " + agentName : "")));
+                    String description;
+                    if ("Unassigned assignment".equals(constraintName) && specName != null && timeslotLabel != null) {
+                        description = "No agent assigned for " + specName + " at " + timeslotLabel;
+                    } else {
+                        description = constraintName + " violation" + (agentName != null ? " for " + agentName : "");
+                    }
+
+                    violations.add(new ViolationDetail(agentId, agentName, timeslotId, timeslotLabel, description));
                 }
 
                 int violationCount = violations.size();
