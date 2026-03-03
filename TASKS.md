@@ -261,23 +261,23 @@ Comprehensive review against spec identified and fixed the following issues:
 
 ---
 
-## Phase 5: Schedule Management
+## Phase 5: Schedule Management ✅ DONE
 
-### Task 23 — ScheduleService.listSchedules
+### Task 23 — ScheduleService.listSchedules ✅
 Merge in-memory schedule (if exists for desk) with database accepted schedules.
 Apply cursor-based pagination. Return `ScheduleSummary` format.
 **Files:** `ScheduleService.java`
 **Depends on:** Task 6 (pagination), Task 21 (DTOs)
 **Ref:** TODO §14
 
-### Task 24 — ScheduleService.getScheduleDetail
+### Task 24 — ScheduleService.getScheduleDetail ✅
 Implement `?date` query parameter filter. Call `ScheduleOutputService` for all four output views.
 Add tenant/desk validation on in-memory path.
 **Files:** `ScheduleService.java`
 **Depends on:** Task 25 (output views)
 **Ref:** TODO §14
 
-### Task 25 — Schedule Output Views (4 views)
+### Task 25 — Schedule Output Views (4 views) ✅
 Implement all four `ScheduleOutputService` methods:
 1. `buildStaffingSummary()`: per-day per-specialization predicted vs actual hours, coverage %, totals
 2. `buildAgentSchedule()`: per-agent per-day shifts, assignments with matchType, breaks
@@ -287,7 +287,7 @@ Implement all four `ScheduleOutputService` methods:
 **Depends on:** Task 22 (constraints produce meaningful violations)
 **Ref:** TODO §15
 
-### Task 26 — ScheduleService.acceptSchedule (MOST COMPLEX)
+### Task 26 — ScheduleService.acceptSchedule (MOST COMPLEX) ✅
 1. Validate status COMPLETED/STOPPED (409 otherwise)
 2. Snapshot live timeslots → new IDs with schedule_id
 3. Snapshot staffing requirements → remap to snapshot timeslots
@@ -299,13 +299,13 @@ Implement all four `ScheduleOutputService` methods:
 **Depends on:** Task 5 (Schedule.score column fix), Task 20 (solver produces results to accept)
 **Ref:** TODO §14
 
-### Task 27 — ScheduleService.rejectSchedule
+### Task 27 — ScheduleService.rejectSchedule ✅
 Add status validation (COMPLETED/STOPPED/FAILED only, 409 if RUNNING).
 **Files:** `ScheduleService.java`
 **Depends on:** Task 1 (exception handler)
 **Ref:** TODO §14
 
-### Task 28 — Schedule Excel Export
+### Task 28 — Schedule Excel Export ✅
 Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
 - Tab 1: Staffing Summary
 - Tab 2: Agent Schedule
@@ -313,6 +313,41 @@ Implement `ScheduleExportService.exportToExcel()` using Apache POI XSSFWorkbook:
 **Files:** `ScheduleExportService.java`
 **Depends on:** Task 25 (output views provide the data)
 **Ref:** TODO §15
+
+### Architect Review Fixes (Post-Phase 5)
+Comprehensive review identified and fixed the following issues:
+
+**Critical Bug Fixes:**
+- ✅ **Tenant isolation missing for in-memory schedules:** `getScheduleDetail`, `acceptSchedule`, and `rejectSchedule` now validate `tenantId` and `deskId` when accessing schedules from the in-memory store. Previously, cross-tenant access was possible.
+- ✅ **`startTimeHonoured` used exact match instead of `>=`:** Spec §8.3 says `true` if `actualStartTime >= preferredStartTime`. Changed from `!isBefore && !isAfter` (equals) to `!isBefore` (greater-or-equal).
+- ✅ **`breakTimeHonoured` used exact match instead of overlap:** Spec §8.3 says `true` if the agent's break overlaps the preferred break timeslot. Changed from `actBreak.equals(prefBreak)` to proper time-range overlap check.
+- ✅ **`actualBreakTime` always used first break instead of closest:** Spec §8.3 says "start of actual break closest to the preferred time." Changed from `breaks.get(0)` to finding the break with minimum distance to preferred time.
+- ✅ **SolverFactory created per request:** `buildConstraintViolations()` created a new `SolverFactory` on every call — an extremely expensive operation. Now injects the Spring-managed `SolverFactory<Schedule>` and creates `SolutionManager` once in the constructor.
+- ✅ **Cursor pagination broken in `listSchedules`:** The `cursor` parameter was accepted but never applied. Now decodes the cursor, finds the last-seen ID, and skips past it.
+- ✅ **`ConstraintViolationEntry` missing spec fields:** Added `violationCount` (int) and `totalPenalty` (ScoreDto) per spec §8.4.
+- ✅ **`ViolationDetail` missing structured IDs:** Added `agentId` (UUID), `timeslotId` (UUID), and `timeslotLabel` (String) fields.
+
+**Major Fixes:**
+- ✅ **`BreakDetail` missing `durationMinutes`:** Added per spec §8.2.
+- ✅ **Staffing summary missing totals:** Added per-day "TOTAL" rows and a "GRAND TOTAL" row per spec §8.1.
+- ✅ **Constraint violations for accepted schedules:** Added early-return when `constraintWeights == null` (accepted schedules lack solver problem facts).
+- ✅ **N+1 lazy loading for DB-loaded assignments:** Added `findWithRelationsByTenantIdAndDeskIdAndScheduleId()` with JOIN FETCH for timeslot, requiredSpecialization, deskAgent, agent, and primarySpecialization.
+- ✅ **Accept snapshot inserts unbatched:** Changed from individual `save()` calls to `saveAll()` for timeslots, staffing requirements, and agent assignments.
+- ✅ **`dateFilter` parsing unhandled:** Added `DateTimeParseException` catch that converts to 400 Bad Request.
+- ✅ **Date filter excludes total rows:** Staffing summary total rows with `date == null` are now correctly filtered out when date filter is applied.
+
+**Modified files:**
+- `dto/ScheduleDetailResponse.java` — `BreakDetail` +durationMinutes, `ConstraintViolationEntry` +violationCount +totalPenalty, `ViolationDetail` +agentId +timeslotId +timeslotLabel
+- `service/ScheduleOutputService.java` — inject SolverFactory, fix startTimeHonoured/breakTimeHonoured/actualBreakTime logic, add staffing totals, add durationMinutes to breaks, fix constraint violations for accepted schedules
+- `service/ScheduleService.java` — tenant validation, cursor pagination, saveAll batching, dateFilter exception handling
+- `repository/AgentAssignmentRepository.java` — add JOIN FETCH query for snapshot loading
+- `controller/ScheduleController.java` — `listSchedules` returns `PaginatedResponse<ScheduleSummary>`, `getScheduleDetail` returns `ScheduleDetailResponse`, `exportToExcel` uses `ScheduleDetailResponse`
+- `service/ScheduleExportService.java` — 3-tab Excel export from `ScheduleDetailResponse` (staffing summary, agent schedule, preference report)
+
+**Remaining known limitations:**
+- Preference report is empty for accepted (DB) schedules — resolved preferences are not snapshotted during accept. Could be addressed by snapshotting preferences or re-resolving from current DB state.
+- Derived delete methods (`deleteByTenantIdAndDeskIdAndScheduleId`) use SELECT+individual DELETE pattern. Could be converted to bulk `@Modifying @Query` for large schedules.
+- `toSummary(Schedule)` helper is duplicated in ScheduleController and ScheduleService.
 
 ---
 

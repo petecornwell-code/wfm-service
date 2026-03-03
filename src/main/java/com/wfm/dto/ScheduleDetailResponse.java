@@ -64,7 +64,7 @@ public class ScheduleDetailResponse {
             String matchType
     ) {}
 
-    public record BreakDetail(LocalTime startTime, LocalTime endTime) {}
+    public record BreakDetail(LocalTime startTime, LocalTime endTime, int durationMinutes) {}
 
     public record PreferenceReport(
             List<PreferenceReportEntry> entries,
@@ -95,12 +95,16 @@ public class ScheduleDetailResponse {
             String constraintName,
             String level,
             ScheduleSummary.ScoreDto weight,
+            int violationCount,
+            ScheduleSummary.ScoreDto totalPenalty,
             List<ViolationDetail> violations
     ) {}
 
     public record ViolationDetail(
+            UUID agentId,
             String agentName,
-            String timeslot,
+            UUID timeslotId,
+            String timeslotLabel,
             String description
     ) {}
 

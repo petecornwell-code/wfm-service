@@ -74,6 +74,12 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
 
     void deleteByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
 
+    @Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t JOIN FETCH sr.specialization s " +
+           "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId = :scheduleId " +
+           "ORDER BY t.date, t.startTime, s.name")
+    List<StaffingRequirement> findByTenantIdAndDeskIdAndScheduleId(
+            long tenantId, UUID deskId, UUID scheduleId);
+
     boolean existsBySpecialization_Id(UUID specializationId);
 
     void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);

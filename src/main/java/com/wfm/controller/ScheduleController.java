@@ -1,5 +1,7 @@
 package com.wfm.controller;
 
+import com.wfm.dto.PaginatedResponse;
+import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.SolveRequest;
 import com.wfm.model.Schedule;
@@ -12,7 +14,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -39,19 +40,18 @@ public class ScheduleController {
     }
 
     @GetMapping
-    public List<ScheduleSummary> listSchedules(@PathVariable UUID deskId,
-                                                @RequestParam(required = false) String cursor,
-                                                @RequestParam(required = false, defaultValue = "50") int limit) {
-        return scheduleService.listSchedules(deskId, cursor, limit).stream()
-                .map(this::toSummary).toList();
+    public PaginatedResponse<ScheduleSummary> listSchedules(
+            @PathVariable UUID deskId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false, defaultValue = "50") int limit) {
+        return scheduleService.listSchedules(deskId, cursor, limit);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Schedule> getScheduleDetail(@PathVariable UUID deskId,
-                                                       @PathVariable UUID id,
-                                                       @RequestParam(required = false) String date) {
-        Schedule schedule = scheduleService.getScheduleDetail(deskId, id, date);
-        return schedule != null ? ResponseEntity.ok(schedule) : ResponseEntity.notFound().build();
+    public ScheduleDetailResponse getScheduleDetail(@PathVariable UUID deskId,
+                                                     @PathVariable UUID id,
+                                                     @RequestParam(required = false) String date) {
+        return scheduleService.getScheduleDetail(deskId, id, date);
     }
 
     @PutMapping("/{id}/stop")
@@ -74,13 +74,12 @@ public class ScheduleController {
 
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> exportToExcel(@PathVariable UUID deskId, @PathVariable UUID id) {
-        Schedule schedule = scheduleService.getScheduleDetail(deskId, id, null);
-        if (schedule == null) return ResponseEntity.notFound().build();
-
-        byte[] xlsx = scheduleExportService.exportToExcel(schedule);
+        ScheduleDetailResponse detail = scheduleService.getScheduleDetail(deskId, id, null);
+        byte[] xlsx = scheduleExportService.exportToExcel(detail);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=schedule-" + id + ".xlsx")
-                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
     }
 
