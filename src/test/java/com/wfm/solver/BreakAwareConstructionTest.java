@@ -12,7 +12,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,6 +126,52 @@ class BreakAwareConstructionTest {
         assertThat(score.hardScore())
                 .as("Hard score should be 0 (feasible) for 2-agent scenario")
                 .isZero();
+    }
+
+    /**
+     * Tests the scenario that previously failed: 12-hour coverage window (08:00-20:00)
+     * with 8-hour contracted agents. Each agent should work at most 8 slots, not 11
+     * (which is 12 minus 1 break). The key assertion: no agent exceeds contracted hours.
+     */
+    @Test
+    void preAssign_wideCoverageWindow_shouldRespectContractedHours() {
+        Schedule schedule = buildWideCoverageSchedule();
+
+        BreakAwareConstructionPhase phase = new BreakAwareConstructionPhase();
+        int preAssigned = phase.preAssign(schedule);
+
+        System.out.println("Wide-coverage pre-assigned: " + preAssigned + "/" + schedule.getAssignments().size());
+
+        // Count assignments per agent
+        Map<UUID, Integer> agentSlotCounts = new HashMap<>();
+        for (AgentAssignment aa : schedule.getAssignments()) {
+            if (aa.getDeskAgent() != null) {
+                agentSlotCounts.merge(aa.getDeskAgent().getId(), 1, Integer::sum);
+            }
+        }
+
+        // With 8-hour contracts and 60-min slots, max 8 assignments per agent
+        int maxSlotsPerAgent = 8;
+        List<Map.Entry<UUID, Integer>> overAssigned = agentSlotCounts.entrySet().stream()
+                .filter(e -> e.getValue() > maxSlotsPerAgent)
+                .toList();
+
+        System.out.println("Agent slot counts — min: " +
+                agentSlotCounts.values().stream().mapToInt(i -> i).min().orElse(0) +
+                ", max: " + agentSlotCounts.values().stream().mapToInt(i -> i).max().orElse(0) +
+                ", avg: " + String.format("%.1f",
+                        agentSlotCounts.values().stream().mapToInt(i -> i).average().orElse(0)));
+
+        if (!overAssigned.isEmpty()) {
+            System.out.println("Over-assigned agents: " + overAssigned.size());
+            overAssigned.stream().limit(5).forEach(e ->
+                    System.out.println("  Agent " + e.getKey() + " => " + e.getValue() + " slots"));
+        }
+
+        // The key assertion: no agent exceeds their contracted hours
+        assertThat(overAssigned)
+                .as("No agent should exceed 8 slots (contracted hours) in a 12-hour window")
+                .isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -347,6 +395,113 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(List.of(configA, configB));
+        schedule.setAssignments(assignments);
+
+        return schedule;
+    }
+
+    /**
+     * 150-agent, 12-hour coverage window (08:00-20:00) with 8-hour contracted hours.
+     * Demand is 50 agents per timeslot = 600 total assignments.
+     * The key scenario: coverage window (12h) > contracted hours (8h),
+     * so agents must NOT be assigned to all 11 non-break slots.
+     * With 150 × 8 = 1200 supply vs 600 demand, the scenario is clearly feasible
+     * and any contracted hours violations indicate the phase isn't limiting properly.
+     */
+    private Schedule buildWideCoverageSchedule() {
+        UUID deskId = UUID.randomUUID();
+        UUID scheduleId = UUID.randomUUID();
+        LocalTime start = LocalTime.of(8, 0);
+        LocalTime end = LocalTime.of(20, 0);
+        int increment = 60;
+        BigDecimal contractedHours = new BigDecimal("8.00");
+
+        Specialization basic = spec(deskId, "Basic");
+
+        // 150 agents
+        List<DeskAgent> deskAgentList = new ArrayList<>(150);
+        for (int i = 0; i < 150; i++) {
+            Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic), contractedHours);
+            deskAgentList.add(da);
+        }
+
+        // 12 timeslots: 08:00-20:00 in 60-min increments
+        List<Timeslot> timeslots = new ArrayList<>();
+        for (LocalTime t = start; t.isBefore(end); t = t.plusMinutes(increment)) {
+            timeslots.add(timeslot(deskId, scheduleId, DAY, t, t.plusMinutes(increment)));
+        }
+
+        // 50 agents demanded per timeslot = 600 total assignments
+        int demandPerSlot = 50;
+        List<StaffingRequirement> staffingReqs = new ArrayList<>();
+        List<AgentAssignment> assignments = new ArrayList<>(demandPerSlot * 12);
+
+        for (Timeslot ts : timeslots) {
+            StaffingRequirement sr = new StaffingRequirement();
+            sr.setId(UUID.randomUUID());
+            sr.setTenantId(TENANT);
+            sr.setDeskId(deskId);
+            sr.setScheduleId(scheduleId);
+            sr.setTimeslot(ts);
+            sr.setSpecialization(basic);
+            sr.setRequiredHours(new BigDecimal(demandPerSlot));
+            staffingReqs.add(sr);
+
+            for (int i = 0; i < demandPerSlot; i++) {
+                AgentAssignment aa = new AgentAssignment();
+                aa.setId(UUID.randomUUID());
+                aa.setTenantId(TENANT);
+                aa.setDeskId(deskId);
+                aa.setScheduleId(scheduleId);
+                aa.setTimeslot(ts);
+                aa.setRequiredSpecialization(basic);
+                assignments.add(aa);
+            }
+        }
+
+        // AgentDayConfigs — 8-hour contracts, 60-min break, 1hr blocked window
+        List<AgentDayConfig> dayConfigs = new ArrayList<>(150);
+        for (DeskAgent da : deskAgentList) {
+            dayConfigs.add(new AgentDayConfig(
+                    da.getId(), DAY, contractedHours,
+                    increment, BREAK_DURATION,
+                    BREAK_MIN_SHIFT, BREAK_BLOCKED,
+                    BREAK_ALIGNMENT));
+        }
+
+        ConstraintWeights weights = new ConstraintWeights();
+        weights.setId(UUID.randomUUID());
+        weights.setTenantId(TENANT);
+        weights.setDeskId(deskId);
+
+        Schedule schedule = new Schedule();
+        schedule.setId(scheduleId);
+        schedule.setTenantId(TENANT);
+        schedule.setDeskId(deskId);
+        schedule.setIncrementMinutes(increment);
+        schedule.setStartTime(start);
+        schedule.setEndTime(end);
+        schedule.setPeriodStartDate(DAY);
+        schedule.setPeriodEndDate(DAY);
+        schedule.setBreakBlockedHours(BREAK_BLOCKED);
+        schedule.setBreakDurationMinutes(BREAK_DURATION);
+        schedule.setBreakMinShiftHours(BREAK_MIN_SHIFT);
+        schedule.setBreakStartAlignment(BREAK_ALIGNMENT);
+        schedule.setDefaultContractedHoursPerDay(contractedHours);
+        schedule.setOverallocationHardLimitPct(130);
+        schedule.setUnderallocationHardLimitPct(70);
+        schedule.setStatus(ScheduleStatus.RUNNING);
+
+        schedule.setConstraintWeights(weights);
+        schedule.setSpecializations(List.of(basic));
+        schedule.setDeskAgents(deskAgentList);
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setAgentPreferences(List.of());
+        schedule.setAgentDaysOff(List.of());
+        schedule.setAgentExceptions(List.of());
+        schedule.setAgentDayConfigs(dayConfigs);
         schedule.setAssignments(assignments);
 
         return schedule;

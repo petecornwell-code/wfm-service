@@ -22,8 +22,8 @@ import java.util.*;
  *   <li>Computing a valid break position for each agent on each day
  *       (respecting blocked window, alignment, duration)</li>
  *   <li>Distributing breaks round-robin across eligible positions</li>
- *   <li>Assigning agents to timeslot seats, skipping their break slots,
- *       preferring primary specialization matches</li>
+ *   <li>Assigning agents to timeslot seats respecting contracted hours limits,
+ *       skipping their break slots, preferring primary specialization matches</li>
  * </ol>
  *
  * <p>Called by {@code SolverService.startSolve()} before launching the solver.
@@ -102,6 +102,15 @@ public class BreakAwareConstructionPhase {
                     deskAgents, dayConfigMap, daysOffSet, date,
                     allSlotTimes, increment, demandPerSlot);
 
+            // Compute each agent's working slot times (contiguous block around break,
+            // limited to their contracted hours)
+            Map<UUID, Set<LocalTime>> agentWorkSlots = new HashMap<>();
+            for (AgentBreakPlan plan : breakPlans) {
+                Set<LocalTime> workSlots = computeWorkSlots(
+                        plan, demandSlotTimes, allSlotTimes, increment, dayConfigMap, date);
+                agentWorkSlots.put(plan.deskAgent.getId(), workSlots);
+            }
+
             // Build a map: demand timeslot start → queue of agents working that slot
             Map<LocalTime, Queue<DeskAgent>> agentQueues = new LinkedHashMap<>();
             for (LocalTime slotTime : demandSlotTimes) {
@@ -109,14 +118,23 @@ public class BreakAwareConstructionPhase {
             }
 
             for (AgentBreakPlan plan : breakPlans) {
+                Set<LocalTime> workSlots = agentWorkSlots.get(plan.deskAgent.getId());
                 for (LocalTime slotTime : demandSlotTimes) {
-                    if (!plan.breakSlots.contains(slotTime)) {
+                    if (workSlots.contains(slotTime)) {
                         agentQueues.get(slotTime).add(plan.deskAgent);
                     }
                 }
             }
 
-            // Assign agents to seats, preferring specialization match
+            // Assign agents to seats, preferring specialization match.
+            // Track assignments per agent to enforce contracted hours limit.
+            Map<UUID, Integer> assignmentCounts = new HashMap<>();
+            Map<UUID, Integer> maxSlots = new HashMap<>();
+            for (AgentBreakPlan plan : breakPlans) {
+                Set<LocalTime> workSlots = agentWorkSlots.get(plan.deskAgent.getId());
+                maxSlots.put(plan.deskAgent.getId(), workSlots.size());
+            }
+
             for (LocalTime slotTime : demandSlotTimes) {
                 List<AgentAssignment> seats = slotMap.get(slotTime);
                 Queue<DeskAgent> available = agentQueues.get(slotTime);
@@ -124,11 +142,12 @@ public class BreakAwareConstructionPhase {
                 for (AgentAssignment seat : seats) {
                     if (available.isEmpty()) break;
 
-                    DeskAgent bestMatch = findBestMatch(seat, available);
+                    DeskAgent bestMatch = findBestMatch(seat, available, assignmentCounts, maxSlots);
                     if (bestMatch != null) {
                         available.remove(bestMatch);
                         seat.setDeskAgent(bestMatch);
                         seat.setAgent(bestMatch.getAgent());
+                        assignmentCounts.merge(bestMatch.getId(), 1, Integer::sum);
                         totalAssigned++;
                     }
                 }
@@ -138,11 +157,123 @@ public class BreakAwareConstructionPhase {
         return totalAssigned;
     }
 
-    private DeskAgent findBestMatch(AgentAssignment seat, Queue<DeskAgent> available) {
+    /**
+     * Compute which demand slot times an agent should work, limited to their
+     * contracted hours. Picks a contiguous block of work slots around the break
+     * position to form a realistic shift pattern.
+     */
+    private Set<LocalTime> computeWorkSlots(
+            AgentBreakPlan plan,
+            List<LocalTime> demandSlotTimes,
+            List<LocalTime> allSlotTimes,
+            int increment,
+            Map<String, AgentDayConfig> dayConfigMap,
+            LocalDate date) {
+
+        AgentDayConfig config = dayConfigMap.get(plan.deskAgent.getId() + "|" + date);
+        if (config == null) return Set.of();
+
+        int workSlotCount = config.effectiveHours()
+                .multiply(BigDecimal.valueOf(60))
+                .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
+                .intValue();
+
+        Set<LocalTime> breakSlots = plan.breakSlots;
+
+        // Build the agent's full shift: workSlotCount working slots + break slots,
+        // as a contiguous block within the all-slot-times list.
+        // Strategy: find the best contiguous window of (workSlotCount + breakSlots.size())
+        // slots from allSlotTimes that contains the break slots.
+        int totalShiftSlots = workSlotCount + breakSlots.size();
+
+        if (totalShiftSlots >= allSlotTimes.size()) {
+            // Agent needs the full day — return all demand slots not in break
+            Set<LocalTime> result = new LinkedHashSet<>();
+            for (LocalTime t : demandSlotTimes) {
+                if (!breakSlots.contains(t)) {
+                    result.add(t);
+                }
+            }
+            return result;
+        }
+
+        // Find the break position in allSlotTimes
+        int breakStartIdx = -1;
+        int breakEndIdx = -1;
+        if (!breakSlots.isEmpty()) {
+            LocalTime firstBreak = breakSlots.stream().min(LocalTime::compareTo).orElse(null);
+            LocalTime lastBreak = breakSlots.stream().max(LocalTime::compareTo).orElse(null);
+            for (int i = 0; i < allSlotTimes.size(); i++) {
+                if (allSlotTimes.get(i).equals(firstBreak)) breakStartIdx = i;
+                if (allSlotTimes.get(i).equals(lastBreak)) breakEndIdx = i;
+            }
+        }
+
+        // Find the best window position that contains the break.
+        // Strategy: center the window on the break position, then use demand overlap
+        // as a tiebreaker. Centering on the break ensures agents with different break
+        // positions get different shift windows, spreading coverage across the day.
+        int bestWindowStart = -1;
+        int bestDemandOverlap = -1;
+        int bestCenterDist = Integer.MAX_VALUE;
+
+        int breakMidIdx = (breakStartIdx >= 0 && breakEndIdx >= 0)
+                ? (breakStartIdx + breakEndIdx) / 2 : allSlotTimes.size() / 2;
+
+        for (int windowStart = 0; windowStart <= allSlotTimes.size() - totalShiftSlots; windowStart++) {
+            int windowEnd = windowStart + totalShiftSlots - 1;
+
+            // Window must contain the break
+            if (breakStartIdx >= 0 && (breakStartIdx < windowStart || breakEndIdx > windowEnd)) {
+                continue;
+            }
+
+            // Count how many demand slots fall within this window (excluding break)
+            int demandOverlap = 0;
+            Set<LocalTime> demandSet = new HashSet<>(demandSlotTimes);
+            for (int i = windowStart; i <= windowEnd; i++) {
+                LocalTime t = allSlotTimes.get(i);
+                if (!breakSlots.contains(t) && demandSet.contains(t)) {
+                    demandOverlap++;
+                }
+            }
+
+            // Distance of the window center from the break center
+            int windowMid = (windowStart + windowEnd) / 2;
+            int centerDist = Math.abs(windowMid - breakMidIdx);
+
+            // Prefer: more demand overlap first, then closer to centered on break
+            if (demandOverlap > bestDemandOverlap
+                    || (demandOverlap == bestDemandOverlap && centerDist < bestCenterDist)) {
+                bestDemandOverlap = demandOverlap;
+                bestCenterDist = centerDist;
+                bestWindowStart = windowStart;
+            }
+        }
+
+        // Build the work slot set from the best window
+        Set<LocalTime> result = new LinkedHashSet<>();
+        Set<LocalTime> demandSet = new HashSet<>(demandSlotTimes);
+        if (bestWindowStart >= 0) {
+            for (int i = bestWindowStart; i < bestWindowStart + totalShiftSlots; i++) {
+                LocalTime t = allSlotTimes.get(i);
+                if (!breakSlots.contains(t) && demandSet.contains(t)) {
+                    result.add(t);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private DeskAgent findBestMatch(AgentAssignment seat, Queue<DeskAgent> available,
+                                    Map<UUID, Integer> assignmentCounts,
+                                    Map<UUID, Integer> maxSlots) {
         UUID reqSpecId = seat.getRequiredSpecialization().getId();
 
-        // First pass: primary specialization match
+        // First pass: primary specialization match (not over-assigned)
         for (DeskAgent da : available) {
+            if (isOverAssigned(da, assignmentCounts, maxSlots)) continue;
             if (da.getPrimarySpecialization() != null
                     && da.getPrimarySpecialization().getId().equals(reqSpecId)) {
                 return da;
@@ -151,14 +282,29 @@ public class BreakAwareConstructionPhase {
 
         // Second pass: secondary specialization match
         for (DeskAgent da : available) {
+            if (isOverAssigned(da, assignmentCounts, maxSlots)) continue;
             if (da.getSecondarySpecializations().stream()
                     .anyMatch(s -> s.getId().equals(reqSpecId))) {
                 return da;
             }
         }
 
-        // Fallback: any agent
+        // Third pass: any agent not over-assigned
+        for (DeskAgent da : available) {
+            if (!isOverAssigned(da, assignmentCounts, maxSlots)) {
+                return da;
+            }
+        }
+
+        // Fallback: any agent (may over-assign, but better than unassigned)
         return available.peek();
+    }
+
+    private boolean isOverAssigned(DeskAgent da, Map<UUID, Integer> assignmentCounts,
+                                   Map<UUID, Integer> maxSlots) {
+        int current = assignmentCounts.getOrDefault(da.getId(), 0);
+        int max = maxSlots.getOrDefault(da.getId(), 0);
+        return current >= max;
     }
 
     /**
