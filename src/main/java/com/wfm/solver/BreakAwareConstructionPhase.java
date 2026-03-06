@@ -193,10 +193,14 @@ public class BreakAwareConstructionPhase {
                 .multiply(BigDecimal.valueOf(60))
                 .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
                 .intValue();
-        // Cap to avoid over-subscription when total agent supply > total demand.
-        // Edge deficits created by the cap are filled by the mop-up pass, which
-        // extends adjacent agents' shifts while preserving break geometry.
-        workSlotCount = Math.min(workSlotCount, maxWorkSlotsPerAgent);
+        // Cap to avoid over-subscription when total agent supply significantly
+        // exceeds total demand. Only apply when the per-agent excess is >5% of
+        // contracted hours, since small rounding differences are handled fine
+        // by the trimming pass and don't cause agent crowding.
+        if (maxWorkSlotsPerAgent < workSlotCount
+                && (workSlotCount - maxWorkSlotsPerAgent) * 20 > workSlotCount) {
+            workSlotCount = maxWorkSlotsPerAgent;
+        }
 
         Set<LocalTime> breakSlots = plan.breakSlots;
 
@@ -489,11 +493,20 @@ public class BreakAwareConstructionPhase {
                 .filter(a -> a.getDeskAgent() == null).count();
         int totalExcess = Math.max(0, totalSupply - totalDemand);
         int numAgents = breakPlans.size();
-        // Allow enough trims to fully balance supply. Interior slots can't be trimmed,
-        // so edge agents may need extra trims to compensate.
-        int maxTrimsPerAgent = numAgents > 0
-                ? Math.max(2, (totalExcess + numAgents - 1) / numAgents + 2)
-                : 0;
+        // Allow enough trims to balance per-slot supply distribution.
+        // Even when total supply == total demand, per-slot imbalances exist
+        // (e.g., edges undersupplied, mid-day oversupplied).
+        // Use per-slot max excess to determine how much trimming is needed.
+        int maxSlotExcess = excessPerSlot.values().stream().mapToInt(i -> i).max().orElse(0);
+        int maxTrimsPerAgent;
+        if (numAgents == 0 || maxSlotExcess <= 0) {
+            maxTrimsPerAgent = 0;
+        } else {
+            // Each trim reduces one slot's excess by 1 and may cascade to neighbors.
+            // Allow enough trims to peel back the worst excess, plus 1 for cascading.
+            maxTrimsPerAgent = Math.min(maxSlotExcess + 1,
+                    Math.max(1, (totalExcess + numAgents - 1) / Math.max(1, numAgents) + 2));
+        }
 
         // Track how many slots each agent has been trimmed
         Map<UUID, Integer> trimCounts = new HashMap<>();
