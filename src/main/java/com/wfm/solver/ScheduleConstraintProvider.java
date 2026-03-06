@@ -98,13 +98,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     /**
      * 3. One assignment per timeslot — an agent cannot occupy two seats
      * in the same timeslot.
+     *
+     * Uses forEach-based groupBy instead of forEachUniquePair to avoid
+     * O(N²) pairing of unassigned entities. Groups by (deskAgentId, timeslotId)
+     * and penalizes when count > 1 (agent appears in multiple seats of the
+     * same timeslot). Penalty = (count - 1) so 2 seats = 1, 3 seats = 2, etc.
      */
     private Constraint oneAssignmentPerTimeslot(ConstraintFactory factory) {
-        return factory.forEachUniquePair(AgentAssignment.class,
-                        equal(a -> a.getDeskAgent() != null ? a.getDeskAgent().getId() : null),
-                        equal(a -> a.getTimeslot().getId()))
-                .filter((a1, a2) -> a1.getDeskAgent() != null)
-                .penalizeConfigurable()
+        return factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getDeskAgent() != null)
+                .groupBy(
+                        a -> a.getDeskAgent().getId(),
+                        a -> a.getTimeslot().getId(),
+                        count())
+                .filter((daId, tsId, cnt) -> cnt > 1)
+                .penalizeConfigurable((daId, tsId, cnt) -> cnt - 1)
                 .asConstraint("One assignment per timeslot");
     }
 

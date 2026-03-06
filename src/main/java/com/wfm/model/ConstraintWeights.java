@@ -42,27 +42,27 @@ public class ConstraintWeights {
     @ConstraintWeight("One assignment per timeslot")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "no_overlap_weight")
-    private HardSoftScore noOverlapWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore noOverlapWeight = HardSoftScore.ofHard(1000);
 
     @ConstraintWeight("Exactly one break")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "exactly_one_break_weight")
-    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(1000);
 
     @ConstraintWeight("Break duration")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_duration_weight")
-    private HardSoftScore breakDurationWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore breakDurationWeight = HardSoftScore.ofHard(1000);
 
     @ConstraintWeight("Break blocked window")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_blocked_window_weight")
-    private HardSoftScore breakBlockedWindowWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore breakBlockedWindowWeight = HardSoftScore.ofHard(1000);
 
     @ConstraintWeight("Break start alignment")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_alignment_weight")
-    private HardSoftScore breakAlignmentWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore breakAlignmentWeight = HardSoftScore.ofHard(1000);
 
     @ConstraintWeight("Prefer primary specialization")
     @Convert(converter = HardSoftScoreConverter.class)

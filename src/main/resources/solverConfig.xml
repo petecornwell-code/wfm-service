@@ -9,15 +9,20 @@
         <constraintProviderClass>com.wfm.solver.ScheduleConstraintProvider</constraintProviderClass>
     </scoreDirectorFactory>
 
-    <!-- Construction heuristic is handled by BreakAwareConstructionPhase
-         in SolverService.startSolve() before the solver starts. All planning
-         variables are pre-assigned, so the solver goes straight to local search. -->
+    <!-- Primary construction is handled by BreakAwareConstructionPhase
+         in SolverService.startSolve() before the solver starts. This CH phase
+         is a safety-net fallback: if any planning variables remain unassigned
+         after the break-aware pre-assignment (e.g. demand > supply, days off
+         reducing available agents), the CH initializes them before local search.
+         When all variables are pre-assigned, this phase is a no-op. -->
+    <constructionHeuristic/>
 
     <!-- Local search: improve the pre-assigned solution -->
     <localSearch>
         <termination>
-            <!-- Default 5 minutes; overridden by solver.time-limit property -->
+            <!-- Stop after 5 minutes OR 30 seconds without improvement -->
             <spentLimit>PT5M</spentLimit>
+            <unimprovedSpentLimit>PT30S</unimprovedSpentLimit>
         </termination>
     </localSearch>
 
