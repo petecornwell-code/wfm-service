@@ -370,6 +370,17 @@ All endpoints use raw `Schedule` JPA entity instead of the existing DTOs:
 
 ---
 
+## 19. Solver Scalability ✅ DONE (Phase 8, Task 42)
+
+### Break-Aware Construction Phase
+- [x] **`BreakAwareConstructionPhase.preAssign()`** — Custom pre-assignment replacing `FIRST_FIT_DECREASING`. Pre-assigns all `AgentAssignment.deskAgent` values before the solver starts by computing break-geometry-aware positions and distributing agents to seats with specialization preference.
+- [x] **Integrated into `SolverService.startSolve()`** — Called after expanding assignments, before launching solver.
+- [x] **Updated `solverConfig.xml`** — Removed construction heuristic; solver goes straight to local search.
+- [x] **Root cause:** `FIRST_FIT_DECREASING` assigns one variable at a time without awareness of contiguous break gap requirements. At 150+ agents, this creates tangled solutions that local search cannot repair in 5 minutes.
+- [x] **Test coverage:** 150-agent (60-min slots, 1200 assignments) and 2-agent (15-min slots, 64 assignments) scenarios both score 0hard/0soft.
+
+---
+
 ## Summary Scorecard
 
 | Area | Estimated Completion |
@@ -383,13 +394,14 @@ All endpoints use raw `Schedule` JPA entity instead of the existing DTOs:
 | Agent preferences | ~95% |
 | Agent exceptions | ~95% |
 | Constraint weights | ~100% |
-| Timeslot management | ~80% |
-| Staffing requirements | ~0% |
-| Erlang X algorithm | ~0% |
-| Solver constraints (15 constraints) | ~0% |
-| Solver lifecycle (start/stop/validate) | ~5% |
-| Schedule management (list/accept/reject) | ~10% |
-| Schedule output views (4 views) | ~0% |
-| Schedule Excel export | ~0% |
-| BambooHR refresh | ~65% |
-| Frontend | ~25% |
+| Timeslot management | ~100% |
+| Staffing requirements | ~100% |
+| Erlang X algorithm | ~100% |
+| Solver constraints (15 constraints) | ~100% |
+| Solver lifecycle (start/stop/validate) | ~100% |
+| Solver scalability (break-aware construction) | ~100% |
+| Schedule management (list/accept/reject) | ~100% |
+| Schedule output views (4 views) | ~100% |
+| Schedule Excel export | ~100% |
+| BambooHR refresh | ~100% |
+| Frontend | ~100% |

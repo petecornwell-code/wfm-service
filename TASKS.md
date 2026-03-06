@@ -500,6 +500,34 @@ Implemented all four tab contents with typed TypeScript interfaces:
 
 ---
 
+## Phase 8: Solver Scalability ✅ DONE
+
+### Task 42 — Break-Aware Construction Phase ✅
+Replace `FIRST_FIT_DECREASING` construction heuristic with a custom pre-assignment phase that understands break geometry. The standard heuristic assigns one planning variable at a time without awareness of contiguous break requirements, creating tangled initial solutions that local search cannot repair at scale (100+ agents).
+
+**Implementation:**
+- ✅ Created `BreakAwareConstructionPhase.preAssign(Schedule)` — pre-assigns all `AgentAssignment.deskAgent` values before the solver starts
+- ✅ Groups assignments by day/timeslot, uses the full schedule timeslot list for break planning
+- ✅ Computes valid break positions per agent (respecting blocked window, alignment, duration constraints)
+- ✅ Distributes breaks intelligently: zero-demand slots strongly preferred; among demand slots, round-robin ensures even distribution
+- ✅ Assigns agents to demand seats with specialization preference (primary > secondary > any)
+- ✅ Integrated into `SolverService.startSolve()` — called after expanding assignments, before launching the solver
+- ✅ Updated `solverConfig.xml` — removed `FIRST_FIT_DECREASING` construction heuristic; solver goes straight to local search since all variables are pre-assigned
+
+**Test coverage:**
+- ✅ `BreakAwareConstructionTest.preAssign_150agents_shouldProduceFeasibleSolution` — 150 agents, 60-min timeslots, 1200 assignments → 0hard/0soft
+- ✅ `BreakAwareConstructionTest.preAssign_twoAgents_15minSlots_shouldProduceFeasibleSolution` — 2 agents, 15-min timeslots, zero-demand break window → 0hard/0soft
+- ✅ `FullScale150AgentTest` (pre-existing) — continues to pass with 0hard/0soft
+
+**Root cause addressed:** At 150 agents with 60-min timeslots (1200 assignments), `FIRST_FIT_DECREASING` produced solutions with violated hard constraints (Break duration, Contracted hours, Exactly one break, One assignment per timeslot) because it greedily assigned agents without considering that each agent needs exactly one contiguous break gap. Local search (5 min) could not untangle the result.
+
+**New files:** `solver/BreakAwareConstructionPhase.java`, `test/solver/BreakAwareConstructionTest.java`
+**Modified files:** `service/SolverService.java`, `resources/solverConfig.xml`
+**Depends on:** Phase 4 (solver constraints, AgentDayConfig)
+**Ref:** spec.md §6 Solver Configuration
+
+---
+
 ## Summary: Dependency Graph
 
 ```
@@ -516,6 +544,8 @@ Phase 5 (Tasks 23-28): Schedule Management — depends on Phase 4
 Phase 6 (Tasks 29-30): BambooHR — depends on Task 1 only (independent of Phases 2-5)
   ↓
 Phase 7 (Tasks 31-41): Frontend — each task depends on its corresponding backend task
+  ↓
+Phase 8 (Task 42): Solver Scalability — depends on Phase 4 (solver constraints)
 ```
 
 **Key insight:** Phases 2, 3, 4, and 6 all depend only on Phase 1 and can start in parallel once Phase 1 is done. Phase 5 is the only phase that requires Phase 4 completion. Frontend tasks (Phase 7) each wait only on their specific backend dependency.

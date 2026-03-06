@@ -1164,13 +1164,15 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 **Failure recovery.** Since non-accepted schedules exist only in memory, a server crash or restart simply loses any in-progress or completed-but-not-accepted schedules. No database cleanup is needed — there are no orphaned records to recover. The concurrent-solve check is also held in memory (per desk), so a restart naturally clears it. The user must re-run the solver after a restart.
 
-**Solver configuration.** The solver is configured via `solverConfig.xml` (or Timefold's programmatic API) placed on the classpath. The configuration should define at minimum:
+**Solver configuration.** The solver is configured via `solverConfig.xml` (or Timefold's programmatic API) placed on the classpath. The configuration defines:
 
-1. **Construction heuristic** — `FIRST_FIT_DECREASING` (or `FIRST_FIT`) to build an initial solution quickly. Ordering planning entities by day + timeslot start time helps the construction heuristic produce a reasonable starting point.
-2. **Local search phase** — `LATE_ACCEPTANCE` or `TABU_SEARCH` (Timefold defaults). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector (swap + change) is appropriate.
+1. **Break-aware pre-assignment** — Before the solver starts, `SolverService.startSolve()` calls `BreakAwareConstructionPhase.preAssign()` to build a feasible initial solution. This custom phase understands break geometry and assigns all `AgentAssignment.deskAgent` values by: (a) computing valid break positions per agent per day (respecting blocked window, alignment, and duration constraints); (b) distributing breaks round-robin across eligible positions, preferring zero-demand timeslots; (c) assigning agents to demand seats with specialization preference (primary > secondary > any). Since all planning variables are pre-assigned, the standard construction heuristic is not needed.
+2. **Local search phase** — `LATE_ACCEPTANCE` or `TABU_SEARCH` (Timefold defaults). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector (swap + change) is appropriate. The solver starts directly in local search since the pre-assignment provides a feasible starting point.
 3. **Termination** — time-based (see below).
 
-The `solverConfig.xml` is a required project artifact. Solver tuning (phase order, move filters, entity/value sorters) is expected to evolve as the team benchmarks with realistic data.
+> **Design note:** The original `FIRST_FIT_DECREASING` construction heuristic assigned one planning variable at a time without awareness of break geometry (contiguous gap constraints). At scale (100+ agents), this produced tangled initial solutions with multiple gaps per agent that local search could not repair within the 5-minute time limit. The break-aware pre-assignment was introduced to solve this scalability problem. Tests confirm it produces 0-hard-score solutions for 150-agent scenarios.
+
+The `solverConfig.xml` is a required project artifact. It now contains only the local search phase (no construction heuristic). Solver tuning (move filters, entity/value sorters) is expected to evolve as the team benchmarks with realistic data.
 
 **Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is retained in memory. This is functionally equivalent to the user calling `PUT /desks/{deskId}/schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
 
