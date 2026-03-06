@@ -9,6 +9,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
+import com.wfm.solver.BreakAwareConstructionPhase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -189,6 +190,15 @@ public class SolverService {
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
         schedule.setAgentDayConfigs(agentDayConfigs);
         schedule.setAssignments(assignments);
+
+        // 11b. Pre-assign agents using break-aware construction
+        // This gives the solver a feasible (or near-feasible) starting point,
+        // bypassing the FIRST_FIT_DECREASING heuristic which cannot handle
+        // break geometry at scale (100+ agents).
+        BreakAwareConstructionPhase constructionPhase = new BreakAwareConstructionPhase();
+        int preAssigned = constructionPhase.preAssign(schedule);
+        log.info("Break-aware pre-assignment — {}/{} assignments pre-assigned",
+                preAssigned, assignments.size());
 
         // 12. Store in memory and start solver asynchronously
         log.info("Starting solver — schedule={}, period={} to {}, assignments={}",
