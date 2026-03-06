@@ -1,27 +1,27 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { constraintWeights as cwApi, type ConstraintWeightsData, type Score } from '../api/client'
+import { constraintWeights as cwApi, type ConstraintWeightsData, type Score, getErrorMessage } from '../api/client'
+import { showToast } from '../components/Toast'
 
-const CONSTRAINT_LABELS: Record<string, string> = {
-  agentDayOffWeight: 'Agent Day Off',
-  specMatchWeight: 'Specialization Match',
-  noOverlapWeight: 'One Assignment per Timeslot',
-  exactlyOneBreakWeight: 'Exactly One Break',
-  breakDurationWeight: 'Break Duration',
-  breakBlockedWindowWeight: 'Break Blocked Window',
-  breakAlignmentWeight: 'Break Start Alignment',
-  preferPrimaryWeight: 'Prefer Primary Specialization',
-  honourStartTimeWeight: 'Honour Preferred Start Time',
-  honourBreakTimeWeight: 'Honour Preferred Break Time',
-  breakClusteringWeight: 'Break Clustering',
-  contractedHoursWeight: 'Contracted Hours',
-  bulkOverallocationLimitWeight: 'Bulk Over-allocation Limit',
-  bulkUnderallocationSoftWeight: 'Bulk Under-allocation (Soft)',
-  bulkUnderallocationHardWeight: 'Bulk Under-allocation (Hard)',
-}
+const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = [
+  { key: 'agentDayOffWeight', label: 'Agent Day Off', description: 'Agents must not be assigned on their days off' },
+  { key: 'specMatchWeight', label: 'Specialization Match', description: 'Assignments must match agent specializations' },
+  { key: 'noOverlapWeight', label: 'One Assignment per Timeslot', description: 'Agent can only be assigned once per timeslot' },
+  { key: 'exactlyOneBreakWeight', label: 'Exactly One Break', description: 'Each agent must have exactly one break per day' },
+  { key: 'breakDurationWeight', label: 'Break Duration', description: 'Break must match the configured duration' },
+  { key: 'breakBlockedWindowWeight', label: 'Break Blocked Window', description: 'No breaks in the first/last hours of a shift' },
+  { key: 'breakAlignmentWeight', label: 'Break Start Alignment', description: 'Break must start on hour/half-hour/quarter' },
+  { key: 'contractedHoursWeight', label: 'Contracted Hours', description: 'Agent total hours must match contracted hours' },
+  { key: 'bulkOverallocationLimitWeight', label: 'Bulk Over-allocation Limit', description: 'Prevent excessive over-staffing' },
+  { key: 'bulkUnderallocationHardWeight', label: 'Bulk Under-allocation (Hard)', description: 'Hard limit on under-staffing' },
+  { key: 'preferPrimaryWeight', label: 'Prefer Primary Specialization', description: 'Prefer assigning agents to their primary specialization' },
+  { key: 'honourStartTimeWeight', label: 'Honour Preferred Start Time', description: 'Try to honour agent preferred start time' },
+  { key: 'honourBreakTimeWeight', label: 'Honour Preferred Break Time', description: 'Try to honour agent preferred break time' },
+  { key: 'breakClusteringWeight', label: 'Break Clustering', description: 'Avoid too many agents on break at the same time' },
+  { key: 'bulkUnderallocationSoftWeight', label: 'Bulk Under-allocation (Soft)', description: 'Soft penalty for under-staffing' },
+]
 
-// Spec defaults (section 5.11)
-const CONSTRAINT_DEFAULTS: Record<string, Score> = {
+const DEFAULTS: Record<string, Score> = {
   agentDayOffWeight: { hardScore: 1, softScore: 0 },
   specMatchWeight: { hardScore: 1, softScore: 0 },
   noOverlapWeight: { hardScore: 1, softScore: 0 },
@@ -29,32 +29,41 @@ const CONSTRAINT_DEFAULTS: Record<string, Score> = {
   breakDurationWeight: { hardScore: 1, softScore: 0 },
   breakBlockedWindowWeight: { hardScore: 1, softScore: 0 },
   breakAlignmentWeight: { hardScore: 1, softScore: 0 },
+  contractedHoursWeight: { hardScore: 1, softScore: 0 },
+  bulkOverallocationLimitWeight: { hardScore: 1, softScore: 0 },
+  bulkUnderallocationHardWeight: { hardScore: 1, softScore: 0 },
   preferPrimaryWeight: { hardScore: 0, softScore: 1 },
   honourStartTimeWeight: { hardScore: 0, softScore: 1 },
   honourBreakTimeWeight: { hardScore: 0, softScore: 1 },
   breakClusteringWeight: { hardScore: 0, softScore: 2 },
-  contractedHoursWeight: { hardScore: 1, softScore: 0 },
-  bulkOverallocationLimitWeight: { hardScore: 1, softScore: 0 },
   bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
-  bulkUnderallocationHardWeight: { hardScore: 1, softScore: 0 },
 }
 
 export default function ConstraintWeightsPage() {
   const { deskId } = useParams<{ deskId: string }>()
   const [weights, setWeights] = useState<ConstraintWeightsData | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (deskId) cwApi.get(deskId).then(setWeights).catch(console.error)
+    if (deskId) cwApi.get(deskId).then(setWeights).catch(err => showToast('error', getErrorMessage(err)))
   }, [deskId])
 
   const handleSave = async () => {
     if (!deskId || !weights) return
+    setSaving(true)
     try {
       const updated = await cwApi.update(deskId, weights)
       setWeights(updated)
+      showToast('success', 'Constraint weights saved')
     } catch (err) {
-      console.error(err)
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setSaving(false)
     }
+  }
+
+  const handleReset = () => {
+    setWeights({ ...DEFAULTS })
   }
 
   if (!weights) return <p>Loading...</p>
@@ -64,22 +73,34 @@ export default function ConstraintWeightsPage() {
       <h1>Constraint Weights</h1>
       <table>
         <thead>
-          <tr><th>Constraint</th><th>Hard Score</th><th>Soft Score</th></tr>
+          <tr><th>Constraint</th><th>Description</th><th>Level</th><th>Hard Score</th><th>Soft Score</th></tr>
         </thead>
         <tbody>
-          {Object.entries(CONSTRAINT_LABELS).map(([key, label]) => {
-            const score = (weights as Record<string, Score>)[key] || CONSTRAINT_DEFAULTS[key]
+          {CONSTRAINTS.map(({ key, label, description }) => {
+            const score = (weights as Record<string, Score>)[key] || DEFAULTS[key]
+            const level = score.hardScore > 0 ? 'Hard' : 'Soft'
             return (
               <tr key={key}>
-                <td>{label}</td>
-                <td><input type="number" value={score.hardScore} onChange={e => setWeights({ ...weights, [key]: { ...score, hardScore: Number(e.target.value) } })} /></td>
-                <td><input type="number" value={score.softScore} onChange={e => setWeights({ ...weights, [key]: { ...score, softScore: Number(e.target.value) } })} /></td>
+                <td style={{ fontWeight: 500 }}>{label}</td>
+                <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{description}</td>
+                <td>
+                  <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                    background: level === 'Hard' ? '#fef2f2' : '#f0fdf4',
+                    color: level === 'Hard' ? '#dc2626' : '#16a34a' }}>
+                    {level}
+                  </span>
+                </td>
+                <td><input type="number" value={score.hardScore} onChange={e => setWeights({ ...weights, [key]: { ...score, hardScore: Number(e.target.value) } })} style={{ width: '70px' }} /></td>
+                <td><input type="number" value={score.softScore} onChange={e => setWeights({ ...weights, [key]: { ...score, softScore: Number(e.target.value) } })} style={{ width: '70px' }} /></td>
               </tr>
             )
           })}
         </tbody>
       </table>
-      <button className="primary" onClick={handleSave} style={{ marginTop: '1rem' }}>Save</button>
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+        <button className="primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+        <button onClick={handleReset}>Reset to Defaults</button>
+      </div>
     </>
   )
 }

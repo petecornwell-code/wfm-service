@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { desks, type Desk } from '../api/client'
+import { desks, type Desk, getErrorMessage } from '../api/client'
+import { showToast } from '../components/Toast'
 
 export default function DeskSelector() {
   const [deskList, setDeskList] = useState<Desk[]>([])
@@ -10,7 +11,7 @@ export default function DeskSelector() {
   useEffect(() => {
     desks.list()
       .then(setDeskList)
-      .catch(console.error)
+      .catch(err => showToast('error', getErrorMessage(err)))
       .finally(() => setLoading(false))
   }, [])
 
@@ -40,6 +41,7 @@ export default function DeskSelector() {
             >
               <h3>{desk.name}</h3>
               {desk.description && <p style={{ color: '#6b7280', marginTop: '0.5rem' }}>{desk.description}</p>}
+              <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '0.25rem' }}>{desk.defaultContractedHoursPerDay} hrs/day</p>
             </div>
           ))}
         </div>

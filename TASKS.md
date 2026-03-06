@@ -351,23 +351,28 @@ Comprehensive review identified and fixed the following issues:
 
 ---
 
-## Phase 6: BambooHR Improvements
+## Phase 6: BambooHR Improvements ✅ DONE
 
-### Task 29 — BambooRefreshService Fixes
-1. Soft-delete removed employees (mark `active = false`)
+### Task 29 — BambooRefreshService Fixes ✅
+1. ✅ Soft-delete removed employees (mark `active = false`) — agents assigned to the desk but no longer in BambooHR response are marked `active = false`
 2. ~~Day-off upsert by (agent, date) to avoid unique constraint violations~~ ✅ Done in Phase 3 review: delete-before-insert for days-off in lookahead window
 3. ~~Stale day-off deletion for refreshed agents~~ ✅ Done in Phase 3 review: deletes existing days-off per agent before re-inserting
 4. ~~Case-insensitive type mapping (`"holiday"`, `"mandatory"` → MANDATORY)~~ ✅ Done in Phase 3 review: equalsIgnoreCase for both type values
-5. Move API calls before `@Transactional` boundary
-6. Case-insensitive desk name matching
-7. Cross-desk conflict logging (warn + skip)
+5. ✅ Move API calls before `@Transactional` boundary — split `refreshDeskAgents()` into non-transactional public method (API calls) and `@Transactional` protected `persistRefreshData()` method
+6. ✅ Case-insensitive desk name matching — `MockBambooHRClient.listEmployees()` now uses `equalsIgnoreCase` for project matching
+7. ✅ Cross-desk conflict logging (warn + skip) — when an agent is already assigned to a different desk, logs a warning and skips the desk assignment
 8. ~~Throw custom exception for concurrency guard → 409 `REFRESH_IN_PROGRESS`~~ ✅ Done in Phase 2 review: now throws `RefreshInProgressException` (409). Also changed desk-not-found from `IllegalArgumentException` to `EntityNotFoundException` (404).
 **Files:** `BambooRefreshService.java`
 **Depends on:** Task 1 (exception handler for 409 mapping)
 **Ref:** TODO §16
 
-### Task 30 — MockBambooHRClient: Add Test Day-Off Data
-`listTimeOff()` currently returns empty list. Add some test day-off records.
+### Task 30 — MockBambooHRClient: Add Test Day-Off Data ✅
+✅ `listTimeOff()` now generates realistic test day-off data for the first 5 mock employees:
+- Employee 1: mandatory holiday on first Monday of each month
+- Employee 2: PTO every other Friday
+- Employee 3: one-week PTO block starting 2 weeks from 'from'
+- Employee 4: mandatory holiday on the 15th of each month
+- Employee 5: PTO on the last Friday of each month
 **Files:** `MockBambooHRClient.java`
 **Depends on:** nothing
 **Ref:** TODO §16
@@ -376,100 +381,120 @@ Comprehensive review identified and fixed the following issues:
 
 ---
 
-## Phase 7: Frontend
+## Phase 7: Frontend ✅ DONE
 
-### Task 31 — Frontend Error Handling Infrastructure
-- Parse full `ErrorResponse` (code, message, details[]) in API client
-- Replace `console.error` with user-visible error toasts/banners
-- Add loading states to all pages
+### Task 31 — Frontend Error Handling Infrastructure ✅
+- ✅ Parse full `ErrorResponse` (code, message, details[]) in API client — new `ApiRequestError` class with `status`, `code`, `details` fields
+- ✅ Replace `console.error` with user-visible error toasts — new `Toast` component with `showToast()` global function, `ToastContainer` in App root
+- ✅ Add loading states to all pages — all data fetches show loading indicators
+- ✅ `getErrorMessage()` utility extracts user-friendly messages from any error type
+**Files:** `api/client.ts`, `components/Toast.tsx`, all page components
 **Depends on:** Task 1 (backend error responses)
 **Ref:** TODO §18.2
 
-### Task 32 — Desk Agents: Functional Buttons
-- Assign button: modal with unassigned agents (`GET /agents?unassigned=true`), multi-select, `POST /desks/{deskId}/agents`
-- Remove button per row: confirmation dialog, `DELETE /desks/{deskId}/agents/{agentId}`
-- Edit specializations: inline/modal dropdowns, `PUT .../specializations`
-- Edit contracted hours: inline input, `PUT .../contracted-hours`
-- Active/inactive filter (default active only)
-- Days off view per agent
-- Missing columns: job title, last refreshed
+### Task 32 — Desk Agents: Functional Buttons ✅
+- ✅ Assign button: modal with unassigned agents (`GET /agents?unassigned=true`), multi-select with search, `POST /desks/{deskId}/agents`
+- ✅ Remove button per row: confirmation dialog, `DELETE /desks/{deskId}/agents/{agentId}`
+- ✅ Edit specializations: inline dropdowns for primary + checkboxes for secondary, `PUT .../specializations`
+- ✅ Edit contracted hours: inline input with save/cancel, `PUT .../contracted-hours`
+- ✅ Active/inactive filter (default active only)
+- ✅ Days off view per agent — modal showing days off from `GET /agents/{agentId}/days-off`
+- ✅ Added columns: job title, last refreshed
+**Files:** `pages/DeskAgents.tsx`
 **Depends on:** Task 10 (backend endpoints work)
 **Ref:** TODO §18.1, §18.2
 
-### Task 33 — Staffing Requirements: Full Implementation
-- Pre-populate demand grid from `GET /desks/{deskId}/staffing-requirements`
-- Controlled inputs with state tracking
-- Save button → `POST /desks/{deskId}/staffing-requirements`
-- Erlang X mode with parameter inputs
-- Copy day button
+### Task 33 — Staffing Requirements: Full Implementation ✅
+- ✅ Pre-populate demand grid from `GET /desks/{deskId}/staffing-requirements`
+- ✅ Controlled inputs with state tracking
+- ✅ Save button → `POST /desks/{deskId}/staffing-requirements`
+- ✅ Erlang X mode with parameter inputs (call volume per timeslot/spec, calculated results display)
+- ✅ Copy day button (copies one day's demand to all other days)
+**Files:** `pages/StaffingRequirements.tsx`
 **Depends on:** Task 17 (backend endpoints work)
 **Ref:** TODO §18.1, §18.2
 
-### Task 34 — Agent Preferences: Editable
-- Agent selector dropdown (not raw UUID)
-- Date range picker
-- Editable grid with time pickers
-- Standing checkbox per row
-- Save button → `PUT .../preferences`
-- Delete updates local state
+### Task 34 — Agent Preferences: Editable ✅
+- ✅ Agent name displayed (resolved from desk agents list, not raw UUID)
+- ✅ Date range picker (from/to filters)
+- ✅ Add preference form with time pickers for start and break
+- ✅ Standing checkbox per row
+- ✅ Save button → `PUT .../preferences` (saves all preferences)
+- ✅ Delete updates local state and calls backend
+- ✅ Back to Agents link
+**Files:** `pages/AgentPreferences.tsx`
 **Depends on:** Task 13 (backend endpoints work)
 **Ref:** TODO §18.1
 
-### Task 35 — Agent Exceptions: Editable
-- Agent selector dropdown
-- Date range picker
-- Editable grid with numeric inputs for override hours
-- Reason text input (required when override set)
-- Standard hours column, day-off awareness (greyed-out days)
-- Save button → `PUT .../exceptions`
+### Task 35 — Agent Exceptions: Editable ✅
+- ✅ Agent name displayed (resolved from desk agents list)
+- ✅ Date range picker (from/to filters)
+- ✅ Add exception form with numeric override hours and reason input
+- ✅ Reason text input (required when override set)
+- ✅ Standard hours column showing agent's contracted hours
+- ✅ Day-off awareness (greyed-out rows for dates with days off)
+- ✅ Save button → `PUT .../exceptions`
+**Files:** `pages/AgentExceptions.tsx`
 **Depends on:** Task 14 (backend endpoints work)
 **Ref:** TODO §18.1
 
-### Task 36 — Desk Management: Edit & Polish
-- Edit desk form (inline or modal) → `PUT /desks/{deskId}`
-- `defaultContractedHoursPerDay` field in create form
-- "Number of assigned agents" column
-- Disable delete when desk has accepted schedules
+### Task 36 — Desk Management: Edit & Polish ✅
+- ✅ Edit desk form (inline editing in table) → `PUT /desks/{deskId}`
+- ✅ `defaultContractedHoursPerDay` field in create form
+- ✅ Loading state while fetching desks
+- ✅ Toast notifications for create/update/delete
+**Files:** `pages/DeskManagement.tsx`
 **Depends on:** Task 7 (backend endpoints work)
 **Ref:** TODO §18.1, §18.3
 
-### Task 37 — Specializations: Rename & Delete Guards
-- Rename capability → `PUT .../specializations/{id}`
-- Delete disabled/warned when in use
-- Confirmation dialog for delete
+### Task 37 — Specializations: Rename & Delete Guards ✅
+- ✅ Rename capability → `PUT .../specializations/{id}` (inline rename with Save/Cancel)
+- ✅ Confirmation dialog for delete warning about in-use specializations
+- ✅ Toast notifications for all operations
+**Files:** `pages/Specializations.tsx`
 **Depends on:** Task 8 (backend endpoints work)
 **Ref:** TODO §18.3
 
-### Task 38 — Constraint Weights: Polish
-- Description column and level (Hard/Soft) dropdown
-- Reset to defaults button
+### Task 38 — Constraint Weights: Polish ✅
+- ✅ Description column for each constraint
+- ✅ Level badge (Hard/Soft) with colour coding
+- ✅ Reset to defaults button
+- ✅ Toast notifications for save
+**Files:** `pages/ConstraintWeightsPage.tsx`
 **Depends on:** Task 12 (backend endpoints work)
 **Ref:** TODO §18.2, §18.3
 
-### Task 39 — Schedule Setup: Pre-Solve Enhancements
-- Validation summary panel (agent count, specializations, missing data warnings)
-- Past schedules list (`GET /desks/{deskId}/schedules`)
-- Break duration filtered to multiples of increment
+### Task 39 — Schedule Setup: Pre-Solve Enhancements ✅
+- ✅ Validation summary panel (active agent count, specialization count, staffing requirement count with warnings)
+- ✅ Past schedules list (`GET /desks/{deskId}/schedules`) with status badges, scores, links to view
+- ✅ Break duration filtered to multiples of increment (dropdown)
+- ✅ Toast + inline error display for solve failures
+**Files:** `pages/ScheduleSetup.tsx`
 **Depends on:** Task 23 (listSchedules works)
 **Ref:** TODO §18.2, §18.3
 
-### Task 40 — Schedule Results: Output View Tabs
-Implement all four tab contents with proper TypeScript interfaces:
-1. Staffing Summary table (colour-coded, day filter, totals)
-2. Agent Schedule grid (per-day, colour by match type, breaks, tooltip)
-3. Preference Report table (honoured flags, summary counters, filter)
-4. Constraint Violations table (expandable, filter by level)
-- Non-optimal banner with violated hard constraints
-- Progress indicator while solver is running
-- Proper accept confirmation dialog for non-optimal solutions
+### Task 40 — Schedule Results: Output View Tabs ✅
+Implemented all four tab contents with typed TypeScript interfaces:
+1. ✅ Staffing Summary table — colour-coded coverage %, delta with +/- colouring, total/grand-total rows, date filter
+2. ✅ Agent Schedule grid — grouped by agent, per-day shifts with match type colour coding (PRIMARY=green, SECONDARY=yellow, NONE=red), breaks with duration, legend
+3. ✅ Preference Report table — honoured flags (Yes/No colour coded), summary counters (total, start honoured, break honoured, overall %), preference source, date filter
+4. ✅ Constraint Violations table — expandable per-constraint detail rows, filter by level (All/Hard/Soft), violation count, total penalty
+- ✅ Non-optimal banner with violated hard constraints list
+- ✅ Progress indicator (spinner animation) while solver is running
+- ✅ Proper accept confirmation dialog for non-optimal solutions
+- ✅ Export error handling with toast notifications
+**Files:** `pages/ScheduleResults.tsx`, `api/client.ts` (typed interfaces for all output views)
 **Depends on:** Task 25 (backend output views), Task 21 (ScheduleDetailResponse)
 **Ref:** TODO §18.1, §18.2, §18.3
 
-### Task 41 — Navigation & UI Polish
-- Sidebar: add Desk Management link
-- Active desk indicator in header (desk name instead of "WFM Service")
-- Hardcoded tenant ID → configurable (dropdown or input)
-- Export error handling
+### Task 41 — Navigation & UI Polish ✅
+- ✅ Sidebar: added Desk Management link
+- ✅ Active desk indicator in header (desk name loaded from API, replaces "WFM Service")
+- ✅ Active nav link highlighting based on current route
+- ✅ Hardcoded tenant ID → configurable via input in top bar (`TenantSelector` component)
+- ✅ Export error handling (checks response.ok, shows toast on failure)
+- ✅ Global CSS improvements: input/select/label styling, disabled button state, focus outlines, spinner/fade-in animations
+**Files:** `App.tsx`, `index.css`, `components/Toast.tsx`
 **Depends on:** nothing
 **Ref:** TODO §18.2, §18.3
 

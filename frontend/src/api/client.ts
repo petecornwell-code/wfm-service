@@ -8,8 +8,39 @@ const API_BASE = '/api/v1'
 // For development, default tenant ID = 1
 let currentTenantId = '1'
 
+export function getTenantId() {
+  return currentTenantId
+}
+
 export function setTenantId(id: string) {
   currentTenantId = id
+}
+
+// --- Error types ---
+export interface ApiErrorDetail {
+  field?: string
+  message: string
+  value?: string
+}
+
+export interface ApiErrorBody {
+  code: string
+  message: string
+  details?: ApiErrorDetail[]
+}
+
+export class ApiRequestError extends Error {
+  status: number
+  code: string
+  details: ApiErrorDetail[]
+
+  constructor(status: number, error: ApiErrorBody) {
+    super(error.message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.code = error.code
+    this.details = error.details ?? []
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -23,12 +54,30 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(error.error?.message || error.message || `HTTP ${response.status}`)
+    const body = await response.json().catch(() => null)
+    if (body?.error) {
+      throw new ApiRequestError(response.status, body.error)
+    }
+    throw new ApiRequestError(response.status, {
+      code: 'UNKNOWN',
+      message: body?.message || response.statusText || `HTTP ${response.status}`,
+    })
   }
 
   if (response.status === 204) return undefined as T
   return response.json()
+}
+
+/** Extract user-friendly error message from any caught error */
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    if (err.details.length > 0) {
+      return err.details.map(d => d.field ? `${d.field}: ${d.message}` : d.message).join('; ')
+    }
+    return err.message
+  }
+  if (err instanceof Error) return err.message
+  return String(err)
 }
 
 // --- Desks ---
@@ -76,7 +125,7 @@ export const deskAgents = {
   setContractedHours: (deskId: string, agentId: string, hours: number) =>
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
   refresh: (deskId: string) =>
-    request<DeskAgent[]>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
+    request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
 }
 
 // --- Specializations ---
@@ -196,5 +245,91 @@ export interface Score { hardScore: number; softScore: number }
 export interface ConstraintWeightsData { [key: string]: Score }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
 export interface ScheduleSummary { id: string; deskId: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; createdAt: string }
-export interface ScheduleDetail extends ScheduleSummary { staffingSummary: unknown[]; agentSchedule: unknown[]; preferenceReport: unknown; constraintViolations: unknown[]; violatedHardConstraints: string[]; warnings?: string[]; errorMessage?: string }
+
+export interface StaffingSummaryEntry {
+  date: string | null
+  specializationName: string
+  predictedHours: number
+  actualHours: number
+  deltaHours: number
+  coveragePct: number
+}
+
+export interface AssignmentDetail {
+  timeslotId: string
+  startTime: string
+  endTime: string
+  specializationName: string
+  matchType: string
+}
+
+export interface BreakDetail {
+  startTime: string
+  endTime: string
+  durationMinutes: number
+}
+
+export interface AgentScheduleEntry {
+  agentId: string
+  agentName: string
+  date: string
+  shiftStart: string
+  shiftEnd: string
+  totalHours: number
+  assignments: AssignmentDetail[]
+  breaks: BreakDetail[]
+}
+
+export interface PreferenceReportEntry {
+  agentId: string
+  agentName: string
+  date: string
+  preferenceSource: string
+  preferredStartTime: string | null
+  actualStartTime: string | null
+  startTimeHonoured: boolean
+  preferredBreakTime: string | null
+  actualBreakTime: string | null
+  breakTimeHonoured: boolean
+}
+
+export interface PreferenceSummary {
+  totalPreferences: number
+  startTimeHonouredCount: number
+  breakTimeHonouredCount: number
+  overallHonouredPct: number
+}
+
+export interface PreferenceReport {
+  entries: PreferenceReportEntry[]
+  summary: PreferenceSummary
+}
+
+export interface ViolationDetail {
+  agentId: string | null
+  agentName: string | null
+  timeslotId: string | null
+  timeslotLabel: string | null
+  description: string
+}
+
+export interface ConstraintViolationEntry {
+  constraintName: string
+  level: string
+  weight: Score
+  violationCount: number
+  totalPenalty: Score
+  violations: ViolationDetail[]
+}
+
+export interface ScheduleDetail extends ScheduleSummary {
+  staffingSummary: StaffingSummaryEntry[]
+  agentSchedule: AgentScheduleEntry[]
+  preferenceReport: PreferenceReport | null
+  constraintViolations: ConstraintViolationEntry[]
+  violatedHardConstraints: string[]
+  warnings?: string[]
+  errorMessage?: string
+}
+
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean }
