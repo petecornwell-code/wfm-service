@@ -153,6 +153,14 @@ public class BreakAwareConstructionPhase {
                     }
                 }
             }
+            // --- Repair break geometry ---
+            // After agent-first assignment, some agents may have multiple interior
+            // gaps (scattered assignments). Detect and fix by un-assigning isolated
+            // slots that are separated from the break by extra gaps, keeping only
+            // the contiguous blocks adjacent to the planned break.
+            totalAssigned -= repairBreakGeometry(breakPlans, slotMap, demandSlotTimes,
+                    increment, assignmentCounts);
+
             // --- Mop-up pass ---
             // Fill remaining unassigned seats by extending agents' shifts.
             // Prefers agents whose existing shift is adjacent to the slot
@@ -570,6 +578,108 @@ public class BreakAwareConstructionPhase {
             untrimableSlots.remove(worstSlot.minusMinutes(increment));
             untrimableSlots.remove(worstSlot.plusMinutes(increment));
         }
+    }
+
+    /**
+     * Repairs break geometry for agents with multiple interior gaps.
+     * For each agent that has a planned break, checks if their actual assignments
+     * create more than one gap between first and last assigned slot. If so,
+     * un-assigns isolated slots that are separated from the break by extra gaps,
+     * keeping only the two contiguous blocks immediately adjacent to the break.
+     */
+    private int repairBreakGeometry(
+            List<AgentBreakPlan> breakPlans,
+            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
+            List<LocalTime> demandSlotTimes,
+            int increment,
+            Map<UUID, Integer> assignmentCounts) {
+
+        int unassigned = 0;
+        for (AgentBreakPlan plan : breakPlans) {
+            if (plan.breakSlots.isEmpty()) continue;
+
+            DeskAgent da = plan.deskAgent;
+            UUID daId = da.getId();
+
+            // Collect this agent's assigned slot times
+            TreeSet<LocalTime> assignedTimes = new TreeSet<>();
+            for (LocalTime slotTime : demandSlotTimes) {
+                for (AgentAssignment seat : slotMap.get(slotTime)) {
+                    if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                        assignedTimes.add(slotTime);
+                    }
+                }
+            }
+
+            if (assignedTimes.size() <= 1) continue;
+
+            // Count gaps using the same logic as ScheduleConstraintProvider.getGapLengths
+            List<LocalTime> gapSlots = new ArrayList<>();
+            LocalTime shiftStart = assignedTimes.first();
+            LocalTime shiftEnd = assignedTimes.last().plusMinutes(increment);
+            int gapCount = 0;
+            List<LocalTime> currentGapSlots = new ArrayList<>();
+            for (LocalTime t = shiftStart; t.isBefore(shiftEnd); t = t.plusMinutes(increment)) {
+                if (!assignedTimes.contains(t)) {
+                    currentGapSlots.add(t);
+                } else {
+                    if (!currentGapSlots.isEmpty()) {
+                        gapCount++;
+                        gapSlots.addAll(currentGapSlots);
+                        currentGapSlots.clear();
+                    }
+                }
+            }
+            if (!currentGapSlots.isEmpty()) {
+                gapCount++;
+                gapSlots.addAll(currentGapSlots);
+            }
+
+            // Only repair if there are multiple gaps (>1 break)
+            if (gapCount <= 1) continue;
+
+            // Find the planned break gap: the gap that overlaps with planned break slots
+            LocalTime breakMin = plan.breakSlots.stream().min(LocalTime::compareTo).orElse(null);
+            LocalTime breakMax = plan.breakSlots.stream().max(LocalTime::compareTo).orElse(null);
+            if (breakMin == null) continue;
+
+            // Walk backward from break to find the contiguous pre-break block
+            Set<LocalTime> keepSlots = new HashSet<>();
+            for (LocalTime t = breakMin.minusMinutes(increment); !t.isBefore(shiftStart); t = t.minusMinutes(increment)) {
+                if (assignedTimes.contains(t)) {
+                    keepSlots.add(t);
+                } else {
+                    break; // hit a gap, stop
+                }
+            }
+
+            // Walk forward from break to find the contiguous post-break block
+            for (LocalTime t = breakMax.plusMinutes(increment); !t.isAfter(shiftEnd.minusMinutes(increment)); t = t.plusMinutes(increment)) {
+                if (assignedTimes.contains(t)) {
+                    keepSlots.add(t);
+                } else {
+                    break; // hit a gap, stop
+                }
+            }
+
+            // Un-assign any slots not in keepSlots
+            Set<LocalTime> toRemove = new HashSet<>(assignedTimes);
+            toRemove.removeAll(keepSlots);
+
+            if (toRemove.isEmpty()) continue;
+
+            for (LocalTime slotTime : toRemove) {
+                for (AgentAssignment seat : slotMap.get(slotTime)) {
+                    if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                        seat.setDeskAgent(null);
+                        seat.setAgent(null);
+                        assignmentCounts.merge(daId, -1, Integer::sum);
+                        unassigned++;
+                    }
+                }
+            }
+        }
+        return unassigned;
     }
 
     /**
