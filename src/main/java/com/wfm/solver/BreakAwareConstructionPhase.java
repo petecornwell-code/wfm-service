@@ -583,9 +583,13 @@ public class BreakAwareConstructionPhase {
     /**
      * Repairs break geometry for agents with multiple interior gaps.
      * For each agent that has a planned break, checks if their actual assignments
-     * create more than one gap between first and last assigned slot. If so,
-     * identifies which gap best matches the planned break and keeps only the two
-     * contiguous assigned blocks flanking that gap, un-assigning everything else.
+     * create more than one gap between first and last assigned slot.
+     *
+     * <p>Strategy: first try to FILL non-break gaps (assign the agent to available
+     * seats in gap slots). This merges disconnected blocks without freeing any
+     * seats. Falls back to removing outer blocks only when gaps can't be filled.
+     *
+     * @return net number of un-assigned seats (negative if more were assigned)
      */
     private int repairBreakGeometry(
             List<AgentBreakPlan> breakPlans,
@@ -594,7 +598,9 @@ public class BreakAwareConstructionPhase {
             int increment,
             Map<UUID, Integer> assignmentCounts) {
 
-        int unassigned = 0;
+        int netUnassigned = 0;
+        Set<LocalTime> demandSet = new HashSet<>(demandSlotTimes);
+
         for (AgentBreakPlan plan : breakPlans) {
             if (plan.breakSlots.isEmpty()) continue;
 
@@ -614,11 +620,10 @@ public class BreakAwareConstructionPhase {
             if (assignedTimes.size() <= 1) continue;
 
             // Build alternating list of contiguous blocks and gaps
-            // Each block/gap is a list of slot times
             LocalTime shiftStart = assignedTimes.first();
             LocalTime shiftEnd = assignedTimes.last().plusMinutes(increment);
-            List<List<LocalTime>> blocks = new ArrayList<>();  // assigned blocks
-            List<List<LocalTime>> gaps = new ArrayList<>();    // gap blocks (between assigned blocks)
+            List<List<LocalTime>> blocks = new ArrayList<>();
+            List<List<LocalTime>> gaps = new ArrayList<>();
             List<LocalTime> currentBlock = new ArrayList<>();
             List<LocalTime> currentGap = new ArrayList<>();
             for (LocalTime t = shiftStart; t.isBefore(shiftEnd); t = t.plusMinutes(increment)) {
@@ -637,16 +642,12 @@ public class BreakAwareConstructionPhase {
                 }
             }
             if (!currentBlock.isEmpty()) blocks.add(currentBlock);
-            // trailing gaps don't count (constraint only measures between first and last assigned)
 
-            // Only repair if there are multiple gaps (>1 break)
             if (gaps.size() <= 1) continue;
 
-            // Find the gap that best matches the planned break:
-            // prefer the gap with the most overlap with planned break slots,
-            // then the gap closest to the break position
+            // Find the gap that best matches the planned break
             LocalTime breakMid = plan.breakSlots.stream().min(LocalTime::compareTo).orElse(shiftStart);
-            int bestGapIdx = 0;
+            int breakGapIdx = 0;
             int bestOverlap = -1;
             long bestDistance = Long.MAX_VALUE;
             for (int i = 0; i < gaps.size(); i++) {
@@ -655,45 +656,83 @@ public class BreakAwareConstructionPhase {
                 for (LocalTime t : gap) {
                     if (plan.breakSlots.contains(t)) overlap++;
                 }
-                // Distance from gap midpoint to break start
                 LocalTime gapMid = gap.get(gap.size() / 2);
                 long dist = Math.abs(gapMid.toSecondOfDay() - breakMid.toSecondOfDay());
                 if (overlap > bestOverlap || (overlap == bestOverlap && dist < bestDistance)) {
                     bestOverlap = overlap;
                     bestDistance = dist;
-                    bestGapIdx = i;
+                    breakGapIdx = i;
                 }
             }
 
-            // Keep the assigned blocks immediately before and after the break gap.
-            // blocks[i] is followed by gaps[i] is followed by blocks[i+1].
-            // The break gap is gaps[bestGapIdx], so keep blocks[bestGapIdx] and blocks[bestGapIdx+1].
-            Set<LocalTime> keepSlots = new HashSet<>();
-            if (bestGapIdx < blocks.size()) {
-                keepSlots.addAll(blocks.get(bestGapIdx));
+            // Try to fill non-break gaps by assigning agent to available seats
+            boolean allFilled = true;
+            List<List<LocalTime>> fillableGaps = new ArrayList<>();
+            for (int i = 0; i < gaps.size(); i++) {
+                if (i == breakGapIdx) continue; // skip the break gap
+                List<LocalTime> gap = gaps.get(i);
+                boolean canFill = true;
+                for (LocalTime t : gap) {
+                    if (!demandSet.contains(t)) { canFill = false; break; }
+                    // Check if there's an available seat at this slot
+                    boolean hasAvailableSeat = false;
+                    for (AgentAssignment seat : slotMap.get(t)) {
+                        if (seat.getDeskAgent() == null) {
+                            hasAvailableSeat = true;
+                            break;
+                        }
+                    }
+                    if (!hasAvailableSeat) { canFill = false; break; }
+                }
+                if (canFill) {
+                    fillableGaps.add(gap);
+                } else {
+                    allFilled = false;
+                }
             }
-            if (bestGapIdx + 1 < blocks.size()) {
-                keepSlots.addAll(blocks.get(bestGapIdx + 1));
-            }
 
-            // Un-assign any slots not in keepSlots
-            Set<LocalTime> toRemove = new HashSet<>(assignedTimes);
-            toRemove.removeAll(keepSlots);
+            if (allFilled) {
+                // Fill all non-break gaps — merges blocks without freeing any seats
+                for (List<LocalTime> gap : fillableGaps) {
+                    for (LocalTime t : gap) {
+                        AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
+                        if (bestSeat != null) {
+                            bestSeat.setDeskAgent(da);
+                            bestSeat.setAgent(da.getAgent());
+                            assignmentCounts.merge(daId, 1, Integer::sum);
+                            netUnassigned--;
+                        }
+                    }
+                }
+            } else {
+                // Can't fill all gaps — fall back to removing outer blocks,
+                // keeping only the two blocks flanking the break gap
+                Set<LocalTime> keepSlots = new HashSet<>();
+                if (breakGapIdx < blocks.size()) {
+                    keepSlots.addAll(blocks.get(breakGapIdx));
+                }
+                if (breakGapIdx + 1 < blocks.size()) {
+                    keepSlots.addAll(blocks.get(breakGapIdx + 1));
+                }
 
-            if (toRemove.isEmpty()) continue;
+                Set<LocalTime> toRemove = new HashSet<>(assignedTimes);
+                toRemove.removeAll(keepSlots);
 
-            for (LocalTime slotTime : toRemove) {
-                for (AgentAssignment seat : slotMap.get(slotTime)) {
-                    if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
-                        seat.setDeskAgent(null);
-                        seat.setAgent(null);
-                        assignmentCounts.merge(daId, -1, Integer::sum);
-                        unassigned++;
+                if (toRemove.isEmpty()) continue;
+
+                for (LocalTime slotTime : toRemove) {
+                    for (AgentAssignment seat : slotMap.get(slotTime)) {
+                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                            seat.setDeskAgent(null);
+                            seat.setAgent(null);
+                            assignmentCounts.merge(daId, -1, Integer::sum);
+                            netUnassigned++;
+                        }
                     }
                 }
             }
         }
-        return unassigned;
+        return netUnassigned;
     }
 
     /**
