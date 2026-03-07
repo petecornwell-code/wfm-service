@@ -665,16 +665,15 @@ public class BreakAwareConstructionPhase {
                 }
             }
 
-            // Fill all fillable non-break gaps — merges blocks without freeing seats.
-            // Even if not all gaps can be filled, filling some reduces the gap count
-            // and gives the solver a better starting point for local search.
+            // Only fill gaps when ALL non-break gaps can be filled. Partial filling
+            // wastes seats for no constraint benefit (reducing 3→2 gaps still violates
+            // exactlyOneBreak) and steals seats other agents need.
+            boolean allFillable = true;
             for (int i = 0; i < gaps.size(); i++) {
-                if (i == breakGapIdx) continue; // skip the break gap
+                if (i == breakGapIdx) continue;
                 List<LocalTime> gap = gaps.get(i);
-                // Check that every slot in this gap has an available seat
-                boolean canFill = true;
                 for (LocalTime t : gap) {
-                    if (!demandSet.contains(t)) { canFill = false; break; }
+                    if (!demandSet.contains(t)) { allFillable = false; break; }
                     boolean hasAvailableSeat = false;
                     for (AgentAssignment seat : slotMap.get(t)) {
                         if (seat.getDeskAgent() == null) {
@@ -682,11 +681,17 @@ public class BreakAwareConstructionPhase {
                             break;
                         }
                     }
-                    if (!hasAvailableSeat) { canFill = false; break; }
+                    if (!hasAvailableSeat) { allFillable = false; break; }
                 }
-                if (!canFill) continue;
-                // Fill the gap
-                for (LocalTime t : gap) {
+                if (!allFillable) break;
+            }
+
+            if (!allFillable) continue;
+
+            // Fill all non-break gaps — merges blocks without freeing any seats
+            for (int i = 0; i < gaps.size(); i++) {
+                if (i == breakGapIdx) continue;
+                for (LocalTime t : gaps.get(i)) {
                     AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
                     if (bestSeat != null) {
                         bestSeat.setDeskAgent(da);
