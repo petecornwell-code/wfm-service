@@ -584,8 +584,8 @@ public class BreakAwareConstructionPhase {
      * Repairs break geometry for agents with multiple interior gaps.
      * For each agent that has a planned break, checks if their actual assignments
      * create more than one gap between first and last assigned slot. If so,
-     * un-assigns isolated slots that are separated from the break by extra gaps,
-     * keeping only the two contiguous blocks immediately adjacent to the break.
+     * identifies which gap best matches the planned break and keeps only the two
+     * contiguous assigned blocks flanking that gap, un-assigning everything else.
      */
     private int repairBreakGeometry(
             List<AgentBreakPlan> breakPlans,
@@ -613,53 +613,67 @@ public class BreakAwareConstructionPhase {
 
             if (assignedTimes.size() <= 1) continue;
 
-            // Count gaps using the same logic as ScheduleConstraintProvider.getGapLengths
-            List<LocalTime> gapSlots = new ArrayList<>();
+            // Build alternating list of contiguous blocks and gaps
+            // Each block/gap is a list of slot times
             LocalTime shiftStart = assignedTimes.first();
             LocalTime shiftEnd = assignedTimes.last().plusMinutes(increment);
-            int gapCount = 0;
-            List<LocalTime> currentGapSlots = new ArrayList<>();
+            List<List<LocalTime>> blocks = new ArrayList<>();  // assigned blocks
+            List<List<LocalTime>> gaps = new ArrayList<>();    // gap blocks (between assigned blocks)
+            List<LocalTime> currentBlock = new ArrayList<>();
+            List<LocalTime> currentGap = new ArrayList<>();
             for (LocalTime t = shiftStart; t.isBefore(shiftEnd); t = t.plusMinutes(increment)) {
-                if (!assignedTimes.contains(t)) {
-                    currentGapSlots.add(t);
-                } else {
-                    if (!currentGapSlots.isEmpty()) {
-                        gapCount++;
-                        gapSlots.addAll(currentGapSlots);
-                        currentGapSlots.clear();
+                if (assignedTimes.contains(t)) {
+                    if (!currentGap.isEmpty()) {
+                        gaps.add(currentGap);
+                        currentGap = new ArrayList<>();
                     }
+                    currentBlock.add(t);
+                } else {
+                    if (!currentBlock.isEmpty()) {
+                        blocks.add(currentBlock);
+                        currentBlock = new ArrayList<>();
+                    }
+                    currentGap.add(t);
                 }
             }
-            if (!currentGapSlots.isEmpty()) {
-                gapCount++;
-                gapSlots.addAll(currentGapSlots);
-            }
+            if (!currentBlock.isEmpty()) blocks.add(currentBlock);
+            // trailing gaps don't count (constraint only measures between first and last assigned)
 
             // Only repair if there are multiple gaps (>1 break)
-            if (gapCount <= 1) continue;
+            if (gaps.size() <= 1) continue;
 
-            // Find the planned break gap: the gap that overlaps with planned break slots
-            LocalTime breakMin = plan.breakSlots.stream().min(LocalTime::compareTo).orElse(null);
-            LocalTime breakMax = plan.breakSlots.stream().max(LocalTime::compareTo).orElse(null);
-            if (breakMin == null) continue;
-
-            // Walk backward from break to find the contiguous pre-break block
-            Set<LocalTime> keepSlots = new HashSet<>();
-            for (LocalTime t = breakMin.minusMinutes(increment); !t.isBefore(shiftStart); t = t.minusMinutes(increment)) {
-                if (assignedTimes.contains(t)) {
-                    keepSlots.add(t);
-                } else {
-                    break; // hit a gap, stop
+            // Find the gap that best matches the planned break:
+            // prefer the gap with the most overlap with planned break slots,
+            // then the gap closest to the break position
+            LocalTime breakMid = plan.breakSlots.stream().min(LocalTime::compareTo).orElse(shiftStart);
+            int bestGapIdx = 0;
+            int bestOverlap = -1;
+            long bestDistance = Long.MAX_VALUE;
+            for (int i = 0; i < gaps.size(); i++) {
+                List<LocalTime> gap = gaps.get(i);
+                int overlap = 0;
+                for (LocalTime t : gap) {
+                    if (plan.breakSlots.contains(t)) overlap++;
+                }
+                // Distance from gap midpoint to break start
+                LocalTime gapMid = gap.get(gap.size() / 2);
+                long dist = Math.abs(gapMid.toSecondOfDay() - breakMid.toSecondOfDay());
+                if (overlap > bestOverlap || (overlap == bestOverlap && dist < bestDistance)) {
+                    bestOverlap = overlap;
+                    bestDistance = dist;
+                    bestGapIdx = i;
                 }
             }
 
-            // Walk forward from break to find the contiguous post-break block
-            for (LocalTime t = breakMax.plusMinutes(increment); !t.isAfter(shiftEnd.minusMinutes(increment)); t = t.plusMinutes(increment)) {
-                if (assignedTimes.contains(t)) {
-                    keepSlots.add(t);
-                } else {
-                    break; // hit a gap, stop
-                }
+            // Keep the assigned blocks immediately before and after the break gap.
+            // blocks[i] is followed by gaps[i] is followed by blocks[i+1].
+            // The break gap is gaps[bestGapIdx], so keep blocks[bestGapIdx] and blocks[bestGapIdx+1].
+            Set<LocalTime> keepSlots = new HashSet<>();
+            if (bestGapIdx < blocks.size()) {
+                keepSlots.addAll(blocks.get(bestGapIdx));
+            }
+            if (bestGapIdx + 1 < blocks.size()) {
+                keepSlots.addAll(blocks.get(bestGapIdx + 1));
             }
 
             // Un-assign any slots not in keepSlots
