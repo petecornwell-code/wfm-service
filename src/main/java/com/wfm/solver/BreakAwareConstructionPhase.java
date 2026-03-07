@@ -138,12 +138,54 @@ public class BreakAwareConstructionPhase {
                 maxSlots.put(plan.deskAgent.getId(), workSlots.size());
             }
 
+            // Two-pass assignment: first assign break-adjacent slots for ALL agents
+            // (critical for correct break geometry), then fill remaining work slots.
+            // This prevents later agents from finding break-adjacent seats stolen
+            // by earlier agents' non-critical slot assignments.
+
+            // Precompute break-adjacent slots per agent
+            Map<UUID, Set<LocalTime>> breakAdjacentByAgent = new HashMap<>();
+            for (AgentBreakPlan plan : breakPlans) {
+                Set<LocalTime> breakAdjacent = new HashSet<>();
+                for (LocalTime bs : plan.breakSlots) {
+                    LocalTime before = bs.minusMinutes(increment);
+                    LocalTime after = bs.plusMinutes(increment);
+                    if (!plan.breakSlots.contains(before)) breakAdjacent.add(before);
+                    if (!plan.breakSlots.contains(after)) breakAdjacent.add(after);
+                }
+                breakAdjacentByAgent.put(plan.deskAgent.getId(), breakAdjacent);
+            }
+
+            // Pass 1: break-adjacent slots only
             for (AgentBreakPlan plan : breakPlans) {
                 DeskAgent da = plan.deskAgent;
                 Set<LocalTime> workSlots = agentWorkSlots.get(da.getId());
+                Set<LocalTime> breakAdjacent = breakAdjacentByAgent.get(da.getId());
 
                 for (LocalTime slotTime : demandSlotTimes) {
                     if (!workSlots.contains(slotTime)) continue;
+                    if (!breakAdjacent.contains(slotTime)) continue;
+
+                    List<AgentAssignment> seats = slotMap.get(slotTime);
+                    AgentAssignment bestSeat = findBestSeat(da, seats);
+                    if (bestSeat != null) {
+                        bestSeat.setDeskAgent(da);
+                        bestSeat.setAgent(da.getAgent());
+                        assignmentCounts.merge(da.getId(), 1, Integer::sum);
+                        totalAssigned++;
+                    }
+                }
+            }
+
+            // Pass 2: remaining work slots
+            for (AgentBreakPlan plan : breakPlans) {
+                DeskAgent da = plan.deskAgent;
+                Set<LocalTime> workSlots = agentWorkSlots.get(da.getId());
+                Set<LocalTime> breakAdjacent = breakAdjacentByAgent.get(da.getId());
+
+                for (LocalTime slotTime : demandSlotTimes) {
+                    if (!workSlots.contains(slotTime)) continue;
+                    if (breakAdjacent.contains(slotTime)) continue; // already done in pass 1
 
                     List<AgentAssignment> seats = slotMap.get(slotTime);
                     AgentAssignment bestSeat = findBestSeat(da, seats);
@@ -171,6 +213,13 @@ public class BreakAwareConstructionPhase {
             totalAssigned += mopUpUnassigned(
                     slotMap, demandSlotTimes, breakPlans, agentWorkSlots,
                     assignmentCounts, maxSlots, dayConfigMap, daysOffSet, date, increment);
+
+            // --- Final break geometry cleanup ---
+            // After mop-up, some agents may still have multiple gaps if mop-up
+            // extended them non-contiguously. Run repair again — any remaining
+            // multi-gap agents will have their outer blocks removed.
+            totalAssigned -= repairBreakGeometry(breakPlans, slotMap, demandSlotTimes,
+                    increment, assignmentCounts);
         }
 
         return totalAssigned;
@@ -552,6 +601,14 @@ public class BreakAwareConstructionPhase {
                 int trims = trimCounts.getOrDefault(plan.deskAgent.getId(), 0);
                 if (trims >= maxTrimsPerAgent) continue; // cap per-agent trims
 
+                // Never trim a slot directly adjacent to the agent's break —
+                // doing so would extend the effective break duration beyond
+                // breakDurationMinutes, causing "Break duration" violations.
+                if (plan.breakSlots.contains(worstSlot.plusMinutes(increment))
+                        || plan.breakSlots.contains(worstSlot.minusMinutes(increment))) {
+                    continue;
+                }
+
                 // Check if worstSlot is at the OUTER edge of the shift
                 // (not adjacent to break, which would extend break duration)
                 boolean isEdge = isShiftEdge(workSlots, worstSlot, increment, plan.breakSlots);
@@ -688,7 +745,32 @@ public class BreakAwareConstructionPhase {
                 if (!allFillable) break;
             }
 
-            if (!allFillable) continue;
+            if (!allFillable) {
+                // Fallback: remove outer disconnected blocks to ensure exactly one gap.
+                // Keep only the two blocks adjacent to the break gap (one on each side).
+                // Freed seats stay unassigned — this runs after mop-up so no re-claiming.
+                Set<LocalTime> keepSlots = new HashSet<>();
+                if (breakGapIdx < blocks.size()) {
+                    keepSlots.addAll(blocks.get(breakGapIdx));
+                }
+                if (breakGapIdx + 1 < blocks.size()) {
+                    keepSlots.addAll(blocks.get(breakGapIdx + 1));
+                }
+
+                for (LocalTime slotTime : demandSlotTimes) {
+                    if (keepSlots.contains(slotTime)) continue;
+                    if (!assignedTimes.contains(slotTime)) continue;
+                    for (AgentAssignment seat : slotMap.get(slotTime)) {
+                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                            seat.setDeskAgent(null);
+                            seat.setAgent(null);
+                            assignmentCounts.merge(daId, -1, Integer::sum);
+                            netUnassigned++;
+                        }
+                    }
+                }
+                continue;
+            }
 
             // Fill all non-break gaps — merges blocks without freeing any seats
             for (int i = 0; i < gaps.size(); i++) {

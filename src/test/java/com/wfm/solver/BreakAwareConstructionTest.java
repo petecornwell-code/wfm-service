@@ -343,13 +343,13 @@ class BreakAwareConstructionTest {
         }
 
         // In over-subscribed scenarios (agents × contractedHours > demand × coverage),
-        // small contracted hours deviations are unavoidable. The remaining violations
-        // (if any) are easily fixed by the solver's local search phase.
-        // Allow up to 1 break violation + reasonable contracted hours deviation.
+        // contracted hours deviations are unavoidable (30×16=480 supply > 450 demand).
+        // But break geometry must be correct: no break duration or exactly-one-break violations.
+        // Expected penalty: contracted hours only (~30 hard for 30 agents × 1 slot each).
         assertThat(score.hardScore())
-                .as("Hard score should be near 0 for 30-min wide coverage scenario "
-                        + "(over-subscribed: 30×8h > 18×0.5h×25)")
-                .isGreaterThanOrEqualTo(-1100);
+                .as("Hard score should reflect only contracted hours deviations "
+                        + "(over-subscribed: 30×8h > 18×0.5h×25), no break geometry violations")
+                .isGreaterThanOrEqualTo(-60);
     }
 
     // ------------------------------------------------------------------
