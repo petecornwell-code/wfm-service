@@ -104,11 +104,13 @@ public class BreakAwareConstructionPhase {
 
             // Compute each agent's working slot times (contiguous block around break,
             // limited to their contracted hours).
-            // Cap per-agent work slots so total supply doesn't vastly exceed total demand.
-            // Ceiling division avoids under-supply with coarse (e.g. 60-min) slot granularity.
+            // Cap per-agent work slots so total supply doesn't exceed total demand.
+            // Floor division ensures agents' shift windows are shorter than the full
+            // day, enabling natural staggering (some agents 09-16, others 10-17).
+            // This keeps breaks interior even when edge slots are over-subscribed.
             int totalDemandSlots = slotMap.values().stream().mapToInt(List::size).sum();
             int maxWorkSlotsPerAgent = breakPlans.isEmpty() ? Integer.MAX_VALUE
-                    : (totalDemandSlots + breakPlans.size() - 1) / breakPlans.size();
+                    : totalDemandSlots / breakPlans.size();
 
             // Process sequentially with a shared remainingDemand map so that each
             // agent's window is steered toward the slots that still need coverage.
