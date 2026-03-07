@@ -665,16 +665,16 @@ public class BreakAwareConstructionPhase {
                 }
             }
 
-            // Try to fill non-break gaps by assigning agent to available seats
-            boolean allFilled = true;
-            List<List<LocalTime>> fillableGaps = new ArrayList<>();
+            // Fill all fillable non-break gaps — merges blocks without freeing seats.
+            // Even if not all gaps can be filled, filling some reduces the gap count
+            // and gives the solver a better starting point for local search.
             for (int i = 0; i < gaps.size(); i++) {
                 if (i == breakGapIdx) continue; // skip the break gap
                 List<LocalTime> gap = gaps.get(i);
+                // Check that every slot in this gap has an available seat
                 boolean canFill = true;
                 for (LocalTime t : gap) {
                     if (!demandSet.contains(t)) { canFill = false; break; }
-                    // Check if there's an available seat at this slot
                     boolean hasAvailableSeat = false;
                     for (AgentAssignment seat : slotMap.get(t)) {
                         if (seat.getDeskAgent() == null) {
@@ -684,30 +684,18 @@ public class BreakAwareConstructionPhase {
                     }
                     if (!hasAvailableSeat) { canFill = false; break; }
                 }
-                if (canFill) {
-                    fillableGaps.add(gap);
-                } else {
-                    allFilled = false;
-                }
-            }
-
-            if (allFilled) {
-                // Fill all non-break gaps — merges blocks without freeing any seats
-                for (List<LocalTime> gap : fillableGaps) {
-                    for (LocalTime t : gap) {
-                        AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
-                        if (bestSeat != null) {
-                            bestSeat.setDeskAgent(da);
-                            bestSeat.setAgent(da.getAgent());
-                            assignmentCounts.merge(daId, 1, Integer::sum);
-                            netUnassigned--;
-                        }
+                if (!canFill) continue;
+                // Fill the gap
+                for (LocalTime t : gap) {
+                    AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
+                    if (bestSeat != null) {
+                        bestSeat.setDeskAgent(da);
+                        bestSeat.setAgent(da.getAgent());
+                        assignmentCounts.merge(daId, 1, Integer::sum);
+                        netUnassigned--;
                     }
                 }
             }
-            // When gaps can't be filled, leave the agent as-is rather than
-            // removing blocks — removal creates freed seats that the break-unaware
-            // construction heuristic fills badly, creating more violations.
         }
         return netUnassigned;
     }
