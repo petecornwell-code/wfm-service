@@ -704,33 +704,10 @@ public class BreakAwareConstructionPhase {
                         }
                     }
                 }
-            } else {
-                // Can't fill all gaps — fall back to removing outer blocks,
-                // keeping only the two blocks flanking the break gap
-                Set<LocalTime> keepSlots = new HashSet<>();
-                if (breakGapIdx < blocks.size()) {
-                    keepSlots.addAll(blocks.get(breakGapIdx));
-                }
-                if (breakGapIdx + 1 < blocks.size()) {
-                    keepSlots.addAll(blocks.get(breakGapIdx + 1));
-                }
-
-                Set<LocalTime> toRemove = new HashSet<>(assignedTimes);
-                toRemove.removeAll(keepSlots);
-
-                if (toRemove.isEmpty()) continue;
-
-                for (LocalTime slotTime : toRemove) {
-                    for (AgentAssignment seat : slotMap.get(slotTime)) {
-                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
-                            seat.setDeskAgent(null);
-                            seat.setAgent(null);
-                            assignmentCounts.merge(daId, -1, Integer::sum);
-                            netUnassigned++;
-                        }
-                    }
-                }
             }
+            // When gaps can't be filled, leave the agent as-is rather than
+            // removing blocks — removal creates freed seats that the break-unaware
+            // construction heuristic fills badly, creating more violations.
         }
         return netUnassigned;
     }
