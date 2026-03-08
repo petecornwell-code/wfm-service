@@ -195,9 +195,22 @@ class SingleDaySolvableTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(List.of(configA, configB));
+        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
+    }
+
+    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
+        java.util.Map<java.time.LocalDate, Integer> demandPerDay = new java.util.HashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+        }
+        List<DayDemandConfig> configs = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<java.time.LocalDate, Integer> e : demandPerDay.entrySet()) {
+            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        }
+        return configs;
     }
 
     // ------------------------------------------------------------------

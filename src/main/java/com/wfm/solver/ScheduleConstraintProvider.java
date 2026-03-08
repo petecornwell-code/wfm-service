@@ -279,26 +279,52 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 13. Bulk over-allocation limit — total assigned hours must not exceed
-     * demand hours by more than overallocationHardLimitPct. Pre-solve check handles
-     * the input-based validation; this is a no-op placeholder for the solver constraint
-     * since the solver cannot change the supply-demand ratio (only assignment distribution).
+     * 13. Bulk over-allocation limit — total assigned slots per day must not
+     * exceed overallocationHardLimitPct of demand slots. Penalises excess slots
+     * beyond the limit. Uses DayDemandConfig for pre-computed demand totals.
      */
     private Constraint bulkOverallocationLimit(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
-                .penalizeConfigurable(a -> 0)
+                .groupBy(a -> a.getTimeslot().getDate(), count())
+                .join(DayDemandConfig.class,
+                        equal((date, cnt) -> date, DayDemandConfig::date))
+                .join(ScheduleConfig.class)
+                .filter((date, totalAssigned, dayDemand, config) -> {
+                    int maxAllowed = dayDemand.totalDemandSlots()
+                            * config.overallocationHardLimitPct() / 100;
+                    return totalAssigned > maxAllowed;
+                })
+                .penalizeConfigurable((date, totalAssigned, dayDemand, config) -> {
+                    int maxAllowed = dayDemand.totalDemandSlots()
+                            * config.overallocationHardLimitPct() / 100;
+                    return totalAssigned - maxAllowed;
+                })
                 .asConstraint("Bulk over-allocation limit");
     }
 
     /**
-     * 15. Bulk under-allocation hard — demand below underallocationHardLimitPct
-     * of contracted hours is a hard violation. Pre-solve check handles this.
+     * 15. Bulk under-allocation hard — total assigned slots per day must not
+     * fall below underallocationHardLimitPct of demand slots. Penalises the
+     * shortfall below the limit. Uses DayDemandConfig for pre-computed totals.
      */
     private Constraint bulkUnderallocationHard(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
-                .penalizeConfigurable(a -> 0)
+                .groupBy(a -> a.getTimeslot().getDate(), count())
+                .join(DayDemandConfig.class,
+                        equal((date, cnt) -> date, DayDemandConfig::date))
+                .join(ScheduleConfig.class)
+                .filter((date, totalAssigned, dayDemand, config) -> {
+                    int minRequired = dayDemand.totalDemandSlots()
+                            * config.underallocationHardLimitPct() / 100;
+                    return totalAssigned < minRequired;
+                })
+                .penalizeConfigurable((date, totalAssigned, dayDemand, config) -> {
+                    int minRequired = dayDemand.totalDemandSlots()
+                            * config.underallocationHardLimitPct() / 100;
+                    return minRequired - totalAssigned;
+                })
                 .asConstraint("Bulk under-allocation hard");
     }
 

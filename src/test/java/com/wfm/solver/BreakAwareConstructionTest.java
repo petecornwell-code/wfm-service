@@ -278,6 +278,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
+        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         // Pre-assign
@@ -342,14 +343,12 @@ class BreakAwareConstructionTest {
             });
         }
 
-        // In over-subscribed scenarios (agents × contractedHours > demand × coverage),
-        // contracted hours deviations are unavoidable (30×16=480 supply > 450 demand).
-        // But break geometry must be correct: no break duration or exactly-one-break violations.
-        // Expected penalty: contracted hours only (~30 hard for 30 agents × 1 slot each).
+        // With overflow seats, all 30 agents work their full 8 hours.
+        // Total supply = 480 slots, demand = 450 slots, 480/450 = 106.7% < 130%.
+        // No contracted hours deviations, no bulk allocation violations.
         assertThat(score.hardScore())
-                .as("Hard score should reflect only contracted hours deviations "
-                        + "(over-subscribed: 30×8h > 18×0.5h×25), no break geometry violations")
-                .isGreaterThanOrEqualTo(-60);
+                .as("Hard score should be 0 — all agents work full hours within 130% limit")
+                .isZero();
     }
 
     // ------------------------------------------------------------------
@@ -471,6 +470,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
+        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -573,6 +573,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(List.of(configA, configB));
+        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -680,6 +681,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
+        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -719,6 +721,21 @@ class BreakAwareConstructionTest {
         da.setSecondarySpecializations(new ArrayList<>(secondaries));
         da.setContractedHoursPerDay(contractedHours);
         return da;
+    }
+
+    /**
+     * Computes DayDemandConfig from assignment list (must be called BEFORE construction phase).
+     */
+    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
+        Map<LocalDate, Integer> demandPerDay = new HashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+        }
+        List<DayDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<LocalDate, Integer> e : demandPerDay.entrySet()) {
+            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        }
+        return configs;
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

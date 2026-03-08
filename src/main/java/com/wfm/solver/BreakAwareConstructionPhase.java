@@ -103,31 +103,44 @@ public class BreakAwareConstructionPhase {
                     allSlotTimes, increment, demandPerSlot);
 
             // Compute each agent's working slot times (contiguous block around break,
-            // limited to their contracted hours).
-            // Cap per-agent work slots so total supply doesn't exceed total demand.
-            // Floor division ensures agents' shift windows are shorter than the full
-            // day, enabling natural staggering (some agents 09-16, others 10-17).
-            // This keeps breaks interior even when edge slots are over-subscribed.
-            int totalDemandSlots = slotMap.values().stream().mapToInt(List::size).sum();
-            int maxWorkSlotsPerAgent = breakPlans.isEmpty() ? Integer.MAX_VALUE
-                    : totalDemandSlots / breakPlans.size();
-
-            // Process sequentially with a shared remainingDemand map so that each
-            // agent's window is steered toward the slots that still need coverage.
+            // limited to their contracted hours). All agents get their full
+            // contracted hours — over-allocation within 130% of demand is acceptable.
+            // The remainingDemand map steers window placement toward under-served
+            // slots, providing natural staggering (some agents 09-16, others 10-17).
             Map<LocalTime, Integer> remainingDemand = new HashMap<>(demandPerSlot);
             Map<UUID, Set<LocalTime>> agentWorkSlots = new HashMap<>();
             for (AgentBreakPlan plan : breakPlans) {
                 Set<LocalTime> workSlots = computeWorkSlots(
                         plan, demandSlotTimes, allSlotTimes, increment, dayConfigMap, date,
-                        remainingDemand, maxWorkSlotsPerAgent);
+                        remainingDemand, Integer.MAX_VALUE);
                 agentWorkSlots.put(plan.deskAgent.getId(), workSlots);
             }
 
-            // --- Trim work slots to match demand ---
-            // When total supply > total demand, trim agent work slots from
-            // shift edges (preserving contiguity).
-            trimWorkSlotsToMatchDemand(
-                    breakPlans, agentWorkSlots, demandSlotTimes, slotMap, increment);
+            // --- Cap agents to stay within the over-allocation limit ---
+            // When total supply significantly exceeds demand (e.g. 200% of demand),
+            // not all agents can work. Remove excess agents' work slots so that
+            // total assigned stays within overallocationHardLimitPct of demand.
+            int totalDemandSlots = slotMap.values().stream().mapToInt(List::size).sum();
+            int maxAllowedSlots = totalDemandSlots
+                    * schedule.getOverallocationHardLimitPct() / 100;
+            int totalSupplySlots = agentWorkSlots.values().stream()
+                    .mapToInt(Set::size).sum();
+            if (totalSupplySlots > maxAllowedSlots) {
+                // Remove agents from the tail of break plans until within bounds.
+                // Agents removed here get no assignments (0 work slots).
+                for (int i = breakPlans.size() - 1; i >= 0 && totalSupplySlots > maxAllowedSlots; i--) {
+                    UUID daId = breakPlans.get(i).deskAgent.getId();
+                    int removed = agentWorkSlots.getOrDefault(daId, Set.of()).size();
+                    agentWorkSlots.put(daId, Set.of());
+                    totalSupplySlots -= removed;
+                }
+            }
+
+            // --- Add overflow seats for over-allocation ---
+            // When total agent supply exceeds demand seats (within the limit),
+            // create additional AgentAssignment entities so every assigned agent
+            // can work their full contracted hours.
+            addOverflowSeats(schedule, breakPlans, agentWorkSlots, slotMap, demandSlotTimes);
 
             // --- Agent-first assignment ---
             // Assign each agent to seats across their contiguous (trimmed) work slots.
@@ -252,14 +265,6 @@ public class BreakAwareConstructionPhase {
                 .multiply(BigDecimal.valueOf(60))
                 .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
                 .intValue();
-        // Cap to avoid over-subscription when total agent supply significantly
-        // exceeds total demand. Only apply when the per-agent excess is >5% of
-        // contracted hours, since small rounding differences are handled fine
-        // by the trimming pass and don't cause agent crowding.
-        if (maxWorkSlotsPerAgent < workSlotCount
-                && (workSlotCount - maxWorkSlotsPerAgent) * 20 > workSlotCount) {
-            workSlotCount = maxWorkSlotsPerAgent;
-        }
 
         Set<LocalTime> breakSlots = plan.breakSlots;
 
@@ -516,10 +521,63 @@ public class BreakAwareConstructionPhase {
     }
 
     /**
+     * Adds overflow AgentAssignment entities for timeslots where agent supply
+     * exceeds existing demand seats. This allows all agents to work their full
+     * contracted hours when total supply is within the over-allocation limit.
+     * Overflow seats are regular AgentAssignment entities — the solver treats
+     * them identically to demand seats.
+     */
+    private void addOverflowSeats(
+            Schedule schedule,
+            List<AgentBreakPlan> breakPlans,
+            Map<UUID, Set<LocalTime>> agentWorkSlots,
+            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
+            List<LocalTime> demandSlotTimes) {
+
+        // Compute per-slot supply (how many agents want to work each slot)
+        Map<LocalTime, Integer> supplyPerSlot = new LinkedHashMap<>();
+        for (LocalTime t : demandSlotTimes) supplyPerSlot.put(t, 0);
+        for (AgentBreakPlan plan : breakPlans) {
+            Set<LocalTime> workSlots = agentWorkSlots.get(plan.deskAgent.getId());
+            if (workSlots == null) continue;
+            for (LocalTime t : workSlots) {
+                if (supplyPerSlot.containsKey(t)) {
+                    supplyPerSlot.merge(t, 1, Integer::sum);
+                }
+            }
+        }
+
+        // For each timeslot where supply > existing seats, add overflow seats
+        for (LocalTime slotTime : demandSlotTimes) {
+            List<AgentAssignment> seats = slotMap.get(slotTime);
+            int supply = supplyPerSlot.getOrDefault(slotTime, 0);
+            int currentSeats = seats.size();
+            if (supply > currentSeats) {
+                // Use an existing seat as a template for tenant/desk/schedule/timeslot/spec
+                AgentAssignment reference = seats.get(0);
+                for (int i = 0; i < supply - currentSeats; i++) {
+                    AgentAssignment overflow = new AgentAssignment();
+                    overflow.setId(UUID.randomUUID());
+                    overflow.setTenantId(reference.getTenantId());
+                    overflow.setDeskId(reference.getDeskId());
+                    overflow.setScheduleId(reference.getScheduleId());
+                    overflow.setTimeslot(reference.getTimeslot());
+                    overflow.setRequiredSpecialization(reference.getRequiredSpecialization());
+                    seats.add(overflow);
+                    schedule.getAssignments().add(overflow);
+                }
+            }
+        }
+    }
+
+    /**
      * Trims agents' work slot sets so that per-slot supply matches demand.
      * When more agents want to work a slot than there are seats, excess agents
      * are trimmed from the EDGES of their shift (preserving contiguity and break
      * geometry). Trims are distributed evenly across agents.
+     *
+     * @deprecated Replaced by {@link #addOverflowSeats} which adds seats instead
+     *             of trimming agent hours. Retained for reference.
      */
     private void trimWorkSlotsToMatchDemand(
             List<AgentBreakPlan> breakPlans,

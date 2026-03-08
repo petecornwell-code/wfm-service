@@ -171,6 +171,9 @@ public class SolverService {
         List<AgentAssignment> assignments = expandAssignments(
                 tenantId, deskId, schedule.getId(), staffingRequirements);
 
+        // 10b. Compute per-day demand slot totals for bulk allocation constraints
+        List<DayDemandConfig> dayDemandConfigs = computeDayDemandConfigs(assignments);
+
         log.debug("Solver input — schedule={}, deskAgents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedDeskAgents.size(), timeslots.size(),
                 staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
@@ -189,6 +192,7 @@ public class SolverService {
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
         schedule.setAgentDayConfigs(agentDayConfigs);
+        schedule.setDayDemandConfigs(dayDemandConfigs);
         schedule.setAssignments(assignments);
 
         // 11b. Pre-assign agents using break-aware construction
@@ -409,6 +413,20 @@ public class SolverService {
             }
         }
 
+        return configs;
+    }
+
+    // --- Day demand configs (per-day demand totals for bulk allocation constraints) ---
+
+    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
+        Map<LocalDate, Integer> demandPerDay = new HashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+        }
+        List<DayDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<LocalDate, Integer> e : demandPerDay.entrySet()) {
+            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        }
         return configs;
     }
 
