@@ -87,7 +87,7 @@ public class ConstraintWeights {
     @ConstraintWeight("Contracted hours")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "contracted_hours_weight")
-    private HardSoftScore contractedHoursWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore contractedHoursWeight = HardSoftScore.ofHard(1001);
 
     @ConstraintWeight("Bulk over-allocation limit")
     @Convert(converter = HardSoftScoreConverter.class)
