@@ -98,12 +98,10 @@ public class SolverService {
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        // Filter desk-agents: only active agents with specializations assigned
+        // Filter desk-agents: only active agents with primary specialization assigned
         List<DeskAgent> eligibleDeskAgents = allDeskAgents.stream()
                 .filter(da -> da.getAgent().isActive())
-                .filter(da -> da.getPrimarySpecialization() != null
-                        && da.getSecondarySpecializations() != null
-                        && !da.getSecondarySpecializations().isEmpty())
+                .filter(da -> da.getPrimarySpecialization() != null)
                 .toList();
 
         // Load agent IDs for eligible desk-agents
@@ -547,15 +545,13 @@ public class SolverService {
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
 
-        // 4. Every active desk-agent must have primary + at least one secondary specialization
+        // 4. Every active desk-agent must have a primary specialization
         for (DeskAgent da : allDeskAgents) {
             if (!da.getAgent().isActive()) continue;
-            if (da.getPrimarySpecialization() == null
-                    || da.getSecondarySpecializations() == null
-                    || da.getSecondarySpecializations().isEmpty()) {
+            if (da.getPrimarySpecialization() == null) {
                 errors.add(new ErrorDetail("deskAgent.specializations",
                         "Agent " + da.getAgent().getName()
-                                + " must have a primary and at least one secondary specialization",
+                                + " must have a primary specialization assigned",
                         da.getAgent().getId().toString()));
             }
         }
