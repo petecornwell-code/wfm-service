@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { schedules, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
@@ -423,8 +423,8 @@ function ViolationsTab({
         </thead>
         <tbody>
           {data.map(e => (
-            <>
-              <tr key={e.constraintName} style={{ cursor: 'pointer' }} onClick={() => onToggle(e.constraintName)}>
+            <Fragment key={e.constraintName}>
+              <tr style={{ cursor: 'pointer' }} onClick={() => onToggle(e.constraintName)}>
                 <td style={{ padding: '4px 8px', fontWeight: 500 }}>{e.constraintName}</td>
                 <td style={{ textAlign: 'center', padding: '4px 8px' }}>
                   <span style={{ padding: '0.1rem 0.4rem', borderRadius: '3px', fontSize: '0.75rem', fontWeight: 600,
@@ -450,7 +450,7 @@ function ViolationsTab({
                   </td>
                 </tr>
               ))}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>

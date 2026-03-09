@@ -388,7 +388,12 @@ public class ScheduleOutputService {
                 && da.getPrimarySpecialization().getId().equals(requiredSpec.getId())) {
             return "PRIMARY";
         }
-        return "SECONDARY";
+        if (da.getSecondarySpecializations() != null
+                && da.getSecondarySpecializations().stream()
+                        .anyMatch(s -> s.getId().equals(requiredSpec.getId()))) {
+            return "SECONDARY";
+        }
+        return "NONE";
     }
 
     private List<BreakDetail> findBreaks(List<AgentAssignment> sortedAssignments) {
