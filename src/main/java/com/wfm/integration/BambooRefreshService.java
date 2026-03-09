@@ -9,7 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -31,6 +31,7 @@ public class BambooRefreshService {
     private final DeskRepository deskRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final SpecializationRepository specializationRepository;
+    private final TransactionTemplate transactionTemplate;
 
     private final ConcurrentHashMap<UUID, Boolean> refreshInProgress = new ConcurrentHashMap<>();
 
@@ -44,13 +45,15 @@ public class BambooRefreshService {
                                 DeskAgentRepository deskAgentRepository,
                                 DeskRepository deskRepository,
                                 AgentDayOffRepository agentDayOffRepository,
-                                SpecializationRepository specializationRepository) {
+                                SpecializationRepository specializationRepository,
+                                TransactionTemplate transactionTemplate) {
         this.bambooHRClient = bambooHRClient;
         this.agentRepository = agentRepository;
         this.deskAgentRepository = deskAgentRepository;
         this.deskRepository = deskRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.specializationRepository = specializationRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
@@ -78,14 +81,16 @@ public class BambooRefreshService {
             List<BambooTimeOff> timeOffs = bambooHRClient.listTimeOff(String.valueOf(tenantId), from, to);
 
             // 3. Persist everything in a single transaction
-            persistRefreshData(deskId, tenantId, desk, employees, timeOffs, from, to);
+            // Use TransactionTemplate instead of @Transactional on a self-invoked method,
+            // which Spring proxies cannot intercept.
+            transactionTemplate.executeWithoutResult(status ->
+                    persistRefreshData(deskId, tenantId, desk, employees, timeOffs, from, to));
         } finally {
             refreshInProgress.remove(deskId);
         }
     }
 
-    @Transactional
-    protected void persistRefreshData(UUID deskId, long tenantId, Desk desk,
+    private void persistRefreshData(UUID deskId, long tenantId, Desk desk,
                                       List<BambooEmployee> employees,
                                       List<BambooTimeOff> timeOffs,
                                       LocalDate from, LocalDate to) {

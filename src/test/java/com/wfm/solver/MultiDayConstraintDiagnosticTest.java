@@ -71,7 +71,7 @@ class MultiDayConstraintDiagnosticTest {
 
         System.out.println("Score: " + score);
         System.out.println("Agents: " + schedule.getDeskAgents().size());
-        System.out.println("Days: " + java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1);
+        System.out.println("Days: " + (java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1));
         System.out.println("Timeslots: " + schedule.getTimeslots().size());
         System.out.println("Assignments: " + schedule.getAssignments().size());
         System.out.println("AgentDayConfigs: " + schedule.getAgentDayConfigs().size());
