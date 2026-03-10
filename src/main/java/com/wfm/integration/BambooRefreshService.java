@@ -150,7 +150,12 @@ public class BambooRefreshService {
                             agent.getName(), emp.id(), existing.getDeskId(), deskId);
                     continue;
                 }
-                // Already assigned to this desk — no action needed
+                // Already assigned to this desk — ensure "second" spec is present
+                if (existing.getSecondarySpecializations().stream()
+                        .noneMatch(s -> SECONDARY_SPECIALIZATION_NAME.equals(s.getName()))) {
+                    existing.getSecondarySpecializations().add(secondSpec);
+                    deskAgentRepository.save(existing);
+                }
             } else {
                 // New assignment to this desk
                 DeskAgent deskAgent = new DeskAgent();
