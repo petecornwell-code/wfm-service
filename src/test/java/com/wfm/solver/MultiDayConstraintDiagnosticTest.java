@@ -177,7 +177,7 @@ class MultiDayConstraintDiagnosticTest {
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic, second), CONTRACTED_HOURS);
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 
