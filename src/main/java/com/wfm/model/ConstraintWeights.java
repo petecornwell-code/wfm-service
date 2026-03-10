@@ -47,7 +47,7 @@ public class ConstraintWeights {
     @ConstraintWeight("Exactly one break")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "exactly_one_break_weight")
-    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(10);
+    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(100);
 
     @ConstraintWeight("Break duration")
     @Convert(converter = HardSoftScoreConverter.class)

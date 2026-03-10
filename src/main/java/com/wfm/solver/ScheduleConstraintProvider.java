@@ -163,7 +163,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     // Fully (or nearly fully) assigned: require exactly 1 gap
                     return countContiguousGaps(assignments, dayConfig.incrementMinutes()) != 1;
                 })
-                .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
+                .penalizeConfigurable((daId, date, assignments, dayConfig) -> {
+                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes());
+                    boolean needsBreak = dayConfig.effectiveHours()
+                            .compareTo(dayConfig.breakMinShiftHours()) > 0;
+                    int expectedGaps = needsBreak ? 1 : 0;
+                    return Math.abs(gaps - expectedGaps);
+                })
                 .asConstraint("Exactly one break");
     }
 
