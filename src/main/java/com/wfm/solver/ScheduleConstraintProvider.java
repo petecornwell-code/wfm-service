@@ -332,9 +332,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint contractedHoursUnderZero(ConstraintFactory factory) {
         return factory.forEach(AgentDayConfig.class)
                 .ifNotExists(AgentAssignment.class,
-                        filtering((dayConfig, a) -> a.getDeskAgent() != null
-                                && a.getDeskAgent().getId().equals(dayConfig.deskAgentId())
-                                && a.getTimeslot().getDate().equals(dayConfig.date())))
+                        equal(AgentDayConfig::deskAgentId, a -> a.getDeskAgent() != null ? a.getDeskAgent().getId() : null),
+                        equal(AgentDayConfig::date, a -> a.getTimeslot().getDate()))
                 .penalizeConfigurable(dayConfig -> {
                     return dayConfig.effectiveHours()
                             .multiply(BigDecimal.valueOf(60))

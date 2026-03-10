@@ -304,10 +304,11 @@ public class SolverService {
         }
         if (request.breakClusterThresholdPct() != null) s.setBreakClusterThresholdPct(request.breakClusterThresholdPct());
 
-        // defaultContractedHoursPerDay: use request value, else inherit from Desk (spec §5.12)
+        // defaultContractedHoursPerDay: use request value, else inherit from Desk, else keep
+        // the Schedule field default (8.00) — null would prevent AgentDayConfig creation
         if (request.defaultContractedHoursPerDay() != null) {
             s.setDefaultContractedHoursPerDay(request.defaultContractedHoursPerDay());
-        } else {
+        } else if (desk.getDefaultContractedHoursPerDay() != null) {
             s.setDefaultContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
         }
 

@@ -1,5 +1,6 @@
 package com.wfm.model;
 
+import ai.timefold.solver.core.api.domain.lookup.PlanningId;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.UUID;
 })
 public class DeskAgent {
 
+    @PlanningId
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
