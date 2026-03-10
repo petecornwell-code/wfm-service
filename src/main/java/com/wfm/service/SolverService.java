@@ -472,7 +472,7 @@ public class SolverService {
             BigDecimal effectiveHours = adc.effectiveHours();
             long slots = effectiveHours
                     .multiply(BigDecimal.valueOf(60))
-                    .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.FLOOR)
+                    .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.HALF_UP)
                     .longValue();
             totalSupplySlots += slots;
             totalSupplyHours = totalSupplyHours.add(effectiveHours);

@@ -97,10 +97,12 @@ public class BreakAwareConstructionPhase {
                 demandPerSlot.put(e.getKey(), e.getValue().size());
             }
 
-            // Compute break plans using the full coverage window
+            // Compute break plans using the full coverage window for positions,
+            // but demand-bounded times for the blocked zone so breaks don't
+            // end up at the edges of the demand window (causing geometry violations).
             List<AgentBreakPlan> breakPlans = computeBreakPlans(
                     deskAgents, dayConfigMap, daysOffSet, date,
-                    allSlotTimes, increment, demandPerSlot);
+                    allSlotTimes, demandSlotTimes, increment, demandPerSlot);
 
             // Compute each agent's working slot times (contiguous block around break,
             // limited to their contracted hours). All agents get their full
@@ -303,9 +305,15 @@ public class BreakAwareConstructionPhase {
         // demand slots in the window. This steers agents toward under-served
         // slots (edges of the day) rather than always centering on break.
         // Break-center distance is used as tiebreaker for natural shift shapes.
+        //
+        // Windows that provide the full workSlotCount of demand work slots are
+        // always preferred over windows that lose slots to non-demand positions
+        // (coverage wider than demand). This prevents agents from being placed
+        // at day edges where non-demand timeslots eat into their contracted hours.
         int bestWindowStart = -1;
         int bestDemandScore = -1;
         int bestCenterDist = Integer.MAX_VALUE;
+        int bestWorkSlots = -1;
 
         int breakMidIdx = (breakStartIdx >= 0 && breakEndIdx >= 0)
                 ? (breakStartIdx + breakEndIdx) / 2 : allSlotTimes.size() / 2;
@@ -323,10 +331,12 @@ public class BreakAwareConstructionPhase {
             // Score: sum of remaining demand for non-break demand slots in window.
             // Higher score = window covers more under-served slots.
             int demandScore = 0;
+            int windowWorkSlots = 0;
             for (int i = windowStart; i <= windowEnd; i++) {
                 LocalTime t = allSlotTimes.get(i);
                 if (!breakSlots.contains(t) && demandSet.contains(t)) {
                     demandScore += Math.max(0, remainingDemand.getOrDefault(t, 0));
+                    windowWorkSlots++;
                 }
             }
 
@@ -334,8 +344,13 @@ public class BreakAwareConstructionPhase {
             int windowMid = (windowStart + windowEnd) / 2;
             int centerDist = Math.abs(windowMid - breakMidIdx);
 
-            if (demandScore > bestDemandScore
-                    || (demandScore == bestDemandScore && centerDist < bestCenterDist)) {
+            // Prefer windows with more work slots (avoids non-demand slot overlap),
+            // then higher demand score, then closer to break center.
+            if (windowWorkSlots > bestWorkSlots
+                    || (windowWorkSlots == bestWorkSlots && demandScore > bestDemandScore)
+                    || (windowWorkSlots == bestWorkSlots && demandScore == bestDemandScore
+                        && centerDist < bestCenterDist)) {
+                bestWorkSlots = windowWorkSlots;
                 bestDemandScore = demandScore;
                 bestCenterDist = centerDist;
                 bestWindowStart = windowStart;
@@ -349,6 +364,39 @@ public class BreakAwareConstructionPhase {
                 LocalTime t = allSlotTimes.get(i);
                 if (!breakSlots.contains(t) && demandSet.contains(t)) {
                     result.add(t);
+                }
+            }
+
+            // When the window contains non-demand slots (coverage wider than demand),
+            // the agent gets fewer work slots than workSlotCount. Extend outward to
+            // pick up CONTIGUOUS demand slots so the agent reaches their contracted
+            // hours without creating extra gaps (which would violate break geometry).
+            if (result.size() < workSlotCount) {
+                // Find the current extent of the result in allSlotTimes
+                TreeSet<LocalTime> sortedResult = new TreeSet<>(result);
+                sortedResult.addAll(breakSlots); // include break for contiguity check
+
+                // Extend forward: add demand slots contiguous with the current last slot
+                LocalTime lastSlot = sortedResult.last();
+                for (int i = 0; i < allSlotTimes.size() && result.size() < workSlotCount; i++) {
+                    LocalTime nextSlot = lastSlot.plusMinutes(increment);
+                    int nextIdx = allSlotTimes.indexOf(nextSlot);
+                    if (nextIdx < 0) break; // no more slots
+                    if (!breakSlots.contains(nextSlot) && demandSet.contains(nextSlot)) {
+                        result.add(nextSlot);
+                    }
+                    lastSlot = nextSlot;
+                }
+
+                // Extend backward: add demand slots contiguous with the current first slot
+                LocalTime firstSlot = sortedResult.first();
+                for (int i = 0; i < allSlotTimes.size() && result.size() < workSlotCount; i++) {
+                    LocalTime prevSlot = firstSlot.minusMinutes(increment);
+                    if (!allSlotTimes.contains(prevSlot)) break;
+                    if (!breakSlots.contains(prevSlot) && demandSet.contains(prevSlot)) {
+                        result.add(prevSlot);
+                    }
+                    firstSlot = prevSlot;
                 }
             }
         }
@@ -964,6 +1012,7 @@ public class BreakAwareConstructionPhase {
             Set<String> daysOffSet,
             LocalDate date,
             List<LocalTime> sortedSlotTimes,
+            List<LocalTime> demandSlotTimes,
             int increment,
             Map<LocalTime, Integer> demandPerSlot) {
 
@@ -992,7 +1041,7 @@ public class BreakAwareConstructionPhase {
             int breakSlotCount = config.breakDurationMinutes() / increment;
 
             List<LocalTime> eligibleStarts = findEligibleBreakStarts(
-                    sortedSlotTimes, breakSlotCount, increment, config);
+                    sortedSlotTimes, demandSlotTimes, breakSlotCount, increment, config);
 
             if (eligibleStarts.isEmpty()) {
                 // No valid break position — assign without break; constraints will penalize
@@ -1047,14 +1096,21 @@ public class BreakAwareConstructionPhase {
 
     private List<LocalTime> findEligibleBreakStarts(
             List<LocalTime> sortedSlotTimes,
+            List<LocalTime> demandSlotTimes,
             int breakSlotCount,
             int increment,
             AgentDayConfig config) {
 
         if (sortedSlotTimes.isEmpty()) return List.of();
 
-        LocalTime shiftStart = sortedSlotTimes.get(0);
-        LocalTime shiftEnd = sortedSlotTimes.get(sortedSlotTimes.size() - 1)
+        // Use the demand window (not the full coverage window) for the blocked zone.
+        // This ensures breaks are placed where agents can have work BOTH before and
+        // after the break, avoiding breaks at the edges of the demand window that
+        // would fall outside the agent's work span and violate break geometry.
+        List<LocalTime> blockedBasis = (demandSlotTimes != null && !demandSlotTimes.isEmpty())
+                ? demandSlotTimes : sortedSlotTimes;
+        LocalTime shiftStart = blockedBasis.get(0);
+        LocalTime shiftEnd = blockedBasis.get(blockedBasis.size() - 1)
                 .plusMinutes(increment);
 
         long blockedMinutes = config.breakBlockedHours()
