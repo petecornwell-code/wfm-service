@@ -94,6 +94,11 @@ public class ConstraintWeights {
     @Column(name = "contracted_hours_under_weight")
     private HardSoftScore contractedHoursUnderWeight = HardSoftScore.ofHard(1);
 
+    @ConstraintWeight("Contracted hours (under, zero)")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "contracted_hours_under_zero_weight")
+    private HardSoftScore contractedHoursUnderZeroWeight = HardSoftScore.ofHard(1);
+
     @ConstraintWeight("Bulk over-allocation limit")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "bulk_overallocation_limit_weight")
@@ -161,6 +166,9 @@ public class ConstraintWeights {
 
     public HardSoftScore getContractedHoursUnderWeight() { return contractedHoursUnderWeight; }
     public void setContractedHoursUnderWeight(HardSoftScore contractedHoursUnderWeight) { this.contractedHoursUnderWeight = contractedHoursUnderWeight; }
+
+    public HardSoftScore getContractedHoursUnderZeroWeight() { return contractedHoursUnderZeroWeight; }
+    public void setContractedHoursUnderZeroWeight(HardSoftScore contractedHoursUnderZeroWeight) { this.contractedHoursUnderZeroWeight = contractedHoursUnderZeroWeight; }
 
     public HardSoftScore getBulkOverallocationLimitWeight() { return bulkOverallocationLimitWeight; }
     public void setBulkOverallocationLimitWeight(HardSoftScore bulkOverallocationLimitWeight) { this.bulkOverallocationLimitWeight = bulkOverallocationLimitWeight; }

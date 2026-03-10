@@ -31,6 +31,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             breakClustering(factory),
             contractedHoursOver(factory),
             contractedHoursUnder(factory),
+            contractedHoursUnderZero(factory),
             bulkOverallocationLimit(factory),
             bulkUnderallocationSoft(factory),
             bulkUnderallocationHard(factory),
@@ -280,8 +281,10 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
     /**
      * 12b. Contracted hours (under) — penalises agents assigned FEWER than their
-     * effective contracted hours. Weight is below unassigned-assignment so the
-     * solver prefers filling seats with partial shifts over leaving seats empty.
+     * effective contracted hours.
+     *
+     * <p>Handles agents with at least one assignment: groups by (agent, date),
+     * counts assignments, and penalises the shortfall below expected slots.
      */
     private Constraint contractedHoursUnder(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -308,6 +311,28 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     return expectedSlots - assignmentCount;
                 })
                 .asConstraint("Contracted hours (under)");
+    }
+
+    /**
+     * 12c. Contracted hours (under, zero assignments) — penalises agents who have
+     * an {@link AgentDayConfig} (i.e. are expected to work) but have NO assignments
+     * at all on that day. The standard contractedHoursUnder constraint starts from
+     * {@link AgentAssignment} and cannot see agents with zero assignments. This
+     * ensures the solver has a hard incentive to assign every contracted agent.
+     */
+    private Constraint contractedHoursUnderZero(ConstraintFactory factory) {
+        return factory.forEach(AgentDayConfig.class)
+                .ifNotExists(AgentAssignment.class,
+                        filtering((dayConfig, a) -> a.getDeskAgent() != null
+                                && a.getDeskAgent().getId().equals(dayConfig.deskAgentId())
+                                && a.getTimeslot().getDate().equals(dayConfig.date())))
+                .penalizeConfigurable(dayConfig -> {
+                    return dayConfig.effectiveHours()
+                            .multiply(BigDecimal.valueOf(60))
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                            .intValue();
+                })
+                .asConstraint("Contracted hours (under, zero)");
     }
 
     /**

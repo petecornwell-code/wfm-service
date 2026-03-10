@@ -474,7 +474,8 @@ public class BreakAwareConstructionPhase {
                 int current = assignmentCounts.getOrDefault(daId, 0);
                 int expected = expectedSlots.getOrDefault(daId, 0);
 
-                // Only extend agents who are under-assigned — never over-assign
+                // Prefer under-assigned agents; allow over-assignment only
+                // when no under-assigned agent is available (handled by overage score)
                 if (current >= expected) continue;
 
                 // Only assign to adjacent slots to maintain contiguous shift blocks
