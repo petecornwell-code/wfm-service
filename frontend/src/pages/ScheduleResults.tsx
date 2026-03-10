@@ -13,7 +13,7 @@ export default function ScheduleResults() {
   const { deskId, scheduleId } = useParams<{ deskId: string; scheduleId: string }>()
   const navigate = useNavigate()
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null)
-  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'preferences' | 'violations'>('staffing')
+  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'violations'>('staffing')
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
@@ -204,11 +204,11 @@ export default function ScheduleResults() {
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0', marginBottom: '1rem' }}>
-        {(['staffing', 'agents', 'preferences', 'violations'] as const).map(tab => (
+      <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        {(['staffing', 'agents', 'allocation', 'preferences', 'violations'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ background: activeTab === tab ? '#3b82f6' : '#e5e7eb', color: activeTab === tab ? '#fff' : '#374151', borderRadius: 0, padding: '0.5rem 1.25rem' }}>
-            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'preferences' ? 'Preference Report' : 'Constraint Violations'}
+            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : 'Constraint Violations'}
           </button>
         ))}
       </div>
@@ -217,6 +217,7 @@ export default function ScheduleResults() {
       <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', overflowX: 'auto' }}>
         {activeTab === 'staffing' && <StaffingTab data={filteredStaffing} />}
         {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} />}
+        {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} />}
         {activeTab === 'preferences' && <PreferenceTab schedule={schedule} dateFilter={dateFilter} />}
         {activeTab === 'violations' && (
           <ViolationsTab
@@ -230,6 +231,182 @@ export default function ScheduleResults() {
       </div>
     </>
   )
+}
+
+function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilter: string }) {
+  const agentSchedule = schedule.agentSchedule || []
+  const violations = schedule.constraintViolations || []
+
+  // Collect agent IDs that have hard constraint violations
+  const failedAgentIds = new Set<string>()
+  for (const cv of violations) {
+    if (cv.level !== 'HARD') continue
+    for (const v of cv.violations || []) {
+      if (v.agentId) failedAgentIds.add(v.agentId)
+    }
+  }
+
+  // Filter by date
+  const filtered = dateFilter ? agentSchedule.filter(e => e.date === dateFilter) : agentSchedule
+
+  if (filtered.length === 0) return <p style={{ color: '#6b7280' }}>No agent allocation data available.</p>
+
+  // Get unique dates
+  const dates = [...new Set(filtered.map(e => e.date))].sort()
+
+  return (
+    <>
+      {dates.map(date => {
+        const dayEntries = filtered.filter(e => e.date === date)
+
+        // Collect all timeslot start times for this day from assignments and breaks
+        const slotSet = new Set<string>()
+        for (const entry of dayEntries) {
+          for (const a of entry.assignments) slotSet.add(a.startTime)
+          for (const b of entry.breaks) {
+            // Break may span multiple slots; derive each slot start from the break range
+            const inc = entry.assignments.length > 0
+              ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+              : 0
+            if (inc > 0) {
+              let t = b.startTime
+              while (t < b.endTime) {
+                slotSet.add(t)
+                t = addMinutes(t, inc)
+              }
+            } else {
+              slotSet.add(b.startTime)
+            }
+          }
+        }
+        const slots = [...slotSet].sort()
+
+        // Sort agents by name
+        const sortedEntries = [...dayEntries].sort((a, b) => a.agentName.localeCompare(b.agentName))
+
+        // Count agents working per slot
+        const agentsPerSlot: Record<string, number> = {}
+        for (const slot of slots) agentsPerSlot[slot] = 0
+        for (const entry of sortedEntries) {
+          for (const a of entry.assignments) {
+            if (agentsPerSlot[a.startTime] !== undefined) agentsPerSlot[a.startTime]++
+          }
+        }
+
+        return (
+          <div key={date} style={{ marginBottom: '2rem' }}>
+            <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
+                    {slots.map(slot => (
+                      <th key={slot} style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb' }}>
+                        {slot.substring(0, 5)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedEntries.map(entry => {
+                    const isFailed = failedAgentIds.has(entry.agentId)
+                    // Build lookup for this agent's slot status
+                    const workSlots = new Set(entry.assignments.map(a => a.startTime))
+                    const matchTypes: Record<string, string> = {}
+                    for (const a of entry.assignments) matchTypes[a.startTime] = a.matchType
+
+                    const breakSlots = new Set<string>()
+                    const inc = entry.assignments.length > 0
+                      ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+                      : 0
+                    for (const b of entry.breaks) {
+                      if (inc > 0) {
+                        let t = b.startTime
+                        while (t < b.endTime) {
+                          breakSlots.add(t)
+                          t = addMinutes(t, inc)
+                        }
+                      } else {
+                        breakSlots.add(b.startTime)
+                      }
+                    }
+
+                    return (
+                      <tr key={entry.agentId + entry.date}>
+                        <td style={{
+                          padding: '3px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1,
+                          fontWeight: 500, color: isFailed ? '#dc2626' : '#111827',
+                        }}>
+                          {entry.agentName}
+                        </td>
+                        {slots.map(slot => {
+                          const isWork = workSlots.has(slot)
+                          const isBreak = breakSlots.has(slot)
+                          let bg = '#fff'
+                          let label = ''
+                          if (isWork) {
+                            const mt = matchTypes[slot]
+                            bg = MATCH_COLORS[mt] || '#dcfce7'
+                            label = mt === 'SECONDARY' ? 'S' : ''
+                          } else if (isBreak) {
+                            bg = '#e5e7eb'
+                            label = 'B'
+                          }
+                          return (
+                            <td key={slot} style={{
+                              padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
+                              background: bg, fontSize: '0.7rem', color: '#6b7280',
+                            }}>
+                              {label}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                  {/* Total row */}
+                  <tr style={{ fontWeight: 700, background: '#f9fafb', borderTop: '2px solid #d1d5db' }}>
+                    <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1 }}>
+                      Total: {sortedEntries.length} agents
+                    </td>
+                    {slots.map(slot => (
+                      <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }}>
+                        {agentsPerSlot[slot] || ''}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.PRIMARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (primary)</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (secondary) S</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>
+            </div>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+/** Parse "HH:MM" or "HH:MM:SS" time difference in minutes */
+function timeDiffMinutes(start: string, end: string): number {
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return (eh * 60 + em) - (sh * 60 + sm)
+}
+
+/** Add minutes to a "HH:MM" or "HH:MM:SS" time string, return "HH:MM" */
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number)
+  const total = h * 60 + m + minutes
+  const nh = Math.floor(total / 60) % 24
+  const nm = total % 60
+  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
 }
 
 function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
