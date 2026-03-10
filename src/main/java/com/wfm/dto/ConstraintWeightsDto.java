@@ -3,6 +3,7 @@ package com.wfm.dto;
 public class ConstraintWeightsDto {
     public record ScoreDto(Integer hardScore, Integer softScore) {}
 
+    private ScoreDto unassignedAssignmentWeight;
     private ScoreDto agentDayOffWeight;
     private ScoreDto specMatchWeight;
     private ScoreDto noOverlapWeight;
@@ -21,6 +22,8 @@ public class ConstraintWeightsDto {
     private ScoreDto bulkUnderallocationHardWeight;
 
     // Getters and setters
+    public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
+    public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
     public ScoreDto getAgentDayOffWeight() { return agentDayOffWeight; }
     public void setAgentDayOffWeight(ScoreDto v) { this.agentDayOffWeight = v; }
     public ScoreDto getSpecMatchWeight() { return specMatchWeight; }

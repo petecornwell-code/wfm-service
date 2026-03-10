@@ -42,6 +42,9 @@ public class ConstraintWeightsService {
                 .orElseThrow(() -> new EntityNotFoundException("ConstraintWeights not found for desk " + deskId));
 
         // Partial update: only non-null fields in the DTO are applied
+        if (updates.getUnassignedAssignmentWeight() != null) {
+            weights.setUnassignedAssignmentWeight(toScore(updates.getUnassignedAssignmentWeight()));
+        }
         if (updates.getAgentDayOffWeight() != null) {
             weights.setAgentDayOffWeight(toScore(updates.getAgentDayOffWeight()));
         }
@@ -97,6 +100,7 @@ public class ConstraintWeightsService {
 
     private ConstraintWeightsDto toDto(ConstraintWeights w) {
         ConstraintWeightsDto dto = new ConstraintWeightsDto();
+        dto.setUnassignedAssignmentWeight(fromScore(w.getUnassignedAssignmentWeight()));
         dto.setAgentDayOffWeight(fromScore(w.getAgentDayOffWeight()));
         dto.setSpecMatchWeight(fromScore(w.getSpecMatchWeight()));
         dto.setNoOverlapWeight(fromScore(w.getNoOverlapWeight()));
