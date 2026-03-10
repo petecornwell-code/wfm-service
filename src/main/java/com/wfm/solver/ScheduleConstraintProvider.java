@@ -124,10 +124,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * Agents at or below the threshold must have no gap.
      * Uses AgentDayConfig for exception-aware effective hours.
      *
-     * <p>CH-friendly: during incremental construction (agent has fewer than their
-     * expected work slots), only penalizes multiple gaps (fragmented shifts).
-     * Zero gaps during construction is OK — the break gap will form as the
-     * shift is completed. Once the shift is fully populated, requires exactly 1 gap.
+     * <p>CH-friendly: only fires once the agent has enough assigned slots to
+     * form a meaningful shift. During construction, an agent with 1-2 slots
+     * should NOT be penalised for missing a break — the break gap will form
+     * as the shift is completed. This prevents the constraint from blocking
+     * CH progress regardless of its weight.
      */
     private Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -142,17 +143,25 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
-                    int gapCount = countContiguousGaps(assignments, dayConfig.incrementMinutes());
-
-                    if (needsBreak) {
-                        // Always require exactly 1 gap. At weight 10, this gives the CH
-                        // incremental feedback to create breaks during construction
-                        // without blocking progress (contracted hours benefit of 100
-                        // per slot always exceeds break penalty of 10).
-                        return gapCount != 1;
-                    } else {
-                        return gapCount != 0;
+                    if (!needsBreak) {
+                        // Agent's contracted hours don't require a break — penalise any gap
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes()) != 0;
                     }
+
+                    // Only enforce break rule once agent has enough slots to need one.
+                    // breakMinShiftHours is the threshold (e.g. 4h). Until the agent has
+                    // at least that many slots, don't penalise — CH is still building.
+                    int breakThresholdSlots = dayConfig.breakMinShiftHours()
+                            .multiply(BigDecimal.valueOf(60))
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, java.math.RoundingMode.CEILING)
+                            .intValue();
+                    if (assignments.size() < breakThresholdSlots) {
+                        // During construction: only penalise fragmented shifts (>1 gap)
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes()) > 1;
+                    }
+
+                    // Fully (or nearly fully) assigned: require exactly 1 gap
+                    return countContiguousGaps(assignments, dayConfig.incrementMinutes()) != 1;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Exactly one break");

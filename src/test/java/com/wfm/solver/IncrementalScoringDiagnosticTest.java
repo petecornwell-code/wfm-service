@@ -114,10 +114,15 @@ class IncrementalScoringDiagnosticTest {
             }
         });
 
-        // The assignment should IMPROVE the score
+        // The assignment should IMPROVE the score.
+        // With the exactlyOneBreak fix (doesn't fire for < breakMinShiftHours slots),
+        // the delta is: +800 (underZero removed) -700 (under added) +1 (bulk) = +101 hard
         assertThat(afterScore.hardScore())
                 .as("Assigning one agent should improve hard score")
                 .isGreaterThan(initialScore.hardScore());
+        assertThat(afterScore.hardScore() - initialScore.hardScore())
+                .as("Hard score delta should be +101 (no break penalty for 1 slot)")
+                .isEqualTo(101);
     }
 
     @Test
