@@ -337,6 +337,7 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                 <thead>
                   <tr>
                     <th style={{ textAlign: 'left', padding: '4px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
+                    <th style={{ textAlign: 'right', padding: '4px 6px', background: '#f3f4f6', fontWeight: 600 }}>Hours</th>
                     {slots.map(slot => {
                       const unfilled = unfilledPerSlot[slot] > 0
                       return (
@@ -383,6 +384,9 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                         }}>
                           {entry.agentName}
                         </td>
+                        <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', color: '#374151', background: '#f9fafb' }}>
+                          {Number(entry.totalHours).toFixed(1)}
+                        </td>
                         {slots.map(slot => {
                           const isWork = workSlots.has(slot)
                           const isBreak = breakSlots.has(slot)
@@ -413,6 +417,9 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                     <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1 }}>
                       Total: {sortedEntries.length} agents
                     </td>
+                    <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', background: '#f9fafb' }}>
+                      {sortedEntries.reduce((sum, e) => sum + Number(e.totalHours), 0).toFixed(1)}
+                    </td>
                     {slots.map(slot => (
                       <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }}>
                         {agentsPerSlot[slot] || ''}
@@ -425,6 +432,7 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                       <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#fef2f2', zIndex: 1, color: '#991b1b' }}>
                         Unfilled
                       </td>
+                      <td style={{ background: '#fef2f2' }} />
                       {slots.map(slot => (
                         <td key={slot} style={{
                           padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #fca5a5',
