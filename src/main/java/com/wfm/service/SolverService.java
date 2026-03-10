@@ -201,6 +201,10 @@ public class SolverService {
         log.info("All {} assignments start unassigned — solver CH will build initial solution",
                 assignments.size());
 
+        // 11c. Pre-solve score diagnostic: verify score delta for one assignment
+        // Detects broken incremental scoring that would cause CH to pick {null -> null}
+        runPreSolveScoreDiagnostic(schedule);
+
         // 12. Store in memory and start solver asynchronously
         log.info("Starting solver — schedule={}, period={} to {}, assignments={}",
                 schedule.getId(), schedule.getPeriodStartDate(), schedule.getPeriodEndDate(),
@@ -784,5 +788,74 @@ public class SolverService {
             }
         }
         return assignments;
+    }
+
+    /**
+     * Pre-solve diagnostic: scores the initial state, assigns one agent to one seat,
+     * re-scores, and logs the delta. Detects broken incremental scoring that would
+     * cause the CH to pick {null -> null} for every step.
+     */
+    private void runPreSolveScoreDiagnostic(Schedule schedule) {
+        try {
+            var solverFactory = ai.timefold.solver.core.api.solver.SolverFactory.<Schedule>create(
+                    new ai.timefold.solver.core.config.solver.SolverConfig()
+                            .withSolutionClass(Schedule.class)
+                            .withEntityClasses(AgentAssignment.class)
+                            .withScoreDirectorFactory(
+                                    new ai.timefold.solver.core.config.score.director.ScoreDirectorFactoryConfig()
+                                            .withConstraintProviderClass(com.wfm.solver.ScheduleConstraintProvider.class)));
+
+            var sm = ai.timefold.solver.core.api.solver.SolutionManager
+                    .<Schedule, ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore>create(solverFactory);
+
+            // Score initial state
+            var initialScore = sm.update(schedule);
+            log.info("Pre-solve diagnostic — initial score: {}", initialScore);
+
+            // Print constraint breakdown
+            var explanation = sm.explain(schedule);
+            explanation.getConstraintMatchTotalMap().forEach((name, total) -> {
+                if (!total.getScore().equals(ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore.ZERO)) {
+                    log.info("  {} => {} (count: {})", name, total.getScore(), total.getConstraintMatchCount());
+                }
+            });
+
+            // Try assigning one agent to one seat
+            if (!schedule.getDeskAgents().isEmpty() && !schedule.getAssignments().isEmpty()) {
+                DeskAgent testAgent = schedule.getDeskAgents().get(0);
+                AgentAssignment testAssignment = schedule.getAssignments().get(0);
+
+                testAssignment.setDeskAgent(testAgent);
+                var afterScore = sm.update(schedule);
+
+                int hardDelta = afterScore.hardScore() - initialScore.hardScore();
+                int softDelta = afterScore.softScore() - initialScore.softScore();
+
+                log.info("Pre-solve diagnostic — after 1 assignment: {} (delta: {}hard/{}soft)",
+                        afterScore, hardDelta, softDelta);
+
+                if (hardDelta <= 0) {
+                    log.error("DIAGNOSTIC FAILURE: assigning agent {} to timeslot {} makes score WORSE "
+                            + "(delta={}hard). The CH will pick null for every step!",
+                            testAgent.getAgent().getName(),
+                            testAssignment.getTimeslot().getStartTime(),
+                            hardDelta);
+
+                    // Print the after-assignment constraint breakdown
+                    var afterExplanation = sm.explain(schedule);
+                    afterExplanation.getConstraintMatchTotalMap().forEach((name, total) -> {
+                        if (!total.getScore().equals(ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore.ZERO)) {
+                            log.error("  {} => {} (count: {})", name, total.getScore(), total.getConstraintMatchCount());
+                        }
+                    });
+                }
+
+                // Revert the test assignment
+                testAssignment.setDeskAgent(null);
+                sm.update(schedule);
+            }
+        } catch (Exception e) {
+            log.warn("Pre-solve diagnostic failed (non-fatal): {}", e.getMessage());
+        }
     }
 }
