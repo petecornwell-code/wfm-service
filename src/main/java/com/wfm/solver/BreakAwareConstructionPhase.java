@@ -236,6 +236,15 @@ public class BreakAwareConstructionPhase {
             totalAssigned -= repairBreakGeometry(breakPlans, slotMap, demandSlotTimes,
                     increment, assignmentCounts);
 
+            // --- Fill underassigned agents ---
+            // After break repair removes outer blocks, some agents end up with
+            // fewer assignments than their contracted hours. Extend their shifts
+            // at the edges using existing unassigned demand seats only (no overflow
+            // seats, which destabilize the solver's local search).
+            totalAssigned += fillUnderassignedAgents(
+                    breakPlans, slotMap, demandSlotTimes, increment,
+                    assignmentCounts, dayConfigMap, date);
+
         }
 
         return totalAssigned;
@@ -568,6 +577,101 @@ public class BreakAwareConstructionPhase {
         } // end for pass
 
         return assigned;
+    }
+
+    /**
+     * Fills underassigned agents by extending their shifts at the edges using
+     * existing unassigned demand seats. Does NOT create overflow seats (which
+     * destabilize the solver's local search phase).
+     *
+     * <p>After repairBreakGeometry removes outer blocks from agents with unfillable
+     * gaps, some agents end up with fewer assignments than their contracted hours.
+     * This pass identifies those agents and extends their contiguous shift block
+     * by claiming adjacent unassigned seats until contracted hours are met.
+     */
+    private int fillUnderassignedAgents(
+            List<AgentBreakPlan> breakPlans,
+            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
+            List<LocalTime> demandSlotTimes,
+            int increment,
+            Map<UUID, Integer> assignmentCounts,
+            Map<String, AgentDayConfig> dayConfigMap,
+            LocalDate date) {
+
+        int totalFilled = 0;
+        Set<LocalTime> demandSet = new HashSet<>(demandSlotTimes);
+
+        for (AgentBreakPlan plan : breakPlans) {
+            DeskAgent da = plan.deskAgent;
+            UUID daId = da.getId();
+
+            AgentDayConfig config = dayConfigMap.get(daId + "|" + date);
+            if (config == null) continue;
+
+            int expectedSlots = config.effectiveHours()
+                    .multiply(BigDecimal.valueOf(60))
+                    .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
+                    .intValue();
+
+            int currentCount = assignmentCounts.getOrDefault(daId, 0);
+            if (currentCount >= expectedSlots) continue;
+
+            // Collect this agent's current assigned slot times
+            TreeSet<LocalTime> assignedTimes = new TreeSet<>();
+            for (LocalTime slotTime : demandSlotTimes) {
+                for (AgentAssignment seat : slotMap.get(slotTime)) {
+                    if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                        assignedTimes.add(slotTime);
+                    }
+                }
+            }
+
+            if (assignedTimes.isEmpty()) continue;
+
+            // Extend the shift at both edges, alternating to maintain centering
+            int shortfall = expectedSlots - currentCount;
+            for (int i = 0; i < shortfall; i++) {
+                // Try extending forward (after shift end)
+                LocalTime afterEnd = assignedTimes.last().plusMinutes(increment);
+                boolean extendedForward = false;
+                // Skip forward over break slots
+                while (plan.breakSlots.contains(afterEnd)) {
+                    afterEnd = afterEnd.plusMinutes(increment);
+                }
+                if (demandSet.contains(afterEnd) && slotMap.containsKey(afterEnd)) {
+                    AgentAssignment seat = findBestSeat(da, slotMap.get(afterEnd));
+                    if (seat != null) {
+                        seat.setDeskAgent(da);
+                        seat.setAgent(da.getAgent());
+                        assignmentCounts.merge(daId, 1, Integer::sum);
+                        assignedTimes.add(afterEnd);
+                        totalFilled++;
+                        extendedForward = true;
+                    }
+                }
+
+                if (extendedForward) continue;
+
+                // Try extending backward (before shift start)
+                LocalTime beforeStart = assignedTimes.first().minusMinutes(increment);
+                // Skip backward over break slots
+                while (plan.breakSlots.contains(beforeStart)) {
+                    beforeStart = beforeStart.minusMinutes(increment);
+                }
+                if (demandSet.contains(beforeStart) && slotMap.containsKey(beforeStart)) {
+                    AgentAssignment seat = findBestSeat(da, slotMap.get(beforeStart));
+                    if (seat != null) {
+                        seat.setDeskAgent(da);
+                        seat.setAgent(da.getAgent());
+                        assignmentCounts.merge(daId, 1, Integer::sum);
+                        assignedTimes.add(beforeStart);
+                        totalFilled++;
+                    }
+                }
+            }
+        }
+
+        return totalFilled;
     }
 
     /**
