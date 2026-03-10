@@ -195,11 +195,12 @@ class BreakAwareConstructionTest {
         int demandPerSlot = 25; // max feasible: 30 agents - 5 on break at peak
 
         Specialization basic = spec(deskId, "Basic");
+        Specialization second = spec(deskId, "second");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic), contractedHours);
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic, second), contractedHours);
             deskAgentList.add(da);
         }
 
@@ -364,13 +365,14 @@ class BreakAwareConstructionTest {
         UUID scheduleId = UUID.randomUUID();
 
         Specialization basic = spec(deskId, "Basic");
+        Specialization second = spec(deskId, "second");
 
         // 150 agents
         List<DeskAgent> deskAgentList = new ArrayList<>(150);
         int id = 1;
         for (int i = 0; i < 150; i++) {
             Agent a = agent(String.valueOf(id), "Agent-" + id);
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic), CONTRACTED_HOURS);
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic, second), CONTRACTED_HOURS);
             deskAgentList.add(da);
             id++;
         }
@@ -487,11 +489,12 @@ class BreakAwareConstructionTest {
         int increment = 15;
 
         Specialization billing = spec(deskId, "Billing");
+        Specialization second = spec(deskId, "second");
 
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");
-        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(billing), new BigDecimal("8.00"));
-        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(billing), new BigDecimal("8.00"));
+        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(billing, second), new BigDecimal("8.00"));
+        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(billing, second), new BigDecimal("8.00"));
 
         // 36 timeslots: 08:00-17:00 in 15-min increments
         List<Timeslot> timeslots = new ArrayList<>();
@@ -596,12 +599,13 @@ class BreakAwareConstructionTest {
         BigDecimal contractedHours = new BigDecimal("8.00");
 
         Specialization basic = spec(deskId, "Basic");
+        Specialization second = spec(deskId, "second");
 
         // 150 agents
         List<DeskAgent> deskAgentList = new ArrayList<>(150);
         for (int i = 0; i < 150; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic), contractedHours);
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(basic, second), contractedHours);
             deskAgentList.add(da);
         }
 

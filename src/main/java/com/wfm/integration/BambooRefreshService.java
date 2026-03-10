@@ -39,6 +39,7 @@ public class BambooRefreshService {
     private int lookaheadWeeks;
 
     private static final String DEFAULT_SPECIALIZATION_NAME = "Basic";
+    private static final String SECONDARY_SPECIALIZATION_NAME = "second";
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
@@ -105,6 +106,17 @@ public class BambooRefreshService {
                     return specializationRepository.save(spec);
                 });
 
+        // 1b. Ensure a "second" specialization exists for this desk
+        Specialization secondSpec = specializationRepository
+                .findByTenantIdAndDeskIdAndName(tenantId, deskId, SECONDARY_SPECIALIZATION_NAME)
+                .orElseGet(() -> {
+                    Specialization spec = new Specialization();
+                    spec.setTenantId(tenantId);
+                    spec.setDeskId(deskId);
+                    spec.setName(SECONDARY_SPECIALIZATION_NAME);
+                    return specializationRepository.save(spec);
+                });
+
         // 2. Collect bamboohrIds from the response for soft-delete detection
         Set<String> bamboohrIdsInResponse = employees.stream()
                 .map(BambooEmployee::id)
@@ -146,7 +158,7 @@ public class BambooRefreshService {
                 deskAgent.setDeskId(deskId);
                 deskAgent.setAgent(agent);
                 deskAgent.setPrimarySpecialization(defaultSpec);
-                deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(defaultSpec)));
+                deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(defaultSpec, secondSpec)));
                 deskAgent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
                 deskAgentRepository.save(deskAgent);
             }

@@ -129,6 +129,7 @@ class FullScale150AgentTest {
 
         // --- Specialization ---
         Specialization basic = spec(deskId, "Basic");
+        Specialization second = spec(deskId, "second");
 
         // --- Build 150 agents matching mock BambooHR name pattern ---
         List<Agent> agentList = new ArrayList<>(150);
@@ -140,7 +141,7 @@ class FullScale150AgentTest {
                 if (agentList.size() >= 150) break outer;
                 String name = firstName + " " + lastName;
                 Agent a = agent(String.valueOf(id), name);
-                DeskAgent da = deskAgent(deskId, a, basic, List.of(basic), CONTRACTED_HOURS);
+                DeskAgent da = deskAgent(deskId, a, basic, List.of(basic, second), CONTRACTED_HOURS);
                 agentList.add(a);
                 deskAgentList.add(da);
                 id++;
