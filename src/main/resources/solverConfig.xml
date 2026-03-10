@@ -19,9 +19,11 @@
     <!-- Local search: improve the CH-built solution -->
     <localSearch>
         <termination>
-            <!-- Stop after 5 minutes OR 30 seconds without improvement -->
-            <spentLimit>PT5M</spentLimit>
-            <unimprovedSpentLimit>PT30S</unimprovedSpentLimit>
+            <!-- Stop after 10 minutes OR 3 minutes without improvement.
+                 Break rearrangement requires coordinated multi-slot moves
+                 that need longer plateaus to discover. -->
+            <spentLimit>PT10M</spentLimit>
+            <unimprovedSpentLimit>PT3M</unimprovedSpentLimit>
         </termination>
     </localSearch>
 
