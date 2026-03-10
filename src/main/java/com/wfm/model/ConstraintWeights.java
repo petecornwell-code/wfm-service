@@ -84,10 +84,15 @@ public class ConstraintWeights {
     @Column(name = "break_clustering_weight")
     private HardSoftScore breakClusteringWeight = HardSoftScore.ofSoft(2);
 
-    @ConstraintWeight("Contracted hours")
+    @ConstraintWeight("Contracted hours (over)")
     @Convert(converter = HardSoftScoreConverter.class)
-    @Column(name = "contracted_hours_weight")
-    private HardSoftScore contractedHoursWeight = HardSoftScore.ofHard(1001);
+    @Column(name = "contracted_hours_over_weight")
+    private HardSoftScore contractedHoursOverWeight = HardSoftScore.ofHard(1001);
+
+    @ConstraintWeight("Contracted hours (under)")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "contracted_hours_under_weight")
+    private HardSoftScore contractedHoursUnderWeight = HardSoftScore.ofHard(1);
 
     @ConstraintWeight("Bulk over-allocation limit")
     @Convert(converter = HardSoftScoreConverter.class)
@@ -151,8 +156,11 @@ public class ConstraintWeights {
     public HardSoftScore getBreakClusteringWeight() { return breakClusteringWeight; }
     public void setBreakClusteringWeight(HardSoftScore breakClusteringWeight) { this.breakClusteringWeight = breakClusteringWeight; }
 
-    public HardSoftScore getContractedHoursWeight() { return contractedHoursWeight; }
-    public void setContractedHoursWeight(HardSoftScore contractedHoursWeight) { this.contractedHoursWeight = contractedHoursWeight; }
+    public HardSoftScore getContractedHoursOverWeight() { return contractedHoursOverWeight; }
+    public void setContractedHoursOverWeight(HardSoftScore contractedHoursOverWeight) { this.contractedHoursOverWeight = contractedHoursOverWeight; }
+
+    public HardSoftScore getContractedHoursUnderWeight() { return contractedHoursUnderWeight; }
+    public void setContractedHoursUnderWeight(HardSoftScore contractedHoursUnderWeight) { this.contractedHoursUnderWeight = contractedHoursUnderWeight; }
 
     public HardSoftScore getBulkOverallocationLimitWeight() { return bulkOverallocationLimitWeight; }
     public void setBulkOverallocationLimitWeight(HardSoftScore bulkOverallocationLimitWeight) { this.bulkOverallocationLimitWeight = bulkOverallocationLimitWeight; }

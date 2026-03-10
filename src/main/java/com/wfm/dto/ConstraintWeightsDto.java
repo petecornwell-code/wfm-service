@@ -14,7 +14,8 @@ public class ConstraintWeightsDto {
     private ScoreDto honourStartTimeWeight;
     private ScoreDto honourBreakTimeWeight;
     private ScoreDto breakClusteringWeight;
-    private ScoreDto contractedHoursWeight;
+    private ScoreDto contractedHoursOverWeight;
+    private ScoreDto contractedHoursUnderWeight;
     private ScoreDto bulkOverallocationLimitWeight;
     private ScoreDto bulkUnderallocationSoftWeight;
     private ScoreDto bulkUnderallocationHardWeight;
@@ -42,8 +43,10 @@ public class ConstraintWeightsDto {
     public void setHonourBreakTimeWeight(ScoreDto v) { this.honourBreakTimeWeight = v; }
     public ScoreDto getBreakClusteringWeight() { return breakClusteringWeight; }
     public void setBreakClusteringWeight(ScoreDto v) { this.breakClusteringWeight = v; }
-    public ScoreDto getContractedHoursWeight() { return contractedHoursWeight; }
-    public void setContractedHoursWeight(ScoreDto v) { this.contractedHoursWeight = v; }
+    public ScoreDto getContractedHoursOverWeight() { return contractedHoursOverWeight; }
+    public void setContractedHoursOverWeight(ScoreDto v) { this.contractedHoursOverWeight = v; }
+    public ScoreDto getContractedHoursUnderWeight() { return contractedHoursUnderWeight; }
+    public void setContractedHoursUnderWeight(ScoreDto v) { this.contractedHoursUnderWeight = v; }
     public ScoreDto getBulkOverallocationLimitWeight() { return bulkOverallocationLimitWeight; }
     public void setBulkOverallocationLimitWeight(ScoreDto v) { this.bulkOverallocationLimitWeight = v; }
     public ScoreDto getBulkUnderallocationSoftWeight() { return bulkUnderallocationSoftWeight; }

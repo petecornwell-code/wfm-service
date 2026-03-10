@@ -29,7 +29,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             honourPreferredStartTime(factory),
             honourPreferredBreakTime(factory),
             breakClustering(factory),
-            contractedHours(factory),
+            contractedHoursOver(factory),
+            contractedHoursUnder(factory),
             bulkOverallocationLimit(factory),
             bulkUnderallocationSoft(factory),
             bulkUnderallocationHard(factory),
@@ -246,11 +247,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 12. Contracted hours — every desk-agent must be assigned exactly their
-     * effective contracted hours per day (accounting for exceptions via AgentDayConfig).
-     * Penalty proportional to deviation in timeslot count.
+     * 12a. Contracted hours (over) — penalises agents assigned MORE than their
+     * effective contracted hours. Weight must dominate unassigned-assignment
+     * to prevent the solver from over-assigning agents to fill empty seats.
      */
-    private Constraint contractedHours(ConstraintFactory factory) {
+    private Constraint contractedHoursOver(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
                 .groupBy(
@@ -261,21 +262,52 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
-                    BigDecimal actualHours = BigDecimal.valueOf(assignmentCount)
-                            .multiply(BigDecimal.valueOf(dayConfig.incrementMinutes()))
-                            .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-                    return actualHours.compareTo(dayConfig.effectiveHours()) != 0;
-                })
-                .penalizeConfigurable((daId, date, count, dayConfig) -> {
-                    BigDecimal actualHours = BigDecimal.valueOf(count)
-                            .multiply(BigDecimal.valueOf(dayConfig.incrementMinutes()))
-                            .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-                    return Math.abs(actualHours.subtract(dayConfig.effectiveHours())
+                    int expectedSlots = dayConfig.effectiveHours()
                             .multiply(BigDecimal.valueOf(60))
                             .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue());
+                            .intValue();
+                    return assignmentCount > expectedSlots;
                 })
-                .asConstraint("Contracted hours");
+                .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
+                    int expectedSlots = dayConfig.effectiveHours()
+                            .multiply(BigDecimal.valueOf(60))
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                            .intValue();
+                    return assignmentCount - expectedSlots;
+                })
+                .asConstraint("Contracted hours (over)");
+    }
+
+    /**
+     * 12b. Contracted hours (under) — penalises agents assigned FEWER than their
+     * effective contracted hours. Weight is below unassigned-assignment so the
+     * solver prefers filling seats with partial shifts over leaving seats empty.
+     */
+    private Constraint contractedHoursUnder(ConstraintFactory factory) {
+        return factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getDeskAgent() != null)
+                .groupBy(
+                        a -> a.getDeskAgent().getId(),
+                        a -> a.getTimeslot().getDate(),
+                        count())
+                .join(AgentDayConfig.class,
+                        equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, cnt) -> date, AgentDayConfig::date))
+                .filter((daId, date, assignmentCount, dayConfig) -> {
+                    int expectedSlots = dayConfig.effectiveHours()
+                            .multiply(BigDecimal.valueOf(60))
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                            .intValue();
+                    return assignmentCount < expectedSlots;
+                })
+                .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
+                    int expectedSlots = dayConfig.effectiveHours()
+                            .multiply(BigDecimal.valueOf(60))
+                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                            .intValue();
+                    return expectedSlots - assignmentCount;
+                })
+                .asConstraint("Contracted hours (under)");
     }
 
     /**

@@ -75,8 +75,11 @@ public class ConstraintWeightsService {
         if (updates.getBreakClusteringWeight() != null) {
             weights.setBreakClusteringWeight(toScore(updates.getBreakClusteringWeight()));
         }
-        if (updates.getContractedHoursWeight() != null) {
-            weights.setContractedHoursWeight(toScore(updates.getContractedHoursWeight()));
+        if (updates.getContractedHoursOverWeight() != null) {
+            weights.setContractedHoursOverWeight(toScore(updates.getContractedHoursOverWeight()));
+        }
+        if (updates.getContractedHoursUnderWeight() != null) {
+            weights.setContractedHoursUnderWeight(toScore(updates.getContractedHoursUnderWeight()));
         }
         if (updates.getBulkOverallocationLimitWeight() != null) {
             weights.setBulkOverallocationLimitWeight(toScore(updates.getBulkOverallocationLimitWeight()));
@@ -105,7 +108,8 @@ public class ConstraintWeightsService {
         dto.setHonourStartTimeWeight(fromScore(w.getHonourStartTimeWeight()));
         dto.setHonourBreakTimeWeight(fromScore(w.getHonourBreakTimeWeight()));
         dto.setBreakClusteringWeight(fromScore(w.getBreakClusteringWeight()));
-        dto.setContractedHoursWeight(fromScore(w.getContractedHoursWeight()));
+        dto.setContractedHoursOverWeight(fromScore(w.getContractedHoursOverWeight()));
+        dto.setContractedHoursUnderWeight(fromScore(w.getContractedHoursUnderWeight()));
         dto.setBulkOverallocationLimitWeight(fromScore(w.getBulkOverallocationLimitWeight()));
         dto.setBulkUnderallocationSoftWeight(fromScore(w.getBulkUnderallocationSoftWeight()));
         dto.setBulkUnderallocationHardWeight(fromScore(w.getBulkUnderallocationHardWeight()));
