@@ -43,10 +43,10 @@ public class MockBambooHRClient implements BambooHRClient {
     };
 
     private static List<BambooEmployee> buildVintedAgents(String wfmTenantId) {
-        List<BambooEmployee> agents = new ArrayList<>(140);
+        List<BambooEmployee> agents = new ArrayList<>(160);
         int id = 1;
-        for (int i = 0; i < FIRST_NAMES.length && agents.size() < 140; i++) {
-            for (int j = 0; j < LAST_NAMES.length && agents.size() < 140; j++) {
+        for (int i = 0; i < FIRST_NAMES.length && agents.size() < 160; i++) {
+            for (int j = 0; j < LAST_NAMES.length && agents.size() < 160; j++) {
                 String firstName = FIRST_NAMES[i];
                 String lastName = LAST_NAMES[j];
                 String displayName = firstName + " " + lastName;
