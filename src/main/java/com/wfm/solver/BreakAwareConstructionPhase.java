@@ -236,13 +236,6 @@ public class BreakAwareConstructionPhase {
             totalAssigned -= repairBreakGeometry(breakPlans, slotMap, demandSlotTimes,
                     increment, assignmentCounts);
 
-            // --- Fill underassigned agents ---
-            // After repair removes outer blocks, some agents may have fewer assignments
-            // than their contracted hours. Extend their shifts by creating overflow
-            // seats at adjacent timeslots so they reach their full contracted hours.
-            totalAssigned += fillUnderassignedAgents(
-                    schedule, breakPlans, slotMap, demandSlotTimes,
-                    assignmentCounts, dayConfigMap, date, increment);
         }
 
         return totalAssigned;
@@ -578,153 +571,6 @@ public class BreakAwareConstructionPhase {
     }
 
     /**
-     * Fills underassigned agents by extending their shifts at the edges.
-     * After repairBreakGeometry removes outer blocks, some agents have fewer
-     * assignments than their contracted hours. This method extends their shifts
-     * by assigning them to adjacent unassigned seats or creating overflow seats.
-     *
-     * @return number of additional assignments made
-     */
-    private int fillUnderassignedAgents(
-            Schedule schedule,
-            List<AgentBreakPlan> breakPlans,
-            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
-            List<LocalTime> demandSlotTimes,
-            Map<UUID, Integer> assignmentCounts,
-            Map<String, AgentDayConfig> dayConfigMap,
-            LocalDate date,
-            int increment) {
-
-        int assigned = 0;
-
-        // Build expected slot count per agent
-        Map<UUID, Integer> expectedSlots = new HashMap<>();
-        for (AgentBreakPlan plan : breakPlans) {
-            AgentDayConfig config = dayConfigMap.get(plan.deskAgent.getId() + "|" + date);
-            if (config != null) {
-                int expected = config.effectiveHours()
-                        .multiply(BigDecimal.valueOf(60))
-                        .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
-                        .intValue();
-                expectedSlots.put(plan.deskAgent.getId(), expected);
-            }
-        }
-
-        // Multiple passes: each extension may open adjacency for the next
-        for (int pass = 0; pass < 20; pass++) {
-            int passAssigned = 0;
-
-            for (AgentBreakPlan plan : breakPlans) {
-                DeskAgent da = plan.deskAgent;
-                UUID daId = da.getId();
-                int current = assignmentCounts.getOrDefault(daId, 0);
-                int expected = expectedSlots.getOrDefault(daId, 0);
-                if (current >= expected) continue;
-
-                // Collect this agent's currently assigned slot times
-                TreeSet<LocalTime> assignedTimes = new TreeSet<>();
-                Set<UUID> occupiedTimeslotIds = new HashSet<>();
-                for (LocalTime slotTime : demandSlotTimes) {
-                    for (AgentAssignment seat : slotMap.get(slotTime)) {
-                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
-                            assignedTimes.add(slotTime);
-                            occupiedTimeslotIds.add(seat.getTimeslot().getId());
-                        }
-                    }
-                }
-                if (assignedTimes.isEmpty()) continue;
-
-                // Try extending at the end of the shift first, then the start
-                LocalTime shiftEnd = assignedTimes.last();
-                LocalTime shiftStart = assignedTimes.first();
-
-                // Extend forward
-                LocalTime nextSlot = shiftEnd.plusMinutes(increment);
-                while (current < expected && demandSlotTimes.contains(nextSlot)
-                        && !plan.breakSlots.contains(nextSlot)) {
-                    AgentAssignment seat = findOrCreateSeat(
-                            schedule, da, slotMap, nextSlot, occupiedTimeslotIds);
-                    if (seat != null) {
-                        seat.setDeskAgent(da);
-                        seat.setAgent(da.getAgent());
-                        assignmentCounts.merge(daId, 1, Integer::sum);
-                        current++;
-                        assigned++;
-                        passAssigned++;
-                        assignedTimes.add(nextSlot);
-                        occupiedTimeslotIds.add(seat.getTimeslot().getId());
-                    } else {
-                        break;
-                    }
-                    nextSlot = nextSlot.plusMinutes(increment);
-                }
-
-                // Extend backward
-                LocalTime prevSlot = shiftStart.minusMinutes(increment);
-                while (current < expected && demandSlotTimes.contains(prevSlot)
-                        && !plan.breakSlots.contains(prevSlot)) {
-                    AgentAssignment seat = findOrCreateSeat(
-                            schedule, da, slotMap, prevSlot, occupiedTimeslotIds);
-                    if (seat != null) {
-                        seat.setDeskAgent(da);
-                        seat.setAgent(da.getAgent());
-                        assignmentCounts.merge(daId, 1, Integer::sum);
-                        current++;
-                        assigned++;
-                        passAssigned++;
-                        assignedTimes.add(prevSlot);
-                        occupiedTimeslotIds.add(seat.getTimeslot().getId());
-                    } else {
-                        break;
-                    }
-                    prevSlot = prevSlot.minusMinutes(increment);
-                }
-            }
-
-            if (passAssigned == 0) break;
-        }
-
-        return assigned;
-    }
-
-    /**
-     * Finds an unassigned seat for the agent at the given slot time, or creates
-     * an overflow seat if all existing seats are taken. Returns null if the agent
-     * already occupies this timeslot.
-     */
-    private AgentAssignment findOrCreateSeat(
-            Schedule schedule,
-            DeskAgent da,
-            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
-            LocalTime slotTime,
-            Set<UUID> occupiedTimeslotIds) {
-
-        List<AgentAssignment> seats = slotMap.get(slotTime);
-        if (seats == null || seats.isEmpty()) return null;
-
-        // Check if agent already assigned in this timeslot
-        UUID timeslotId = seats.get(0).getTimeslot().getId();
-        if (occupiedTimeslotIds.contains(timeslotId)) return null;
-
-        // Try to find an existing unassigned seat
-        AgentAssignment bestSeat = findBestSeat(da, seats);
-        if (bestSeat != null) return bestSeat;
-
-        // All seats taken — create an overflow seat
-        AgentAssignment reference = seats.get(0);
-        AgentAssignment overflow = new AgentAssignment();
-        overflow.setId(UUID.randomUUID());
-        overflow.setTenantId(reference.getTenantId());
-        overflow.setDeskId(reference.getDeskId());
-        overflow.setScheduleId(reference.getScheduleId());
-        overflow.setTimeslot(reference.getTimeslot());
-        overflow.setRequiredSpecialization(reference.getRequiredSpecialization());
-        seats.add(overflow);
-        schedule.getAssignments().add(overflow);
-        return overflow;
-    }
-
-    /**
      * Adds overflow AgentAssignment entities for timeslots where agent supply
      * exceeds existing demand seats. This allows all agents to work their full
      * contracted hours when total supply is within the over-allocation limit.
@@ -987,69 +833,100 @@ public class BreakAwareConstructionPhase {
                 }
             }
 
-            // Only fill gaps when ALL non-break gaps can be filled. Partial filling
-            // wastes seats for no constraint benefit (reducing 3→2 gaps still violates
-            // exactlyOneBreak) and steals seats other agents need.
-            boolean allFillable = true;
-            for (int i = 0; i < gaps.size(); i++) {
-                if (i == breakGapIdx) continue;
+            // Fill non-break gaps incrementally outward from the break gap.
+            // For each direction (left/right of break), fill fillable gaps and
+            // merge their adjacent blocks. Stop when a gap can't be filled —
+            // remove all blocks beyond that point.
+            Set<LocalTime> keepSlots = new HashSet<>();
+
+            // Always keep the two blocks immediately adjacent to the break gap
+            if (breakGapIdx < blocks.size()) {
+                keepSlots.addAll(blocks.get(breakGapIdx));
+            }
+            if (breakGapIdx + 1 < blocks.size()) {
+                keepSlots.addAll(blocks.get(breakGapIdx + 1));
+            }
+
+            // Expand LEFT from break gap: gaps at breakGapIdx-1, breakGapIdx-2, ...
+            for (int i = breakGapIdx - 1; i >= 0; i--) {
                 List<LocalTime> gap = gaps.get(i);
-                for (LocalTime t : gap) {
-                    if (!demandSet.contains(t)) { allFillable = false; break; }
-                    boolean hasAvailableSeat = false;
-                    for (AgentAssignment seat : slotMap.get(t)) {
-                        if (seat.getDeskAgent() == null) {
-                            hasAvailableSeat = true;
-                            break;
+                boolean fillable = canFillGap(gap, demandSet, slotMap);
+                if (fillable) {
+                    // Fill this gap and keep the block to the left of it
+                    for (LocalTime t : gap) {
+                        AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
+                        if (bestSeat != null) {
+                            bestSeat.setDeskAgent(da);
+                            bestSeat.setAgent(da.getAgent());
+                            assignmentCounts.merge(daId, 1, Integer::sum);
+                            netUnassigned--;
                         }
                     }
-                    if (!hasAvailableSeat) { allFillable = false; break; }
+                    keepSlots.addAll(blocks.get(i)); // block to the left of gap i
+                } else {
+                    break; // can't fill — stop expanding left
                 }
-                if (!allFillable) break;
             }
 
-            if (!allFillable) {
-                // Fallback: remove outer disconnected blocks to ensure exactly one gap.
-                // Keep only the two blocks adjacent to the break gap (one on each side).
-                // Freed seats stay unassigned — this runs after mop-up so no re-claiming.
-                Set<LocalTime> keepSlots = new HashSet<>();
-                if (breakGapIdx < blocks.size()) {
-                    keepSlots.addAll(blocks.get(breakGapIdx));
-                }
-                if (breakGapIdx + 1 < blocks.size()) {
-                    keepSlots.addAll(blocks.get(breakGapIdx + 1));
-                }
-
-                for (LocalTime slotTime : demandSlotTimes) {
-                    if (keepSlots.contains(slotTime)) continue;
-                    if (!assignedTimes.contains(slotTime)) continue;
-                    for (AgentAssignment seat : slotMap.get(slotTime)) {
-                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
-                            seat.setDeskAgent(null);
-                            seat.setAgent(null);
-                            assignmentCounts.merge(daId, -1, Integer::sum);
-                            netUnassigned++;
+            // Expand RIGHT from break gap: gaps at breakGapIdx+1, breakGapIdx+2, ...
+            for (int i = breakGapIdx + 1; i < gaps.size(); i++) {
+                List<LocalTime> gap = gaps.get(i);
+                boolean fillable = canFillGap(gap, demandSet, slotMap);
+                if (fillable) {
+                    // Fill this gap and keep the block to the right of it
+                    for (LocalTime t : gap) {
+                        AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
+                        if (bestSeat != null) {
+                            bestSeat.setDeskAgent(da);
+                            bestSeat.setAgent(da.getAgent());
+                            assignmentCounts.merge(daId, 1, Integer::sum);
+                            netUnassigned--;
                         }
                     }
+                    if (i + 1 < blocks.size()) {
+                        keepSlots.addAll(blocks.get(i + 1)); // block to the right of gap i
+                    }
+                } else {
+                    break; // can't fill — stop expanding right
                 }
-                continue;
             }
 
-            // Fill all non-break gaps — merges blocks without freeing any seats
-            for (int i = 0; i < gaps.size(); i++) {
-                if (i == breakGapIdx) continue;
-                for (LocalTime t : gaps.get(i)) {
-                    AgentAssignment bestSeat = findBestSeat(da, slotMap.get(t));
-                    if (bestSeat != null) {
-                        bestSeat.setDeskAgent(da);
-                        bestSeat.setAgent(da.getAgent());
-                        assignmentCounts.merge(daId, 1, Integer::sum);
-                        netUnassigned--;
+            // Remove assignments in blocks that weren't kept
+            for (LocalTime slotTime : demandSlotTimes) {
+                if (keepSlots.contains(slotTime)) continue;
+                if (!assignedTimes.contains(slotTime)) continue;
+                for (AgentAssignment seat : slotMap.get(slotTime)) {
+                    if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                        seat.setDeskAgent(null);
+                        seat.setAgent(null);
+                        assignmentCounts.merge(daId, -1, Integer::sum);
+                        netUnassigned++;
                     }
                 }
             }
         }
         return netUnassigned;
+    }
+
+    /**
+     * Returns true if every slot in the gap has demand and an available seat.
+     */
+    private boolean canFillGap(List<LocalTime> gap, Set<LocalTime> demandSet,
+                                TreeMap<LocalTime, List<AgentAssignment>> slotMap) {
+        for (LocalTime t : gap) {
+            if (!demandSet.contains(t)) return false;
+            List<AgentAssignment> seats = slotMap.get(t);
+            if (seats == null) return false;
+            boolean hasAvailable = false;
+            for (AgentAssignment seat : seats) {
+                if (seat.getDeskAgent() == null) {
+                    hasAvailable = true;
+                    break;
+                }
+            }
+            if (!hasAvailable) return false;
+        }
+        return true;
     }
 
     /**
