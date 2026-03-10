@@ -189,6 +189,8 @@ public class BambooRefreshService {
         for (BambooTimeOff timeOff : timeOffs) {
             agentRepository.findByTenantIdAndBamboohrId(tenantId, timeOff.employeeId())
                     .ifPresent(agent -> {
+                        // Only insert days off for agents included in this desk's refresh (spec §9.4)
+                        if (!refreshedAgentIds.contains(agent.getId())) return;
                         AgentDayOff dayOff = new AgentDayOff();
                         dayOff.setTenantId(tenantId);
                         dayOff.setAgent(agent);

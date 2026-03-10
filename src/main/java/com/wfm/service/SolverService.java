@@ -134,13 +134,13 @@ public class SolverService {
                     return cw;
                 });
 
-        // 5. Run pre-solve validation (12 checks from spec §7.11)
-        // Note: validation uses ALL preferences (before resolution) to check alignment
-        runPreSolveValidation(schedule, allDeskAgents, timeslots, staffingRequirements,
-                eligibleDeskAgents, allDaysOff, exceptions, allPreferences);
-
-        // 6. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
+        // 5. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
+        // Done before validation so break alignment check uses effective preferences.
         List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule);
+
+        // 6. Run pre-solve validation (12 checks from spec §7.11)
+        runPreSolveValidation(schedule, allDeskAgents, timeslots, staffingRequirements,
+                eligibleDeskAgents, allDaysOff, exceptions, resolvedPreferences);
 
         // 7. Build lookup maps for days off and exceptions
         Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
@@ -219,26 +219,39 @@ public class SolverService {
                     return schedule;
                 },
                 (Schedule bestSolution) -> {
-                    log.debug("Solver best solution update — schedule={}, score={}",
-                            bestSolution.getId(), bestSolution.getScore());
+                    TenantContext.setTenantId(solverTenantId);
+                    try {
+                        log.debug("Solver best solution update — schedule={}, score={}",
+                                bestSolution.getId(), bestSolution.getScore());
+                    } finally {
+                        TenantContext.clear();
+                    }
                 },
                 (Schedule finalBestSolution) -> {
-                    log.info("Solver finished — schedule={}, score={}, status={}",
-                            finalBestSolution.getId(), finalBestSolution.getScore(),
-                            finalBestSolution.getStatus());
-                    // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
-                    if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
-                        finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
+                    TenantContext.setTenantId(solverTenantId);
+                    try {
+                        log.info("Solver finished — schedule={}, score={}, status={}",
+                                finalBestSolution.getId(), finalBestSolution.getScore(),
+                                finalBestSolution.getStatus());
+                        // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
+                        if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
+                            finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
+                        }
+                        inMemoryStore.put(finalBestSolution);
+                    } finally {
+                        TenantContext.clear();
                     }
-                    inMemoryStore.put(finalBestSolution);
-                    TenantContext.clear();
                 },
                 (UUID problemId, Throwable throwable) -> {
-                    log.error("Solver failed for schedule {}", problemId, throwable);
-                    schedule.setStatus(ScheduleStatus.FAILED);
-                    schedule.setErrorMessage(throwable.getMessage());
-                    inMemoryStore.put(schedule);
-                    TenantContext.clear();
+                    TenantContext.setTenantId(solverTenantId);
+                    try {
+                        log.error("Solver failed for schedule {}", problemId, throwable);
+                        schedule.setStatus(ScheduleStatus.FAILED);
+                        schedule.setErrorMessage(throwable.getMessage());
+                        inMemoryStore.put(schedule);
+                    } finally {
+                        TenantContext.clear();
+                    }
                 });
 
         return schedule;
@@ -622,26 +635,21 @@ public class SolverService {
                     String.valueOf(schedule.getBreakDurationMinutes())));
         }
 
-        // 9. Break alignment conformance for preferred break times
+        // 9. Break alignment conformance for effective preferred break times (spec §7.11)
+        // Preferences passed here are already resolved (date-specific, never standing),
+        // so we only check dates within the schedule period.
         BreakAlignment alignment = schedule.getBreakStartAlignment();
         for (AgentPreference pref : preferences) {
             if (pref.getPreferredBreakTime() == null) continue;
-            boolean applies;
-            if (pref.isStanding()) {
-                applies = true;
-            } else {
-                applies = pref.getDate() != null
-                        && !pref.getDate().isBefore(schedule.getPeriodStartDate())
-                        && !pref.getDate().isAfter(schedule.getPeriodEndDate());
+            if (pref.getDate() == null
+                    || pref.getDate().isBefore(schedule.getPeriodStartDate())
+                    || pref.getDate().isAfter(schedule.getPeriodEndDate())) {
+                continue;
             }
-            if (!applies) continue;
 
             if (!isAligned(pref.getPreferredBreakTime(), alignment)) {
-                String dateStr = pref.isStanding()
-                        ? "standing " + pref.getDayOfWeek()
-                        : pref.getDate().toString();
                 errors.add(new ErrorDetail("agentPreference.breakTime",
-                        "Agent " + pref.getAgent().getName() + " (" + dateStr
+                        "Agent " + pref.getAgent().getName() + " (" + pref.getDate()
                                 + ") has preferred break time " + pref.getPreferredBreakTime()
                                 + " which does not conform to alignment " + alignment,
                         pref.getPreferredBreakTime().toString()));

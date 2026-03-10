@@ -35,13 +35,20 @@ public class ErlangXService {
         double retryFraction = retryRate / 100.0;
         double slTarget = serviceLevelTarget / 100.0;
 
-        // Iterative Erlang X: adjust offered load by retrials until convergence
+        // Iterative Erlang X: adjust offered load by retrials until convergence (spec §4.4)
         double adjustedCallVolume = callVolume;
+        int previousAgents = -1;
 
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
             double trafficIntensity = adjustedCallVolume * aht / 3600.0; // in Erlangs (per hour)
 
             int agents = findMinAgents(trafficIntensity, aht, patience, slTarget, serviceLevelThreshold);
+
+            // Convergence check: staffing count unchanged between iterations (spec §4.4 step 4)
+            if (agents == previousAgents) {
+                return agents;
+            }
+            previousAgents = agents;
 
             // Calculate abandonment with this staffing level
             double erlangCProb = erlangCProbability(agents, trafficIntensity);
@@ -56,13 +63,7 @@ public class ErlangXService {
 
             double abandonedCalls = adjustedCallVolume * pAbandon;
             double retrials = abandonedCalls * retryFraction;
-            double newAdjustedVolume = callVolume + retrials;
-
-            // Convergence check: change < 1 agent difference in load
-            if (Math.abs(newAdjustedVolume - adjustedCallVolume) < 1.0) {
-                return agents;
-            }
-            adjustedCallVolume = newAdjustedVolume;
+            adjustedCallVolume = callVolume + retrials;
         }
 
         // Final pass with converged load
