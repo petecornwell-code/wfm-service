@@ -246,21 +246,43 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
     }
   }
 
+  // Build unfilled slot counts from "Unassigned assignment" constraint violations.
+  // timeslotLabel format: "YYYY-MM-DD HH:MM-HH:MM"
+  const unfilledSlots = new Map<string, number>() // key: "date|HH:MM"
+  for (const cv of violations) {
+    if (cv.constraintName !== 'Unassigned assignment') continue
+    for (const v of cv.violations || []) {
+      if (!v.timeslotLabel) continue
+      const spaceIdx = v.timeslotLabel.indexOf(' ')
+      if (spaceIdx < 0) continue
+      const vDate = v.timeslotLabel.substring(0, spaceIdx)
+      const vStart = toHHMM(v.timeslotLabel.substring(spaceIdx + 1))
+      const key = `${vDate}|${vStart}`
+      unfilledSlots.set(key, (unfilledSlots.get(key) || 0) + 1)
+    }
+  }
+
   // Filter by date
   const filtered = dateFilter ? agentSchedule.filter(e => e.date === dateFilter) : agentSchedule
 
-  if (filtered.length === 0) return <p style={{ color: '#6b7280' }}>No agent allocation data available.</p>
+  // Get unique dates — include dates from unfilled slots even if no agent is scheduled
+  const dateSet = new Set<string>()
+  for (const e of filtered) dateSet.add(e.date)
+  for (const key of unfilledSlots.keys()) {
+    const d = key.split('|')[0]
+    if (!dateFilter || d === dateFilter) dateSet.add(d)
+  }
+  const dates = [...dateSet].sort()
 
-  // Get unique dates
-  const dates = [...new Set(filtered.map(e => e.date))].sort()
+  if (dates.length === 0) return <p style={{ color: '#6b7280' }}>No agent allocation data available.</p>
 
   return (
     <>
       {dates.map(date => {
         const dayEntries = filtered.filter(e => e.date === date)
 
-        // Collect all timeslot start times for this day from assignments and breaks
-        // Normalize to "HH:MM" to avoid duplicates from "HH:MM" vs "HH:MM:SS" formats
+        // Collect all timeslot start times for this day from assignments, breaks,
+        // AND unfilled slots (so fully-unfilled timeslots still appear as columns)
         const slotSet = new Set<string>()
         for (const entry of dayEntries) {
           for (const a of entry.assignments) slotSet.add(toHHMM(a.startTime))
@@ -280,6 +302,11 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
             }
           }
         }
+        // Add unfilled slot times for this date
+        for (const key of unfilledSlots.keys()) {
+          const [d, t] = key.split('|')
+          if (d === date) slotSet.add(t)
+        }
         const slots = [...slotSet].sort()
 
         // Sort agents by name
@@ -295,6 +322,13 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
           }
         }
 
+        // Check which slots have unfilled seats
+        const unfilledPerSlot: Record<string, number> = {}
+        for (const slot of slots) {
+          unfilledPerSlot[slot] = unfilledSlots.get(`${date}|${slot}`) || 0
+        }
+        const hasAnyUnfilled = Object.values(unfilledPerSlot).some(n => n > 0)
+
         return (
           <div key={date} style={{ marginBottom: '2rem' }}>
             <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
@@ -303,11 +337,18 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                 <thead>
                   <tr>
                     <th style={{ textAlign: 'left', padding: '4px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
-                    {slots.map(slot => (
-                      <th key={slot} style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb' }}>
-                        {slot.substring(0, 5)}
-                      </th>
-                    ))}
+                    {slots.map(slot => {
+                      const unfilled = unfilledPerSlot[slot] > 0
+                      return (
+                        <th key={slot} style={{
+                          padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb',
+                          background: unfilled ? '#fecaca' : undefined,
+                          color: unfilled ? '#991b1b' : undefined,
+                        }}>
+                          {slot.substring(0, 5)}
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -378,6 +419,22 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                       </td>
                     ))}
                   </tr>
+                  {/* Unfilled row — only shown when there are unassigned seats */}
+                  {hasAnyUnfilled && (
+                    <tr style={{ fontWeight: 700, background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
+                      <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#fef2f2', zIndex: 1, color: '#991b1b' }}>
+                        Unfilled
+                      </td>
+                      {slots.map(slot => (
+                        <td key={slot} style={{
+                          padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #fca5a5',
+                          fontSize: '0.75rem', color: '#991b1b', background: unfilledPerSlot[slot] > 0 ? '#fecaca' : '#fef2f2',
+                        }}>
+                          {unfilledPerSlot[slot] > 0 ? unfilledPerSlot[slot] : ''}
+                        </td>
+                      ))}
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -386,6 +443,7 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.PRIMARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (primary)</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (secondary) S</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fecaca', border: '1px solid #fca5a5', borderRadius: '2px' }} /> Unfilled seat(s)</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>
             </div>
           </div>
