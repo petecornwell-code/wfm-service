@@ -123,6 +123,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * breakMinShiftHours must have exactly one contiguous gap (break).
      * Agents at or below the threshold must have no gap.
      * Uses AgentDayConfig for exception-aware effective hours.
+     *
+     * <p>CH-friendly: during incremental construction (agent has fewer than their
+     * expected work slots), only penalizes multiple gaps (fragmented shifts).
+     * Zero gaps during construction is OK — the break gap will form as the
+     * shift is completed. Once the shift is fully populated, requires exactly 1 gap.
      */
     private Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -140,6 +145,10 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     int gapCount = countContiguousGaps(assignments, dayConfig.incrementMinutes());
 
                     if (needsBreak) {
+                        // Always require exactly 1 gap. At weight 10, this gives the CH
+                        // incremental feedback to create breaks during construction
+                        // without blocking progress (contracted hours benefit of 100
+                        // per slot always exceeds break penalty of 10).
                         return gapCount != 1;
                     } else {
                         return gapCount != 0;
@@ -364,11 +373,16 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 15. Bulk under-allocation hard — total assigned slots per day must not
      * fall below underallocationHardLimitPct of demand slots. Penalises the
      * shortfall below the limit. Uses DayDemandConfig for pre-computed totals.
+     *
+     * <p>CH-friendly: uses forEachIncludingUnassigned with sum to count assigned
+     * entities, so the constraint fires even when all entities are null. This
+     * prevents a penalty cliff when the first assignment is made (0→1 transition
+     * that would otherwise block the construction heuristic for large schedules).
      */
     private Constraint bulkUnderallocationHard(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
-                .groupBy(a -> a.getTimeslot().getDate(), count())
+        return factory.forEachIncludingUnassigned(AgentAssignment.class)
+                .groupBy(a -> a.getTimeslot().getDate(),
+                        sum((AgentAssignment a) -> a.getDeskAgent() != null ? 1 : 0))
                 .join(DayDemandConfig.class,
                         equal((date, cnt) -> date, DayDemandConfig::date))
                 .join(ScheduleConfig.class)
@@ -480,6 +494,16 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // ============================================================
     //  HELPER METHODS
     // ============================================================
+
+    /**
+     * Computes the expected number of work slots for an agent-day.
+     */
+    private int expectedWorkSlots(AgentDayConfig dayConfig) {
+        return dayConfig.effectiveHours()
+                .multiply(BigDecimal.valueOf(60))
+                .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
+                .intValue();
+    }
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();

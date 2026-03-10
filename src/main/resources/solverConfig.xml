@@ -9,15 +9,14 @@
         <constraintProviderClass>com.wfm.solver.ScheduleConstraintProvider</constraintProviderClass>
     </scoreDirectorFactory>
 
-    <!-- Primary construction is handled by BreakAwareConstructionPhase
-         in SolverService.startSolve() before the solver starts. This CH phase
-         is a safety-net fallback: if any planning variables remain unassigned
-         after the break-aware pre-assignment (e.g. demand > supply, days off
-         reducing available agents), the CH initializes them before local search.
-         When all variables are pre-assigned, this phase is a no-op. -->
+    <!-- Construction heuristic: builds the initial solution from scratch.
+         All planning variables (AgentAssignment.deskAgent) start as null.
+         The CH assigns agents to seats one at a time, evaluating all 18
+         constraints per move to find feasible break positions, respect
+         contracted hours, and match specializations. -->
     <constructionHeuristic/>
 
-    <!-- Local search: improve the pre-assigned solution -->
+    <!-- Local search: improve the CH-built solution -->
     <localSearch>
         <termination>
             <!-- Stop after 5 minutes OR 30 seconds without improvement -->

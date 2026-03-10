@@ -47,22 +47,22 @@ public class ConstraintWeights {
     @ConstraintWeight("Exactly one break")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "exactly_one_break_weight")
-    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(1000);
+    private HardSoftScore exactlyOneBreakWeight = HardSoftScore.ofHard(10);
 
     @ConstraintWeight("Break duration")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_duration_weight")
-    private HardSoftScore breakDurationWeight = HardSoftScore.ofHard(1000);
+    private HardSoftScore breakDurationWeight = HardSoftScore.ofHard(10);
 
     @ConstraintWeight("Break blocked window")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_blocked_window_weight")
-    private HardSoftScore breakBlockedWindowWeight = HardSoftScore.ofHard(1000);
+    private HardSoftScore breakBlockedWindowWeight = HardSoftScore.ofHard(10);
 
     @ConstraintWeight("Break start alignment")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "break_alignment_weight")
-    private HardSoftScore breakAlignmentWeight = HardSoftScore.ofHard(1000);
+    private HardSoftScore breakAlignmentWeight = HardSoftScore.ofHard(10);
 
     @ConstraintWeight("Prefer primary specialization")
     @Convert(converter = HardSoftScoreConverter.class)
