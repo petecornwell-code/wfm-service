@@ -42,18 +42,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // ============================================================
 
     /**
-     * 0. Unassigned assignment — every seat must be filled with an agent.
+     * 0. Unassigned assignment — prefer filling every seat with an agent.
+     *
+     * This is a SOFT constraint: leaving a slot unallocated is acceptable
+     * as long as the total allocation remains within the underflow/overflow
+     * tolerance enforced by the bulk allocation hard constraints
+     * ({@code bulkUnderallocationHard} / {@code bulkOverallocationLimit}).
      *
      * Must use forEachIncludingUnassigned() because Timefold's forEach()
      * excludes entities whose planning variable is null. Without this,
      * null-assigned entities are invisible to all constraint streams,
      * producing a 0-penalty score that the CH always prefers over any
      * real assignment.
-     *
-     * The configurable weight (default 1000hard) must dominate per-entity
-     * penalties from other constraints — especially contracted hours, which
-     * can reach ~32 hard during CH when an agent has only 1 of 32 needed
-     * slots assigned.
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
