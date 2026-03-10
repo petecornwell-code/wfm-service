@@ -235,6 +235,14 @@ public class BreakAwareConstructionPhase {
             // multi-gap agents will have their outer blocks removed.
             totalAssigned -= repairBreakGeometry(breakPlans, slotMap, demandSlotTimes,
                     increment, assignmentCounts);
+
+            // --- Fill underassigned agents ---
+            // After repair removes outer blocks, some agents may have fewer assignments
+            // than their contracted hours. Extend their shifts by creating overflow
+            // seats at adjacent timeslots so they reach their full contracted hours.
+            totalAssigned += fillUnderassignedAgents(
+                    schedule, breakPlans, slotMap, demandSlotTimes,
+                    assignmentCounts, dayConfigMap, date, increment);
         }
 
         return totalAssigned;
@@ -567,6 +575,153 @@ public class BreakAwareConstructionPhase {
         } // end for pass
 
         return assigned;
+    }
+
+    /**
+     * Fills underassigned agents by extending their shifts at the edges.
+     * After repairBreakGeometry removes outer blocks, some agents have fewer
+     * assignments than their contracted hours. This method extends their shifts
+     * by assigning them to adjacent unassigned seats or creating overflow seats.
+     *
+     * @return number of additional assignments made
+     */
+    private int fillUnderassignedAgents(
+            Schedule schedule,
+            List<AgentBreakPlan> breakPlans,
+            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
+            List<LocalTime> demandSlotTimes,
+            Map<UUID, Integer> assignmentCounts,
+            Map<String, AgentDayConfig> dayConfigMap,
+            LocalDate date,
+            int increment) {
+
+        int assigned = 0;
+
+        // Build expected slot count per agent
+        Map<UUID, Integer> expectedSlots = new HashMap<>();
+        for (AgentBreakPlan plan : breakPlans) {
+            AgentDayConfig config = dayConfigMap.get(plan.deskAgent.getId() + "|" + date);
+            if (config != null) {
+                int expected = config.effectiveHours()
+                        .multiply(BigDecimal.valueOf(60))
+                        .divide(BigDecimal.valueOf(increment), 0, RoundingMode.HALF_UP)
+                        .intValue();
+                expectedSlots.put(plan.deskAgent.getId(), expected);
+            }
+        }
+
+        // Multiple passes: each extension may open adjacency for the next
+        for (int pass = 0; pass < 20; pass++) {
+            int passAssigned = 0;
+
+            for (AgentBreakPlan plan : breakPlans) {
+                DeskAgent da = plan.deskAgent;
+                UUID daId = da.getId();
+                int current = assignmentCounts.getOrDefault(daId, 0);
+                int expected = expectedSlots.getOrDefault(daId, 0);
+                if (current >= expected) continue;
+
+                // Collect this agent's currently assigned slot times
+                TreeSet<LocalTime> assignedTimes = new TreeSet<>();
+                Set<UUID> occupiedTimeslotIds = new HashSet<>();
+                for (LocalTime slotTime : demandSlotTimes) {
+                    for (AgentAssignment seat : slotMap.get(slotTime)) {
+                        if (seat.getDeskAgent() != null && seat.getDeskAgent().getId().equals(daId)) {
+                            assignedTimes.add(slotTime);
+                            occupiedTimeslotIds.add(seat.getTimeslot().getId());
+                        }
+                    }
+                }
+                if (assignedTimes.isEmpty()) continue;
+
+                // Try extending at the end of the shift first, then the start
+                LocalTime shiftEnd = assignedTimes.last();
+                LocalTime shiftStart = assignedTimes.first();
+
+                // Extend forward
+                LocalTime nextSlot = shiftEnd.plusMinutes(increment);
+                while (current < expected && demandSlotTimes.contains(nextSlot)
+                        && !plan.breakSlots.contains(nextSlot)) {
+                    AgentAssignment seat = findOrCreateSeat(
+                            schedule, da, slotMap, nextSlot, occupiedTimeslotIds);
+                    if (seat != null) {
+                        seat.setDeskAgent(da);
+                        seat.setAgent(da.getAgent());
+                        assignmentCounts.merge(daId, 1, Integer::sum);
+                        current++;
+                        assigned++;
+                        passAssigned++;
+                        assignedTimes.add(nextSlot);
+                        occupiedTimeslotIds.add(seat.getTimeslot().getId());
+                    } else {
+                        break;
+                    }
+                    nextSlot = nextSlot.plusMinutes(increment);
+                }
+
+                // Extend backward
+                LocalTime prevSlot = shiftStart.minusMinutes(increment);
+                while (current < expected && demandSlotTimes.contains(prevSlot)
+                        && !plan.breakSlots.contains(prevSlot)) {
+                    AgentAssignment seat = findOrCreateSeat(
+                            schedule, da, slotMap, prevSlot, occupiedTimeslotIds);
+                    if (seat != null) {
+                        seat.setDeskAgent(da);
+                        seat.setAgent(da.getAgent());
+                        assignmentCounts.merge(daId, 1, Integer::sum);
+                        current++;
+                        assigned++;
+                        passAssigned++;
+                        assignedTimes.add(prevSlot);
+                        occupiedTimeslotIds.add(seat.getTimeslot().getId());
+                    } else {
+                        break;
+                    }
+                    prevSlot = prevSlot.minusMinutes(increment);
+                }
+            }
+
+            if (passAssigned == 0) break;
+        }
+
+        return assigned;
+    }
+
+    /**
+     * Finds an unassigned seat for the agent at the given slot time, or creates
+     * an overflow seat if all existing seats are taken. Returns null if the agent
+     * already occupies this timeslot.
+     */
+    private AgentAssignment findOrCreateSeat(
+            Schedule schedule,
+            DeskAgent da,
+            TreeMap<LocalTime, List<AgentAssignment>> slotMap,
+            LocalTime slotTime,
+            Set<UUID> occupiedTimeslotIds) {
+
+        List<AgentAssignment> seats = slotMap.get(slotTime);
+        if (seats == null || seats.isEmpty()) return null;
+
+        // Check if agent already assigned in this timeslot
+        UUID timeslotId = seats.get(0).getTimeslot().getId();
+        if (occupiedTimeslotIds.contains(timeslotId)) return null;
+
+        // Try to find an existing unassigned seat
+        AgentAssignment bestSeat = findBestSeat(da, seats);
+        if (bestSeat != null) return bestSeat;
+
+        // All seats taken — create an overflow seat
+        AgentAssignment reference = seats.get(0);
+        AgentAssignment overflow = new AgentAssignment();
+        overflow.setId(UUID.randomUUID());
+        overflow.setTenantId(reference.getTenantId());
+        overflow.setDeskId(reference.getDeskId());
+        overflow.setScheduleId(reference.getScheduleId());
+        overflow.setTimeslot(reference.getTimeslot());
+        overflow.setRequiredSpecialization(reference.getRequiredSpecialization());
+        seats.add(overflow);
+        schedule.getAssignments().add(overflow);
+        return overflow;
     }
 
     /**
