@@ -2,13 +2,17 @@ package com.wfm.solver;
 
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.solver.SolverFactory;
+import ai.timefold.solver.core.config.constructionheuristic.ConstructionHeuristicPhaseConfig;
+import ai.timefold.solver.core.config.localsearch.LocalSearchPhaseConfig;
 import ai.timefold.solver.core.config.score.director.ScoreDirectorFactoryConfig;
 import ai.timefold.solver.core.config.solver.SolverConfig;
+import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.wfm.model.*;
 
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -111,6 +115,84 @@ class NinetyAgent12HourTest {
         assertThat(score.softScore())
                 .as("Soft score should be 0 — all primary, no preferences")
                 .isZero();
+    }
+
+    /**
+     * 90 agents, 12-hour coverage, all assignments start UNASSIGNED.
+     * Runs CH + brief local search. This replicates the live scenario where
+     * the solver must build the initial solution from scratch.
+     */
+    @Test
+    void ninetyAgents_solverCH_shouldAssignAgents() {
+        Schedule schedule = buildPreAssignedSolution();
+
+        // Clear all assignments to simulate all-unassigned start
+        for (AgentAssignment a : schedule.getAssignments()) {
+            a.setDeskAgent(null);
+            a.setAgent(null);
+        }
+
+        // Verify all unassigned
+        assertThat(schedule.getAssignments().stream().filter(a -> a.getDeskAgent() != null).count())
+                .as("All assignments should start unassigned").isZero();
+
+        System.out.println("Starting 90-agent solver test with " + schedule.getAssignments().size()
+                + " assignments and " + schedule.getDeskAgents().size() + " agents");
+
+        // Run solver: CH + 30s local search
+        SolverConfig solverConfig = new SolverConfig()
+                .withSolutionClass(Schedule.class)
+                .withEntityClasses(AgentAssignment.class)
+                .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
+                        .withConstraintProviderClass(ScheduleConstraintProvider.class))
+                .withPhases(
+                        new ConstructionHeuristicPhaseConfig(),
+                        new LocalSearchPhaseConfig()
+                                .withTerminationConfig(new TerminationConfig()
+                                        .withSpentLimit(Duration.ofSeconds(30))
+                                        .withUnimprovedSpentLimit(Duration.ofSeconds(15))));
+
+        long startTime = System.currentTimeMillis();
+        SolverFactory<Schedule> solverFactory = SolverFactory.create(solverConfig);
+        Schedule solved = solverFactory.buildSolver().solve(schedule);
+        long elapsed = System.currentTimeMillis() - startTime;
+
+        long assigned = solved.getAssignments().stream()
+                .filter(a -> a.getDeskAgent() != null).count();
+        System.out.println("90-agent solver: assigned=" + assigned + "/"
+                + solved.getAssignments().size() + ", score=" + solved.getScore()
+                + ", elapsed=" + elapsed + "ms");
+
+        // Print constraint breakdown
+        SolverFactory<Schedule> scoringFactory = SolverFactory.create(
+                new SolverConfig()
+                        .withSolutionClass(Schedule.class)
+                        .withEntityClasses(AgentAssignment.class)
+                        .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
+                                .withConstraintProviderClass(ScheduleConstraintProvider.class)));
+        var solutionManager = ai.timefold.solver.core.api.solver.SolutionManager
+                .<Schedule, HardSoftScore>create(scoringFactory);
+        if (solved.getScore() != null && !solved.getScore().equals(HardSoftScore.ZERO)) {
+            var explanation = solutionManager.explain(solved);
+            System.out.println("=== Constraint Matches ===");
+            explanation.getConstraintMatchTotalMap().forEach((name, total) -> {
+                if (!total.getScore().equals(HardSoftScore.ZERO)) {
+                    System.out.printf("  %-35s => %s (violations: %d)%n",
+                            name, total.getScore(), total.getConstraintMatchCount());
+                }
+            });
+        }
+
+        // The solver should assign a significant portion of seats
+        assertThat(assigned)
+                .as("Solver should assign agents to seats")
+                .isGreaterThan(0);
+
+        // With 90 agents × 8hr × 60-min = 720 supply slots,
+        // all 720 assignments should be filled
+        assertThat(assigned)
+                .as("All 720 assignments should be filled (supply = demand)")
+                .isEqualTo(720);
     }
 
     // ------------------------------------------------------------------

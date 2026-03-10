@@ -219,6 +219,8 @@ public class SolverService {
                     try {
                         log.debug("Solver best solution update — schedule={}, score={}",
                                 bestSolution.getId(), bestSolution.getScore());
+                        bestSolution.setStatus(ScheduleStatus.RUNNING);
+                        inMemoryStore.put(bestSolution);
                     } finally {
                         TenantContext.clear();
                     }
