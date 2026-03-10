@@ -579,6 +579,7 @@ public class BreakAwareConstructionPhase {
      * @deprecated Replaced by {@link #addOverflowSeats} which adds seats instead
      *             of trimming agent hours. Retained for reference.
      */
+    @Deprecated
     private void trimWorkSlotsToMatchDemand(
             List<AgentBreakPlan> breakPlans,
             Map<UUID, Set<LocalTime>> agentWorkSlots,
