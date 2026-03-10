@@ -43,25 +43,19 @@ export default function StaffingRequirements() {
     specApi.list(deskId).then(setSpecs).catch(err => showToast('error', getErrorMessage(err)))
   }, [deskId])
 
-  // Convert person-hours to headcount (agents per slot)
-  const hoursToHeadcount = (hours: number) => increment > 0 ? hours * 60 / increment : hours
-  // Convert headcount to person-hours
-  const headcountToHours = (headcount: number) => increment > 0 ? headcount * increment / 60 : headcount
-
   const loadExisting = useCallback(async (generatedSlots: Timeslot[]) => {
     if (!deskId || !periodStart || !periodEnd || generatedSlots.length === 0) return
     try {
       const resp = await srApi.list(deskId, { from: periodStart, to: periodEnd })
       const loaded: DemandMap = {}
       for (const item of resp.data) {
-        // Convert stored person-hours back to headcount for display
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours * 60 / increment
+        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours
       }
       setDemand(loaded)
     } catch {
       setDemand({})
     }
-  }, [deskId, periodStart, periodEnd, increment])
+  }, [deskId, periodStart, periodEnd])
 
   useEffect(() => {
     if (!deskId || !periodStart || !periodEnd) return
@@ -133,8 +127,7 @@ export default function StaffingRequirements() {
         for (const spec of specs) {
           const val = demand[demandKey(slot.id, spec.id)] ?? 0
           if (val > 0) {
-            // Convert headcount (agents per slot) to person-hours for storage
-            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredHours: headcountToHours(val) })
+            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredHours: val })
           }
         }
       }
@@ -180,8 +173,7 @@ export default function StaffingRequirements() {
       const result = await srApi.calculateErlangX(deskId, { from: periodStart, to: periodEnd, parameters })
       const loaded: DemandMap = {}
       for (const item of result.requirements) {
-        // Convert stored person-hours back to headcount for display
-        loaded[demandKey(item.timeslotId, item.specializationId)] = hoursToHeadcount(item.requiredHours)
+        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours
       }
       setDemand(loaded)
       showToast('success', 'Erlang X calculation complete')
@@ -255,7 +247,7 @@ export default function StaffingRequirements() {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
                       {specs.map(s => (
-                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name} (agents)</th>
+                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name} (hrs)</th>
                       ))}
                     </tr>
                   </thead>
@@ -265,7 +257,7 @@ export default function StaffingRequirements() {
                         <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
                         {specs.map(s => (
                           <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
-                            <input type="number" min={0} step={1}
+                            <input type="number" min={0} step={0.25}
                               value={demand[demandKey(slot.id, s.id)] ?? 0}
                               onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseFloat(e.target.value) || 0))}
                               style={{ width: '70px', textAlign: 'center' }} />

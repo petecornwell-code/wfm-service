@@ -260,22 +260,23 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
         const dayEntries = filtered.filter(e => e.date === date)
 
         // Collect all timeslot start times for this day from assignments and breaks
+        // Normalize to "HH:MM" to avoid duplicates from "HH:MM" vs "HH:MM:SS" formats
         const slotSet = new Set<string>()
         for (const entry of dayEntries) {
-          for (const a of entry.assignments) slotSet.add(a.startTime)
+          for (const a of entry.assignments) slotSet.add(toHHMM(a.startTime))
           for (const b of entry.breaks) {
             // Break may span multiple slots; derive each slot start from the break range
             const inc = entry.assignments.length > 0
               ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
               : 0
             if (inc > 0) {
-              let t = b.startTime
-              while (t < b.endTime) {
+              let t = toHHMM(b.startTime)
+              while (t < toHHMM(b.endTime)) {
                 slotSet.add(t)
                 t = addMinutes(t, inc)
               }
             } else {
-              slotSet.add(b.startTime)
+              slotSet.add(toHHMM(b.startTime))
             }
           }
         }
@@ -289,7 +290,8 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
         for (const slot of slots) agentsPerSlot[slot] = 0
         for (const entry of sortedEntries) {
           for (const a of entry.assignments) {
-            if (agentsPerSlot[a.startTime] !== undefined) agentsPerSlot[a.startTime]++
+            const key = toHHMM(a.startTime)
+            if (agentsPerSlot[key] !== undefined) agentsPerSlot[key]++
           }
         }
 
@@ -312,9 +314,9 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                   {sortedEntries.map(entry => {
                     const isFailed = failedAgentIds.has(entry.agentId)
                     // Build lookup for this agent's slot status
-                    const workSlots = new Set(entry.assignments.map(a => a.startTime))
+                    const workSlots = new Set(entry.assignments.map(a => toHHMM(a.startTime)))
                     const matchTypes: Record<string, string> = {}
-                    for (const a of entry.assignments) matchTypes[a.startTime] = a.matchType
+                    for (const a of entry.assignments) matchTypes[toHHMM(a.startTime)] = a.matchType
 
                     const breakSlots = new Set<string>()
                     const inc = entry.assignments.length > 0
@@ -322,13 +324,13 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                       : 0
                     for (const b of entry.breaks) {
                       if (inc > 0) {
-                        let t = b.startTime
-                        while (t < b.endTime) {
+                        let t = toHHMM(b.startTime)
+                        while (t < toHHMM(b.endTime)) {
                           breakSlots.add(t)
                           t = addMinutes(t, inc)
                         }
                       } else {
-                        breakSlots.add(b.startTime)
+                        breakSlots.add(toHHMM(b.startTime))
                       }
                     }
 
@@ -391,6 +393,11 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
       })}
     </>
   )
+}
+
+/** Normalize time to "HH:MM" — strips seconds from "HH:MM:SS" */
+function toHHMM(time: string): string {
+  return time.substring(0, 5)
 }
 
 /** Parse "HH:MM" or "HH:MM:SS" time difference in minutes */
