@@ -9,6 +9,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.util.CursorPagination;
+import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,19 +27,22 @@ public class ScheduleService {
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentAssignmentRepository agentAssignmentRepository;
     private final ScheduleOutputService scheduleOutputService;
+    private final EntityManager entityManager;
 
     public ScheduleService(ScheduleRepository scheduleRepository,
                            InMemoryScheduleStore inMemoryStore,
                            TimeslotRepository timeslotRepository,
                            StaffingRequirementRepository staffingRequirementRepository,
                            AgentAssignmentRepository agentAssignmentRepository,
-                           ScheduleOutputService scheduleOutputService) {
+                           ScheduleOutputService scheduleOutputService,
+                           EntityManager entityManager) {
         this.scheduleRepository = scheduleRepository;
         this.inMemoryStore = inMemoryStore;
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentAssignmentRepository = agentAssignmentRepository;
         this.scheduleOutputService = scheduleOutputService;
+        this.entityManager = entityManager;
     }
 
     // --- Task 23: listSchedules ---
@@ -190,9 +194,11 @@ public class ScheduleService {
             scheduleRepository.delete(old);
         }
 
-        // 2. Persist the Schedule record
+        // 2. Persist the Schedule record (use persist, not merge — the entity
+        //    was only held in the in-memory store and has never been saved to the DB)
         schedule.setStatus(ScheduleStatus.ACCEPTED);
-        Schedule saved = scheduleRepository.save(schedule);
+        entityManager.persist(schedule);
+        Schedule saved = schedule;
 
         // 3. Snapshot live timeslots → new IDs with schedule_id set
         Map<UUID, UUID> timeslotRemap = new HashMap<>();
