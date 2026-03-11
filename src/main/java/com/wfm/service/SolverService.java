@@ -426,7 +426,9 @@ public class SolverService {
                         schedule.getBreakDurationMinutes(),
                         schedule.getBreakMinShiftHours(),
                         schedule.getBreakBlockedHours(),
-                        schedule.getBreakStartAlignment()));
+                        schedule.getBreakStartAlignment(),
+                        schedule.getOverallocationHardLimitPct(),
+                        schedule.getUnderallocationHardLimitPct()));
             }
         }
 

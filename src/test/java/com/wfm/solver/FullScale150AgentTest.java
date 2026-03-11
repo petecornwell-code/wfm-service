@@ -214,7 +214,7 @@ class FullScale150AgentTest {
                     da.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
                     BREAK_MIN_SHIFT, BREAK_BLOCKED,
-                    BREAK_ALIGNMENT));
+                    BREAK_ALIGNMENT, 130, 70));
         }
 
         // --- Constraint Weights (all defaults) ---

@@ -155,12 +155,12 @@ class SingleDaySolvableTest {
                 daA.getId(), DAY, new BigDecimal("8.00"),
                 INCREMENT, 60,
                 new BigDecimal("4.00"), new BigDecimal("1.00"),
-                BreakAlignment.ON_HOUR);
+                BreakAlignment.ON_HOUR, 130, 70);
         AgentDayConfig configB = new AgentDayConfig(
                 daB.getId(), DAY, new BigDecimal("8.00"),
                 INCREMENT, 60,
                 new BigDecimal("4.00"), new BigDecimal("1.00"),
-                BreakAlignment.ON_HOUR);
+                BreakAlignment.ON_HOUR, 130, 70);
 
         // --- Constraint Weights (all defaults) ---
         ConstraintWeights weights = new ConstraintWeights();

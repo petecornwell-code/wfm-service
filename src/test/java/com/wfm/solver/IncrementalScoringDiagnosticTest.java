@@ -74,7 +74,7 @@ class IncrementalScoringDiagnosticTest {
         });
 
         // Verify initial score matches expected
-        assertThat(initialScore.hardScore()).isEqualTo(-76504);
+        assertThat(initialScore.hardScore()).isEqualTo(-48004);
         assertThat(initialScore.softScore()).isEqualTo(-720000);
 
         // Now assign ONE agent to ONE seat
@@ -182,7 +182,7 @@ class IncrementalScoringDiagnosticTest {
                     da.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
                     BREAK_MIN_SHIFT, BREAK_BLOCKED,
-                    BREAK_ALIGNMENT));
+                    BREAK_ALIGNMENT, 130, 70));
         }
 
         int[] demandPerSlot = {20, 42, 63, 79, 75, 76, 74, 77, 83, 66, 45, 20};

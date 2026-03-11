@@ -18,5 +18,7 @@ public record AgentDayConfig(
         int breakDurationMinutes,
         BigDecimal breakMinShiftHours,
         BigDecimal breakBlockedHours,
-        BreakAlignment breakStartAlignment
+        BreakAlignment breakStartAlignment,
+        int overallocationHardLimitPct,
+        int underallocationHardLimitPct
 ) {}
