@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
+
+type SortField = 'firstName' | 'lastName'
+type SortDir = 'asc' | 'desc'
+
+function getFirstName(name: string) { return name.split(' ')[0] ?? '' }
+function getLastName(name: string) { return name.split(' ').slice(1).join(' ') }
 
 export default function DeskAgents() {
   const { deskId } = useParams<{ deskId: string }>()
@@ -9,6 +15,14 @@ export default function DeskAgents() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [showActiveOnly, setShowActiveOnly] = useState(true)
+
+  // Pagination
+  const [pageSize, setPageSize] = useState(20)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Sorting
+  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   // Assign modal
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -147,7 +161,38 @@ export default function DeskAgents() {
     }
   }
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+    setCurrentPage(1)
+  }
+
+  const sortIndicator = (field: SortField) => {
+    if (sortField !== field) return ' \u2195'
+    return sortDir === 'asc' ? ' \u2191' : ' \u2193'
+  }
+
   const filteredAgents = showActiveOnly ? agentList.filter(da => da.agent.active) : agentList
+
+  const sortedAgents = useMemo(() => {
+    if (!sortField) return filteredAgents
+    const sorted = [...filteredAgents]
+    sorted.sort((a, b) => {
+      const aVal = sortField === 'firstName' ? getFirstName(a.agent.name) : getLastName(a.agent.name)
+      const bVal = sortField === 'firstName' ? getFirstName(b.agent.name) : getLastName(b.agent.name)
+      const cmp = aVal.localeCompare(bVal)
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return sorted
+  }, [filteredAgents, sortField, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedAgents.length / pageSize))
+  const paginatedAgents = sortedAgents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   const filteredUnassigned = searchTerm
     ? unassigned.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()))
     : unassigned
@@ -168,18 +213,37 @@ export default function DeskAgents() {
         </label>
       </div>
 
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+        <label>
+          Rows per page:{' '}
+          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}>
+            {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <span style={{ marginLeft: 'auto' }}>
+          {sortedAgents.length} agent{sortedAgents.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
       <table>
         <thead>
           <tr>
-            <th>Name</th><th>Email</th><th>Department</th><th>Job Title</th>
+            <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('firstName')}>
+              First Name{sortIndicator('firstName')}
+            </th>
+            <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('lastName')}>
+              Last Name{sortIndicator('lastName')}
+            </th>
+            <th>Email</th><th>Department</th><th>Job Title</th>
             <th>Primary Spec</th><th>Secondary Specs</th><th>Hours/Day</th>
             <th>Active</th><th>Last Refreshed</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {filteredAgents.map(da => (
+          {paginatedAgents.map(da => (
             <tr key={da.id}>
-              <td>{da.agent.name}</td>
+              <td>{getFirstName(da.agent.name)}</td>
+              <td>{getLastName(da.agent.name)}</td>
               <td>{da.agent.email}</td>
               <td>{da.agent.department}</td>
               <td>{da.agent.jobTitle}</td>
@@ -247,6 +311,16 @@ export default function DeskAgents() {
           ))}
         </tbody>
       </table>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.75rem' }}>
+          <button disabled={currentPage <= 1} onClick={() => setCurrentPage(1)} style={{ padding: '0.25rem 0.5rem' }}>&laquo;</button>
+          <button disabled={currentPage <= 1} onClick={() => setCurrentPage(p => p - 1)} style={{ padding: '0.25rem 0.5rem' }}>&lsaquo;</button>
+          <span style={{ fontSize: '0.85rem' }}>Page {currentPage} of {totalPages}</span>
+          <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)} style={{ padding: '0.25rem 0.5rem' }}>&rsaquo;</button>
+          <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(totalPages)} style={{ padding: '0.25rem 0.5rem' }}>&raquo;</button>
+        </div>
+      )}
 
       {/* Assign Modal */}
       {showAssignModal && (
