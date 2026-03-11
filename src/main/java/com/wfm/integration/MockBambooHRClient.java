@@ -6,7 +6,10 @@ import org.springframework.stereotype.Component;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory mock BambooHR client for development.
@@ -42,14 +45,22 @@ public class MockBambooHRClient implements BambooHRClient {
         "Campbell", "Mitchell", "Carter", "Roberts"
     };
 
-    private static List<BambooEmployee> buildVintedAgents(String wfmTenantId) {
-        List<BambooEmployee> agents = new ArrayList<>(95);
-        for (int i = 0; i < 95; i++) {
-            String firstName = FIRST_NAMES[i / LAST_NAMES.length];
+    /** Incremented on each listEmployees call so each refresh produces a different roster. */
+    private final AtomicInteger callCount = new AtomicInteger(0);
+
+    /**
+     * Build a shuffled roster of Vinted agents. The seed controls which employees
+     * appear and in what order, so each refresh call returns a visibly different list.
+     */
+    private static List<BambooEmployee> buildVintedAgents(String wfmTenantId, int seed) {
+        // Build the full pool of possible employees
+        List<BambooEmployee> pool = new ArrayList<>(FIRST_NAMES.length);
+        for (int i = 0; i < FIRST_NAMES.length; i++) {
+            String firstName = FIRST_NAMES[i];
             String lastName = LAST_NAMES[i % LAST_NAMES.length];
             String displayName = firstName + " " + lastName;
             String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + (i + 1) + "@vinted.example.com";
-            agents.add(new BambooEmployee(
+            pool.add(new BambooEmployee(
                 String.valueOf(i + 1),
                 displayName,
                 email,
@@ -60,20 +71,48 @@ public class MockBambooHRClient implements BambooHRClient {
                 "Vinted"
             ));
         }
-        return List.copyOf(agents);
+        // Shuffle with a seed derived from the call count so each refresh is different
+        Collections.shuffle(pool, new Random(seed));
+        // Return between 85 and 100 employees (varying roster size)
+        int size = 85 + (Math.abs(seed) % 16);
+        return List.copyOf(pool.subList(0, Math.min(size, pool.size())));
     }
 
     @Override
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
+        int seed = callCount.getAndIncrement();
+
         // Case-insensitive desk name matching
         if ("Vinted".equalsIgnoreCase(project)) {
-            return buildVintedAgents(wfmTenantId);
+            return buildVintedAgents(wfmTenantId, seed);
         }
-        return List.of(
-            new BambooEmployee("1", "Jane Smith", "jane@example.com", "Support", "Senior Agent", "Active", wfmTenantId, project),
-            new BambooEmployee("2", "John Doe", "john@example.com", "Support", "Agent", "Active", wfmTenantId, project),
-            new BambooEmployee("3", "Alice Brown", "alice@example.com", "Sales", "Agent", "Active", wfmTenantId, project)
-        );
+
+        // For non-Vinted desks, generate a varying roster from the name pools
+        Random rng = new Random(seed);
+        int count = 3 + rng.nextInt(6); // 3-8 employees
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < FIRST_NAMES.length; i++) indices.add(i);
+        Collections.shuffle(indices, rng);
+
+        List<BambooEmployee> employees = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            int idx = indices.get(i);
+            String firstName = FIRST_NAMES[idx];
+            String lastName = LAST_NAMES[idx % LAST_NAMES.length];
+            String displayName = firstName + " " + lastName;
+            String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + "@example.com";
+            employees.add(new BambooEmployee(
+                String.valueOf(idx + 1),
+                displayName,
+                email,
+                rng.nextBoolean() ? "Support" : "Sales",
+                "Agent",
+                "Active",
+                wfmTenantId,
+                project
+            ));
+        }
+        return List.copyOf(employees);
     }
 
     @Override
