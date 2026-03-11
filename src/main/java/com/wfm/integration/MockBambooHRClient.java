@@ -44,25 +44,21 @@ public class MockBambooHRClient implements BambooHRClient {
 
     private static List<BambooEmployee> buildVintedAgents(String wfmTenantId) {
         List<BambooEmployee> agents = new ArrayList<>(95);
-        int id = 1;
-        for (int i = 0; i < FIRST_NAMES.length && agents.size() < 95; i++) {
-            for (int j = 0; j < LAST_NAMES.length && agents.size() < 95; j++) {
-                String firstName = FIRST_NAMES[i];
-                String lastName = LAST_NAMES[j];
-                String displayName = firstName + " " + lastName;
-                String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + "@vinted.example.com";
-                agents.add(new BambooEmployee(
-                    String.valueOf(id),
-                    displayName,
-                    email,
-                    "Support",
-                    "Agent",
-                    "Active",
-                    wfmTenantId,
-                    "Vinted"
-                ));
-                id++;
-            }
+        for (int i = 0; i < 95; i++) {
+            String firstName = FIRST_NAMES[i / LAST_NAMES.length];
+            String lastName = LAST_NAMES[i % LAST_NAMES.length];
+            String displayName = firstName + " " + lastName;
+            String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + (i + 1) + "@vinted.example.com";
+            agents.add(new BambooEmployee(
+                String.valueOf(i + 1),
+                displayName,
+                email,
+                "Support",
+                "Agent",
+                "Active",
+                wfmTenantId,
+                "Vinted"
+            ));
         }
         return List.copyOf(agents);
     }

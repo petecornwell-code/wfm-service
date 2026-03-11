@@ -534,7 +534,7 @@ Represents the demand for a given specialization in a given timeslot. There is o
 | `scheduleId` | `UUID` | Nullable. `NULL` = live input data (user-editable). Non-null = snapshot belonging to an accepted schedule. |
 | `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
-| `requiredHours` | `BigDecimal` | Total staff-hours of coverage needed for this timeslot and specialization |
+| `requiredHours` | `BigDecimal` | Total staff-hours of coverage needed for this timeslot and specialization. Uses `NUMERIC(10,4)` precision (not the standard `NUMERIC(5,2)`) to support Erlang X calculations that may produce fractional agent counts. |
 | `source` | `enum(DIRECT, ERLANG_X)` | How the value was determined |
 
 **Generating seats:** For each StaffingRequirement, the system converts `requiredHours` to an agent count (`agents = requiredHours × 60 / timeslotIncrementMinutes`, rounded to nearest integer) and creates that many AgentAssignment instances for that timeslot and specialization.
@@ -630,27 +630,29 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `id` | `UUID` | — | Primary key |
 | `tenantId` | `long` | — | Tenant identifier (from platform) |
 | `deskId` | `UUID` | — | Desk identifier; unique together with `tenantId` — one row per desk |
-| `unassignedAssignmentWeight` | `HardSoftScore` | `hard(1)` | Unassigned assignment — penalizes seats left without an agent |
+| `unassignedAssignmentWeight` | `HardSoftScore` | `soft(1000)` | Unassigned assignment — penalizes seats left without an agent. Soft rather than hard because the solver uses nullable planning variables; making it a very high soft penalty allows the solver to explore partial solutions without immediately failing on hard score. |
 | `agentDayOffWeight` | `HardSoftScore` | `hard(1)` | Agent day off |
 | `specMatchWeight` | `HardSoftScore` | `hard(1)` | Specialization match |
-| `noOverlapWeight` | `HardSoftScore` | `hard(1)` | One assignment per timeslot |
-| `exactlyOneBreakWeight` | `HardSoftScore` | `hard(1)` | Exactly one break per shift |
-| `breakDurationWeight` | `HardSoftScore` | `hard(1)` | Break duration |
-| `breakBlockedWindowWeight` | `HardSoftScore` | `hard(1)` | Break blocked window |
-| `breakAlignmentWeight` | `HardSoftScore` | `hard(1)` | Break start alignment |
+| `noOverlapWeight` | `HardSoftScore` | `hard(1000)` | One assignment per timeslot. High weight relative to other hard constraints to strongly discourage overlapping assignments. |
+| `exactlyOneBreakWeight` | `HardSoftScore` | `hard(100)` | Exactly one break per shift |
+| `breakDurationWeight` | `HardSoftScore` | `hard(10)` | Break duration |
+| `breakBlockedWindowWeight` | `HardSoftScore` | `hard(10)` | Break blocked window |
+| `breakAlignmentWeight` | `HardSoftScore` | `hard(10)` | Break start alignment |
 | `preferPrimaryWeight` | `HardSoftScore` | `soft(1)` | Prefer primary specialization |
 | `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
 | `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
-| `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering |
-| `contractedHoursWeight` | `HardSoftScore` | `hard(1)` | Contracted hours (hard — every agent must work exactly their contracted hours) |
+| `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering (placeholder — full implementation deferred; see section 6) |
+| `contractedHoursOverWeight` | `HardSoftScore` | `hard(1001)` | Contracted hours — over: penalizes assigning more timeslots than the agent's contracted hours allow. The highest hard weight ensures over-assignment is strongly penalized. |
+| `contractedHoursUnderWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under: penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. |
+| `contractedHoursUnderZeroWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under (zero assignments): penalizes desk-agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity to detect completely unscheduled agents. |
 | `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`, default 130%) |
-| `bulkUnderallocationSoftWeight` | `HardSoftScore` | `soft(1)` | Bulk under-allocation soft penalty (scales linearly with the shortfall between demand and contracted hours) |
+| `bulkUnderallocationSoftWeight` | `HardSoftScore` | `soft(1)` | Bulk under-allocation soft penalty (placeholder — not yet implemented; returns zero penalty) |
 | `bulkUnderallocationHardWeight` | `HardSoftScore` | `hard(1)` | Bulk under-allocation hard limit (violated when demand falls below `underallocationHardLimitPct` of contracted hours, default 70%) |
 
 
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
-**JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 15 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
+**JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 18 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
 
 ### 5.11a AgentDayConfig (Problem Fact)
 
@@ -666,8 +668,19 @@ A pre-computed per-agent-day configuration record used as a problem fact during 
 | `breakMinShiftHours` | `BigDecimal` | Copied from schedule config |
 | `breakBlockedHours` | `BigDecimal` | Copied from schedule config |
 | `breakStartAlignment` | `BreakAlignment` | Copied from schedule config |
+| `overallocationHardLimitPct` | `int` | Copied from schedule config for bulk allocation constraint convenience |
+| `underallocationHardLimitPct` | `int` | Copied from schedule config for bulk allocation constraint convenience |
 
 Constraints that need per-agent-day effective hours (contracted hours, all break constraints) join `AgentDayConfig` instead of `ScheduleConfig`. Constraints that only need schedule-wide configuration (e.g. preference constraints) may still use `ScheduleConfig`.
+
+### 5.11b DayDemandConfig (Problem Fact)
+
+A pre-computed per-day demand totals record used as a problem fact during solving. The `SolverService` generates one `DayDemandConfig` for each day in the schedule period. This holds the total number of demand slots for a single day, enabling the bulk over-allocation and under-allocation constraints to compare total assigned slots against demand bounds without per-timeslot aggregation at constraint evaluation time.
+
+| Field | Type | Notes |
+|---|---|---|
+| `date` | `LocalDate` | The day this config applies to |
+| `totalDemandSlots` | `int` | Total number of assignment seats across all timeslots and specializations for this day. Derived from staffing requirements: `Σ (requiredHours × 60 / incrementMinutes)` for each requirement on this date. |
 
 ### 5.12 Schedule (Planning Solution)
 
@@ -699,8 +712,10 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
 | `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.10) |
 | `agentDayConfigs` | `List<AgentDayConfig>` | Problem facts — pre-computed per-agent-day effective hours and break config (section 5.11a). Generated by SolverService during pre-solve phase. |
+| `dayDemandConfigs` | `List<DayDemandConfig>` | Problem facts — pre-computed per-day demand totals (section 5.11b). Used by bulk over-allocation and under-allocation constraints for efficient per-day comparison against assigned slots. Generated by SolverService during pre-solve phase. |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
+| `warnings` | `List<String>` | Transient. Validation warnings collected during the pre-solve phase (e.g. agents near contracted-hours edge cases). Not persisted. |
 | `score` | `HardSoftScore` | Populated by solver. `null` while `RUNNING` if no solution found yet, and `null` if `FAILED`. |
 | `status` | `enum(RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)` | Current solver/lifecycle status (see lifecycle rules below). Persisted as a database column for accepted schedules. |
 | `errorMessage` | `String` | `null` unless status is `FAILED`. Contains the exception message from the solver failure. |
@@ -753,22 +768,25 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 | Constraint | Default Level | Description |
 |---|---|---|
-| Unassigned assignment | Hard | Every agent assignment (seat) must be filled with a desk-agent. Since the planning variable is nullable (to allow the solver to explore partial solutions), this constraint provides the incentive to assign all seats. Each unassigned seat incurs a hard penalty. |
+| Unassigned assignment | Soft (1000) | Every agent assignment (seat) should be filled with a desk-agent. Since the planning variable is nullable (to allow the solver to explore partial solutions during construction), this constraint provides a very high soft incentive to assign all seats. Implemented as soft rather than hard so the construction heuristic can build solutions incrementally without immediately failing on hard score when some seats are still null. |
 | Agent day off | Hard | An agent must not be assigned to any timeslot on a day they have a day off (mandatory or PTO). |
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
-| One assignment per timeslot | Hard | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. |
+| One assignment per timeslot | Hard (1000) | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. High weight relative to other hard constraints. |
 | One agent per seat | Hard | Each AgentAssignment (seat) is filled by exactly one agent (enforced by the planning variable). |
-| Exactly one break | Hard | An agent whose contracted hours **strictly exceed** the minimum shift threshold (`breakMinShiftHours`, default 4.0) must have exactly one contiguous break of the configured duration. An agent whose contracted hours are equal to or less than the threshold must have **no break** — their shift consists entirely of assigned work. **Break detection:** a "break" is a contiguous sequence of one or more timeslots within the agent's shift window (from their earliest assignment start to their latest assignment end) where the agent has **no assignment**. Multiple gaps or zero gaps (when one is required) each constitute a violation. |
-| Break duration | Hard | An agent's break (the single contiguous gap, as detected above) must span exactly `breakDurationMinutes / incrementMinutes` timeslots. A gap that is shorter or longer than the configured duration is a violation. |
-| Break blocked window | Hard | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1.0 hour, fractional values supported). The entire break must be contained within the eligible window between the blocked periods. |
-| Break start alignment | Hard | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
+| Exactly one break | Hard (100) | An agent whose contracted hours **strictly exceed** the minimum shift threshold (`breakMinShiftHours`, default 4.0) must have exactly one contiguous break of the configured duration. An agent whose contracted hours are equal to or less than the threshold must have **no break** — their shift consists entirely of assigned work. **Break detection:** a "break" is a contiguous sequence of one or more timeslots within the agent's shift window (from their earliest assignment start to their latest assignment end) where the agent has **no assignment**. Multiple gaps or zero gaps (when one is required) each constitute a violation. |
+| Break duration | Hard (10) | An agent's break (the single contiguous gap, as detected above) must span exactly `breakDurationMinutes / incrementMinutes` timeslots. A gap that is shorter or longer than the configured duration is a violation. |
+| Break blocked window | Hard (10) | No part of an agent's break may fall within the first or last N hours of their shift (configurable, default 1.0 hour, fractional values supported). The entire break must be contained within the eligible window between the blocked periods. |
+| Break start alignment | Hard (10) | A break must start on a timeslot boundary that matches the configured alignment (hour, half-hour, or quarter-hour). |
 | Prefer primary specialization | Soft | Prefer assigning agents to seats matching their primary specialization over any of their secondary specializations. |
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
-| Break clustering | Soft | Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. |
-| Contracted hours | Hard | Every desk-agent must be assigned exactly their contracted hours per day (from `DeskAgent.contractedHoursPerDay`, or the schedule's `defaultContractedHoursPerDay` if not set). Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any desk-agent whose contracted hours are not a multiple of the increment. |
+| Break clustering | Soft | *(Placeholder — not yet implemented; returns zero penalty.)* Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. Full implementation requires cross-agent aggregation per timeslot and is deferred to a future phase. |
+| Contracted hours (over) | Hard (1001) | Penalizes assigning more timeslots than an agent's contracted hours allow on a given day. The highest hard weight ensures over-assignment is the strongest violation. Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any desk-agent whose contracted hours are not a multiple of the increment. |
+| Contracted hours (under) | Hard (100) | Penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. Uses `AgentAssignment` as the starting entity and groups by desk-agent per day. |
+| Contracted hours (under, zero) | Hard (100) | Penalizes desk-agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity (via `ifNotExists` on `AgentAssignment`) to detect completely unscheduled agents, since a purely assignment-based constraint would never fire for agents with no assignments. |
 | Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each desk-agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ requiredHours` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
-| Bulk under-allocation limit | Soft / Hard | When **total predicted demand hours** are less than **total contracted agent hours** for the schedule period, a **soft penalty** scales linearly with the gap. If demand falls below `underallocationHardLimitPct` (default 70%) of contracted hours, a **hard** violation is triggered. Same definitions of "total contracted agent hours" and "total predicted demand hours" as the over-allocation constraint above. Example: contracted hours = 200, limit = 70% → demand below 140 hours is a hard violation; demand between 140–200 hours incurs a soft penalty proportional to the shortfall. This is also evaluated as a **pre-solve check**. |
+| Bulk under-allocation soft | Soft | *(Placeholder — not yet implemented; returns zero penalty.)* When **total predicted demand hours** are less than **total contracted agent hours** for the schedule period, a soft penalty should scale linearly with the gap. Full implementation is deferred. |
+| Bulk under-allocation hard | Hard | When **total predicted demand hours** fall below `underallocationHardLimitPct` (default 70%) of **total contracted agent hours**, a hard violation is triggered. Same definitions of "total contracted agent hours" and "total predicted demand hours" as the over-allocation constraint above. Example: contracted hours = 200, limit = 70% → demand below 140 hours is a hard violation. This is also evaluated as a **pre-solve check**. |
 
 
 ## 7. API
@@ -991,19 +1009,21 @@ Desk-scoped. Each desk has its own constraint weight configuration.
 
 ```json
 {
-  "unassignedAssignmentWeight": { "hardScore": 1, "softScore": 0 },
+  "unassignedAssignmentWeight": { "hardScore": 0, "softScore": 1000 },
   "agentDayOffWeight": { "hardScore": 1, "softScore": 0 },
   "specMatchWeight": { "hardScore": 1, "softScore": 0 },
-  "noOverlapWeight": { "hardScore": 1, "softScore": 0 },
-  "exactlyOneBreakWeight": { "hardScore": 1, "softScore": 0 },
-  "breakDurationWeight": { "hardScore": 1, "softScore": 0 },
-  "breakBlockedWindowWeight": { "hardScore": 1, "softScore": 0 },
-  "breakAlignmentWeight": { "hardScore": 1, "softScore": 0 },
+  "noOverlapWeight": { "hardScore": 1000, "softScore": 0 },
+  "exactlyOneBreakWeight": { "hardScore": 100, "softScore": 0 },
+  "breakDurationWeight": { "hardScore": 10, "softScore": 0 },
+  "breakBlockedWindowWeight": { "hardScore": 10, "softScore": 0 },
+  "breakAlignmentWeight": { "hardScore": 10, "softScore": 0 },
   "preferPrimaryWeight": { "hardScore": 0, "softScore": 1 },
   "honourStartTimeWeight": { "hardScore": 0, "softScore": 1 },
   "honourBreakTimeWeight": { "hardScore": 0, "softScore": 1 },
   "breakClusteringWeight": { "hardScore": 0, "softScore": 2 },
-  "contractedHoursWeight": { "hardScore": 1, "softScore": 0 },
+  "contractedHoursOverWeight": { "hardScore": 1001, "softScore": 0 },
+  "contractedHoursUnderWeight": { "hardScore": 100, "softScore": 0 },
+  "contractedHoursUnderZeroWeight": { "hardScore": 100, "softScore": 0 },
   "bulkOverallocationLimitWeight": { "hardScore": 1, "softScore": 0 },
   "bulkUnderallocationSoftWeight": { "hardScore": 0, "softScore": 1 },
   "bulkUnderallocationHardWeight": { "hardScore": 1, "softScore": 0 }
@@ -1164,17 +1184,18 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 **Failure recovery.** Since non-accepted schedules exist only in memory, a server crash or restart simply loses any in-progress or completed-but-not-accepted schedules. No database cleanup is needed — there are no orphaned records to recover. The concurrent-solve check is also held in memory (per desk), so a restart naturally clears it. The user must re-run the solver after a restart.
 
-**Solver configuration.** The solver is configured via `solverConfig.xml` (or Timefold's programmatic API) placed on the classpath. The configuration defines:
+**Solver configuration.** The solver is configured via `solverConfig.xml` placed on the classpath. The configuration defines:
 
-1. **Break-aware pre-assignment** — Before the solver starts, `SolverService.startSolve()` calls `BreakAwareConstructionPhase.preAssign()` to build a feasible initial solution. This custom phase understands break geometry and assigns all `AgentAssignment.deskAgent` values by: (a) computing valid break positions per agent per day (respecting blocked window, alignment, and duration constraints); (b) distributing breaks round-robin across eligible positions, preferring zero-demand timeslots; (c) assigning agents to demand seats with specialization preference (primary > secondary > any). Since all planning variables are pre-assigned, the standard construction heuristic is not needed.
-2. **Local search phase** — `LATE_ACCEPTANCE` or `TABU_SEARCH` (Timefold defaults). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector (swap + change) is appropriate. The solver starts directly in local search since the pre-assignment provides a feasible starting point.
-3. **Termination** — time-based (see below).
+1. **Break-aware pre-assignment (no-op)** — `SolverService.startSolve()` calls `BreakAwareConstructionPhase.preAssign()` before launching the solver. This method is currently a **no-op** — it returns 0 and all planning variables remain `null`. The previous multi-pass brute-force pipeline (compute work slots → assign → repair break geometry → mop up → repair → fill under-assigned) was removed because sequential passes with no backtracking could not scale: each pass lost quality, and repair cascades caused under-assignment at 100+ agents.
+2. **Construction heuristic** — Timefold's default construction heuristic (`<constructionHeuristic/>`) builds the initial solution from scratch. All planning variables (`AgentAssignment.deskAgent`) start as `null`. The CH assigns agents to seats one at a time, evaluating all 18 constraints per move to find feasible break positions, respect contracted hours, and match specializations.
+3. **Local search phase** — Timefold defaults (swap + change moves). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector is appropriate.
+4. **Termination** — time-based: 10-minute total spend limit OR 3-minute unimproved spend limit, whichever is reached first. Break rearrangement requires coordinated multi-slot moves that need longer plateaus to discover.
 
-> **Design note:** The original `FIRST_FIT_DECREASING` construction heuristic assigned one planning variable at a time without awareness of break geometry (contiguous gap constraints). At scale (100+ agents), this produced tangled initial solutions with multiple gaps per agent that local search could not repair within the 5-minute time limit. The break-aware pre-assignment was introduced to solve this scalability problem. Tests confirm it produces 0-hard-score solutions for 150-agent scenarios.
+> **Design note:** The original `FIRST_FIT_DECREASING` construction heuristic and subsequent break-aware pre-assignment approaches were abandoned in favour of delegating everything to Timefold's standard CH. The CH naturally discovers feasible break positions through the hard break constraints (exactlyOneBreak, breakDuration, breakBlockedWindow, breakStartAlignment) and does not suffer from the sequential-pass quality degradation that affected custom approaches.
 
-The `solverConfig.xml` is a required project artifact. It now contains only the local search phase (no construction heuristic). Solver tuning (move filters, entity/value sorters) is expected to evolve as the team benchmarks with realistic data.
+The `solverConfig.xml` is a required project artifact. It contains both a construction heuristic phase and a local search phase. Solver tuning (move filters, entity/value sorters) is expected to evolve as the team benchmarks with realistic data.
 
-**Solver time limit.** Each solve run is subject to a configurable time limit (default: 5 minutes, set via `solver.time-limit` application property). When the limit is reached, Timefold terminates gracefully and the best solution found so far is retained in memory. This is functionally equivalent to the user calling `PUT /desks/{deskId}/schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
+**Solver time limit.** The `solverConfig.xml` defines termination as 10 minutes total or 3 minutes without improvement. The `solver.time-limit` application property (default: `PT5M`) provides an additional outer time limit that can be used to cap the total solve duration. When any limit is reached, Timefold terminates gracefully and the best solution found so far is retained in memory. This is functionally equivalent to the user calling `PUT /desks/{deskId}/schedules/{id}/stop` — the schedule transitions to `COMPLETED` with the best-effort result.
 
 **Pre-solve validation:** `POST /desks/{deskId}/schedules/solve` performs the following validation before starting the solver. If any check fails, the endpoint returns `400 Bad Request` using the standard error envelope (error code `VALIDATION_FAILED`). Each failing check is represented as an entry in the `details` array so that the client can display all issues at once:
 
@@ -1456,6 +1477,7 @@ src/main/java/com/wfm/
 │   ├── ConstraintWeights.java
 │   ├── ScheduleConfig.java            (record: immutable schedule config for constraint access)
 │   ├── AgentDayConfig.java            (record: per-agent-day effective hours + break config)
+│   ├── DayDemandConfig.java           (record: per-day demand totals for bulk allocation constraints)
 │   ├── Schedule.java
 │   ├── DayOffType.java              (enum: MANDATORY, PTO)
 │   ├── ScheduleStatus.java          (enum: RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)
@@ -1501,7 +1523,8 @@ src/main/java/com/wfm/
 │   ├── TimeslotController.java
 │   ├── StaffingRequirementController.java
 │   ├── ConstraintWeightsController.java
-│   └── ScheduleController.java
+│   ├── ScheduleController.java
+│   └── GlobalExceptionHandler.java    (centralized error handling: 400/404/409/422/500)
 ├── integration/
 │   ├── BambooHRClient.java
 │   ├── BambooEmployee.java
@@ -1510,21 +1533,50 @@ src/main/java/com/wfm/
 │   ├── HttpBambooHRClient.java
 │   └── BambooRefreshService.java
 ├── dto/                               (request/response DTOs for all API endpoints)
+│   ├── DeskRequest.java
+│   ├── DeskResponse.java
+│   ├── AgentResponse.java
+│   ├── AgentDayOffResponse.java
+│   ├── DeskAgentResponse.java
+│   ├── AssignAgentsRequest.java
+│   ├── SetSpecializationsRequest.java
+│   ├── SetContractedHoursRequest.java
+│   ├── SpecializationResponse.java
+│   ├── PreferenceResponse.java
+│   ├── ExceptionResponse.java
+│   ├── TimeslotResponse.java
+│   ├── GenerateTimeslotsRequest.java
+│   ├── StaffingRequirementRequest.java
+│   ├── StaffingRequirementResponse.java
+│   ├── ErlangXRequest.java
+│   ├── ConstraintWeightsDto.java
 │   ├── SolveRequest.java
 │   ├── ScheduleSummary.java
 │   ├── ScheduleDetailResponse.java
-│   ├── StaffingRequirementRequest.java
-│   ├── ErlangXRequest.java
-│   ├── StaffingRequirementResponse.java
-│   ├── DeskAgentResponse.java
-│   ├── ConstraintWeightsDto.java
+│   ├── PaginatedResponse.java         (standard pagination envelope: data, nextCursor, hasMore)
 │   └── ErrorResponse.java
 ├── config/
 │   ├── TenantFilter.java
 │   ├── TenantContext.java
-│   └── CorsConfig.java
+│   ├── CorsConfig.java
+│   ├── JacksonConfig.java             (registers custom HardSoftScore serializer/deserializer)
+│   ├── HardSoftScoreSerializer.java   (Jackson serializer for HardSoftScore → {"hardScore":n,"softScore":n})
+│   └── HardSoftScoreDeserializer.java (Jackson deserializer for HardSoftScore)
 ├── solver/
-│   └── ScheduleConstraintProvider.java
+│   ├── ScheduleConstraintProvider.java
+│   ├── BreakAwareConstructionPhase.java  (no-op: all assignment delegated to solver CH)
+│   ├── AgentAssignmentDifficultyComparator.java  (variable difficulty scoring for CH)
+│   └── plugin/
+│       └── CustomConstraint.java      (SPI for client-supplied constraints; see Appendix I)
+├── exception/
+│   ├── EntityNotFoundException.java   (404 errors)
+│   ├── ConflictException.java         (409 conflicts)
+│   ├── RefreshInProgressException.java (409 for concurrent refresh)
+│   ├── UnprocessableException.java    (422 validation/logic errors)
+│   └── PreSolveValidationException.java (pre-solve validation failures)
+├── util/
+│   ├── BigDecimals.java               (normalisation utility: setScale(2, HALF_UP))
+│   └── CursorPagination.java          (keyset pagination: Base64 JSON cursor encoding)
 └── WfmApplication.java
 ```
 
@@ -1533,7 +1585,7 @@ src/main/java/com/wfm/
 PostgreSQL is the sole data store. Schema management uses **Flyway** (or Liquibase) from day one — not Hibernate DDL auto-generation — because several data integrity constraints cannot be expressed through JPA annotations alone:
 
 - **Partial unique indexes** — `agent_preference` requires two partial unique indexes (`WHERE is_standing = true` and `WHERE is_standing = false`); `timeslot` and `staffing_requirement` require partial unique indexes (`WHERE schedule_id IS NULL`). Hibernate's DDL generator cannot create partial indexes.
-- **`BigDecimal` column precision** — All `BigDecimal` hour fields use `NUMERIC(5,2)` (see below). Flyway migrations ensure consistent column definitions.
+- **`BigDecimal` column precision** — All `BigDecimal` hour fields use `NUMERIC(5,2)` except `staffing_requirement.required_hours` which uses `NUMERIC(10,4)` to support Erlang X fractional agent counts (see section 5.7). Flyway migrations ensure consistent column definitions.
 
 During local development, Hibernate's `ddl-auto=validate` may be used to verify that entity mappings are compatible with the Flyway-managed schema.
 
