@@ -149,8 +149,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     }
 
                     // Only enforce break rule once agent has enough slots to need one.
-                    // breakMinShiftHours is the threshold (e.g. 4h). Until the agent has
-                    // at least that many slots, don't penalise — CH is still building.
                     int breakThresholdSlots = dayConfig.breakMinShiftHours()
                             .multiply(BigDecimal.valueOf(60))
                             .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, java.math.RoundingMode.CEILING)
@@ -160,15 +158,22 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         return countContiguousGaps(assignments, dayConfig.incrementMinutes()) > 1;
                     }
 
-                    // Fully (or nearly fully) assigned: require exactly 1 gap
-                    return countContiguousGaps(assignments, dayConfig.incrementMinutes()) != 1;
+                    // Fully (or nearly fully) assigned: require exactly 1 gap of correct length
+                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes());
+                    if (gaps != 1) return true;
+                    int expectedBreakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
+                    return totalGapSlots(assignments, dayConfig.incrementMinutes()) != expectedBreakSlots;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> {
-                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes());
+                    // Penalise by TOTAL excess break slots, not just gap count.
+                    // This makes longer/extra breaks proportionally more expensive,
+                    // directly targeting break overallocation.
                     boolean needsBreak = dayConfig.effectiveHours()
                             .compareTo(dayConfig.breakMinShiftHours()) > 0;
-                    int expectedGaps = needsBreak ? 1 : 0;
-                    return Math.abs(gaps - expectedGaps);
+                    int expectedBreakSlots = needsBreak
+                            ? dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes() : 0;
+                    int actualBreakSlots = totalGapSlots(assignments, dayConfig.incrementMinutes());
+                    return Math.max(1, Math.abs(actualBreakSlots - expectedBreakSlots));
                 })
                 .asConstraint("Exactly one break");
     }
@@ -521,6 +526,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();
+    }
+
+    private int totalGapSlots(List<AgentAssignment> assignments, int incrementMinutes) {
+        return getGapLengths(assignments, incrementMinutes).stream()
+                .mapToInt(Integer::intValue).sum();
     }
 
     private List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes) {
