@@ -279,8 +279,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     /**
      * 12a. Contracted hours (over) — penalises agents assigned MORE than their
      * exact effective contracted hours. Agents must work exactly their contracted
-     * hours — the overallocation/underallocation tolerance percentages apply only
-     * to bulk (slot-level) constraints, not to individual agents.
+     * hours per day.
      */
     private Constraint contractedHoursOver(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -306,8 +305,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     /**
      * 12b. Contracted hours (under) — penalises agents assigned FEWER than their
      * exact effective contracted hours. Agents must work exactly their contracted
-     * hours — the overallocation/underallocation tolerance percentages apply only
-     * to bulk (slot-level) constraints, not to individual agents.
+     * hours per day.
      *
      * <p>Handles agents with at least one assignment: groups by (agent, date),
      * counts assignments, and penalises the shortfall below the expected slots.

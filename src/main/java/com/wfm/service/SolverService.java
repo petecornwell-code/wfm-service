@@ -167,11 +167,25 @@ public class SolverService {
         }
 
         // 10. Expand staffing requirements into AgentAssignment planning entities
-        List<AgentAssignment> assignments = expandAssignments(
+        //     Creates demand-based seats PLUS overflow seats up to overallocationHardLimitPct.
+        //     Overflow seats allow agents to extend into timeslots beyond demand so that
+        //     every agent can meet their exact contracted hours.
+        List<AgentAssignment> demandAssignments = expandAssignments(
                 tenantId, deskId, schedule.getId(), staffingRequirements);
 
-        // 10b. Compute per-day demand slot totals for bulk allocation constraints
-        List<DayDemandConfig> dayDemandConfigs = computeDayDemandConfigs(assignments);
+        // 10b. Compute per-day demand slot totals from demand-only assignments
+        //      (overflow seats are NOT counted as demand)
+        List<DayDemandConfig> dayDemandConfigs = computeDayDemandConfigs(demandAssignments);
+
+        // 10c. Create overflow seats up to overallocationHardLimitPct
+        List<AgentAssignment> overflowAssignments = expandOverflowAssignments(
+                tenantId, deskId, schedule.getId(), staffingRequirements,
+                schedule.getOverallocationHardLimitPct());
+
+        List<AgentAssignment> assignments = new ArrayList<>(demandAssignments);
+        assignments.addAll(overflowAssignments);
+        log.debug("Overflow assignments: {} demand + {} overflow = {} total",
+                demandAssignments.size(), overflowAssignments.size(), assignments.size());
 
         log.debug("Solver input — schedule={}, deskAgents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedDeskAgents.size(), timeslots.size(),
@@ -790,6 +804,45 @@ public class SolverService {
             }
         }
         return assignments;
+    }
+
+    /**
+     * Creates overflow assignment entities beyond demand, up to overallocationHardLimitPct.
+     * For each staffing requirement, if overallocationHardLimitPct > 100%, additional seats
+     * are created with the same timeslot and specialization. These overflow seats give the
+     * solver room to assign agents beyond demand so that every agent can meet their exact
+     * contracted hours. The bulk over-allocation constraint penalises exceeding the limit.
+     */
+    private List<AgentAssignment> expandOverflowAssignments(long tenantId, UUID deskId, UUID scheduleId,
+                                                             List<StaffingRequirement> staffingRequirements,
+                                                             int overallocationHardLimitPct) {
+        if (overallocationHardLimitPct <= 100) {
+            return List.of();
+        }
+        List<AgentAssignment> overflow = new ArrayList<>();
+        for (StaffingRequirement sr : staffingRequirements) {
+            long slotMinutes = java.time.temporal.ChronoUnit.MINUTES.between(
+                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
+            int requiredAgents = sr.getRequiredHours()
+                    .multiply(BigDecimal.valueOf(60))
+                    .divide(BigDecimal.valueOf(slotMinutes), 0, java.math.RoundingMode.HALF_UP)
+                    .intValue();
+
+            int maxAgents = requiredAgents * overallocationHardLimitPct / 100;
+            int overflowAgents = maxAgents - requiredAgents;
+
+            for (int i = 0; i < overflowAgents; i++) {
+                AgentAssignment a = new AgentAssignment();
+                a.setId(UUID.randomUUID());
+                a.setTenantId(tenantId);
+                a.setDeskId(deskId);
+                a.setScheduleId(scheduleId);
+                a.setTimeslot(sr.getTimeslot());
+                a.setRequiredSpecialization(sr.getSpecialization());
+                overflow.add(a);
+            }
+        }
+        return overflow;
     }
 
     /**
