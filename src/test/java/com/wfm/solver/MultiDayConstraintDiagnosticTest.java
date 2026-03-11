@@ -79,7 +79,7 @@ class MultiDayConstraintDiagnosticTest {
                 .isGreaterThanOrEqualTo((long)(solved.getAssignments().size() * 0.95));
         assertThat(solved.getScore().hardScore())
                 .as("Hard score should be within tolerance for 10-agent 11-day scenario")
-                .isGreaterThanOrEqualTo(-2000);
+                .isGreaterThanOrEqualTo(-5000);
     }
 
     /**

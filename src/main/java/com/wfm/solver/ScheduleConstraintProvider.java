@@ -278,11 +278,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
     /**
      * 12a. Contracted hours (over) — penalises agents assigned MORE than their
-     * effective contracted hours adjusted by the overallocation tolerance.
-     * The per-agent maximum is {@code expectedSlots * overallocationHardLimitPct / 100},
-     * matching the bulk overallocation policy. This allows agents to be assigned
-     * beyond their contracted hours (e.g. to cover break-time demand) as long as
-     * the overflow limit is not exceeded.
+     * exact effective contracted hours. Agents must work exactly their contracted
+     * hours — the overallocation/underallocation tolerance percentages apply only
+     * to bulk (slot-level) constraints, not to individual agents.
      */
     private Constraint contractedHoursOver(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -295,32 +293,24 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = dayConfig.effectiveHours()
-                            .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue();
-                    int maxAllowed = expectedSlots * dayConfig.overallocationHardLimitPct() / 100;
-                    return assignmentCount > maxAllowed;
+                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    return assignmentCount > expectedSlots;
                 })
                 .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = dayConfig.effectiveHours()
-                            .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue();
-                    int maxAllowed = expectedSlots * dayConfig.overallocationHardLimitPct() / 100;
-                    return assignmentCount - maxAllowed;
+                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    return assignmentCount - expectedSlots;
                 })
                 .asConstraint("Contracted hours (over)");
     }
 
     /**
      * 12b. Contracted hours (under) — penalises agents assigned FEWER than their
-     * effective contracted hours adjusted by the underallocation tolerance.
-     * The per-agent minimum is {@code expectedSlots * underallocationHardLimitPct / 100},
-     * matching the bulk underallocation policy.
+     * exact effective contracted hours. Agents must work exactly their contracted
+     * hours — the overallocation/underallocation tolerance percentages apply only
+     * to bulk (slot-level) constraints, not to individual agents.
      *
      * <p>Handles agents with at least one assignment: groups by (agent, date),
-     * counts assignments, and penalises the shortfall below the tolerated minimum.
+     * counts assignments, and penalises the shortfall below the expected slots.
      */
     private Constraint contractedHoursUnder(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
@@ -333,20 +323,12 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = dayConfig.effectiveHours()
-                            .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue();
-                    int minRequired = expectedSlots * dayConfig.underallocationHardLimitPct() / 100;
-                    return assignmentCount < minRequired;
+                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    return assignmentCount < expectedSlots;
                 })
                 .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = dayConfig.effectiveHours()
-                            .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue();
-                    int minRequired = expectedSlots * dayConfig.underallocationHardLimitPct() / 100;
-                    return minRequired - assignmentCount;
+                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    return expectedSlots - assignmentCount;
                 })
                 .asConstraint("Contracted hours (under)");
     }
@@ -357,20 +339,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * at all on that day. The standard contractedHoursUnder constraint starts from
      * {@link AgentAssignment} and cannot see agents with zero assignments. This
      * ensures the solver has a hard incentive to assign every contracted agent.
-     * Penalty is the underallocation-adjusted minimum slots for the agent-day.
+     * Penalty is the full expected slots for the agent-day.
      */
     private Constraint contractedHoursUnderZero(ConstraintFactory factory) {
         return factory.forEach(AgentDayConfig.class)
                 .ifNotExists(AgentAssignment.class,
                         equal(AgentDayConfig::deskAgentId, a -> a.getDeskAgent() != null ? a.getDeskAgent().getId() : null),
                         equal(AgentDayConfig::date, a -> a.getTimeslot().getDate()))
-                .penalizeConfigurable(dayConfig -> {
-                    int expectedSlots = dayConfig.effectiveHours()
-                            .multiply(BigDecimal.valueOf(60))
-                            .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                            .intValue();
-                    return expectedSlots * dayConfig.underallocationHardLimitPct() / 100;
-                })
+                .penalizeConfigurable(dayConfig -> expectedWorkSlots(dayConfig))
                 .asConstraint("Contracted hours (under, zero)");
     }
 

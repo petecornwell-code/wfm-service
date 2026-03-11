@@ -74,7 +74,9 @@ class IncrementalScoringDiagnosticTest {
         });
 
         // Verify initial score matches expected
-        assertThat(initialScore.hardScore()).isEqualTo(-48004);
+        // underZero: 95 agents × 8 expectedSlots × weight 100 = 76,000
+        // bulkUnderHard: 504 × weight 1 = 504
+        assertThat(initialScore.hardScore()).isEqualTo(-76504);
         assertThat(initialScore.softScore()).isEqualTo(-720000);
 
         // Now assign ONE agent to ONE seat
