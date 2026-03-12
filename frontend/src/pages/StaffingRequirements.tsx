@@ -257,30 +257,20 @@ export default function StaffingRequirements() {
                         <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
                         {specs.map(s => (
                           <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
-                            <input type="number" min={0} step={0.25}
-                              value={demand[demandKey(slot.id, s.id)] ?? 0}
-                              onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseFloat(e.target.value) || 0))}
-                              style={{ width: '70px', textAlign: 'center' }} />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                              <input type="number" min={0} step={0.25}
+                                value={demand[demandKey(slot.id, s.id)] ?? 0}
+                                onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseFloat(e.target.value) || 0))}
+                                style={{ width: '70px', textAlign: 'center' }} />
+                              <span style={{ color: '#6b7280', fontSize: '0.75rem', minWidth: '45px', textAlign: 'left' }}>
+                                {((demand[demandKey(slot.id, s.id)] ?? 0) / 8).toFixed(1)} FTE
+                              </span>
+                            </div>
                           </td>
                         ))}
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: '2px solid #e5e7eb', fontWeight: 600, fontSize: '0.85rem' }}>
-                      <td style={{ padding: '6px 8px' }}>Total</td>
-                      {specs.map(s => {
-                        const totalHrs = daySlots.reduce((sum, slot) => sum + (demand[demandKey(slot.id, s.id)] ?? 0), 0)
-                        const ftes = totalHrs / 8
-                        return (
-                          <td key={s.id} style={{ textAlign: 'center', padding: '6px 8px' }}>
-                            {totalHrs.toFixed(1)} hrs
-                            <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: '4px' }}>({ftes.toFixed(1)} FTEs)</span>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
             ))}
