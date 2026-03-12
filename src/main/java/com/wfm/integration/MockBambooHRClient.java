@@ -73,8 +73,8 @@ public class MockBambooHRClient implements BambooHRClient {
         }
         // Shuffle with a seed derived from the call count so each refresh is different
         Collections.shuffle(pool, new Random(seed));
-        // Return exactly 95 employees
-        return List.copyOf(pool.subList(0, Math.min(95, pool.size())));
+        // Return exactly 32 employees
+        return List.copyOf(pool.subList(0, Math.min(32, pool.size())));
     }
 
     @Override
@@ -88,7 +88,7 @@ public class MockBambooHRClient implements BambooHRClient {
 
         // For non-Vinted desks, generate a varying roster from the name pools
         Random rng = new Random(seed);
-        int count = 32; // fixed at 32 agents
+        int count = 3 + rng.nextInt(6); // 3-8 employees
         List<Integer> indices = new ArrayList<>();
         for (int i = 0; i < FIRST_NAMES.length; i++) indices.add(i);
         Collections.shuffle(indices, rng);
