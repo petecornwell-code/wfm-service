@@ -39,12 +39,14 @@ public class ScheduleOutputService {
         BigDecimal incrementHours = BigDecimal.valueOf(schedule.getIncrementMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
 
-        // Group staffing requirements by (date, specName) → sum of requiredHours
+        // Group staffing requirements by (date, specName) → sum of FTE-hours
+        // Convert FTEs to hours for the summary: FTEs × slotDurationHours
         Map<LocalDate, Map<String, BigDecimal>> predicted = new LinkedHashMap<>();
         for (StaffingRequirement sr : schedule.getStaffingRequirements()) {
+            BigDecimal fteHours = BigDecimal.valueOf(sr.getRequiredFTEs()).multiply(incrementHours);
             predicted
                     .computeIfAbsent(sr.getTimeslot().getDate(), k -> new LinkedHashMap<>())
-                    .merge(sr.getSpecialization().getName(), sr.getRequiredHours(), BigDecimal::add);
+                    .merge(sr.getSpecialization().getName(), fteHours, BigDecimal::add);
         }
 
         // Group assigned (non-null deskAgent) assignments by (date, requiredSpec name) → count

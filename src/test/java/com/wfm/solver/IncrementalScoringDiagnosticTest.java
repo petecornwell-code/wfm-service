@@ -75,8 +75,8 @@ class IncrementalScoringDiagnosticTest {
 
         // Verify initial score matches expected
         // underZero: 95 agents × 8 expectedSlots × weight 100 = 76,000
-        // bulkUnderHard: 504 × weight 1 = 504
-        assertThat(initialScore.hardScore()).isEqualTo(-76504);
+        // bulkUnderHard: per-timeslot sum of floor(demand × 70/100) = 500
+        assertThat(initialScore.hardScore()).isEqualTo(-76500);
         assertThat(initialScore.softScore()).isEqualTo(-720000);
 
         // Now assign ONE agent to ONE seat
@@ -206,7 +206,7 @@ class IncrementalScoringDiagnosticTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(basic);
-            sr.setRequiredHours(new BigDecimal(demandPerSlot[s]));
+            sr.setRequiredFTEs(demandPerSlot[s]);
             staffingReqs.add(sr);
 
             for (int i = 0; i < demandPerSlot[s]; i++) {
@@ -221,8 +221,7 @@ class IncrementalScoringDiagnosticTest {
             }
         }
 
-        List<DayDemandConfig> dayDemandConfigs = List.of(
-                new DayDemandConfig(DAY, totalDemand));
+        List<TimeslotDemandConfig> timeslotDemandConfigs = computeTimeslotDemandConfigs(assignments);
 
         ConstraintWeights weights = new ConstraintWeights();
         weights.setId(UUID.randomUUID());
@@ -256,10 +255,22 @@ class IncrementalScoringDiagnosticTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(dayDemandConfigs);
+        schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
         return schedule;
+    }
+
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
+        }
+        List<TimeslotDemandConfig> configs = new java.util.ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
+        }
+        return configs;
     }
 
     private Specialization spec(UUID deskId, String name) {

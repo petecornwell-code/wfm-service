@@ -129,7 +129,7 @@ public class Schedule {
 
     @ProblemFactCollectionProperty
     @Transient
-    private List<DayDemandConfig> dayDemandConfigs = new ArrayList<>();
+    private List<TimeslotDemandConfig> timeslotDemandConfigs = new ArrayList<>();
 
     @PlanningEntityCollectionProperty
     @Transient
@@ -229,8 +229,8 @@ public class Schedule {
     public List<AgentDayConfig> getAgentDayConfigs() { return agentDayConfigs; }
     public void setAgentDayConfigs(List<AgentDayConfig> agentDayConfigs) { this.agentDayConfigs = agentDayConfigs; }
 
-    public List<DayDemandConfig> getDayDemandConfigs() { return dayDemandConfigs; }
-    public void setDayDemandConfigs(List<DayDemandConfig> dayDemandConfigs) { this.dayDemandConfigs = dayDemandConfigs; }
+    public List<TimeslotDemandConfig> getTimeslotDemandConfigs() { return timeslotDemandConfigs; }
+    public void setTimeslotDemandConfigs(List<TimeslotDemandConfig> timeslotDemandConfigs) { this.timeslotDemandConfigs = timeslotDemandConfigs; }
 
     public List<AgentAssignment> getAssignments() { return assignments; }
     public void setAssignments(List<AgentAssignment> assignments) { this.assignments = assignments; }

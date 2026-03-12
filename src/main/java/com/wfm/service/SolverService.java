@@ -181,9 +181,9 @@ public class SolverService {
         List<AgentAssignment> demandAssignments = expandAssignments(
                 tenantId, deskId, schedule.getId(), staffingRequirements);
 
-        // 10b. Compute per-day demand slot totals from demand-only assignments
+        // 10b. Compute per-timeslot demand FTE totals from demand-only assignments
         //      (overflow seats are NOT counted as demand)
-        List<DayDemandConfig> dayDemandConfigs = computeDayDemandConfigs(demandAssignments);
+        List<TimeslotDemandConfig> timeslotDemandConfigs = computeTimeslotDemandConfigs(demandAssignments);
 
         // 10c. Create overflow seats up to overallocationHardLimitPct
         List<AgentAssignment> overflowAssignments = expandOverflowAssignments(
@@ -214,7 +214,7 @@ public class SolverService {
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
         schedule.setAgentDayConfigs(agentDayConfigs);
-        schedule.setDayDemandConfigs(dayDemandConfigs);
+        schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
         // 11b. All seat assignment is delegated to the solver's construction
@@ -457,16 +457,16 @@ public class SolverService {
         return configs;
     }
 
-    // --- Day demand configs (per-day demand totals for bulk allocation constraints) ---
+    // --- Timeslot demand configs (per-timeslot demand totals for bulk allocation constraints) ---
 
-    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
-        Map<LocalDate, Integer> demandPerDay = new HashMap<>();
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new LinkedHashMap<>();
         for (AgentAssignment a : assignments) {
-            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
         }
-        List<DayDemandConfig> configs = new ArrayList<>();
-        for (Map.Entry<LocalDate, Integer> e : demandPerDay.entrySet()) {
-            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        List<TimeslotDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
         }
         return configs;
     }
@@ -478,18 +478,10 @@ public class SolverService {
                                           List<AgentDayConfig> agentDayConfigs) {
         int incrementMinutes = schedule.getIncrementMinutes();
 
-        // Sum total demand slots from staffing requirements
+        // Sum total demand slots from staffing requirements (1 FTE = 1 slot per timeslot)
         long totalDemandSlots = 0;
-        BigDecimal totalDemandHours = BigDecimal.ZERO;
         for (StaffingRequirement sr : staffingRequirements) {
-            long slotMinutes = ChronoUnit.MINUTES.between(
-                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
-            int requiredAgents = sr.getRequiredHours()
-                    .multiply(BigDecimal.valueOf(60))
-                    .divide(BigDecimal.valueOf(slotMinutes), 0, RoundingMode.HALF_UP)
-                    .intValue();
-            totalDemandSlots += requiredAgents;
-            totalDemandHours = totalDemandHours.add(sr.getRequiredHours());
+            totalDemandSlots += sr.getRequiredFTEs();
         }
 
         // Sum total supply slots from agent day configs
@@ -509,9 +501,9 @@ public class SolverService {
         if (totalDemandSlots > totalSupplySlots) {
             long deficit = totalDemandSlots - totalSupplySlots;
             warnings.add(String.format(
-                    "Demand (%s hrs, %d slots) exceeds supply (%s hrs, %d slots) by %d slots. "
+                    "Demand (%d FTE-slots) exceeds supply (%s hrs, %d slots) by %d slots. "
                     + "The solver will produce the best partial schedule, but at least %d assignment(s) will remain unassigned.",
-                    totalDemandHours.setScale(2, RoundingMode.HALF_UP), totalDemandSlots,
+                    totalDemandSlots,
                     totalSupplyHours.setScale(2, RoundingMode.HALF_UP), totalSupplySlots,
                     deficit, deficit));
             log.warn("Capacity warning for schedule {}: demand={} slots, supply={} slots, deficit={}",
@@ -791,13 +783,7 @@ public class SolverService {
                                                       List<StaffingRequirement> staffingRequirements) {
         List<AgentAssignment> assignments = new ArrayList<>();
         for (StaffingRequirement sr : staffingRequirements) {
-            // Convert requiredHours to agent count: agents = hours / (slotMinutes / 60)
-            long slotMinutes = java.time.temporal.ChronoUnit.MINUTES.between(
-                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
-            int requiredAgents = sr.getRequiredHours()
-                    .multiply(BigDecimal.valueOf(60))
-                    .divide(BigDecimal.valueOf(slotMinutes), 0, java.math.RoundingMode.HALF_UP)
-                    .intValue();
+            int requiredAgents = sr.getRequiredFTEs();
 
             for (int i = 0; i < requiredAgents; i++) {
                 AgentAssignment a = new AgentAssignment();
@@ -829,13 +815,7 @@ public class SolverService {
         }
         List<AgentAssignment> overflow = new ArrayList<>();
         for (StaffingRequirement sr : staffingRequirements) {
-            long slotMinutes = java.time.temporal.ChronoUnit.MINUTES.between(
-                    sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
-            int requiredAgents = sr.getRequiredHours()
-                    .multiply(BigDecimal.valueOf(60))
-                    .divide(BigDecimal.valueOf(slotMinutes), 0, java.math.RoundingMode.HALF_UP)
-                    .intValue();
-
+            int requiredAgents = sr.getRequiredFTEs();
             int maxAgents = requiredAgents * overallocationHardLimitPct / 100;
             int overflowAgents = maxAgents - requiredAgents;
 

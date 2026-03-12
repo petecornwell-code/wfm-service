@@ -213,7 +213,7 @@ class MultiDayConstraintDiagnosticTest {
                     sr.setScheduleId(scheduleId);
                     sr.setTimeslot(ts);
                     sr.setSpecialization(basic);
-                    sr.setRequiredHours(new BigDecimal(workingAgents));
+                    sr.setRequiredFTEs(workingAgents);
                     staffingReqs.add(sr);
 
                     for (int i = 0; i < workingAgents; i++) {
@@ -275,20 +275,20 @@ class MultiDayConstraintDiagnosticTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
     }
 
-    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
-        Map<LocalDate, Integer> demandPerDay = new HashMap<>();
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
         for (AgentAssignment a : assignments) {
-            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
         }
-        List<DayDemandConfig> configs = new ArrayList<>();
-        for (Map.Entry<LocalDate, Integer> e : demandPerDay.entrySet()) {
-            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        List<TimeslotDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
         }
         return configs;
     }

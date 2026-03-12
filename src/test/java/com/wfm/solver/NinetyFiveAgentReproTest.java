@@ -196,7 +196,7 @@ class NinetyFiveAgentReproTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(basic);
-            sr.setRequiredHours(new BigDecimal(demandPerSlot[s]));
+            sr.setRequiredFTEs(demandPerSlot[s]);
             staffingReqs.add(sr);
 
             // Create assignments (ALL UNASSIGNED - deskAgent = null)
@@ -213,8 +213,7 @@ class NinetyFiveAgentReproTest {
             }
         }
 
-        List<DayDemandConfig> dayDemandConfigs = List.of(
-                new DayDemandConfig(DAY, totalDemand));
+        List<TimeslotDemandConfig> timeslotDemandConfigs = computeTimeslotDemandConfigs(assignments);
 
         ConstraintWeights weights = new ConstraintWeights();
         weights.setId(UUID.randomUUID());
@@ -248,13 +247,25 @@ class NinetyFiveAgentReproTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(dayDemandConfigs);
+        schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
         return schedule;
     }
 
     // Factory helpers
+
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
+        }
+        List<TimeslotDemandConfig> configs = new java.util.ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
+        }
+        return configs;
+    }
 
     private Specialization spec(UUID deskId, String name) {
         Specialization s = new Specialization();

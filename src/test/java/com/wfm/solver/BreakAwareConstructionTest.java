@@ -238,9 +238,7 @@ class BreakAwareConstructionTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(basic);
-            sr.setRequiredHours(BigDecimal.valueOf(workingAgents)
-                    .multiply(BigDecimal.valueOf(increment))
-                    .divide(BigDecimal.valueOf(60), 4, java.math.RoundingMode.HALF_UP));
+            sr.setRequiredFTEs(workingAgents);
             staffingReqs.add(sr);
 
             for (int i = 0; i < workingAgents; i++) {
@@ -296,7 +294,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -347,9 +345,7 @@ class BreakAwareConstructionTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(basic);
-            sr.setRequiredHours(BigDecimal.valueOf(demandPerSlot)
-                    .multiply(BigDecimal.valueOf(increment))
-                    .divide(BigDecimal.valueOf(60), 4, java.math.RoundingMode.HALF_UP));
+            sr.setRequiredFTEs(demandPerSlot);
             staffingReqs.add(sr);
 
             for (int i = 0; i < demandPerSlot; i++) {
@@ -405,7 +401,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -452,7 +448,7 @@ class BreakAwareConstructionTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(billing);
-            sr.setRequiredHours(new BigDecimal("0.5000")); // 2 agents × 15 min
+            sr.setRequiredFTEs(2); // 2 agents per timeslot
             staffingReqs.add(sr);
 
             // 2 unassigned seats per timeslot
@@ -509,7 +505,7 @@ class BreakAwareConstructionTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(List.of(configA, configB));
-        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -519,14 +515,14 @@ class BreakAwareConstructionTest {
     //  Factory helpers
     // ------------------------------------------------------------------
 
-    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
-        Map<LocalDate, Integer> demandPerDay = new HashMap<>();
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
         for (AgentAssignment a : assignments) {
-            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
         }
-        List<DayDemandConfig> configs = new ArrayList<>();
-        for (Map.Entry<LocalDate, Integer> e : demandPerDay.entrySet()) {
-            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        List<TimeslotDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
         }
         return configs;
     }

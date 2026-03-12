@@ -49,7 +49,7 @@ export default function StaffingRequirements() {
       const resp = await srApi.list(deskId, { from: periodStart, to: periodEnd })
       const loaded: DemandMap = {}
       for (const item of resp.data) {
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours
+        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
       }
       setDemand(loaded)
     } catch {
@@ -127,7 +127,7 @@ export default function StaffingRequirements() {
         for (const spec of specs) {
           const val = demand[demandKey(slot.id, spec.id)] ?? 0
           if (val > 0) {
-            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredHours: val })
+            requirements.push({ timeslotId: slot.id, specializationId: spec.id, requiredFTEs: val })
           }
         }
       }
@@ -173,7 +173,7 @@ export default function StaffingRequirements() {
       const result = await srApi.calculateErlangX(deskId, { from: periodStart, to: periodEnd, parameters })
       const loaded: DemandMap = {}
       for (const item of result.requirements) {
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredHours
+        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
       }
       setDemand(loaded)
       showToast('success', 'Erlang X calculation complete')
@@ -247,7 +247,7 @@ export default function StaffingRequirements() {
                     <tr>
                       <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
                       {specs.map(s => (
-                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name} (hrs)</th>
+                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name} (FTEs)</th>
                       ))}
                     </tr>
                   </thead>
@@ -257,15 +257,10 @@ export default function StaffingRequirements() {
                         <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
                         {specs.map(s => (
                           <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                              <input type="number" min={0} step={0.25}
-                                value={demand[demandKey(slot.id, s.id)] ?? 0}
-                                onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, parseFloat(e.target.value) || 0))}
-                                style={{ width: '70px', textAlign: 'center' }} />
-                              <span style={{ color: '#6b7280', fontSize: '0.75rem', minWidth: '45px', textAlign: 'left' }}>
-                                {((demand[demandKey(slot.id, s.id)] ?? 0) / 8).toFixed(1)} FTE
-                              </span>
-                            </div>
+                            <input type="number" min={0} step={1}
+                              value={demand[demandKey(slot.id, s.id)] ?? 0}
+                              onChange={e => handleDemandChange(slot.id, s.id, Math.max(0, Math.round(parseFloat(e.target.value) || 0)))}
+                              style={{ width: '70px', textAlign: 'center' }} />
                           </td>
                         ))}
                       </tr>
@@ -316,7 +311,7 @@ export default function StaffingRequirements() {
             {/* Show calculated results */}
             {Object.keys(demand).length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <h4>Calculated Results (required hours)</h4>
+                <h4>Calculated Results (required FTEs)</h4>
                 {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
                   <table key={date} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                     <thead>

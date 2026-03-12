@@ -186,8 +186,7 @@ class FullScale150AgentTest {
                 sr.setScheduleId(scheduleId);
                 sr.setTimeslot(timeslots.get(s));
                 sr.setSpecialization(basic);
-                // requiredHours = workingAgents × 1 hour (each agent fills 1 hour in a 60-min slot)
-                sr.setRequiredHours(new BigDecimal(workingAgents));
+                sr.setRequiredFTEs(workingAgents);
                 staffingReqs.add(sr);
             }
         }
@@ -251,20 +250,20 @@ class FullScale150AgentTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(computeDayDemandConfigs(assignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(assignments));
         schedule.setAssignments(assignments);
 
         return schedule;
     }
 
-    private List<DayDemandConfig> computeDayDemandConfigs(List<AgentAssignment> assignments) {
-        java.util.Map<java.time.LocalDate, Integer> demandPerDay = new java.util.HashMap<>();
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        java.util.Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
         for (AgentAssignment a : assignments) {
-            demandPerDay.merge(a.getTimeslot().getDate(), 1, Integer::sum);
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
         }
-        List<DayDemandConfig> configs = new java.util.ArrayList<>();
-        for (java.util.Map.Entry<java.time.LocalDate, Integer> e : demandPerDay.entrySet()) {
-            configs.add(new DayDemandConfig(e.getKey(), e.getValue()));
+        List<TimeslotDemandConfig> configs = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
         }
         return configs;
     }

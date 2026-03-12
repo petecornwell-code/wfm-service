@@ -195,7 +195,7 @@ class TwelveHourUniformDemandTest {
             sr.setScheduleId(scheduleId);
             sr.setTimeslot(ts);
             sr.setSpecialization(support);
-            sr.setRequiredHours(new BigDecimal(DEMAND_PER_SLOT)); // 60 agents × 1 hr
+            sr.setRequiredFTEs(DEMAND_PER_SLOT); // 60 agents per timeslot
             staffingReqs.add(sr);
         }
 
@@ -243,11 +243,10 @@ class TwelveHourUniformDemandTest {
                     BREAK_ALIGNMENT, 130, 70));
         }
 
-        // --- DayDemandConfig: based on DEMAND seats only (720) ---
+        // --- TimeslotDemandConfig: based on DEMAND seats only (720) ---
         // The bulk allocation constraint compares total assigned (960) vs demand (720).
         // 960/720 = 133.3% which is within 134% limit.
-        List<DayDemandConfig> dayDemandConfigs = List.of(
-                new DayDemandConfig(DAY, DEMAND_PER_SLOT * timeslots.size())); // 720
+        List<TimeslotDemandConfig> timeslotDemandConfigs = computeTimeslotDemandConfigs(assignments);
 
         // --- Constraint Weights (all defaults) ---
         ConstraintWeights weights = new ConstraintWeights();
@@ -283,7 +282,7 @@ class TwelveHourUniformDemandTest {
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
         schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setDayDemandConfigs(dayDemandConfigs);
+        schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
         return schedule;
@@ -292,6 +291,18 @@ class TwelveHourUniformDemandTest {
     // ------------------------------------------------------------------
     //  Factory helpers
     // ------------------------------------------------------------------
+
+    private List<TimeslotDemandConfig> computeTimeslotDemandConfigs(List<AgentAssignment> assignments) {
+        Map<Timeslot, Integer> demandPerTimeslot = new java.util.LinkedHashMap<>();
+        for (AgentAssignment a : assignments) {
+            demandPerTimeslot.merge(a.getTimeslot(), 1, Integer::sum);
+        }
+        List<TimeslotDemandConfig> configs = new ArrayList<>();
+        for (Map.Entry<Timeslot, Integer> e : demandPerTimeslot.entrySet()) {
+            configs.add(new TimeslotDemandConfig(e.getKey(), e.getValue()));
+        }
+        return configs;
+    }
 
     private AgentAssignment assignment(UUID deskId, UUID scheduleId,
                                        Timeslot ts, Specialization spec,

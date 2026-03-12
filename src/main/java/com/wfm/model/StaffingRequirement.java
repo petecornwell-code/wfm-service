@@ -1,7 +1,6 @@
 package com.wfm.model;
 
 import jakarta.persistence.*;
-import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
@@ -29,8 +28,8 @@ public class StaffingRequirement {
     @JoinColumn(name = "specialization_id", nullable = false)
     private Specialization specialization;
 
-    @Column(name = "required_hours", nullable = false, precision = 10, scale = 4)
-    private BigDecimal requiredHours;
+    @Column(name = "required_ftes", nullable = false)
+    private int requiredFTEs;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -56,8 +55,8 @@ public class StaffingRequirement {
     public Specialization getSpecialization() { return specialization; }
     public void setSpecialization(Specialization specialization) { this.specialization = specialization; }
 
-    public BigDecimal getRequiredHours() { return requiredHours; }
-    public void setRequiredHours(BigDecimal requiredHours) { this.requiredHours = requiredHours; }
+    public int getRequiredFTEs() { return requiredFTEs; }
+    public void setRequiredFTEs(int requiredFTEs) { this.requiredFTEs = requiredFTEs; }
 
     public StaffingSource getSource() { return source; }
     public void setSource(StaffingSource source) { this.source = source; }

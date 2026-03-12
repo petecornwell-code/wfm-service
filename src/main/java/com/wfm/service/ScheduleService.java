@@ -243,7 +243,7 @@ public class ScheduleService {
             snapshot.setScheduleId(saved.getId());
             snapshot.setTimeslot(snapshotTs);
             snapshot.setSpecialization(live.getSpecialization());
-            snapshot.setRequiredHours(live.getRequiredHours());
+            snapshot.setRequiredFTEs(live.getRequiredFTEs());
             snapshot.setSource(live.getSource());
             snapshotRequirements.add(snapshot);
         }

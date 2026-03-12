@@ -349,24 +349,24 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 13. Bulk over-allocation limit — total assigned slots per day must not
-     * exceed overallocationHardLimitPct of demand slots. Penalises excess slots
-     * beyond the limit. Uses DayDemandConfig for pre-computed demand totals.
+     * 13. Bulk over-allocation limit — total assigned agents per timeslot must not
+     * exceed overallocationHardLimitPct of demand FTEs. Penalises excess agents
+     * beyond the limit. Uses TimeslotDemandConfig for pre-computed per-timeslot demand.
      */
     private Constraint bulkOverallocationLimit(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getDeskAgent() != null)
-                .groupBy(a -> a.getTimeslot().getDate(), count())
-                .join(DayDemandConfig.class,
-                        equal((date, cnt) -> date, DayDemandConfig::date))
+                .groupBy(a -> a.getTimeslot(), count())
+                .join(TimeslotDemandConfig.class,
+                        equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
                 .join(ScheduleConfig.class)
-                .filter((date, totalAssigned, dayDemand, config) -> {
-                    int maxAllowed = dayDemand.totalDemandSlots()
+                .filter((ts, totalAssigned, tsDemand, config) -> {
+                    int maxAllowed = tsDemand.totalDemandFTEs()
                             * config.overallocationHardLimitPct() / 100;
                     return totalAssigned > maxAllowed;
                 })
-                .penalizeConfigurable((date, totalAssigned, dayDemand, config) -> {
-                    int maxAllowed = dayDemand.totalDemandSlots()
+                .penalizeConfigurable((ts, totalAssigned, tsDemand, config) -> {
+                    int maxAllowed = tsDemand.totalDemandFTEs()
                             * config.overallocationHardLimitPct() / 100;
                     return totalAssigned - maxAllowed;
                 })
@@ -374,9 +374,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 15. Bulk under-allocation hard — total assigned slots per day must not
-     * fall below underallocationHardLimitPct of demand slots. Penalises the
-     * shortfall below the limit. Uses DayDemandConfig for pre-computed totals.
+     * 15. Bulk under-allocation hard — total assigned agents per timeslot must not
+     * fall below underallocationHardLimitPct of demand FTEs. Penalises the
+     * shortfall below the limit. Uses TimeslotDemandConfig for pre-computed totals.
      *
      * <p>CH-friendly: uses forEachIncludingUnassigned with sum to count assigned
      * entities, so the constraint fires even when all entities are null. This
@@ -385,18 +385,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint bulkUnderallocationHard(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
-                .groupBy(a -> a.getTimeslot().getDate(),
+                .groupBy(a -> a.getTimeslot(),
                         sum((AgentAssignment a) -> a.getDeskAgent() != null ? 1 : 0))
-                .join(DayDemandConfig.class,
-                        equal((date, cnt) -> date, DayDemandConfig::date))
+                .join(TimeslotDemandConfig.class,
+                        equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
                 .join(ScheduleConfig.class)
-                .filter((date, totalAssigned, dayDemand, config) -> {
-                    int minRequired = dayDemand.totalDemandSlots()
+                .filter((ts, totalAssigned, tsDemand, config) -> {
+                    int minRequired = tsDemand.totalDemandFTEs()
                             * config.underallocationHardLimitPct() / 100;
                     return totalAssigned < minRequired;
                 })
-                .penalizeConfigurable((date, totalAssigned, dayDemand, config) -> {
-                    int minRequired = dayDemand.totalDemandSlots()
+                .penalizeConfigurable((ts, totalAssigned, tsDemand, config) -> {
+                    int minRequired = tsDemand.totalDemandFTEs()
                             * config.underallocationHardLimitPct() / 100;
                     return minRequired - totalAssigned;
                 })

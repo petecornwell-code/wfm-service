@@ -233,8 +233,8 @@ export interface Specialization { id: string; name: string }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
 export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number }
-export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; startTime: string; endTime: string; specializationName: string; requiredHours: number; source: string }
-export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredHours: number }
+export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
+export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
 export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[] }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
