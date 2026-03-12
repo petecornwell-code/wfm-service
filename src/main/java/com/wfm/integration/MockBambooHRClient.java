@@ -73,8 +73,8 @@ public class MockBambooHRClient implements BambooHRClient {
         }
         // Shuffle with a seed derived from the call count so each refresh is different
         Collections.shuffle(pool, new Random(seed));
-        // Return exactly 32 employees
-        return List.copyOf(pool.subList(0, Math.min(32, pool.size())));
+        // Return exactly 83 employees
+        return List.copyOf(pool.subList(0, Math.min(83, pool.size())));
     }
 
     @Override
