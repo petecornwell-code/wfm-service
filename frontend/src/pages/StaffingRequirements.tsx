@@ -266,6 +266,21 @@ export default function StaffingRequirements() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid #e5e7eb', fontWeight: 600, fontSize: '0.85rem' }}>
+                      <td style={{ padding: '6px 8px' }}>Total</td>
+                      {specs.map(s => {
+                        const totalHrs = daySlots.reduce((sum, slot) => sum + (demand[demandKey(slot.id, s.id)] ?? 0), 0)
+                        const ftes = totalHrs / 8
+                        return (
+                          <td key={s.id} style={{ textAlign: 'center', padding: '6px 8px' }}>
+                            {totalHrs.toFixed(1)} hrs
+                            <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: '4px' }}>({ftes.toFixed(1)} FTEs)</span>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             ))}
