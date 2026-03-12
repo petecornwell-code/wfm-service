@@ -74,10 +74,18 @@ public class SolverService {
     public Schedule startSolve(UUID deskId, SolveRequest request) {
         long tenantId = TenantContext.getTenantId();
 
-        // 1. Check no existing non-accepted schedule for this desk
-        if (inMemoryStore.hasDeskSchedule(deskId)) {
-            throw new ConflictException("A schedule already exists for this desk. "
-                    + "Stop it (if running) and accept or reject it before starting a new solve.");
+        // 1. Check no existing non-accepted schedule for this desk with overlapping dates
+        Optional<Schedule> existingOpt = inMemoryStore.getByDeskId(deskId);
+        if (existingOpt.isPresent()) {
+            Schedule existing = existingOpt.get();
+            boolean datesOverlap = !request.periodStartDate().isAfter(existing.getPeriodEndDate())
+                    && !request.periodEndDate().isBefore(existing.getPeriodStartDate());
+            if (datesOverlap || existing.getStatus() == ScheduleStatus.RUNNING) {
+                throw new ConflictException("A schedule already exists for this desk. "
+                        + "Stop it (if running) and accept or reject it before starting a new solve.");
+            }
+            // Non-overlapping dates and schedule is not running — auto-reject the old one
+            inMemoryStore.remove(existing.getId());
         }
 
         // 2. Load desk for defaultContractedHoursPerDay inheritance
