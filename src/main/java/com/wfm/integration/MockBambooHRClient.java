@@ -88,7 +88,7 @@ public class MockBambooHRClient implements BambooHRClient {
 
         // For non-Vinted desks, generate a varying roster from the name pools
         Random rng = new Random(seed);
-        int count = 3 + rng.nextInt(6); // 3-8 employees
+        int count = 32; // fixed at 32 agents
         List<Integer> indices = new ArrayList<>();
         for (int i = 0; i < FIRST_NAMES.length; i++) indices.add(i);
         Collections.shuffle(indices, rng);
