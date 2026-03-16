@@ -5,9 +5,11 @@ import com.wfm.integration.BambooRefreshService;
 import com.wfm.service.AgentExceptionService;
 import com.wfm.service.AgentPreferenceService;
 import com.wfm.service.DeskAgentService;
+import com.wfm.service.PreferenceUploadService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,15 +23,18 @@ public class DeskAgentController {
     private final AgentPreferenceService agentPreferenceService;
     private final AgentExceptionService agentExceptionService;
     private final BambooRefreshService bambooRefreshService;
+    private final PreferenceUploadService preferenceUploadService;
 
     public DeskAgentController(DeskAgentService deskAgentService,
                                AgentPreferenceService agentPreferenceService,
                                AgentExceptionService agentExceptionService,
-                               BambooRefreshService bambooRefreshService) {
+                               BambooRefreshService bambooRefreshService,
+                               PreferenceUploadService preferenceUploadService) {
         this.deskAgentService = deskAgentService;
         this.agentPreferenceService = agentPreferenceService;
         this.agentExceptionService = agentExceptionService;
         this.bambooRefreshService = bambooRefreshService;
+        this.preferenceUploadService = preferenceUploadService;
     }
 
     @GetMapping
@@ -98,6 +103,13 @@ public class DeskAgentController {
                                                   @PathVariable UUID preferenceId) {
         agentPreferenceService.deletePreference(deskId, agentId, preferenceId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/preferences/upload")
+    public PreferenceUploadService.PreferenceUploadResult uploadPreferences(
+            @PathVariable UUID deskId,
+            @RequestParam("file") MultipartFile file) throws java.io.IOException {
+        return preferenceUploadService.uploadPreferences(deskId, file);
     }
 
     // --- Exceptions ---

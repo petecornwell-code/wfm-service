@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
@@ -43,6 +43,10 @@ export default function DeskAgents() {
 
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
+
+  // Preference upload
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadAgents = async () => {
     if (!deskId) return
@@ -161,6 +165,24 @@ export default function DeskAgents() {
     }
   }
 
+  const handleUploadPreferences = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !deskId) return
+    setUploading(true)
+    try {
+      const result = await deskAgents.uploadPreferences(deskId, file)
+      showToast('success', `Preferences loaded: ${result.savedCount} saved, ${result.skippedCount} skipped`)
+      if (result.skippedDetails.length > 0) {
+        console.warn('Skipped rows:', result.skippedDetails)
+      }
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -207,6 +229,10 @@ export default function DeskAgents() {
           {refreshing ? 'Refreshing...' : 'Refresh from BambooHR'}
         </button>
         <button className="primary" onClick={openAssignModal}>Assign Agents</button>
+        <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading...' : 'Load Preferences'}
+        </button>
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadPreferences} />
         <label style={{ marginLeft: 'auto', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
           <input type="checkbox" checked={showActiveOnly} onChange={e => setShowActiveOnly(e.target.checked)} />
           Active only

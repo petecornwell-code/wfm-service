@@ -126,6 +126,21 @@ export const deskAgents = {
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
   refresh: (deskId: string) =>
     request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
+  uploadPreferences: async (deskId: string, file: File): Promise<PreferenceUploadResult> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${API_BASE}/desks/${deskId}/agents/preferences/upload`, {
+      method: 'POST',
+      headers: { 'X-Tenant-ID': currentTenantId },
+      body: formData,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      if (body?.error) throw new ApiRequestError(response.status, body.error)
+      throw new ApiRequestError(response.status, { code: 'UNKNOWN', message: body?.message || response.statusText })
+    }
+    return response.json()
+  },
 }
 
 // --- Specializations ---
@@ -332,4 +347,5 @@ export interface ScheduleDetail extends ScheduleSummary {
   errorMessage?: string
 }
 
+export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean }

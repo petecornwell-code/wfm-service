@@ -36,4 +36,6 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
                                          String cursorName, UUID cursorId, Pageable pageable);
 
     List<Agent> findAllByIdInAndTenantId(List<UUID> ids, long tenantId);
+
+    Optional<Agent> findByTenantIdAndEmailIgnoreCase(long tenantId, String email);
 }
