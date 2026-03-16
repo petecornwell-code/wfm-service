@@ -72,6 +72,12 @@ public class ScheduleController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSchedule(@PathVariable UUID deskId, @PathVariable UUID id) {
+        scheduleService.deleteSchedule(deskId, id);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> exportToExcel(@PathVariable UUID deskId, @PathVariable UUID id) {
         ScheduleDetailResponse detail = scheduleService.getScheduleDetail(deskId, id, null);

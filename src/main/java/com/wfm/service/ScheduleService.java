@@ -279,6 +279,26 @@ public class ScheduleService {
         return saved;
     }
 
+    // --- deleteSchedule (accepted schedules) ---
+
+    @Transactional
+    public void deleteSchedule(UUID deskId, UUID scheduleId) {
+        long tenantId = TenantContext.getTenantId();
+
+        Schedule schedule = scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Schedule", scheduleId));
+
+        if (schedule.getStatus() != ScheduleStatus.ACCEPTED) {
+            throw new ConflictException("Only ACCEPTED schedules can be deleted (status: "
+                    + schedule.getStatus() + ")");
+        }
+
+        agentAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
+        staffingRequirementRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
+        timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
+        scheduleRepository.delete(schedule);
+    }
+
     // --- Task 27: rejectSchedule ---
 
     public void rejectSchedule(UUID deskId, UUID scheduleId) {
