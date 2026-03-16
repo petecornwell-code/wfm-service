@@ -135,6 +135,9 @@ public class PreferenceUploadService {
                 }
 
                 pref.setPreferredStartTime(startTime);
+                if (startTime != null) {
+                    pref.setPreferredBreakTime(startTime.plusHours(5));
+                }
                 AgentPreference savedPref = agentPreferenceRepository.save(pref);
                 saved.add(toResponse(savedPref));
             }
