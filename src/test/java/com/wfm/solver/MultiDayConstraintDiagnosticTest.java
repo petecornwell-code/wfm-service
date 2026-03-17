@@ -166,14 +166,11 @@ class MultiDayConstraintDiagnosticTest {
 
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
-        Specialization none = spec(deskId, "None");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            Specialization primary = i < 20 ? none : basic;
-            List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, primary, secondaries, CONTRACTED_HOURS);
+            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 

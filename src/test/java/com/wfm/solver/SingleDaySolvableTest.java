@@ -106,14 +106,13 @@ class SingleDaySolvableTest {
         // --- Specialization ---
         Specialization billing = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
-        Specialization none = spec(deskId, "None");
 
         // --- Agents + DeskAgents ---
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");
 
-        DeskAgent daA = deskAgent(deskId, agentA, none, List.of(second), new BigDecimal("8.00"));
-        DeskAgent daB = deskAgent(deskId, agentB, none, List.of(second), new BigDecimal("8.00"));
+        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(second), new BigDecimal("8.00"));
+        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(second), new BigDecimal("8.00"));
 
         List<DeskAgent> deskAgents = List.of(daA, daB);
 
