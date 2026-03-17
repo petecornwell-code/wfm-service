@@ -152,7 +152,8 @@ public class BambooRefreshService {
                 }
                 // Already assigned to this desk — ensure primary and secondary are set
                 existing.setPrimarySpecialization(defaultSpec);
-                existing.setSecondarySpecializations(new ArrayList<>(List.of(secondSpec)));
+                existing.getSecondarySpecializations().clear();
+                existing.getSecondarySpecializations().add(secondSpec);
                 deskAgentRepository.save(existing);
             } else {
                 // New assignment to this desk
