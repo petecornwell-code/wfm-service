@@ -40,7 +40,6 @@ public class BambooRefreshService {
 
     private static final String DEFAULT_SPECIALIZATION_NAME = "IT Support";
     private static final String SECONDARY_SPECIALIZATION_NAME = "IT Support (Spanish)";
-    private static final int MAX_SECONDARY_SPEC_AGENTS = 20;
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
@@ -123,12 +122,6 @@ public class BambooRefreshService {
                 .map(BambooEmployee::id)
                 .collect(Collectors.toSet());
 
-        // Count how many agents already have the secondary specialization on this desk
-        List<DeskAgent> existingDeskAgents = deskAgentRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        long secondaryCount = existingDeskAgents.stream()
-                .filter(da -> da.getSecondarySpecializations().contains(secondSpec))
-                .count();
-
         // 3. Upsert agents and create DeskAgent records
         Set<UUID> refreshedAgentIds = new HashSet<>();
         for (BambooEmployee emp : employees) {
@@ -157,15 +150,10 @@ public class BambooRefreshService {
                             agent.getName(), emp.id(), existing.getDeskId(), deskId);
                     continue;
                 }
-                // Already assigned to this desk — assign secondary only if under limit
-                if (secondaryCount < MAX_SECONDARY_SPEC_AGENTS
-                        && !existing.getSecondarySpecializations().contains(secondSpec)) {
-                    existing.setSecondarySpecializations(new ArrayList<>(List.of(secondSpec)));
-                    secondaryCount++;
-                } else if (secondaryCount >= MAX_SECONDARY_SPEC_AGENTS
-                        && existing.getSecondarySpecializations().contains(secondSpec)) {
-                    existing.setSecondarySpecializations(new ArrayList<>());
-                }
+                // Already assigned to this desk — ensure primary and secondary are set
+                existing.setPrimarySpecialization(defaultSpec);
+                existing.getSecondarySpecializations().clear();
+                existing.getSecondarySpecializations().add(secondSpec);
                 deskAgentRepository.save(existing);
             } else {
                 // New assignment to this desk
@@ -174,12 +162,7 @@ public class BambooRefreshService {
                 deskAgent.setDeskId(deskId);
                 deskAgent.setAgent(agent);
                 deskAgent.setPrimarySpecialization(defaultSpec);
-                if (secondaryCount < MAX_SECONDARY_SPEC_AGENTS) {
-                    deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(secondSpec)));
-                    secondaryCount++;
-                } else {
-                    deskAgent.setSecondarySpecializations(new ArrayList<>());
-                }
+                deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(secondSpec)));
                 deskAgent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
                 deskAgentRepository.save(deskAgent);
             }
