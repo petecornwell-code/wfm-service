@@ -32,7 +32,10 @@ public class MockBambooHRClient implements BambooHRClient {
         "Mia", "Michael", "Miles", "Natalie", "Nathan", "Noah", "Nolan", "Nora",
         "Nova", "Olivia", "Owen", "Paisley", "Penelope", "Riley", "Ryan", "Samantha",
         "Samuel", "Savannah", "Scarlett", "Sebastian", "Skylar", "Sophia", "Stella",
-        "Thomas", "Violet", "William", "Wyatt", "Zoe", "Zoey"
+        "Thomas", "Violet", "William", "Wyatt", "Zoe", "Zoey",
+        "Alice", "Brian", "Catherine", "Derek", "Elena", "Felix", "Georgia", "Hugo",
+        "Iris", "Julian", "Katherine", "Lorenzo", "Madeline", "Nico", "Ophelia",
+        "Patrick", "Quinn", "Regina", "Sienna", "Tobias", "Ursula", "Victor"
     };
 
     private static final String[] LAST_NAMES = {
@@ -73,8 +76,8 @@ public class MockBambooHRClient implements BambooHRClient {
         }
         // Shuffle with a seed derived from the call count so each refresh is different
         Collections.shuffle(pool, new Random(seed));
-        // Return exactly 83 employees
-        return List.copyOf(pool.subList(0, Math.min(83, pool.size())));
+        // Return exactly 120 employees
+        return List.copyOf(pool.subList(0, Math.min(120, pool.size())));
     }
 
     @Override
