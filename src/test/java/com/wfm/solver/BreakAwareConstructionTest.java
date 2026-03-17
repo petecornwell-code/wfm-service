@@ -184,12 +184,14 @@ class BreakAwareConstructionTest {
 
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
+        Specialization none = spec(deskId, "None");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
+            Specialization primary = i < 20 ? none : basic;
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+            DeskAgent da = deskAgent(deskId, a, primary, secondaries, CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 
@@ -322,12 +324,14 @@ class BreakAwareConstructionTest {
 
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
+        Specialization none = spec(deskId, "None");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
+            Specialization primary = i < 20 ? none : basic;
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+            DeskAgent da = deskAgent(deskId, a, primary, secondaries, CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 
@@ -421,11 +425,12 @@ class BreakAwareConstructionTest {
 
         Specialization billing = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
+        Specialization none = spec(deskId, "None");
 
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");
-        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(second), new BigDecimal("8.00"));
-        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(second), new BigDecimal("8.00"));
+        DeskAgent daA = deskAgent(deskId, agentA, none, List.of(second), new BigDecimal("8.00"));
+        DeskAgent daB = deskAgent(deskId, agentB, none, List.of(second), new BigDecimal("8.00"));
 
         // 36 timeslots: 08:00-17:00 in 15-min increments
         List<Timeslot> timeslots = new ArrayList<>();

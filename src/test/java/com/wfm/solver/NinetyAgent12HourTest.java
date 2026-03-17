@@ -228,6 +228,7 @@ class NinetyAgent12HourTest {
 
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
+        Specialization none = spec(deskId, "None");
 
         // --- Timeslots: 08:00-20:00, 60-min ---
         List<Timeslot> timeslots = new ArrayList<>();
@@ -287,8 +288,9 @@ class NinetyAgent12HourTest {
 
             for (int i = 0; i < count; i++) {
                 Agent a = agent(String.valueOf(agentIdx + 1), "Agent-" + (agentIdx + 1));
+                Specialization primary = agentIdx < 20 ? none : basic;
                 List<Specialization> secondaries = agentIdx < 20 ? List.of(second) : List.of();
-                DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+                DeskAgent da = deskAgent(deskId, a, primary, secondaries, CONTRACTED_HOURS);
                 allDeskAgents.add(da);
                 dayConfigs.add(new AgentDayConfig(
                         da.getId(), DAY, CONTRACTED_HOURS,
