@@ -17,5 +17,6 @@ public record SolveRequest(
         Integer breakClusterThresholdPct,
         BigDecimal defaultContractedHoursPerDay,
         Integer overallocationHardLimitPct,
-        Integer underallocationHardLimitPct
+        Integer underallocationHardLimitPct,
+        Integer solveTimeSeconds
 ) {}

@@ -22,6 +22,7 @@ export default function ScheduleSetup() {
   const [defaultHours, setDefaultHours] = useState(8.0)
   const [overallocationLimit, setOverallocationLimit] = useState(130)
   const [underallocationLimit, setUnderallocationLimit] = useState(70)
+  const [solveTimeMinutes, setSolveTimeMinutes] = useState(10)
   const [solving, setSolving] = useState(false)
   const [error, setError] = useState('')
 
@@ -67,6 +68,7 @@ export default function ScheduleSetup() {
         defaultContractedHoursPerDay: defaultHours,
         overallocationHardLimitPct: overallocationLimit,
         underallocationHardLimitPct: underallocationLimit,
+        solveTimeSeconds: solveTimeMinutes * 60,
       })
       navigate(`/desks/${deskId}/schedules/${schedule.id}`)
     } catch (err) {
@@ -122,6 +124,7 @@ export default function ScheduleSetup() {
           <label>Default Contracted Hrs/Day<input type="number" step="0.25" value={defaultHours} onChange={e => setDefaultHours(Number(e.target.value))} /></label>
           <label>Over-allocation Limit (%)<input type="number" value={overallocationLimit} onChange={e => setOverallocationLimit(Number(e.target.value))} /></label>
           <label>Under-allocation Limit (%)<input type="number" value={underallocationLimit} onChange={e => setUnderallocationLimit(Number(e.target.value))} /></label>
+          <label>Solve Time (min)<input type="number" min={1} max={60} value={solveTimeMinutes} onChange={e => setSolveTimeMinutes(Number(e.target.value))} /></label>
         </div>
 
         {error && <p style={{ color: '#dc2626', marginTop: '0.75rem' }}>{error}</p>}

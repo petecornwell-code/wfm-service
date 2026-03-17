@@ -1,6 +1,8 @@
 package com.wfm.service;
 
+import ai.timefold.solver.core.api.solver.SolverConfigOverride;
 import ai.timefold.solver.core.api.solver.SolverManager;
+import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.SolveRequest;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -235,12 +238,13 @@ public class SolverService {
 
         long solverTenantId = tenantId;
 
-        solverManager.solveAndListen(schedule.getId(),
-                (UUID id) -> {
+        var solveBuilder = solverManager.solveBuilder()
+                .withProblemId(schedule.getId())
+                .withProblemFinder((UUID id) -> {
                     TenantContext.setTenantId(solverTenantId);
                     return schedule;
-                },
-                (Schedule bestSolution) -> {
+                })
+                .withBestSolutionConsumer((Schedule bestSolution) -> {
                     TenantContext.setTenantId(solverTenantId);
                     try {
                         log.debug("Solver best solution update — schedule={}, score={}",
@@ -250,8 +254,8 @@ public class SolverService {
                     } finally {
                         TenantContext.clear();
                     }
-                },
-                (Schedule finalBestSolution) -> {
+                })
+                .withFinalBestSolutionConsumer((Schedule finalBestSolution) -> {
                     TenantContext.setTenantId(solverTenantId);
                     try {
                         log.info("Solver finished — schedule={}, score={}, status={}",
@@ -265,8 +269,8 @@ public class SolverService {
                     } finally {
                         TenantContext.clear();
                     }
-                },
-                (UUID problemId, Throwable throwable) -> {
+                })
+                .withExceptionHandler((UUID problemId, Throwable throwable) -> {
                     TenantContext.setTenantId(solverTenantId);
                     try {
                         log.error("Solver failed for schedule {}", problemId, throwable);
@@ -277,6 +281,19 @@ public class SolverService {
                         TenantContext.clear();
                     }
                 });
+
+        if (request.solveTimeSeconds() != null && request.solveTimeSeconds() > 0) {
+            long seconds = request.solveTimeSeconds();
+            long unimprovedSeconds = Math.max(30, seconds * 3 / 10); // 30% of total, min 30s
+            log.info("Custom solve time: {}s total, {}s unimproved limit", seconds, unimprovedSeconds);
+            solveBuilder = solveBuilder.withConfigOverride(
+                    new SolverConfigOverride<Schedule>()
+                            .withTerminationConfig(new TerminationConfig()
+                                    .withSpentLimit(Duration.ofSeconds(seconds))
+                                    .withUnimprovedSpentLimit(Duration.ofSeconds(unimprovedSeconds))));
+        }
+
+        solveBuilder.run();
 
         return schedule;
     }
