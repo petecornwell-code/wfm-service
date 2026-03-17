@@ -151,9 +151,10 @@ public class DeskAgentService {
                     .map(id -> specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
                             .orElseThrow(() -> new EntityNotFoundException("Specialization", id)))
                     .toList();
-            da.setSecondarySpecializations(new ArrayList<>(secondaries));
+            da.getSecondarySpecializations().clear();
+            da.getSecondarySpecializations().addAll(secondaries);
         } else {
-            da.setSecondarySpecializations(new ArrayList<>());
+            da.getSecondarySpecializations().clear();
         }
 
         DeskAgent saved = deskAgentRepository.save(da);
