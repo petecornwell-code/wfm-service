@@ -202,7 +202,7 @@ export const schedules = {
   stop: (deskId: string, id: string) =>
     request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/stop`, { method: 'PUT' }),
   accept: (deskId: string, id: string) =>
-    request<ScheduleDetail>(`/desks/${deskId}/schedules/${id}/accept`, { method: 'PUT' }),
+    request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/accept`, { method: 'PUT' }),
   reject: (deskId: string, id: string) =>
     request<void>(`/desks/${deskId}/schedules/${id}/reject`, { method: 'PUT' }),
   export: (deskId: string, id: string) =>

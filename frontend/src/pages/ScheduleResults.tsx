@@ -19,6 +19,7 @@ export default function ScheduleResults() {
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -60,28 +61,33 @@ export default function ScheduleResults() {
   }
 
   const handleAccept = async () => {
-    if (!deskId || !scheduleId) return
+    if (!deskId || !scheduleId || submitting) return
     if (schedule.feasible === false) {
       if (!confirm('This schedule has hard constraint violations and is not optimal. Accept anyway?')) return
     }
+    setSubmitting(true)
     try {
       const updated = await schedules.accept(deskId, scheduleId)
-      setSchedule(updated)
+      setSchedule({ ...schedule, ...updated })
       showToast('success', 'Schedule accepted')
     } catch (err) {
       showToast('error', getErrorMessage(err))
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleReject = async () => {
-    if (!deskId || !scheduleId) return
+    if (!deskId || !scheduleId || submitting) return
     if (!confirm('Are you sure you want to reject this schedule?')) return
+    setSubmitting(true)
     try {
       await schedules.reject(deskId, scheduleId)
       showToast('success', 'Schedule rejected')
       navigate(`/desks/${deskId}/schedule-setup`)
     } catch (err) {
       showToast('error', getErrorMessage(err))
+      setSubmitting(false)
     }
   }
 
@@ -186,8 +192,8 @@ export default function ScheduleResults() {
 
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
           {isRunning && <button className="danger" onClick={handleStop}>Stop Solver</button>}
-          {canAccept && <button className="primary" onClick={handleAccept}>Accept</button>}
-          {canReject && <button className="danger" onClick={handleReject}>Reject</button>}
+          {canAccept && <button className="primary" onClick={handleAccept} disabled={submitting}>{submitting ? 'Accepting…' : 'Accept'}</button>}
+          {canReject && <button className="danger" onClick={handleReject} disabled={submitting}>Reject</button>}
           {!isRunning && <button onClick={handleExport}>Export to Excel</button>}
         </div>
       </div>
