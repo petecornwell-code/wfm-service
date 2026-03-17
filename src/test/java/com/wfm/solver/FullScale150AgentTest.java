@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>1 day: 2026-03-16 (Monday)</li>
  *   <li>Coverage window: 09:00 – 18:00 (9 hours, 9 × 60-min timeslots)</li>
- *   <li>1 specialization: "Basic"</li>
+ *   <li>1 specialization: "IT Support"</li>
  *   <li>150 agents, each contracted 8 hrs/day → 8 work slots + 1 break slot per agent</li>
  *   <li>Break: 60 min, blocked first/last 1 hr, ON_HOUR alignment</li>
  *   <li>Eligible break hours: 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00 (7 options)</li>
@@ -128,8 +128,8 @@ class FullScale150AgentTest {
         UUID scheduleId = UUID.randomUUID();
 
         // --- Specialization ---
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         // --- Build 150 agents matching mock BambooHR name pattern ---
         List<Agent> agentList = new ArrayList<>(150);

@@ -182,8 +182,8 @@ class BreakAwareConstructionTest {
         UUID deskId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
@@ -319,8 +319,8 @@ class BreakAwareConstructionTest {
         UUID deskId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
@@ -417,8 +417,8 @@ class BreakAwareConstructionTest {
         LocalTime end = LocalTime.of(17, 0);
         int increment = 15;
 
-        Specialization billing = spec(deskId, "Billing");
-        Specialization second = spec(deskId, "second");
+        Specialization billing = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");

@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>1 day: 2026-03-10 (Tuesday)</li>
  *   <li>Coverage window: 08:00 – 20:00 (12 hrs, 12 × 60-min timeslots)</li>
- *   <li>1 specialization: "Support" (all primary, 0 secondary)</li>
+ *   <li>1 specialization: "IT Support" (all primary, 0 secondary)</li>
  *   <li>120 agents, each contracted 8 hrs → 8 work slots + 1 break slot</li>
  *   <li>Break: 60 min, blocked first/last 1 hr, ON_HOUR alignment</li>
  *   <li>Demand: 60 agents in every slot (720 total demand seats)</li>
@@ -160,7 +160,7 @@ class TwelveHourUniformDemandTest {
         UUID scheduleId = UUID.randomUUID();
 
         // --- Single specialization (all primary, no secondary) ---
-        Specialization support = spec(deskId, "Support");
+        Specialization support = spec(deskId, "IT Support");
 
         // --- 120 agents: 60 early + 60 late ---
         List<DeskAgent> deskAgents = new ArrayList<>(120);

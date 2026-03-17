@@ -164,8 +164,8 @@ class MultiDayConstraintDiagnosticTest {
         UUID deskId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {

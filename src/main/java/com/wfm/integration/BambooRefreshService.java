@@ -38,8 +38,8 @@ public class BambooRefreshService {
     @Value("${bamboohr.time-off.lookahead-weeks:8}")
     private int lookaheadWeeks;
 
-    private static final String DEFAULT_SPECIALIZATION_NAME = "Basic";
-    private static final String SECONDARY_SPECIALIZATION_NAME = "second";
+    private static final String DEFAULT_SPECIALIZATION_NAME = "IT Support";
+    private static final String SECONDARY_SPECIALIZATION_NAME = "IT Support (Spanish)";
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,

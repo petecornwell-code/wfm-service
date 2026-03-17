@@ -162,8 +162,8 @@ class IncrementalScoringDiagnosticTest {
         UUID deskId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "Second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         List<Timeslot> timeslots = new ArrayList<>();
         Map<LocalTime, Timeslot> tsByStart = new HashMap<>();

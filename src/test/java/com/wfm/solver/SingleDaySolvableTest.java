@@ -104,8 +104,8 @@ class SingleDaySolvableTest {
         UUID scheduleId = UUID.randomUUID();
 
         // --- Specialization ---
-        Specialization billing = spec(deskId, "Billing");
-        Specialization second = spec(deskId, "second");
+        Specialization billing = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         // --- Agents + DeskAgents ---
         Agent agentA = agent("A-001", "Alice");

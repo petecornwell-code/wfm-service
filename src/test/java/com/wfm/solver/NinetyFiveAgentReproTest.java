@@ -147,8 +147,8 @@ class NinetyFiveAgentReproTest {
         UUID deskId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        Specialization basic = spec(deskId, "Basic");
-        Specialization second = spec(deskId, "Second");
+        Specialization basic = spec(deskId, "IT Support");
+        Specialization second = spec(deskId, "IT Support (Spanish)");
 
         // --- Timeslots: 08:00-20:00, 60-min ---
         List<Timeslot> timeslots = new ArrayList<>();
