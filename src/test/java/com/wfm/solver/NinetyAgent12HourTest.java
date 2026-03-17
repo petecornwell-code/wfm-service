@@ -287,7 +287,8 @@ class NinetyAgent12HourTest {
 
             for (int i = 0; i < count; i++) {
                 Agent a = agent(String.valueOf(agentIdx + 1), "Agent-" + (agentIdx + 1));
-                DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
+                List<Specialization> secondaries = agentIdx < 20 ? List.of(second) : List.of();
+                DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
                 allDeskAgents.add(da);
                 dayConfigs.add(new AgentDayConfig(
                         da.getId(), DAY, CONTRACTED_HOURS,

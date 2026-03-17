@@ -188,7 +188,8 @@ class BreakAwareConstructionTest {
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
+            List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
+            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 
@@ -325,7 +326,8 @@ class BreakAwareConstructionTest {
         List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
+            List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
+            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
             deskAgentList.add(da);
         }
 

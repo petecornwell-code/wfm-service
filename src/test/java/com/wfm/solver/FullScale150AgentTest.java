@@ -141,7 +141,8 @@ class FullScale150AgentTest {
                 if (agentList.size() >= 150) break outer;
                 String name = firstName + " " + lastName;
                 Agent a = agent(String.valueOf(id), name);
-                DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
+                List<Specialization> secondaries = agentList.size() < 20 ? List.of(second) : List.of();
+                DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
                 agentList.add(a);
                 deskAgentList.add(da);
                 id++;

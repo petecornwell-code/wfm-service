@@ -165,7 +165,8 @@ class NinetyFiveAgentReproTest {
 
         for (int i = 0; i < 95; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
+            List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
+            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
             allDeskAgents.add(da);
             dayConfigs.add(new AgentDayConfig(
                     da.getId(), DAY, CONTRACTED_HOURS,
