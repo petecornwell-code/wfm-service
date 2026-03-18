@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { schedules, deskAgents, specializations as specApi, staffingRequirements as srApi, type ScheduleSummary, getErrorMessage } from '../api/client'
 import { loadTimeslotParams } from '../timeslotParams'
@@ -33,13 +33,48 @@ export default function ScheduleSetup() {
 
   // Past schedules
   const [pastSchedules, setPastSchedules] = useState<ScheduleSummary[]>([])
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const loadSchedules = useCallback(() => {
+    if (!deskId) return
+    schedules.list(deskId).then(res => setPastSchedules(res.data)).catch(() => {})
+  }, [deskId])
 
   useEffect(() => {
     if (!deskId) return
     deskAgents.list(deskId).then(res => setAgentCount(res.data.filter(da => da.agent.active).length)).catch(() => {})
     specApi.list(deskId).then(s => setSpecCount(s.length)).catch(() => {})
-    schedules.list(deskId).then(res => setPastSchedules(res.data)).catch(() => {})
-  }, [deskId])
+    loadSchedules()
+  }, [deskId, loadSchedules])
+
+  const handleAcceptSchedule = async (id: string) => {
+    if (!deskId || actionLoading) return
+    setActionLoading(id)
+    try {
+      await schedules.accept(deskId, id)
+      showToast('success', 'Schedule accepted')
+      loadSchedules()
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleRejectSchedule = async (id: string) => {
+    if (!deskId || actionLoading) return
+    if (!confirm('Are you sure you want to reject this schedule?')) return
+    setActionLoading(id)
+    try {
+      await schedules.reject(deskId, id)
+      showToast('success', 'Schedule rejected')
+      loadSchedules()
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   useEffect(() => {
     if (!deskId || !periodStart || !periodEnd) { setSrCount(null); return }
@@ -143,22 +178,40 @@ export default function ScheduleSetup() {
               <tr><th>Created</th><th>Status</th><th>Period</th><th>Score</th><th>Feasible</th><th></th></tr>
             </thead>
             <tbody>
-              {pastSchedules.map(s => (
-                <tr key={s.id}>
-                  <td style={{ fontSize: '0.85rem' }}>{new Date(s.createdAt).toLocaleString()}</td>
-                  <td>
-                    <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                      background: s.status === 'ACCEPTED' ? '#f0fdf4' : s.status === 'FAILED' ? '#fef2f2' : s.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
-                      color: s.status === 'ACCEPTED' ? '#16a34a' : s.status === 'FAILED' ? '#dc2626' : s.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
-                      {s.status}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: '0.85rem' }}>{s.periodStartDate} — {s.periodEndDate}</td>
-                  <td style={{ fontSize: '0.85rem' }}>{s.score ? `H:${s.score.hardScore} S:${s.score.softScore}` : '—'}</td>
-                  <td>{s.feasible === true ? 'Yes' : s.feasible === false ? 'No' : '—'}</td>
-                  <td><Link to={`/desks/${deskId}/schedules/${s.id}`}>View</Link></td>
-                </tr>
-              ))}
+              {pastSchedules.map(s => {
+                const canAccept = s.status === 'COMPLETED' || s.status === 'STOPPED'
+                const canReject = canAccept || s.status === 'FAILED'
+                return (
+                  <tr key={s.id}>
+                    <td style={{ fontSize: '0.85rem' }}>{new Date(s.createdAt).toLocaleString()}</td>
+                    <td>
+                      <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                        background: s.status === 'ACCEPTED' ? '#f0fdf4' : s.status === 'FAILED' ? '#fef2f2' : s.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
+                        color: s.status === 'ACCEPTED' ? '#16a34a' : s.status === 'FAILED' ? '#dc2626' : s.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
+                        {s.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.85rem' }}>{s.periodStartDate} — {s.periodEndDate}</td>
+                    <td style={{ fontSize: '0.85rem' }}>{s.score ? `H:${s.score.hardScore} S:${s.score.softScore}` : '—'}</td>
+                    <td>{s.feasible === true ? 'Yes' : s.feasible === false ? 'No' : '—'}</td>
+                    <td style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                      <Link to={`/desks/${deskId}/schedules/${s.id}`}>View</Link>
+                      {canAccept && (
+                        <button className="primary" style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                          disabled={actionLoading === s.id} onClick={() => handleAcceptSchedule(s.id)}>
+                          Accept
+                        </button>
+                      )}
+                      {canReject && (
+                        <button className="danger" style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                          disabled={actionLoading === s.id} onClick={() => handleRejectSchedule(s.id)}>
+                          Reject
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
