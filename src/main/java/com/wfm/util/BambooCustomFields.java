@@ -8,7 +8,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +23,30 @@ public final class BambooCustomFields {
     private static final String CUSTOM_FIELD_ID = "4620";
 
     private BambooCustomFields() {}
+
+    public static void main(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: BambooCustomFields <subdomain> <apiKey>");
+            System.exit(1);
+        }
+        String subdomain = args[0];
+        String apiKey = args[1];
+
+        System.out.println("Fetching custom field 4620 values for subdomain: " + subdomain);
+        System.out.println();
+
+        Map<String, String> values = getAllCustomField4620Values(subdomain, apiKey);
+
+        System.out.printf("%-12s  %s%n", "EMPLOYEE ID", "CUSTOM FIELD 4620");
+        System.out.printf("%-12s  %s%n", "-----------", "-----------------");
+        values.forEach((id, value) -> System.out.printf("%-12s  %s%n", id, value));
+
+        System.out.println();
+        System.out.println("Total employees with value: " + values.size());
+
+        List<String> distinct = values.values().stream().distinct().toList();
+        System.out.println("Distinct values: " + distinct);
+    }
 
     /**
      * Fetches all values of custom field 4620 for every employee.
@@ -87,15 +110,4 @@ public final class BambooCustomFields {
         }
     }
 
-    /**
-     * Returns just the distinct values (no duplicates) of custom field 4620.
-     *
-     * @param subdomain BambooHR company subdomain
-     * @param apiKey    BambooHR API key
-     * @return list of distinct non-blank values
-     */
-    public static List<String> getDistinctCustomField4620Values(String subdomain, String apiKey) {
-        return new ArrayList<>(getAllCustomField4620Values(subdomain, apiKey)
-                .values().stream().distinct().toList());
-    }
 }
