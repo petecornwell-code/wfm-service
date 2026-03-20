@@ -1,8 +1,5 @@
 package com.wfm.integration;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -13,10 +10,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory mock BambooHR client for development.
- * Active when bamboohr.mock=true (default).
+ * Used as fallback when BambooHR credentials are not configured.
  */
-@Component
-@ConditionalOnProperty(name = "bamboohr.mock", havingValue = "true", matchIfMissing = true)
 public class MockBambooHRClient implements BambooHRClient {
 
     private static final String[] FIRST_NAMES = {

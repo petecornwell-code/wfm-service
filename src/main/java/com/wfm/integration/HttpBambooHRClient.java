@@ -5,10 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wfm.service.AppConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
@@ -28,8 +26,6 @@ import java.util.List;
  * - GET  /employees/{id}?fields=...   (single employee)
  * - GET  /time_off/requests/?...       (approved time-off)
  */
-@Component
-@ConditionalOnProperty(name = "bamboohr.mock", havingValue = "false")
 public class HttpBambooHRClient implements BambooHRClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpBambooHRClient.class);

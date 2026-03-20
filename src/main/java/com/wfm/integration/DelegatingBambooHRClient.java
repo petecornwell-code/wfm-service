@@ -1,0 +1,65 @@
+package com.wfm.integration;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wfm.service.AppConfigurationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * Delegates to HttpBambooHRClient when server and API key are configured in the
+ * database (via the Configuration UI), otherwise falls back to MockBambooHRClient.
+ *
+ * This replaces the previous @ConditionalOnProperty approach which required a
+ * static property in application.yml — meaning the HTTP client was never used
+ * even after the user configured credentials through the UI.
+ */
+@Component
+public class DelegatingBambooHRClient implements BambooHRClient {
+
+    private static final Logger log = LoggerFactory.getLogger(DelegatingBambooHRClient.class);
+
+    private final AppConfigurationService configurationService;
+    private final HttpBambooHRClient httpClient;
+    private final MockBambooHRClient mockClient;
+
+    public DelegatingBambooHRClient(AppConfigurationService configurationService,
+                                     ObjectMapper objectMapper) {
+        this.configurationService = configurationService;
+        this.httpClient = new HttpBambooHRClient(configurationService, objectMapper);
+        this.mockClient = new MockBambooHRClient();
+    }
+
+    private boolean isConfigured() {
+        String server = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_SERVER);
+        String apiKey = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_API_KEY);
+        return server != null && !server.isBlank() && apiKey != null && !apiKey.isBlank();
+    }
+
+    private BambooHRClient delegate() {
+        if (isConfigured()) {
+            log.debug("BambooHR credentials configured — using live HTTP client");
+            return httpClient;
+        }
+        log.debug("BambooHR credentials not configured — using mock client");
+        return mockClient;
+    }
+
+    @Override
+    public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
+        return delegate().listEmployees(wfmTenantId, project);
+    }
+
+    @Override
+    public BambooEmployee getEmployee(String bamboohrId) {
+        return delegate().getEmployee(bamboohrId);
+    }
+
+    @Override
+    public List<BambooTimeOff> listTimeOff(String wfmTenantId, LocalDate from, LocalDate to) {
+        return delegate().listTimeOff(wfmTenantId, from, to);
+    }
+}
