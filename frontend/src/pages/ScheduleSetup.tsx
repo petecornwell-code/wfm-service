@@ -42,7 +42,7 @@ export default function ScheduleSetup() {
 
   useEffect(() => {
     if (!deskId) return
-    deskAgents.list(deskId).then(res => setAgentCount(res.data.filter(da => da.agent.active).length)).catch(() => {})
+    deskAgents.list(deskId).then(res => setAgentCount(res.data.filter(da => da.active).length)).catch(() => {})
     specApi.list(deskId).then(s => setSpecCount(s.length)).catch(() => {})
     loadSchedules()
   }, [deskId, loadSchedules])

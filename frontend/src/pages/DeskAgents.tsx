@@ -111,7 +111,7 @@ export default function DeskAgents() {
     if (!deskId || !confirm('Remove this agent from the desk?')) return
     try {
       await deskAgents.remove(deskId, agentId)
-      setAgentList(agentList.filter(da => da.agent.id !== agentId))
+      setAgentList(agentList.filter(da => da.id !== agentId))
       showToast('success', 'Agent removed')
     } catch (err) {
       showToast('error', getErrorMessage(err))
@@ -119,7 +119,7 @@ export default function DeskAgents() {
   }
 
   const startEditSpec = (da: DeskAgent) => {
-    setEditSpecAgentId(da.agent.id)
+    setEditSpecAgentId(da.id)
     setEditPrimary(da.primarySpecialization?.id || '')
     setEditSecondary(da.secondarySpecializations.map(s => s.id))
   }
@@ -131,7 +131,7 @@ export default function DeskAgents() {
         primarySpecializationId: editPrimary,
         secondarySpecializationIds: editSecondary,
       })
-      setAgentList(agentList.map(da => da.agent.id === editSpecAgentId ? updated : da))
+      setAgentList(agentList.map(da => da.id === editSpecAgentId ? updated : da))
       setEditSpecAgentId(null)
       showToast('success', 'Specializations updated')
     } catch (err) {
@@ -140,7 +140,7 @@ export default function DeskAgents() {
   }
 
   const startEditHours = (da: DeskAgent) => {
-    setEditHoursAgentId(da.agent.id)
+    setEditHoursAgentId(da.id)
     setEditHours(da.effectiveContractedHoursPerDay)
   }
 
@@ -148,7 +148,7 @@ export default function DeskAgents() {
     if (!deskId || !editHoursAgentId) return
     try {
       const updated = await deskAgents.setContractedHours(deskId, editHoursAgentId, editHours)
-      setAgentList(agentList.map(da => da.agent.id === editHoursAgentId ? updated : da))
+      setAgentList(agentList.map(da => da.id === editHoursAgentId ? updated : da))
       setEditHoursAgentId(null)
       showToast('success', 'Contracted hours updated')
     } catch (err) {
@@ -198,14 +198,14 @@ export default function DeskAgents() {
     return sortDir === 'asc' ? ' \u2191' : ' \u2193'
   }
 
-  const filteredAgents = showActiveOnly ? agentList.filter(da => da.agent.active) : agentList
+  const filteredAgents = showActiveOnly ? agentList.filter(da => da.active) : agentList
 
   const sortedAgents = useMemo(() => {
     if (!sortField) return filteredAgents
     const sorted = [...filteredAgents]
     sorted.sort((a, b) => {
-      const aVal = sortField === 'firstName' ? getFirstName(a.agent.name) : getLastName(a.agent.name)
-      const bVal = sortField === 'firstName' ? getFirstName(b.agent.name) : getLastName(b.agent.name)
+      const aVal = sortField === 'firstName' ? getFirstName(a.name) : getLastName(a.name)
+      const bVal = sortField === 'firstName' ? getFirstName(b.name) : getLastName(b.name)
       const cmp = aVal.localeCompare(bVal)
       return sortDir === 'asc' ? cmp : -cmp
     })
@@ -268,13 +268,13 @@ export default function DeskAgents() {
         <tbody>
           {paginatedAgents.map(da => (
             <tr key={da.id}>
-              <td>{getFirstName(da.agent.name)}</td>
-              <td>{getLastName(da.agent.name)}</td>
-              <td>{da.agent.email}</td>
-              <td>{da.agent.department}</td>
-              <td>{da.agent.jobTitle}</td>
+              <td>{getFirstName(da.name)}</td>
+              <td>{getLastName(da.name)}</td>
+              <td>{da.email}</td>
+              <td>{da.department}</td>
+              <td>{da.jobTitle}</td>
               <td>
-                {editSpecAgentId === da.agent.id ? (
+                {editSpecAgentId === da.id ? (
                   <select value={editPrimary} onChange={e => setEditPrimary(e.target.value)}>
                     <option value="">—</option>
                     {specs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -286,7 +286,7 @@ export default function DeskAgents() {
                 )}
               </td>
               <td>
-                {editSpecAgentId === da.agent.id ? (
+                {editSpecAgentId === da.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {specs.map(s => (
                       <label key={s.id} style={{ fontSize: '0.8rem' }}>
@@ -310,7 +310,7 @@ export default function DeskAgents() {
                 )}
               </td>
               <td>
-                {editHoursAgentId === da.agent.id ? (
+                {editHoursAgentId === da.id ? (
                   <div style={{ display: 'flex', gap: '0.25rem' }}>
                     <input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))}
                       step="0.25" style={{ width: '60px' }} />
@@ -323,14 +323,14 @@ export default function DeskAgents() {
                   </span>
                 )}
               </td>
-              <td>{da.agent.active ? 'Yes' : 'No'}</td>
-              <td style={{ fontSize: '0.8rem' }}>{da.agent.lastRefreshedAt ? new Date(da.agent.lastRefreshedAt).toLocaleDateString() : '—'}</td>
+              <td>{da.active ? 'Yes' : 'No'}</td>
+              <td style={{ fontSize: '0.8rem' }}>{da.lastRefreshedAt ? new Date(da.lastRefreshedAt).toLocaleDateString() : '—'}</td>
               <td>
                 <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
-                  <Link to={`/desks/${deskId}/agents/${da.agent.id}/preferences`} style={{ fontSize: '0.8rem' }}>Prefs</Link>
-                  <Link to={`/desks/${deskId}/agents/${da.agent.id}/exceptions`} style={{ fontSize: '0.8rem' }}>Exc</Link>
-                  <button onClick={() => openDaysOff(da.agent.id, da.agent.name)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>Days Off</button>
-                  <button className="danger" onClick={() => handleRemove(da.agent.id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>Remove</button>
+                  <Link to={`/desks/${deskId}/agents/${da.id}/preferences`} style={{ fontSize: '0.8rem' }}>Prefs</Link>
+                  <Link to={`/desks/${deskId}/agents/${da.id}/exceptions`} style={{ fontSize: '0.8rem' }}>Exc</Link>
+                  <button onClick={() => openDaysOff(da.id, da.name)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>Days Off</button>
+                  <button className="danger" onClick={() => handleRemove(da.id)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>Remove</button>
                 </div>
               </td>
             </tr>

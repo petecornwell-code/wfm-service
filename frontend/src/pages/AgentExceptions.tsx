@@ -22,9 +22,9 @@ export default function AgentExceptions() {
   useEffect(() => {
     if (deskId && agentId) {
       deskAgents.list(deskId).then(res => {
-        const da = res.data.find((d: DeskAgent) => d.agent.id === agentId)
+        const da = res.data.find((d: DeskAgent) => d.id === agentId)
         if (da) {
-          setAgentName(da.agent.name)
+          setAgentName(da.name)
           setStandardHours(da.effectiveContractedHoursPerDay)
         }
       }).catch(() => {})

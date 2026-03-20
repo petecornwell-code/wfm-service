@@ -24,8 +24,8 @@ export default function AgentPreferences() {
   useEffect(() => {
     if (deskId && agentId) {
       deskAgents.list(deskId).then(res => {
-        const da = res.data.find((d: DeskAgent) => d.agent.id === agentId)
-        if (da) setAgentName(da.agent.name)
+        const da = res.data.find((d: DeskAgent) => d.id === agentId)
+        if (da) setAgentName(da.name)
       }).catch(() => {})
     }
   }, [deskId, agentId])
