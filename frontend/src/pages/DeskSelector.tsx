@@ -20,9 +20,11 @@ export default function DeskSelector() {
   return (
     <div className="main-content">
       <h1>Select a Desk</h1>
-      <p style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
         <Link to="/desk-management">Manage Desks</Link>
-      </p>
+        <Link to="/configuration">Configuration</Link>
+        <Link to="/client-management">Client Management</Link>
+      </div>
       {deskList.length === 0 ? (
         <p>No desks configured. <Link to="/desk-management">Create one</Link> to get started.</p>
       ) : (

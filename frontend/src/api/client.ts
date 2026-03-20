@@ -349,3 +349,18 @@ export interface ScheduleDetail extends ScheduleSummary {
 
 export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean }
+
+export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }
+
+// --- App Configuration ---
+export const appConfiguration = {
+  get: () => request<Record<string, string>>('/configuration'),
+  update: (config: Record<string, string>) =>
+    request<Record<string, string>>('/configuration', { method: 'PUT', body: JSON.stringify(config) }),
+}
+
+// --- Client Management ---
+export const clientManagement = {
+  listEmployees: (department: string, page = 1, pageSize = 20) =>
+    request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}`),
+}

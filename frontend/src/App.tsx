@@ -12,6 +12,8 @@ import StaffingRequirements from './pages/StaffingRequirements'
 import ConstraintWeightsPage from './pages/ConstraintWeightsPage'
 import ScheduleSetup from './pages/ScheduleSetup'
 import ScheduleResults from './pages/ScheduleResults'
+import Configuration from './pages/Configuration'
+import ClientManagement from './pages/ClientManagement'
 
 function DeskLayout() {
   const { deskId } = useParams()
@@ -79,6 +81,8 @@ function App() {
       <Routes>
         <Route path="/" element={<DeskSelector />} />
         <Route path="/desk-management" element={<DeskManagement />} />
+        <Route path="/configuration" element={<Configuration />} />
+        <Route path="/client-management" element={<ClientManagement />} />
         <Route path="/desks/:deskId/*" element={<DeskLayout />} />
       </Routes>
     </>
