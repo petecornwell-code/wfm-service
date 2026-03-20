@@ -13,14 +13,14 @@ export default function ClientManagement() {
   const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
 
-  const fetchEmployees = async (page = 1) => {
+  const fetchEmployees = async (page = 1, refresh = false) => {
     if (!department.trim()) {
       showToast('error', 'Please enter a department name')
       return
     }
     setLoading(true)
     try {
-      const res = await clientManagement.listEmployees(department.trim(), page, pageSize)
+      const res = await clientManagement.listEmployees(department.trim(), page, pageSize, refresh)
       setEmployees(res.data)
       setHasMore(res.hasMore)
       setTotalCount(res.totalCount)
@@ -35,7 +35,7 @@ export default function ClientManagement() {
 
   const handleSearch = () => {
     setCurrentPage(1)
-    fetchEmployees(1)
+    fetchEmployees(1, true)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

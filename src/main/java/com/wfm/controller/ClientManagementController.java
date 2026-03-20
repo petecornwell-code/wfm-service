@@ -22,10 +22,11 @@ public class ClientManagementController {
     public PaginatedResponse<BambooEmployeeResponse> listEmployees(
             @RequestParam String department,
             @RequestParam(required = false, defaultValue = "1") int page,
-            @RequestParam(required = false, defaultValue = "20") int pageSize) {
+            @RequestParam(required = false, defaultValue = "20") int pageSize,
+            @RequestParam(required = false, defaultValue = "false") boolean refresh) {
 
         String tenantId = String.valueOf(TenantContext.getTenantId());
-        List<BambooEmployeeResponse> all = clientManagementService.listEmployeesByDepartment(tenantId, department);
+        List<BambooEmployeeResponse> all = clientManagementService.listEmployeesByDepartment(tenantId, department, refresh);
 
         int start = (page - 1) * pageSize;
         int end = Math.min(start + pageSize, all.size());

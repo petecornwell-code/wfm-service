@@ -14,6 +14,7 @@ public class AppConfigurationService {
 
     public static final String BAMBOOHR_SERVER = "bamboohr.server";
     public static final String BAMBOOHR_API_KEY = "bamboohr.apiKey";
+    public static final String BAMBOOHR_CACHE_MAX_SIZE = "bamboohr.cache.maxSize";
 
     private final AppConfigurationRepository repository;
 

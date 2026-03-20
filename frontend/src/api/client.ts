@@ -361,6 +361,6 @@ export const appConfiguration = {
 
 // --- Client Management ---
 export const clientManagement = {
-  listEmployees: (department: string, page = 1, pageSize = 20) =>
-    request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}`),
+  listEmployees: (department: string, page = 1, pageSize = 20, refresh = false) =>
+    request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}&refresh=${refresh}`),
 }
