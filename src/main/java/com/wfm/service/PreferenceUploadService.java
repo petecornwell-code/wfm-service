@@ -73,6 +73,7 @@ public class PreferenceUploadService {
                 String dayOfWeekStr = getCellString(row.getCell(3));
                 String startTimeStr = getCellString(row.getCell(4));
                 String standingStr = getCellString(row.getCell(5));
+                String breakTimeStr = getCellString(row.getCell(6));
 
                 boolean isStanding = standingStr != null &&
                         (standingStr.equalsIgnoreCase("yes") || standingStr.equalsIgnoreCase("true"));
@@ -127,9 +128,14 @@ public class PreferenceUploadService {
                 }
 
                 pref.setPreferredStartTime(startTime);
-                if (startTime != null) {
-                    pref.setPreferredBreakTime(startTime.plusHours(5));
+
+                LocalTime breakTime = null;
+                if (breakTimeStr != null && !breakTimeStr.isBlank()) {
+                    breakTime = LocalTime.parse(breakTimeStr.trim(), DateTimeFormatter.ofPattern("HH:mm"));
+                } else if (startTime != null) {
+                    breakTime = startTime.plusHours(5);
                 }
+                pref.setPreferredBreakTime(breakTime);
                 AgentPreference savedPref = agentPreferenceRepository.save(pref);
                 saved.add(toResponse(savedPref));
             }
