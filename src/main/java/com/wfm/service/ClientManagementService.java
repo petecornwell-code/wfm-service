@@ -24,6 +24,7 @@ public class ClientManagementService {
 
         return employees.stream()
                 .filter(e -> "Active".equalsIgnoreCase(e.status()))
+                .filter(e -> department.equalsIgnoreCase(e.department()))
                 .map(e -> new BambooEmployeeResponse(
                         e.id(),
                         e.displayName(),

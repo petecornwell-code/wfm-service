@@ -10,6 +10,7 @@ export default function ClientManagement() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [hasMore, setHasMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
 
   const fetchEmployees = async (page = 1) => {
@@ -22,6 +23,7 @@ export default function ClientManagement() {
       const res = await clientManagement.listEmployees(department.trim(), page, pageSize)
       setEmployees(res.data)
       setHasMore(res.hasMore)
+      setTotalCount(res.totalCount)
       setCurrentPage(page)
       setSearched(true)
     } catch (err) {
@@ -66,6 +68,9 @@ export default function ClientManagement() {
 
       {searched && (
         <>
+          <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
+            Total records: {totalCount.toLocaleString()}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
             <label>
               Rows per page:{' '}

@@ -72,8 +72,11 @@ public class BambooRefreshService {
                     .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
 
             // 2. Fetch from BambooHR BEFORE the transactional boundary
+            String deskName = desk.getName();
             List<BambooEmployee> employees = bambooHRClient.listEmployees(
-                    String.valueOf(tenantId), desk.getName());
+                    String.valueOf(tenantId), deskName).stream()
+                    .filter(e -> deskName.equalsIgnoreCase(e.department()))
+                    .toList();
 
             LocalDate from = LocalDate.now();
             LocalDate to = from.plusWeeks(lookaheadWeeks);

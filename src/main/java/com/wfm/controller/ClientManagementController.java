@@ -32,6 +32,6 @@ public class ClientManagementController {
         List<BambooEmployeeResponse> pageData = start < all.size() ? all.subList(start, end) : List.of();
         boolean hasMore = end < all.size();
 
-        return new PaginatedResponse<>(pageData, hasMore ? String.valueOf(page + 1) : null, hasMore);
+        return new PaginatedResponse<>(pageData, hasMore ? String.valueOf(page + 1) : null, hasMore, all.size());
     }
 }

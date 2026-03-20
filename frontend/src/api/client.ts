@@ -348,7 +348,7 @@ export interface ScheduleDetail extends ScheduleSummary {
 }
 
 export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
-export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean }
+export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean; totalCount: number }
 
 export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }
 

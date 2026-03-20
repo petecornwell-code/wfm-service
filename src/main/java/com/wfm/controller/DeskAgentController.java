@@ -43,7 +43,7 @@ public class DeskAgentController {
                                           @RequestParam(required = false) String cursor,
                                           @RequestParam(required = false, defaultValue = "50") int limit) {
         List<DeskAgentResponse> agents = deskAgentService.listDeskAgentResponses(deskId, search, cursor, limit);
-        return new PaginatedResponse<>(agents, null, false);
+        return new PaginatedResponse<>(agents, null, false, agents.size());
     }
 
     @PostMapping

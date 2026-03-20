@@ -85,11 +85,11 @@ public final class CursorPagination {
     public static <T> PaginatedResponse<T> buildPage(List<T> results, int limit,
                                                        Function<T, Map<String, String>> cursorExtractor) {
         if (results.size() <= limit) {
-            return new PaginatedResponse<>(results, null, false);
+            return new PaginatedResponse<>(results, null, false, results.size());
         }
         List<T> page = List.copyOf(results.subList(0, limit));
         T lastItem = page.get(page.size() - 1);
         String nextCursor = encode(cursorExtractor.apply(lastItem));
-        return new PaginatedResponse<>(page, nextCursor, true);
+        return new PaginatedResponse<>(page, nextCursor, true, -1);
     }
 }
