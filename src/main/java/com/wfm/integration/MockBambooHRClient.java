@@ -102,11 +102,15 @@ public class MockBambooHRClient implements BambooHRClient {
             String lastName = LAST_NAMES[idx % LAST_NAMES.length];
             String displayName = firstName + " " + lastName;
             String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + "@example.com";
+            String department = rng.nextBoolean() ? "Support" : "Sales";
+            if (project != null && !project.isBlank() && !project.equalsIgnoreCase(department)) {
+                continue;
+            }
             employees.add(new BambooEmployee(
                 String.valueOf(idx + 1),
                 displayName,
                 email,
-                rng.nextBoolean() ? "Support" : "Sales",
+                department,
                 "Agent",
                 "Active",
                 wfmTenantId,

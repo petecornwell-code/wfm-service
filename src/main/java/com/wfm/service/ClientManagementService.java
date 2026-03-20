@@ -20,12 +20,10 @@ public class ClientManagementService {
     }
 
     public List<BambooEmployeeResponse> listEmployeesByDepartment(String tenantId, String department) {
-        // Use the configured server/apiKey if available (passed to the client via config)
-        // The BambooHRClient implementations read from their own config,
-        // but we filter the results by department here.
         List<BambooEmployee> employees = bambooHRClient.listEmployees(tenantId, department);
 
         return employees.stream()
+                .filter(e -> "Active".equalsIgnoreCase(e.status()))
                 .filter(e -> department == null || department.isBlank()
                         || department.equalsIgnoreCase(e.department()))
                 .map(e -> new BambooEmployeeResponse(
