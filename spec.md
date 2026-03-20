@@ -72,7 +72,7 @@ Within a tenant, all scheduling work is organised into **desks**. A desk represe
 - **Tenant-level data** — Two categories of data remain at the tenant level (scoped by `tenant_id` only, no `desk_id`):
   1. **Agent records** — imported from BambooHR via `POST /desks/{deskId}/agents/refresh`. An agent is a person who exists at the tenant level.
   2. **Agent days off** — also sourced from BambooHR. A day off reflects the person's absence and applies regardless of desk.
-- **Agent-desk assignment** — An agent must be explicitly assigned to a desk before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
+- **Agent-desk assignment** — An agent must be explicitly assigned to a desk (by setting `Agent.deskId`) before they can participate in that desk's schedules. Assignment is managed via the Desk Agents API (section 7.2). When assigned, the agent receives desk-specific configuration: contracted hours per day, primary specialization, and secondary specializations — all stored directly on the `Agent` entity. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
 - **Desk context in the API** — All desk-scoped endpoints require a `deskId` path parameter or are nested under a desk resource. Desk management endpoints (`/desks`) require only tenant context. See section 7 for details.
 - **Single-desk constraint** — Because each agent is assigned to exactly one desk, cross-desk scheduling conflicts cannot occur.
 - **Desk selection in the UI** — Before navigating to any scheduling page, the user selects a desk from a desk picker (section 12.1). All subsequent pages operate within that desk's context.
@@ -154,7 +154,7 @@ Demand can be:
    | `serviceLevelTarget` | `double` | % (0–100) | Target percentage of calls answered within `serviceLevelThreshold` |
    | `serviceLevelThreshold` | `int` | seconds | Maximum acceptable wait time for the service level target (e.g. 20 seconds for "80% of calls answered within 20 seconds") |
 
-   Each row in the Erlang X request applies to a single timeslot and specialization. The output is the calculated `requiredHours` for that combination (agent count × timeslot duration in hours).
+   Each row in the Erlang X request applies to a single timeslot and specialization. The output is the calculated `requiredFTEs` for that combination (the integer number of agents needed).
 
 ### 4.5 Agent Preferences
 
@@ -294,12 +294,9 @@ classDiagram
         +String jobTitle
         +boolean active
         +OffsetDateTime lastRefreshedAt
-    }
-
-    class DeskAgent {
-        +UUID id
-        +long tenantId
         +UUID deskId
+        +Specialization primarySpecialization
+        +List~Specialization~ secondarySpecializations
         +BigDecimal contractedHoursPerDay
     }
 
@@ -318,7 +315,7 @@ classDiagram
         +long tenantId
         +UUID deskId
         +UUID scheduleId
-        +BigDecimal requiredHours
+        +int requiredFTEs
         +Source source
     }
 
@@ -405,7 +402,6 @@ classDiagram
         «RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED»
     }
 
-    Desk "1" *-- "* " DeskAgent
     Desk "1" *-- "* " Specialization
     Desk "1" *-- "* " StaffingRequirement
     Desk "1" o-- "* " AgentPreference : deskId
@@ -413,17 +409,17 @@ classDiagram
     Desk "1" *-- "1" ConstraintWeights
     Desk "1" *-- "* " Schedule
 
-    DeskAgent "* " --> "1" Agent
-    DeskAgent "1" --> "1" Specialization : primarySpecialization
-    DeskAgent "1" --> "1..*" Specialization : secondarySpecializations
-    note for DeskAgent "Unique on (desk, agent).\nUnique on (tenant, agent) — one desk per agent.\nDesk-specific agent configuration."
+    Agent "* " --> "0..1" Desk : deskId
+    Agent "1" --> "0..1" Specialization : primarySpecialization
+    Agent "1" --> "0..*" Specialization : secondarySpecializations
+    note for Agent "Desk fields (deskId, specializations, contractedHours)\nare nullable — null when unassigned.\nUnique on (tenant, bamboohrId)."
 
     StaffingRequirement "* " --> "1" Timeslot
     StaffingRequirement "* " --> "1" Specialization
 
     AgentAssignment "* " --> "1" Timeslot
     AgentAssignment "* " --> "1" Specialization : requiredSpecialization
-    AgentAssignment "* " ..> "1" DeskAgent : «planning variable»
+    AgentAssignment "* " ..> "1" Agent : «planning variable»
 
     AgentPreference "* " --> "1" Agent
     note for AgentPreference "Standing: unique on (desk, agent, dayOfWeek).\nWeekly: unique on (desk, agent, date)."
@@ -436,7 +432,7 @@ classDiagram
 
     Schedule "1" --> "1" ConstraintWeights : «@ConstraintConfigurationProvider»
     Schedule "1" *-- "* " Specialization : specializations
-    Schedule "1" *-- "* " DeskAgent : deskAgents
+    Schedule "1" *-- "* " Agent : agents
     Schedule "1" *-- "* " Timeslot : timeslots
     Schedule "1" *-- "* " StaffingRequirement : staffingRequirements
     Schedule "1" *-- "* " AgentPreference : agentPreferences
@@ -455,7 +451,7 @@ A desk represents a distinct contact-centre capability (e.g. "Inbound Sales", "T
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `name` | `String` | Display name (unique per tenant) |
 | `description` | `String` | Free-text description of this desk's purpose or capability (optional) |
-| `defaultContractedHoursPerDay` | `BigDecimal` | Desk-level default contracted daily hours excluding break time (default 8.0). Used as the fallback for any desk-agent whose `contractedHoursPerDay` is not explicitly set. Can be overridden per solve run via the schedule configuration. |
+| `defaultContractedHoursPerDay` | `BigDecimal` | Desk-level default contracted daily hours excluding break time (default 8.0). Used as the fallback for any agent whose `contractedHoursPerDay` is not explicitly set. Can be overridden per solve run via the schedule configuration. |
 
 **`BigDecimal` convention.** All `BigDecimal` hour fields across the domain model (`contractedHoursPerDay`, `defaultContractedHoursPerDay`, `breakBlockedHours`, `breakMinShiftHours`, `contractedHoursOverride`) use a standard scale of **2 decimal places** and are stored as `NUMERIC(5,2)` in PostgreSQL (max 999.99, sufficient for any hours value). Arithmetic and comparison operations in Java must use `compareTo()` — never `equals()` — because `BigDecimal.equals` is scale-sensitive (`new BigDecimal("8.0").equals(new BigDecimal("8.00"))` returns `false`). Service code should normalise values to scale 2 with `HALF_UP` rounding on input.
 
@@ -472,9 +468,9 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 
 ### 5.3 Agent
 
-An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and are **tenant-level** — they exist independently of any desk. An agent must be assigned to a desk (via a `DeskAgent` record, section 5.4) before participating in that desk's schedules.
+An agent is a person who can be assigned to work during one or more timeslots. Agent records are imported from BambooHR and are **tenant-level** — they exist independently of any desk. Desk-specific configuration (specializations, contracted hours) is stored directly on the `Agent` entity as nullable fields — when all desk fields are null, the agent is unassigned. An agent must be assigned to a desk (by setting `deskId`) before participating in that desk's schedules.
 
-The `Agent` entity holds only BambooHR-sourced data. Desk-specific configuration — specializations and contracted hours — is managed on the `DeskAgent` entity.
+**Specialization requirement:** Every desk-assigned agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. During a BambooHR refresh, newly assigned agents are automatically given a default "Basic" specialization (as both primary and secondary) — the specialization is auto-created on the desk if it does not already exist (see section 9.4). Administrators can reassign specializations at any time via the UI or API. The solver will refuse to start if any active desk-assigned agent lacks specializations (see section 7.11).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -487,28 +483,14 @@ The `Agent` entity holds only BambooHR-sourced data. Desk-specific configuration
 | `jobTitle` | `String` | Job title (from BambooHR) |
 | `active` | `boolean` | Whether the employee is active in BambooHR |
 | `lastRefreshedAt` | `OffsetDateTime` | Timestamp of last successful refresh from BambooHR |
+| `deskId` | `UUID` | Desk this agent is assigned to. Nullable — null when unassigned. An agent may be assigned to **at most one desk** at a time. |
+| `primarySpecialization` | `Specialization` | Main area of expertise for this desk (managed locally). Nullable — null when unassigned or not yet configured. |
+| `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover for this desk (managed locally, one or more). Empty when unassigned. |
+| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours, **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Nullable — if not set, the desk's `Desk.defaultContractedHoursPerDay` (section 5.1) is used. |
 
-### 5.4 DeskAgent
+**Desk assignment:** An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available. When an agent is removed from a desk, all desk fields (`deskId`, `primarySpecialization`, `secondarySpecializations`, `contractedHoursPerDay`) are cleared.
 
-Represents an agent's assignment to a desk, together with that desk's configuration for the agent. An agent must have a `DeskAgent` record for a desk before they can participate in that desk's schedules. An agent may be assigned to **at most one desk** at a time. Desk assignment is driven by the BambooHR `project` custom field, matched to `Desk.name` during refresh (section 9.4). Manual assignment via the API remains available.
-
-**Specialization requirement:** Every desk-agent must have a primary specialization and at least one secondary specialization assigned before they can participate in a solve run. During a BambooHR refresh, newly created desk-agents are automatically assigned a default "Basic" specialization (as both primary and secondary) — the specialization is auto-created on the desk if it does not already exist (see section 9.4). Administrators can reassign specializations at any time via the UI or API. The solver will refuse to start if any active desk-agent lacks specializations (see section 7.11).
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `UUID` | Primary key |
-| `tenantId` | `long` | Tenant identifier (from platform) |
-| `deskId` | `UUID` | Desk this assignment belongs to |
-| `agent` | `Agent` | The assigned agent |
-| `primarySpecialization` | `Specialization` | Main area of expertise for this desk (managed locally) |
-| `secondarySpecializations` | `List<Specialization>` | Additional areas the agent can cover for this desk (managed locally, one or more) |
-| `contractedHoursPerDay` | `BigDecimal` | The agent's contracted daily working hours for this desk, **excluding break time** (e.g. 8.0 for full-time, 4.0 for part-time). A full-time agent with 8.0 contracted hours and a 60-minute break works a 9-hour shift. Nullable — if not set, the desk's `Desk.defaultContractedHoursPerDay` (section 5.1) is used. |
-
-**Uniqueness constraints:**
-- Unique on (`desk`, `agent`) — an agent may be assigned to a given desk at most once.
-- Unique on (`tenant`, `agent`) — an agent may be assigned to **at most one desk** across the entire tenant. This enforces the single-desk rule: each desk has a unique set of agents with no overlap.
-
-### 5.5 Timeslot
+### 5.4 Timeslot
 
 A timeslot is a single time interval within the coverage window. Timeslots are **generated and persisted to the database** before staffing requirements or the solver can reference them (see section 7.9). They are not created manually — the user specifies a date range, time range, and increment, and the system generates all timeslots automatically. A timeslot is specialization-agnostic; multiple agents with different specializations may be needed in the same timeslot. Timeslots are desk-scoped.
 
@@ -522,9 +504,9 @@ A timeslot is a single time interval within the coverage window. Timeslots are *
 | `startTime` | `LocalTime` | Start of the interval |
 | `endTime` | `LocalTime` | End of the interval |
 
-### 5.6 StaffingRequirement
+### 5.5 StaffingRequirement
 
-Represents the demand for a given specialization in a given timeslot. There is one StaffingRequirement per timeslot/specialization combination. Each row directly states how many concurrent agents are needed, enabling non-uniform staffing across the day. Staffing requirements are desk-scoped.
+Represents the demand for a given specialization in a given timeslot. There is one StaffingRequirement per timeslot/specialization combination. Each row directly states how many concurrent agents (FTEs) are needed, enabling non-uniform staffing across the day. Staffing requirements are desk-scoped.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -534,16 +516,16 @@ Represents the demand for a given specialization in a given timeslot. There is o
 | `scheduleId` | `UUID` | Nullable. `NULL` = live input data (user-editable). Non-null = snapshot belonging to an accepted schedule. |
 | `timeslot` | `Timeslot` | The specific interval |
 | `specialization` | `Specialization` | Which specialization is needed |
-| `requiredHours` | `BigDecimal` | Total staff-hours of coverage needed for this timeslot and specialization. Uses `NUMERIC(10,4)` precision (not the standard `NUMERIC(5,2)`) to support Erlang X calculations that may produce fractional agent counts. |
+| `requiredFTEs` | `int` | Number of concurrent agents (FTEs) needed for this timeslot and specialization. An integer — each FTE represents one agent seat. |
 | `source` | `enum(DIRECT, ERLANG_X)` | How the value was determined |
 
-**Generating seats:** For each StaffingRequirement, the system converts `requiredHours` to an agent count (`agents = requiredHours × 60 / timeslotIncrementMinutes`, rounded to nearest integer) and creates that many AgentAssignment instances for that timeslot and specialization.
+**Generating seats:** For each StaffingRequirement, the system creates `requiredFTEs` AgentAssignment instances for that timeslot and specialization.
 
-Example: Monday 09:00–09:15 (15-min slot) needs 2.0 Billing hours and 0.75 Tech Support hours → the system calculates `2.0 × 60/15 = 8` Billing agents and `0.75 × 60/15 = 3` Tech Support agents, generating **8 + 3 = 11 AgentAssignment** instances for that single timeslot.
+Example: Monday 09:00–09:15 (15-min slot) needs 8 Billing FTEs and 3 Tech Support FTEs → the system generates **8 + 3 = 11 AgentAssignment** instances for that single timeslot.
 
-### 5.7 AgentAssignment (Planning Entity)
+### 5.6 AgentAssignment (Planning Entity)
 
-The central Timefold planning entity. Each instance represents one **seat** — a need for one agent with a particular specialization in a particular timeslot. The solver decides which desk-agent fills each seat. Agent assignments are desk-scoped.
+The central Timefold planning entity. Each instance represents one **seat** — a need for one agent with a particular specialization in a particular timeslot. The solver decides which agent fills each seat. Agent assignments are desk-scoped.
 
 Multiple AgentAssignment instances may reference the same timeslot, each for a different (or the same) specialization. This is how a single timeslot is staffed by several agents across multiple specializations.
 
@@ -555,9 +537,9 @@ Multiple AgentAssignment instances may reference the same timeslot, each for a d
 | `scheduleId` | `UUID` | The accepted schedule this assignment belongs to (NOT NULL — assignments only exist as part of a persisted schedule) |
 | `timeslot` | `Timeslot` | The time interval to fill |
 | `requiredSpecialization` | `Specialization` | The specialization this seat demands |
-| `deskAgent` | `DeskAgent` | **Planning variable** (`@PlanningVariable`, nullable) — assigned by the solver. The planning variable is `nullable = true` to allow Timefold's construction heuristic to initialize assignments incrementally (starting from null). In the final solution, every seat should be filled — all constraints filter out unassigned (null) entities. The `@ValueRangeProvider` is `Schedule.deskAgents` (section 5.12). Using `DeskAgent` (rather than `Agent`) gives constraints direct access to desk-specific configuration: specializations, contracted hours, and the underlying `Agent` record. When an accepted schedule is persisted to the database, the `agent_assignment` row stores FKs to both `desk_agent` and `agent` for query convenience. |
+| `agent` | `Agent` | **Planning variable** (`@PlanningVariable`, nullable) — assigned by the solver. The planning variable is `nullable = true` to allow Timefold's construction heuristic to initialize assignments incrementally (starting from null). In the final solution, every seat should be filled — all constraints filter out unassigned (null) entities. The `@ValueRangeProvider` is `Schedule.agents` (section 5.11). Since desk-specific configuration (specializations, contracted hours) is now stored directly on the `Agent` entity, constraints have direct access to all needed data. |
 
-### 5.8 AgentPreference
+### 5.7 AgentPreference
 
 An agent's scheduling preferences for a specific desk. Standing preferences define recurring defaults per day of week; weekly preferences override the standing default for a specific date. These are loaded as problem facts and referenced by soft constraints during solving. Preferences are **desk-scoped** — they belong to the agent's assigned desk.
 
@@ -581,9 +563,9 @@ An agent's scheduling preferences for a specific desk. Standing preferences defi
 
 **Solver resolution:** When building the problem facts for a solve run, the service resolves each agent-day to a single **effective** preference: if a weekly (non-standing) preference exists for that specific date **and at least one preference field is non-null**, use it; otherwise fall back to the standing preference for that day of week (if one exists); otherwise the agent has no preference for that day. Resolution is per-record — the entire standing record is replaced, not merged field-by-field. A weekly preference where all preference fields are null is ignored during resolution — the standing preference (if any) applies. The solver receives only the resolved effective preferences.
 
-### 5.9 AgentDayOff
+### 5.8 AgentDayOff
 
-A day on which an agent is unavailable for scheduling. Days off are refreshed from BambooHR (see section 9) and treated as read-only within WFM Service. Days off are **tenant-level** (no `deskId`) — a day off reflects the person's absence and applies to all desks the agent is assigned to.
+A day on which an agent is unavailable for scheduling. Days off are refreshed from BambooHR (see section 9) and treated as read-only within WFM Service. Days off are **tenant-level** (no `deskId`) — a day off reflects the person's absence and applies regardless of desk assignment.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -597,11 +579,11 @@ A day on which an agent is unavailable for scheduling. Days off are refreshed fr
 
 **Solver usage:** When building the planning solution for a desk, the service loads all `AgentDayOff` records that fall within the schedule's period for agents assigned to that desk. These are included as problem facts and referenced by the "Agent day off" hard constraint (section 6).
 
-### 5.10 AgentException
+### 5.9 AgentException
 
 A per-agent, per-desk, per-day override that allows an agent to work different contracted hours than their standard `contractedHoursPerDay` on a specific date. Exceptions are used to accommodate individual circumstances — for example, an agent who is a part-time student and can only work 4 hours on certain days, or an agent with childcare responsibilities requiring a shorter shift. Exceptions are **desk-scoped** — they belong to the agent's assigned desk.
 
-Exceptions are **pre-solve inputs** — they must be configured before the solver is run. The solver uses the exception's `contractedHoursOverride` in place of the desk-agent's normal contracted hours for that day when evaluating the "Contracted hours" constraint (section 6).
+Exceptions are **pre-solve inputs** — they must be configured before the solver is run. The solver uses the exception's `contractedHoursOverride` in place of the agent's normal contracted hours for that day when evaluating the "Contracted hours" constraint (section 6).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -610,16 +592,16 @@ Exceptions are **pre-solve inputs** — they must be configured before the solve
 | `deskId` | `UUID` | Desk this exception belongs to |
 | `agent` | `Agent` | The agent the exception applies to |
 | `date` | `LocalDate` | The day the override applies to |
-| `contractedHoursOverride` | `BigDecimal` | The number of working hours (excluding break time) for this agent on this day. Replaces the desk-agent's `contractedHoursPerDay` for this date only. Must be positive. |
+| `contractedHoursOverride` | `BigDecimal` | The number of working hours (excluding break time) for this agent on this day. Replaces the agent's `contractedHoursPerDay` for this date only. Must be positive. |
 | `reason` | `String` | A free-text explanation of why the exception exists (e.g. "Childcare — school pickup", "Part-time student", "Training day — short shift"). Required. |
 
 **Uniqueness constraint:** Unique on (`desk`, `agent`, `date`) — an agent has at most one exception per desk per date.
 
 **Interaction with days off:** An exception and a day off must not coexist for the same agent on the same date — pre-solve validation (section 7.11) rejects this as contradictory.
 
-**Solver resolution:** When building the planning solution for a desk, the service loads all `AgentException` records for that desk that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the desk-agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.11) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
+**Solver resolution:** When building the planning solution for a desk, the service loads all `AgentException` records for that desk that fall within the schedule's period. For each agent-day, if an exception exists the solver uses `contractedHoursOverride`; otherwise it uses the agent's `contractedHoursPerDay` (or the schedule's `defaultContractedHoursPerDay` if not set). The pre-solve coverage window check (section 7.11) also accounts for exceptions — an agent with a 4-hour exception does not require a 9-hour window.
 
-### 5.11 ConstraintWeights
+### 5.10 ConstraintWeights
 
 A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` field for every constraint defined in section 6. One row per desk (identified by `tenantId` + `deskId`) so each desk can tune solver behaviour independently.
 
@@ -644,7 +626,7 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering (placeholder — full implementation deferred; see section 6) |
 | `contractedHoursOverWeight` | `HardSoftScore` | `hard(1001)` | Contracted hours — over: penalizes assigning more timeslots than the agent's contracted hours allow. The highest hard weight ensures over-assignment is strongly penalized. |
 | `contractedHoursUnderWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under: penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. |
-| `contractedHoursUnderZeroWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under (zero assignments): penalizes desk-agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity to detect completely unscheduled agents. |
+| `contractedHoursUnderZeroWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under (zero assignments): penalizes agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity to detect completely unscheduled agents. |
 | `bulkOverallocationLimitWeight` | `HardSoftScore` | `hard(1)` | Bulk over-allocation limit (hard — total staffing hours must not exceed predicted demand by more than `overallocationHardLimitPct`, default 130%) |
 | `bulkUnderallocationSoftWeight` | `HardSoftScore` | `soft(1)` | Bulk under-allocation soft penalty (placeholder — not yet implemented; returns zero penalty) |
 | `bulkUnderallocationHardWeight` | `HardSoftScore` | `hard(1)` | Bulk under-allocation hard limit (violated when demand falls below `underallocationHardLimitPct` of contracted hours, default 70%) |
@@ -654,15 +636,15 @@ The "One agent per seat" constraint is structural (enforced by the planning vari
 
 **JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 18 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
 
-### 5.11a AgentDayConfig (Problem Fact)
+### 5.10a AgentDayConfig (Problem Fact)
 
-A pre-computed per-agent-day configuration record used as a problem fact during solving. The `SolverService` generates one `AgentDayConfig` for each eligible desk-agent on each day of the schedule period (excluding days off). This resolves the effective contracted hours — accounting for `AgentException` overrides — so that constraints can access them via a single join without needing to look up exceptions at runtime.
+A pre-computed per-agent-day configuration record used as a problem fact during solving. The `SolverService` generates one `AgentDayConfig` for each eligible agent on each day of the schedule period (excluding days off). This resolves the effective contracted hours — accounting for `AgentException` overrides — so that constraints can access them via a single join without needing to look up exceptions at runtime.
 
 | Field | Type | Notes |
 |---|---|---|
-| `deskAgentId` | `UUID` | The desk-agent this config applies to |
+| `agentId` | `UUID` | The agent this config applies to |
 | `date` | `LocalDate` | The day this config applies to |
-| `effectiveHours` | `BigDecimal` | Pre-computed contracted hours for this agent-day. Uses `AgentException.contractedHoursOverride` if one exists for this (agent, date); else `DeskAgent.contractedHoursPerDay`; else `Schedule.defaultContractedHoursPerDay`. |
+| `effectiveHours` | `BigDecimal` | Pre-computed contracted hours for this agent-day. Uses `AgentException.contractedHoursOverride` if one exists for this (agent, date); else `Agent.contractedHoursPerDay`; else `Schedule.defaultContractedHoursPerDay`. |
 | `incrementMinutes` | `int` | Copied from schedule config for constraint convenience |
 | `breakDurationMinutes` | `int` | Copied from schedule config |
 | `breakMinShiftHours` | `BigDecimal` | Copied from schedule config |
@@ -671,18 +653,18 @@ A pre-computed per-agent-day configuration record used as a problem fact during 
 | `overallocationHardLimitPct` | `int` | Copied from schedule config for bulk allocation constraint convenience |
 | `underallocationHardLimitPct` | `int` | Copied from schedule config for bulk allocation constraint convenience |
 
-Constraints that need per-agent-day effective hours (contracted hours, all break constraints) join `AgentDayConfig` instead of `ScheduleConfig`. Constraints that only need schedule-wide configuration (e.g. preference constraints) may still use `ScheduleConfig`.
+Constraints that need per-agent-day effective hours (contracted hours, all break constraints) join `AgentDayConfig` instead of `ScheduleConfig`. Constraints that only need schedule-wide configuration (e.g. preference constraints) may still use `ScheduleConfig`. The `agentId` field links to the `Agent` entity (no longer to a separate `DeskAgent`).
 
-### 5.11b DayDemandConfig (Problem Fact)
+### 5.10b TimeslotDemandConfig (Problem Fact)
 
-A pre-computed per-day demand totals record used as a problem fact during solving. The `SolverService` generates one `DayDemandConfig` for each day in the schedule period. This holds the total number of demand slots for a single day, enabling the bulk over-allocation and under-allocation constraints to compare total assigned slots against demand bounds without per-timeslot aggregation at constraint evaluation time.
+A pre-computed per-timeslot demand totals record used as a problem fact during solving. The `SolverService` generates one `TimeslotDemandConfig` for each timeslot in the schedule period. This holds the total number of demand FTEs for a single timeslot, enabling the bulk over-allocation and under-allocation constraints to compare total assigned agents against demand bounds per timeslot without per-specialization aggregation at constraint evaluation time.
 
 | Field | Type | Notes |
 |---|---|---|
-| `date` | `LocalDate` | The day this config applies to |
-| `totalDemandSlots` | `int` | Total number of assignment seats across all timeslots and specializations for this day. Derived from staffing requirements: `Σ (requiredHours × 60 / incrementMinutes)` for each requirement on this date. |
+| `timeslot` | `Timeslot` | The timeslot this config applies to |
+| `totalDemandFTEs` | `int` | Total number of FTEs (agent seats) needed across all specializations for this timeslot. Derived from staffing requirements: `Σ requiredFTEs` for each requirement referencing this timeslot. |
 
-### 5.12 Schedule (Planning Solution)
+### 5.11 Schedule (Planning Solution)
 
 The top-level Timefold `@PlanningSolution` that aggregates all facts and planning entities for a single solve run. Each schedule belongs to a specific desk.
 
@@ -701,18 +683,18 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 | `breakMinShiftHours` | `BigDecimal` | Contracted hours must strictly exceed this threshold for a break to be assigned (default 4.0). An agent with exactly this many hours or fewer gets no break. Uses `BigDecimal` for consistency with other hour-based fields (e.g. a threshold of 4.5 is valid). |
 | `breakStartAlignment` | `enum(ON_HOUR, ON_HALF_HOUR, ON_QUARTER_HOUR)` | Required alignment for break start times (default `ON_HOUR`) |
 | `breakClusterThresholdPct` | `int` | Max percentage of on-shift agents on break per timeslot before soft penalty applies (default 20) |
-| `defaultContractedHoursPerDay` | `BigDecimal` | Default contracted daily hours excluding break time for this solve run. If omitted in the solve request, inherits from `Desk.defaultContractedHoursPerDay` (section 5.1). Applied to any desk-agent whose `contractedHoursPerDay` is not explicitly set. |
+| `defaultContractedHoursPerDay` | `BigDecimal` | Default contracted daily hours excluding break time for this solve run. If omitted in the solve request, inherits from `Desk.defaultContractedHoursPerDay` (section 5.1). Applied to any agent whose `contractedHoursPerDay` is not explicitly set. |
 | `overallocationHardLimitPct` | `int` | Maximum percentage by which total assigned staffing hours across all agents may exceed total predicted demand hours before triggering a hard constraint violation (default 130) |
 | `underallocationHardLimitPct` | `int` | Minimum percentage of total contracted agent hours that total predicted demand hours must reach before triggering a hard constraint violation (default 70). Below this floor the schedule is considered infeasible. Between this floor and 100% a soft penalty applies proportional to the shortfall. |
 | `constraintWeights` | `ConstraintWeights` | `@ConstraintConfigurationProvider` — per-desk weights applied at solve time |
 | `specializations` | `List<Specialization>` | Problem facts — desk's specializations |
-| `deskAgents` | `List<DeskAgent>` | Problem facts and **`@ValueRangeProvider`** for the `AgentAssignment.deskAgent` planning variable. **Only desk-agents whose underlying `Agent.active` is `true` and who have specializations assigned** are loaded. "Active" is determined solely by the `Agent.active` flag (set by BambooHR refresh). Inactive agents and desk-agents without specializations are excluded at input time, not by constraint. |
+| `agents` | `List<Agent>` | Problem facts and **`@ValueRangeProvider`** for the `AgentAssignment.agent` planning variable. **Only agents whose `active` is `true`, who are assigned to this desk (`deskId` matches), and who have specializations assigned** are loaded. "Active" is determined solely by the `Agent.active` flag (set by BambooHR refresh). Inactive agents and agents without specializations are excluded at input time, not by constraint. |
 | `staffingRequirements` | `List<StaffingRequirement>` | Problem facts |
 | `agentPreferences` | `List<AgentPreference>` | Problem facts — **resolved** effective preferences per agent-day (see §5.8 resolver). Standing and weekly preferences are resolved during pre-solve; each entry has an exact `date` set. |
 | `agentDaysOff` | `List<AgentDayOff>` | Problem facts — days off within the schedule period |
-| `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.10) |
-| `agentDayConfigs` | `List<AgentDayConfig>` | Problem facts — pre-computed per-agent-day effective hours and break config (section 5.11a). Generated by SolverService during pre-solve phase. |
-| `dayDemandConfigs` | `List<DayDemandConfig>` | Problem facts — pre-computed per-day demand totals (section 5.11b). Used by bulk over-allocation and under-allocation constraints for efficient per-day comparison against assigned slots. Generated by SolverService during pre-solve phase. |
+| `agentExceptions` | `List<AgentException>` | Problem facts — contracted hours overrides within the schedule period (section 5.9) |
+| `agentDayConfigs` | `List<AgentDayConfig>` | Problem facts — pre-computed per-agent-day effective hours and break config (section 5.10a). Generated by SolverService during pre-solve phase. |
+| `timeslotDemandConfigs` | `List<TimeslotDemandConfig>` | Problem facts — pre-computed per-timeslot demand FTE totals (section 5.10b). Used by bulk over-allocation and under-allocation constraints for efficient per-timeslot comparison against assigned agents. Generated by SolverService during pre-solve phase. |
 | `timeslots` | `List<Timeslot>` | Generated problem facts |
 | `assignments` | `List<AgentAssignment>` | Planning entities |
 | `warnings` | `List<String>` | Transient. Validation warnings collected during the pre-solve phase (e.g. agents near contracted-hours edge cases). Not persisted. |
@@ -729,7 +711,7 @@ The top-level Timefold `@PlanningSolution` that aggregates all facts and plannin
 4. **`FAILED`** — the solver threw an unrecoverable exception during execution. The schedule retains whatever partial data was available (score may be `null`, assignments may be empty). A failed schedule can only be **rejected** (not accepted). The user must fix any underlying issue and re-run the solver.
 5. **`ACCEPTED`** — the scheduler has accepted this schedule as the active schedule for its period on this desk. At most **one** accepted schedule may exist per desk for any given date — if two schedules share even a single day, they overlap. Accepting a new schedule that overlaps with an existing accepted schedule on the same desk **deletes the old schedule entirely** (including all its snapshot data). For example, if schedule A covers Mon–Fri and schedule B covers Thu–Sun, accepting B deletes A in full (Mon–Wed data is lost). The user should re-run a solve for Mon–Wed if separate coverage is needed.
 
-**JPA and Timefold dual-annotation model.** `Schedule` carries both `@Entity` and `@PlanningSolution`; `AgentAssignment` carries both `@Entity` and `@PlanningEntity`. During solving, Timefold mutates the `deskAgent` planning variable on `AgentAssignment` thousands of times per second. If these entities were attached to a Hibernate persistence context, dirty checking would destroy solver performance. Therefore, the entire planning solution — `Schedule`, all `AgentAssignment` instances, and all problem-fact collections — must be **detached from (or never attached to) the JPA persistence context** while the solver is running. In practice the pre-solve phase loads all required data via Spring Data repositories (which close the persistence context at the end of the `@Transactional` read), assembles a detached `Schedule` object, and hands it to the solver. The entities become JPA-managed again only during the accept transaction, when a **new** persistence context merges/persists them. Timefold's best-solution cloning also requires that collection fields (e.g. `DeskAgent.secondarySpecializations`) are plain `java.util` collections, not Hibernate proxy wrappers — the pre-solve assembly step should copy Hibernate collections into `ArrayList`/`HashSet` to avoid `LazyInitializationException` during cloning.
+**JPA and Timefold dual-annotation model.** `Schedule` carries both `@Entity` and `@PlanningSolution`; `AgentAssignment` carries both `@Entity` and `@PlanningEntity`. During solving, Timefold mutates the `agent` planning variable on `AgentAssignment` thousands of times per second. If these entities were attached to a Hibernate persistence context, dirty checking would destroy solver performance. Therefore, the entire planning solution — `Schedule`, all `AgentAssignment` instances, and all problem-fact collections — must be **detached from (or never attached to) the JPA persistence context** while the solver is running. In practice the pre-solve phase loads all required data via Spring Data repositories (which close the persistence context at the end of the `@Transactional` read), assembles a detached `Schedule` object, and hands it to the solver. The entities become JPA-managed again only during the accept transaction, when a **new** persistence context merges/persists them. Timefold's best-solution cloning also requires that collection fields (e.g. `Agent.secondarySpecializations`) are plain `java.util` collections, not Hibernate proxy wrappers — the pre-solve assembly step should copy Hibernate collections into `ArrayList`/`HashSet` to avoid `LazyInitializationException` during cloning.
 
 **In-memory persistence model.** This model applies to **schedule output only** — the `Schedule` record and its solver-generated data (agent assignments, solver score). All **solver input data** (agent specializations, preferences, exceptions, staffing requirements, timeslots, constraint weights) is persisted to the database immediately via its respective API endpoint as the user enters it. This allows users to build up their input data incrementally over time without risk of data loss.
 
@@ -768,7 +750,7 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 
 | Constraint | Default Level | Description |
 |---|---|---|
-| Unassigned assignment | Soft (1000) | Every agent assignment (seat) should be filled with a desk-agent. Since the planning variable is nullable (to allow the solver to explore partial solutions during construction), this constraint provides a very high soft incentive to assign all seats. Implemented as soft rather than hard so the construction heuristic can build solutions incrementally without immediately failing on hard score when some seats are still null. |
+| Unassigned assignment | Soft (1000) | Every agent assignment (seat) should be filled with an agent. Since the planning variable is nullable (to allow the solver to explore partial solutions during construction), this constraint provides a very high soft incentive to assign all seats. Implemented as soft rather than hard so the construction heuristic can build solutions incrementally without immediately failing on hard score when some seats are still null. |
 | Agent day off | Hard | An agent must not be assigned to any timeslot on a day they have a day off (mandatory or PTO). |
 | Specialization match | Hard | An agent's primary specialization or one of their secondary specializations must match the assignment's required specialization. |
 | One assignment per timeslot | Hard (1000) | An agent cannot be assigned to more than one seat in the same timeslot. Since timeslots are non-overlapping by construction (section 4.2), this reduces to: at most one seat per agent per timeslot. High weight relative to other hard constraints. |
@@ -781,10 +763,10 @@ Constraints are defined in a `ConstraintProvider` implementation. The **Level** 
 | Honour preferred start time | Soft | Penalise assigning an agent to a timeslot that starts before their preferred start time on that day. |
 | Honour preferred break time | Soft | Penalise assigning an agent to a timeslot that overlaps their preferred break time on that day. |
 | Break clustering | Soft | *(Placeholder — not yet implemented; returns zero penalty.)* Penalise when the number of agents on break in a single timeslot exceeds the configured threshold percentage of agents **assigned during that same timeslot** (not the whole day). Penalty scales linearly with the number of agents over the threshold. Full implementation requires cross-agent aggregation per timeslot and is deferred to a future phase. |
-| Contracted hours (over) | Hard (1001) | Penalizes assigning more timeslots than an agent's contracted hours allow on a given day. The highest hard weight ensures over-assignment is the strongest violation. Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any desk-agent whose contracted hours are not a multiple of the increment. |
-| Contracted hours (under) | Hard (100) | Penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. Uses `AgentAssignment` as the starting entity and groups by desk-agent per day. |
-| Contracted hours (under, zero) | Hard (100) | Penalizes desk-agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity (via `ifNotExists` on `AgentAssignment`) to detect completely unscheduled agents, since a purely assignment-based constraint would never fire for agents with no assignments. |
-| Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each desk-agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ requiredHours` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
+| Contracted hours (over) | Hard (1001) | Penalizes assigning more timeslots than an agent's contracted hours allow on a given day. The highest hard weight ensures over-assignment is the strongest violation. Contracted hours count **assigned (non-break) time only** — break time is additional. For example, an agent with 8.0 contracted hours and a 60-minute break has a 9-hour shift (8 hours working + 1 hour break). Since assignments are quantised to the timeslot increment, `contractedHoursPerDay` **must be a multiple of `incrementMinutes / 60`** — e.g. with 15-minute increments, valid values are 4.0, 4.25, 4.5, … 8.0, etc. Pre-solve validation (section 7.11) rejects any agent whose contracted hours are not a multiple of the increment. |
+| Contracted hours (under) | Hard (100) | Penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. Uses `AgentAssignment` as the starting entity and groups by agent per day. |
+| Contracted hours (under, zero) | Hard (100) | Penalizes agents who receive zero assignments on a working day (not on day off). Uses `AgentDayConfig` as the starting entity (via `ifNotExists` on `AgentAssignment`) to detect completely unscheduled agents, since a purely assignment-based constraint would never fire for agents with no assignments. |
+| Bulk over-allocation limit | Hard | **Total contracted agent hours** (supply) must not exceed **total predicted demand hours** (from staffing requirements) by more than `overallocationHardLimitPct` (default 130%). "Total contracted agent hours" = `Σ (effective contracted hours per day for each agent for each day in the period)`, accounting for exceptions and excluding agents on day-off. "Total predicted demand hours" = `Σ (requiredFTEs × incrementMinutes / 60)` across all timeslots and specializations. Example: demand = 200 hours, limit = 130% → contracted supply must not exceed 260 hours. This is evaluated as a **pre-solve check** in addition to being a solver constraint, because the values are determined entirely by inputs. |
 | Bulk under-allocation soft | Soft | *(Placeholder — not yet implemented; returns zero penalty.)* When **total predicted demand hours** are less than **total contracted agent hours** for the schedule period, a soft penalty should scale linearly with the gap. Full implementation is deferred. |
 | Bulk under-allocation hard | Hard | When **total predicted demand hours** fall below `underallocationHardLimitPct` (default 70%) of **total contracted agent hours**, a hard violation is triggered. Same definitions of "total contracted agent hours" and "total predicted demand hours" as the over-allocation constraint above. Example: contracted hours = 200, limit = 70% → demand below 140 hours is a hard violation. This is also evaluated as a **pre-solve check**. |
 
@@ -806,7 +788,7 @@ All endpoints are served under the base path `/api/v1`. Every request is scoped 
 
 | Endpoint | Sort order | Cursor key |
 |---|---|---|
-| `GET /desks/{deskId}/agents` | Agent name (asc), then `desk_agent.id` | `(name, id)` |
+| `GET /desks/{deskId}/agents` | Agent name (asc), then `agent.id` | `(name, id)` |
 | `GET /agents` | Agent name (asc), then `agent.id` | `(name, id)` |
 | `GET /days-off` | Date (asc), then `agent_day_off.id` | `(date, id)` |
 | `GET /desks/{deskId}/staffing-requirements` | Timeslot date (asc), timeslot start time (asc), specialization name (asc), then `staffing_requirement.id` | `(date, startTime, specName, id)` |
@@ -888,38 +870,35 @@ Desk management is **tenant-level** — these endpoints do not require a desk co
 | `POST` | `/desks` | Create a new desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. `name` is required; `description` and `defaultContractedHoursPerDay` are optional (default 8.0). Name must be unique per tenant — returns `409 Conflict` (error code `CONFLICT`) if a desk with the same name already exists. Returns `201` with the created desk. Also auto-creates a `constraint_weights` row with defaults for this desk (section 5.11). |
 | `GET` | `/desks/{deskId}` | Get desk by id. Returns `200` with the same object format as `GET /desks` list items. |
 | `PUT` | `/desks/{deskId}` | Update desk. Request body: `{ "name": "...", "description": "...", "defaultContractedHoursPerDay": 8.0 }`. All fields are optional — omitted fields keep their current values. Name must remain unique per tenant — returns `409 Conflict` (error code `CONFLICT`) if the new name is already taken. |
-| `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data in FK-safe order: agent preferences, agent exceptions, agent assignments, staffing requirements, timeslots, schedule records, desk-agents, specializations, constraint weights, and any non-accepted in-memory schedule. |
+| `DELETE` | `/desks/{deskId}` | Delete a desk. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the desk has any accepted schedules. If the desk has no accepted schedules, deletion **cascade-deletes** all desk-scoped data in FK-safe order: agent preferences, agent exceptions, agent assignments, staffing requirements, timeslots, schedule records, specializations, constraint weights, and any non-accepted in-memory schedule. Agents assigned to this desk have their desk fields cleared (deskId, specializations, contractedHoursPerDay set to null). |
 
 ### 7.2 Desk Agents
 
 Manages which agents are assigned to a desk and their desk-specific configuration (specializations, contracted hours). These endpoints are **desk-scoped**.
 
-**Path parameter convention:** All `{agentId}` path parameters in this section refer to the **`Agent.id`** (the tenant-level agent UUID), not the `DeskAgent.id`. The server resolves the desk-agent record internally using the combination of `deskId` + `agentId`.
+**Path parameter convention:** All `{agentId}` path parameters in this section refer to the **`Agent.id`** (the tenant-level agent UUID). The server validates that the agent is assigned to the specified desk by checking `Agent.deskId`.
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents` | List agents assigned to this desk with their desk-specific configuration (specializations, contracted hours). Paginated. Optional query parameter `search` filters by name (case-insensitive substring match). |
-| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. An agent may only belong to **one desk** — if any agent in the list is already assigned to **any** desk (including this one), the entire request fails with `409 Conflict` (error code `CONFLICT`) and no agents are assigned. If any agent is inactive, the request also fails with `409 Conflict`. If any agent does not exist, the request fails with `404 Not Found`. The operation is **all-or-nothing**: if any agent in the list is invalid, the entire request fails and no agents are assigned. Returns `201` with an array of created desk-agent records using the DeskAgentResponse format below. |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Deletes the desk-agent record and all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. **Deferred:** the in-progress schedule check (`409 Conflict` if the desk has a non-accepted schedule) is not yet implemented and is planned for Phase 4. |
+| `POST` | `/desks/{deskId}/agents` | Assign one or more agents to this desk. Request body: `{ "agentIds": ["uuid1", "uuid2"] }`. Agents must exist and be active. An agent may only belong to **one desk** — if any agent in the list is already assigned to **any** desk (including this one), the entire request fails with `409 Conflict` (error code `CONFLICT`) and no agents are assigned. If any agent is inactive, the request also fails with `409 Conflict`. If any agent does not exist, the request fails with `404 Not Found`. The operation is **all-or-nothing**: if any agent in the list is invalid, the entire request fails and no agents are assigned. Sets `Agent.deskId` to this desk for each agent. Returns `201` with an array of agent records using the DeskAgentResponse format below. |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Clears the agent's desk fields (`deskId`, `primarySpecialization`, `secondarySpecializations`, `contractedHoursPerDay`) and deletes all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. **Deferred:** the in-progress schedule check (`409 Conflict` if the desk has a non-accepted schedule) is not yet implemented and is planned for Phase 4. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `200` with the updated DeskAgentResponse. Returns `404 Not Found` if any specialization does not belong to this desk. **Deferred:** the validation that primary must not appear in the secondary list is not yet implemented. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. Returns `200` with the updated DeskAgentResponse. If not set, the desk's `defaultContractedHoursPerDay` is used. |
-| `POST` | `/desks/{deskId}/agents/refresh` | Trigger a desk-scoped refresh of agent data from BambooHR (section 9.4). Uses the desk's `name` as the BambooHR `project` filter to pull only employees assigned to this desk. Returns `200` with the full list of desk-agents after the refresh completes (same shape as `GET /desks/{deskId}/agents` items but **not paginated** — returns all desk-agents in a flat array so the UI can replace its local state in one shot). Returns `409 Conflict` if a refresh is already in progress for this desk. |
+| `POST` | `/desks/{deskId}/agents/refresh` | Trigger a desk-scoped refresh of agent data from BambooHR (section 9.4). Uses the desk's `name` as the BambooHR `project` filter to pull only employees assigned to this desk. Returns `200` with the full list of agents assigned to this desk after the refresh completes (same shape as `GET /desks/{deskId}/agents` items but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). Returns `409 Conflict` if a refresh is already in progress for this desk. |
 
-**Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response):
+**Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response). Since `DeskAgent` has been merged into `Agent`, the response is a flat structure:
 
 ```json
 {
-  "id": "desk-agent-uuid",
+  "id": "agent-uuid",
   "deskId": "uuid",
-  "agent": {
-    "id": "agent-uuid",
-    "name": "Jane Smith",
-    "email": "jane@example.com",
-    "department": "Support",
-    "jobTitle": "Senior Agent",
-    "active": true,
-    "lastRefreshedAt": "2026-02-24T10:00:00Z"
-  },
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "department": "Support",
+  "jobTitle": "Senior Agent",
+  "active": true,
+  "lastRefreshedAt": "2026-02-24T10:00:00Z",
   "primarySpecialization": { "id": "uuid", "name": "Billing" },
   "secondarySpecializations": [
     { "id": "uuid", "name": "Technical Support" }
@@ -929,7 +908,7 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 }
 ```
 
-`effectiveContractedHoursPerDay` is the resolved value: the desk-agent's `contractedHoursPerDay` if set, otherwise the desk's `defaultContractedHoursPerDay`. `primarySpecialization` and `secondarySpecializations` are `null`/empty if not yet assigned.
+`effectiveContractedHoursPerDay` is the resolved value: the agent's `contractedHoursPerDay` if set, otherwise the desk's `defaultContractedHoursPerDay`. `primarySpecialization` and `secondarySpecializations` are `null`/empty if not yet assigned.
 
 ### 7.3 Agents (Tenant-Level)
 
@@ -974,7 +953,7 @@ Desk-scoped. Each desk defines its own set of specializations.
 | `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk. Returns a flat JSON array (not paginated — bounded by business constraints; a desk typically has fewer than 20 specializations). Each object: `{ "id": "uuid", "name": "Billing" }`. |
 | `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "..." }`. Name must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the name is already taken. Returns `201` with the created specialization. |
 | `PUT` | `/desks/{deskId}/specializations/{id}` | Rename a specialization. Request body: `{ "name": "..." }`. Name must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the new name is already taken. Returns `200` with the updated specialization. |
-| `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any desk-agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
+| `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
 
 ### 7.6 Agent Preferences
 
@@ -982,19 +961,20 @@ Desk-scoped. Preferences are specific to an agent within a desk. Handled by `Des
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/agents/{agentId}/preferences` | List **raw** preference records for an agent on this desk. Optionally filtered by date range via query parameters. Always includes all standing preferences for the desk-agent alongside any date-specific (weekly) preferences in the range. Returns a flat JSON array. Each object: `{ "id": "uuid", "dayOfWeek": "MONDAY", "date": null, "isStanding": true, "preferredStartTime": "09:00", "preferredBreakTime": "12:30" }`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.8). |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/preferences` | Create or update preferences for an agent on this desk (batch). Each entry includes `dayOfWeek`, `date` (null for standing), `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server deletes any previous standing preference for that same desk-agent-day before saving the new one. Returns `200` with the full updated list of preferences for this desk-agent (same format as `GET .../preferences`). |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}/preferences/{id}` | Delete a preference by its id. Returns `204 No Content` on success. If the deleted preference was standing, the desk-agent will have no standing default for that day of week until a new one is set. |
+| `GET` | `/desks/{deskId}/agents/{agentId}/preferences` | List **raw** preference records for an agent on this desk. Optionally filtered by date range via query parameters. Always includes all standing preferences for the agent alongside any date-specific (weekly) preferences in the range. Returns a flat JSON array. Each object: `{ "id": "uuid", "dayOfWeek": "MONDAY", "date": null, "isStanding": true, "preferredStartTime": "09:00", "preferredBreakTime": "12:30" }`. The client is responsible for computing the effective preference per day (standing-vs-weekly resolution described in section 5.7). |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/preferences` | Create or update preferences for an agent on this desk (batch). Each entry includes `dayOfWeek`, `date` (null for standing), `preferredStartTime`, `preferredBreakTime`, and `isStanding`. If `isStanding` is set to `true` on a record, the server deletes any previous standing preference for that same agent-day before saving the new one. Returns `200` with the full updated list of preferences for this agent (same format as `GET .../preferences`). |
+| `POST` | `/desks/{deskId}/agents/preferences/upload` | Upload preferences from a `.xlsx` spreadsheet. Accepts `multipart/form-data` with a `file` field. The spreadsheet must have columns: **Name**, **Email**, **Date**, **Day of Week**, **Preferred Start Time**, **Standing** (yes/no), **Preferred Break Time**. Agents are matched by email. If `preferredBreakTime` is blank but `preferredStartTime` is provided, break time defaults to start + 5 hours. Returns `200` with `{ "savedCount": n, "skippedCount": n, "skippedDetails": [...] }`. Rows with unrecognised emails or agents not assigned to this desk are skipped and reported in `skippedDetails`. |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}/preferences/{id}` | Delete a preference by its id. Returns `204 No Content` on success. If the deleted preference was standing, the agent will have no standing default for that day of week until a new one is set. |
 
 ### 7.7 Agent Exceptions
 
-Desk-scoped. Exceptions allow a desk-agent's contracted hours to be overridden on specific dates, with a mandatory reason (section 5.10). Handled by `DeskAgentController` (same controller as sections 7.2 and 7.6).
+Desk-scoped. Exceptions allow an agent's contracted hours to be overridden on specific dates, with a mandatory reason (section 5.9). Handled by `DeskAgentController` (same controller as sections 7.2 and 7.6).
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/desks/{deskId}/agents/{agentId}/exceptions` | List exception records for an agent on this desk. Optionally filtered by date range via query parameters (`from`, `to`). Returns a flat JSON array. Each object: `{ "id": "uuid", "date": "2026-03-01", "contractedHoursOverride": 4.0, "reason": "Part-time study" }`. |
-| `PUT` | `/desks/{deskId}/agents/{agentId}/exceptions` | Create or update exceptions for an agent on this desk (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same desk-agent and date are replaced. Returns `200` with the full updated list of exceptions for this desk-agent (same format as `GET .../exceptions`). Returns `409 Conflict` (error code `CONFLICT`) if an exception conflicts with a day off on the same date. |
-| `DELETE` | `/desks/{deskId}/agents/{agentId}/exceptions/{date}` | Delete the exception for the specified date. Returns `204 No Content` on success. The desk-agent reverts to their standard contracted hours for that day. |
+| `PUT` | `/desks/{deskId}/agents/{agentId}/exceptions` | Create or update exceptions for an agent on this desk (batch). Each entry includes `date`, `contractedHoursOverride`, and `reason`. Existing exceptions for the same agent and date are replaced. Returns `200` with the full updated list of exceptions for this agent (same format as `GET .../exceptions`). Returns `409 Conflict` (error code `CONFLICT`) if an exception conflicts with a day off on the same date. |
+| `DELETE` | `/desks/{deskId}/agents/{agentId}/exceptions/{date}` | Delete the exception for the specified date. Returns `204 No Content` on success. The agent reverts to their standard contracted hours for that day. |
 
 ### 7.8 Constraint Weights
 
@@ -1048,7 +1028,7 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredHours", "source" }`). |
+| `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredFTEs", "source" }`). |
 | `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `200` with the response body below. Returns `404 Not Found` (error code `NOT_FOUND`) if any referenced timeslot or specialization does not exist. Returns `400` (error code `VALIDATION_FAILED`) if the payload contains duplicate `timeslotId` + `specializationId` combinations. |
 | `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. Returns `200` with the response body below. |
 
@@ -1060,18 +1040,18 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
     {
       "timeslotId": "uuid-of-timeslot",
       "specializationId": "uuid-of-specialization",
-      "requiredHours": 2.0
+      "requiredFTEs": 8
     },
     {
       "timeslotId": "uuid-of-another-timeslot",
       "specializationId": "uuid-of-specialization",
-      "requiredHours": 3.0
+      "requiredFTEs": 3
     }
   ]
 }
 ```
 
-Each entry references a timeslot by its `id` (timeslots must already exist in the database) and a specialization by its `id` (must belong to this desk). The combination of `timeslotId` + `specializationId` must be unique within the payload. The **replacement date range** is derived from the timeslots referenced in the payload: `min(timeslot.date)` to `max(timeslot.date)`. All existing live staffing requirements whose timeslot date falls within this range are deleted before the new requirements are inserted — this is a full replace for that date range, not a merge. To update a single day, include only timeslots for that day.
+Each entry references a timeslot by its `id` (timeslots must already exist in the database) and a specialization by its `id` (must belong to this desk). The `requiredFTEs` is an integer specifying the number of concurrent agents needed. The combination of `timeslotId` + `specializationId` must be unique within the payload. The **replacement date range** is derived from the timeslots referenced in the payload: `min(timeslot.date)` to `max(timeslot.date)`. All existing live staffing requirements whose timeslot date falls within this range are deleted before the new requirements are inserted — this is a full replace for that date range, not a merge. To update a single day, include only timeslots for that day.
 
 **Request body for `POST /desks/{deskId}/staffing-requirements/erlang-x`:**
 
@@ -1094,7 +1074,7 @@ Each entry references a timeslot by its `id` (timeslots must already exist in th
 }
 ```
 
-Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the required agent count for each entry, converts to `requiredHours` (agents × timeslot duration in hours), and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredHours = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredHours = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
+Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the required agent count (FTEs) for each entry and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredFTEs = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredFTEs = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
 
 **Response body (both endpoints):**
 
@@ -1109,7 +1089,7 @@ Each entry provides Erlang X input parameters (section 4.4) for a single timeslo
       "startTime": "08:00",
       "endTime": "08:15",
       "specializationName": "Billing",
-      "requiredHours": 2.0,
+      "requiredFTEs": 8,
       "source": "DIRECT"
     }
   ]
@@ -1128,6 +1108,7 @@ Desk-scoped. Each desk runs its own independent solver.
 | `PUT` | `/desks/{deskId}/schedules/{id}/stop` | Terminate a running solve early. Returns `200` with the updated schedule summary (status will be `STOPPED`). Returns `409 Conflict` if the schedule is not in `RUNNING` status. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/accept` | Accept this schedule as the active schedule for its period on this desk. Only allowed when status is `COMPLETED` or `STOPPED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Persists the complete schedule (including all timeslots, assignments, and score) to the database in a single transaction and removes it from the in-memory store. If another accepted schedule exists for an overlapping date range on this desk, it is deleted and replaced by this one. Sets status to `ACCEPTED`. Returns `200` with the updated schedule. |
 | `PUT` | `/desks/{deskId}/schedules/{id}/reject` | Reject and discard this schedule. Only allowed when status is `COMPLETED`, `STOPPED`, or `FAILED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. The schedule is removed from the in-memory store. No database operation is performed since non-accepted schedules are never persisted. Returns `204 No Content`. |
+| `DELETE` | `/desks/{deskId}/schedules/{id}` | Delete an accepted schedule. Only allowed when status is `ACCEPTED` — returns `409 Conflict` (error code `CONFLICT`) otherwise. Deletes the schedule and all its snapshot data (assignments, timeslot snapshots, staffing requirement snapshots) in a single transaction. Returns `204 No Content` on success. |
 | `GET` | `/desks/{deskId}/schedules/{id}/export` | Download schedule as a multi-tab `.xlsx` spreadsheet (section 8.5). |
 
 **Request body for `POST /desks/{deskId}/schedules/solve`:**
@@ -1146,11 +1127,12 @@ Desk-scoped. Each desk runs its own independent solver.
   "breakClusterThresholdPct": 20,
   "defaultContractedHoursPerDay": 8.0,
   "overallocationHardLimitPct": 130,
-  "underallocationHardLimitPct": 70
+  "underallocationHardLimitPct": 70,
+  "solveTimeSeconds": 300
 }
 ```
 
-All fields with defaults (section 5.12) are optional in the request — omitted fields use their default values. The five scheduling parameters — `periodStartDate`, `periodEndDate`, `startTime`, `endTime`, and `incrementMinutes` — are **required**. The server assembles the `Schedule` by loading desk-agents, specializations, staffing requirements, preferences, days off, and exceptions from the database for the specified desk and date range.
+All fields with defaults (section 5.11) are optional in the request — omitted fields use their default values. The five scheduling parameters — `periodStartDate`, `periodEndDate`, `startTime`, `endTime`, and `incrementMinutes` — are **required**. `solveTimeSeconds` is an optional override for the solver's termination time limit (in seconds). When provided, the solver uses this value as the total spend limit, with an unimproved spend limit set to 30% of the total (minimum 30 seconds). When omitted, the default termination from `solverConfig.xml` applies. The server assembles the `Schedule` by loading agents, specializations, staffing requirements, preferences, days off, and exceptions from the database for the specified desk and date range.
 
 **Schedule summary format** (used by `POST /schedules/solve` response, `GET /schedules` list items, and `PUT /schedules/{id}/stop` response):
 
@@ -1172,11 +1154,11 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 
 `score` and `feasible` are `null` while status is `RUNNING` (if no feasible solution has been found yet) or `FAILED`. Once the solver finds a solution, `score` contains `{ "hardScore": 0, "softScore": -42 }` and `feasible` is derived from the hard score.
 
-**Concurrent solves:** Only one non-accepted schedule may exist per desk at a time (tracked in the in-memory store). Different desks may have concurrent solves running independently. If a desk attempts to start a solve while another is already running or awaiting accept/reject for that desk, the endpoint returns `409 Conflict` using the standard error envelope (error code `CONFLICT`). To start a new solve the existing one must first be stopped (if running) and then accepted or rejected.
+**Concurrent solves:** Only one non-accepted schedule may exist per desk at a time for a given date range (tracked in the in-memory store). Different desks may have concurrent solves running independently. If a desk has a non-accepted schedule that is currently `RUNNING`, a new solve for any date range returns `409 Conflict`. If a desk has a non-accepted schedule in `COMPLETED`, `STOPPED`, or `FAILED` status and the new solve's date range **overlaps** with the existing schedule's dates, the endpoint returns `409 Conflict` — the existing schedule must first be accepted or rejected. However, if the new solve's date range does **not overlap** with the existing non-running schedule, the old schedule is **auto-rejected** (removed from the in-memory store) and the new solve proceeds. This allows users to start a new solve for a different week without manually rejecting the previous completed schedule.
 
-**Transaction scopes.** Since non-accepted schedules are held entirely in memory (section 5.12), the solve lifecycle does not involve database transactions until acceptance:
+**Transaction scopes.** Since non-accepted schedules are held entirely in memory (section 5.11), the solve lifecycle does not involve database transactions until acceptance:
 
-1. **Pre-solve phase** — covers everything from receiving the `POST /desks/{deskId}/schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading existing timeslots and staffing requirements from the database, loading desk-agents/specializations/preferences/days off/exceptions from the database (all read-only), expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. Timeslots must already exist in the database (generated via `POST /desks/{deskId}/timeslots/generate`, section 7.9). If any step fails (validation error, no timeslots found, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
+1. **Pre-solve phase** — covers everything from receiving the `POST /desks/{deskId}/schedules/solve` request through to the point where the solver is ready to start. This includes: validating the request, loading existing timeslots and staffing requirements from the database, loading agents/specializations/preferences/days off/exceptions from the database (all read-only), expanding staffing requirements into `AgentAssignment` entities, and creating the in-memory `Schedule` object with status `RUNNING`. Timeslots must already exist in the database (generated via `POST /desks/{deskId}/timeslots/generate`, section 7.9). If any step fails (validation error, no timeslots found, unexpected exception), the in-memory schedule is discarded and the client receives an error response. No database writes occur during this phase.
 
 2. **Solve phase** — once the pre-solve phase completes successfully, the solver is started asynchronously on a separate thread. The solver operates on the in-memory planning solution and periodically updates the best score. When the solver terminates (either by completing, reaching the time limit, or being stopped via the API), the in-memory schedule status is updated to `COMPLETED` or `STOPPED` and the final assignments and score are retained in memory for the user to review. If the solver throws an uncaught exception, the schedule status is set to `FAILED`, an error message is captured on the schedule object, and the schedule remains in the in-memory store so the user can see the failure and reject it (freeing the desk for a new solve).
 
@@ -1187,7 +1169,7 @@ All fields with defaults (section 5.12) are optional in the request — omitted 
 **Solver configuration.** The solver is configured via `solverConfig.xml` placed on the classpath. The configuration defines:
 
 1. **Break-aware pre-assignment (no-op)** — `SolverService.startSolve()` calls `BreakAwareConstructionPhase.preAssign()` before launching the solver. This method is currently a **no-op** — it returns 0 and all planning variables remain `null`. The previous multi-pass brute-force pipeline (compute work slots → assign → repair break geometry → mop up → repair → fill under-assigned) was removed because sequential passes with no backtracking could not scale: each pass lost quality, and repair cascades caused under-assignment at 100+ agents.
-2. **Construction heuristic** — Timefold's default construction heuristic (`<constructionHeuristic/>`) builds the initial solution from scratch. All planning variables (`AgentAssignment.deskAgent`) start as `null`. The CH assigns agents to seats one at a time, evaluating all 18 constraints per move to find feasible break positions, respect contracted hours, and match specializations.
+2. **Construction heuristic** — Timefold's default construction heuristic (`<constructionHeuristic/>`) builds the initial solution from scratch. All planning variables (`AgentAssignment.agent`) start as `null`. The CH assigns agents to seats one at a time, evaluating all 18 constraints per move to find feasible break positions, respect contracted hours, and match specializations.
 3. **Local search phase** — Timefold defaults (swap + change moves). For this problem size (up to 31 days × 40 timeslots × ~10 seats per slot = ~12,400 planning entities with ~50 planning values each), the default move selector is appropriate.
 4. **Termination** — time-based: 10-minute total spend limit OR 3-minute unimproved spend limit, whichever is reached first. Break rearrangement requires coordinated multi-slot moves that need longer plateaus to discover.
 
@@ -1202,15 +1184,15 @@ The `solverConfig.xml` is a required project artifact. It contains both a constr
 - The schedule period must be between 1 and 31 days (`periodEndDate − periodStartDate + 1 ≤ 31`). *(`details[].field`: `"periodEndDate"`.)*
 - Timeslots must exist for this desk covering every day of the schedule period. (Timeslots are normally generated on-demand from the Staffing Requirements page; see section 7.9.) *(`details[].field`: `"timeslots"`.)*
 - The schedule's `incrementMinutes`, `startTime`, and `endTime` must match the existing timeslot structure. If the timeslots were generated with a 15-minute increment from 08:00–18:00, the schedule must use the same values. *(`details[].field`: `"incrementMinutes"` / `"startTime"` / `"endTime"`.)*
-- Every active desk-agent must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"deskAgent.specializations"`, with the affected agent identified.)*
-- Every desk-agent's effective contracted hours (accounting for exceptions) must be a multiple of `incrementMinutes / 60`. For example, with 15-minute increments, 7.5 hours is valid (30 slots) but 7.6 is not. *(`details[].field`: `"deskAgent.contractedHoursPerDay"`, with the affected agent identified.)*
+- Every active agent assigned to this desk must have a primary specialization and at least one secondary specialization assigned. *(`details[].field`: `"agent.specializations"`, with the affected agent identified.)*
+- Every agent's effective contracted hours (accounting for exceptions) must be a multiple of `incrementMinutes / 60`. For example, with 15-minute increments, 7.5 hours is valid (30 slots) but 7.6 is not. *(`details[].field`: `"agent.contractedHoursPerDay"`, with the affected agent identified.)*
 - At least one staffing requirement must exist for this desk for the target period.
-- At least one active desk-agent must be available (i.e. not on a day off for every day of the period).
+- At least one active agent assigned to this desk must be available (i.e. not on a day off for every day of the period).
 - `breakDurationMinutes` must be a positive multiple of `incrementMinutes`. *(`details[].field`: `"breakDurationMinutes"`.)*
-- Every desk-agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
-- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each desk-agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration where applicable (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours **strictly greater than** `breakMinShiftHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For agents at or below the threshold (no break), the check verifies `coverageWindowHours ≥ effectiveContractedHours`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception requires only a 4-hour window (no break). Agents failing this check are listed in the `details` array.
+- Every agent with an effective preferred break time for a day in the schedule period must have that time conform to the schedule's `breakStartAlignment`. Non-conforming preferences are listed in the `details` array (one entry per agent-day) so they can be corrected.
+- The coverage window (`timeRangeEnd − timeRangeStart`) must be at least as long as each agent's **effective** contracted hours (accounting for exceptions) plus the configured break duration where applicable (since contracted hours exclude break time). Specifically, for every active agent-day whose shift would include a break (effective contracted hours **strictly greater than** `breakMinShiftHours`), the check verifies that `coverageWindowHours ≥ effectiveContractedHours + (breakDurationMinutes / 60)`. For agents at or below the threshold (no break), the check verifies `coverageWindowHours ≥ effectiveContractedHours`. For example, an agent with 8.0 contracted hours and a 60-minute break requires a coverage window of at least 9 hours; an agent with a 4-hour exception requires only a 4-hour window (no break). Agents failing this check are listed in the `details` array.
 - No agent may have both an exception (on this desk) and a day off on the same date within the schedule period. *(`details[].field`: `"agentException.date"`, with the conflicting agent and date identified.)*
-- Every specialization referenced by a staffing requirement in the schedule period must have at least one eligible desk-agent (active, with that specialization as primary or secondary, and not on day-off for every day of the period). If a specialization has demand but no agent can fill it, the solver will inevitably violate constraints. *(`details[].field`: `"staffingRequirement.specialization"`, with the unmatched specialization identified.)*
+- Every specialization referenced by a staffing requirement in the schedule period must have at least one eligible agent (active, assigned to this desk, with that specialization as primary or secondary, and not on day-off for every day of the period). If a specialization has demand but no agent can fill it, the solver will inevitably violate constraints. *(`details[].field`: `"staffingRequirement.specialization"`, with the unmatched specialization identified.)*
 
 ## 8. Schedule Output
 
@@ -1266,7 +1248,7 @@ A per-day comparison of **predicted** staffing hours (derived from staffing requ
 |---|---|---|
 | `date` | `LocalDate` | Day |
 | `specialization` | `String` | Specialization name |
-| `predictedHours` | `BigDecimal` | Sum of `requiredHours` across all timeslots for that day and specialization |
+| `predictedHours` | `BigDecimal` | Sum of `requiredFTEs × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `actualHours` | `BigDecimal` | Sum of `(assigned agents) × incrementMinutes / 60` across all timeslots for that day and specialization |
 | `deltaHours` | `BigDecimal` | `actualHours − predictedHours` (positive = overstaffed, negative = understaffed) |
 | `coveragePct` | `BigDecimal` | `actualHours / predictedHours × 100`. If `predictedHours` is zero, `coveragePct` is `null` (not applicable — there was no demand for that specialization/day). |
@@ -1307,7 +1289,7 @@ Each entry in the list represents one agent-day:
 
 ### 8.3 Preference Report
 
-A per-agent, per-day report showing which preferences were honoured and which were overridden. Preference values shown are the **effective (resolved)** values after standing-vs-weekly resolution (see section 5.8), not the raw stored records.
+A per-agent, per-day report showing which preferences were honoured and which were overridden. Preference values shown are the **effective (resolved)** values after standing-vs-weekly resolution (see section 5.7), not the raw stored records.
 
 | Field | Type | Description |
 |---|---|---|
@@ -1437,8 +1419,8 @@ All refreshes are **desk-scoped** and **user-initiated** — there is no automat
 - **Concurrency guard** — Only one refresh may run at a time per desk. The service holds an in-memory `ConcurrentHashMap<UUID, Boolean>` keyed by `desk_id`. When a refresh is requested, the service attempts `putIfAbsent(deskId, true)`. If a refresh is already in progress for this desk, the endpoint returns `409 Conflict` (error code `REFRESH_IN_PROGRESS`, message: *"A BambooHR refresh is already in progress for this desk."*). The flag is removed in a `finally` block after the refresh completes (success or failure). This prevents duplicate API calls and data races from concurrent button clicks.
 - **Employee retrieval** — The service calls `listEmployees(wfmTenantId, desk.name)` to fetch only employees matching the tenant and the desk's BambooHR project. This means each desk refresh pulls a targeted subset of the BPO's workforce rather than all employees.
 - **Upsert logic** — Employees are matched by `bamboohrId`. New employees are inserted into the tenant-level `agent` table; existing employees have their name, email, department, and job title updated. Employees present in the previous refresh for this desk but no longer returned by BambooHR are marked `active = false` (soft-delete).
-- **Desk assignment** — Every employee returned by `listEmployees` for this desk is automatically assigned to the desk: a `DeskAgent` record is created if one does not already exist. Newly created desk-agents are assigned a default **"Basic"** specialization as both primary and secondary specialization — the "Basic" specialization is auto-created on the desk if it does not already exist. The agent's `contractedHoursPerDay` is set to the desk's `defaultContractedHoursPerDay`. If the agent is already assigned to a different desk, the refresh logs a warning and skips the desk assignment for that agent — the administrator must resolve the conflict manually.
-- **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh. The default "Basic" assignment only applies to newly created desk-agent records.
+- **Desk assignment** — Every employee returned by `listEmployees` for this desk is automatically assigned to the desk: the agent's `deskId` is set to this desk if not already assigned. Newly assigned agents are given a default **"Basic"** specialization as both primary and secondary specialization — the "Basic" specialization is auto-created on the desk if it does not already exist. The agent's `contractedHoursPerDay` is set to the desk's `defaultContractedHoursPerDay`. If the agent is already assigned to a different desk, the refresh logs a warning and skips the desk assignment for that agent — the administrator must resolve the conflict manually.
+- **Specializations are preserved** — Locally assigned specializations are never overwritten by a refresh. The default "Basic" assignment only applies to newly assigned agents.
 - **Days off refresh** — The refresh also calls `listTimeOff(wfmTenantId, from, to)` for a configurable lookahead window (default: 8 weeks from today, configurable via `bamboohr.time-off.lookahead-weeks`). Days off are **tenant-level** (not desk-scoped) so this call uses `wfmTenantId` only. Returned day-off records are upserted into the `agent_day_off` table for the agents returned by this refresh, matched by (`agent`, `date`). For **only those agents**, days off within the refreshed date range that are no longer present in BambooHR are deleted. Days off for agents not included in this desk's refresh are never touched.
 - **Transaction scope** — The entire refresh (agent upserts + desk assignment upserts + days off upserts) executes in a **single database transaction** (`@Transactional`). If any part fails (e.g. database error mid-import), all changes are rolled back. The BambooHR API calls (which are external and read-only) happen before the transaction begins — the service first fetches all data from BambooHR, then applies the changes to the database atomically.
 
@@ -1467,7 +1449,6 @@ src/main/java/com/wfm/
 │   ├── Desk.java
 │   ├── Specialization.java
 │   ├── Agent.java
-│   ├── DeskAgent.java
 │   ├── Timeslot.java
 │   ├── StaffingRequirement.java
 │   ├── AgentPreference.java
@@ -1477,7 +1458,7 @@ src/main/java/com/wfm/
 │   ├── ConstraintWeights.java
 │   ├── ScheduleConfig.java            (record: immutable schedule config for constraint access)
 │   ├── AgentDayConfig.java            (record: per-agent-day effective hours + break config)
-│   ├── DayDemandConfig.java           (record: per-day demand totals for bulk allocation constraints)
+│   ├── TimeslotDemandConfig.java      (record: per-timeslot demand FTE totals for bulk allocation constraints)
 │   ├── Schedule.java
 │   ├── DayOffType.java              (enum: MANDATORY, PTO)
 │   ├── ScheduleStatus.java          (enum: RUNNING, COMPLETED, STOPPED, FAILED, ACCEPTED)
@@ -1488,7 +1469,6 @@ src/main/java/com/wfm/
 │   ├── DeskRepository.java
 │   ├── SpecializationRepository.java
 │   ├── AgentRepository.java
-│   ├── DeskAgentRepository.java
 │   ├── AgentPreferenceRepository.java
 │   ├── AgentDayOffRepository.java
 │   ├── AgentExceptionRepository.java
@@ -1501,6 +1481,7 @@ src/main/java/com/wfm/
 │   ├── DeskService.java
 │   ├── AgentService.java
 │   ├── DeskAgentService.java
+│   ├── PreferenceUploadService.java
 │   ├── AgentPreferenceService.java
 │   ├── AgentDayOffService.java
 │   ├── AgentExceptionService.java
@@ -1537,7 +1518,7 @@ src/main/java/com/wfm/
 │   ├── DeskResponse.java
 │   ├── AgentResponse.java
 │   ├── AgentDayOffResponse.java
-│   ├── DeskAgentResponse.java
+│   ├── DeskAgentResponse.java          (flat agent response with desk fields — name kept for API compatibility)
 │   ├── AssignAgentsRequest.java
 │   ├── SetSpecializationsRequest.java
 │   ├── SetContractedHoursRequest.java
@@ -1585,7 +1566,7 @@ src/main/java/com/wfm/
 PostgreSQL is the sole data store. Schema management uses **Flyway** (or Liquibase) from day one — not Hibernate DDL auto-generation — because several data integrity constraints cannot be expressed through JPA annotations alone:
 
 - **Partial unique indexes** — `agent_preference` requires two partial unique indexes (`WHERE is_standing = true` and `WHERE is_standing = false`); `timeslot` and `staffing_requirement` require partial unique indexes (`WHERE schedule_id IS NULL`). Hibernate's DDL generator cannot create partial indexes.
-- **`BigDecimal` column precision** — All `BigDecimal` hour fields use `NUMERIC(5,2)` except `staffing_requirement.required_hours` which uses `NUMERIC(10,4)` to support Erlang X fractional agent counts (see section 5.7). Flyway migrations ensure consistent column definitions.
+- **`BigDecimal` column precision** — All `BigDecimal` hour fields use `NUMERIC(5,2)`. The `staffing_requirement.required_ftes` column is an `INTEGER` (see section 5.5). Flyway migrations ensure consistent column definitions.
 
 During local development, Hibernate's `ddl-auto=validate` may be used to verify that entity mappings are compatible with the Flyway-managed schema.
 
@@ -1596,19 +1577,18 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 **Tenant-level tables** (no `desk_id`):
 
 - `desk` (`tenant_id`, `name`, `description`, `default_contracted_hours_per_day`, unique on `tenant_id` + `name`)
-- `agent` (`tenant_id`, unique on `tenant_id` + `bamboohr_id`)
+- `agent` (`tenant_id`, `desk_id` (nullable FK → `desk`), `primary_specialization_id` (nullable FK → `specialization`), `contracted_hours_per_day`, unique on `tenant_id` + `bamboohr_id`)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `agent` + `date`). The `tenant_id` column is present for query filtering but not needed in the uniqueness constraint since `agent` already implies tenant.
 
 **Desk-scoped tables** (`tenant_id` + `desk_id`):
 
-- `desk_agent` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, FK → `specialization` for primary, `contracted_hours_per_day`, unique on `tenant_id` + `desk_id` + `agent`, unique on `tenant_id` + `agent` — enforces one desk per agent)
-- `desk_agent_secondary_specialization` (join table: FK → `desk_agent`, FK → `specialization`)
+- `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
 - `specialization` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` + `name`)
 - `agent_preference` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `day_of_week`, `date`, `is_standing`; partial unique on `tenant_id` + `desk_id` + `agent` + `day_of_week` where `is_standing = true`; partial unique on `tenant_id` + `desk_id` + `agent` + `date` where `is_standing = false`)
 - `agent_exception` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `date`, `contracted_hours_override`, `reason`, unique on `tenant_id` + `desk_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`, `desk_id`, FK → `desk`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `date` + `start_time` + `end_time` where `schedule_id IS NULL`). Rows with `schedule_id IS NULL` are live input data; rows with a `schedule_id` are accepted schedule snapshots.
 - `staffing_requirement` (`tenant_id`, `desk_id`, FK → `desk`, FK → `timeslot`, FK → `specialization`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `timeslot` + `specialization` where `schedule_id IS NULL`). Same live-vs-snapshot distinction as `timeslot`.
-- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `desk_agent`, FK → `agent`). Assignments only exist as part of an accepted schedule. Stores FKs to both `desk_agent` (the planning variable) and `agent` (denormalised for query convenience).
+- `agent_assignment` (`tenant_id`, `desk_id`, FK → `desk`, FK → `schedule` (`schedule_id`, NOT NULL), FK → `timeslot`, FK → `specialization`, FK → `agent`). Assignments only exist as part of an accepted schedule.
 - `constraint_weights` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` — one row per desk)
 - `schedule` (`tenant_id`, `desk_id`, FK → `desk`, FK → `constraint_weights`, `status`, `increment_minutes`, `start_time`, `end_time`, `period_start_date`, `period_end_date`, `break_blocked_hours`, `break_duration_minutes`, `break_min_shift_hours`, `break_start_alignment`, `break_cluster_threshold_pct`, `default_contracted_hours_per_day`, `overallocation_hard_limit_pct`, `underallocation_hard_limit_pct`, `score`, `error_message`, `created_at`). Only `ACCEPTED` schedules are written to this table.
 
@@ -1645,11 +1625,11 @@ Manages the set of available specializations for the selected desk (section 4.3)
 |---|---|---|
 | Specializations table | Table | Lists all specializations for this desk by name. One row per specialization. |
 | Add specialization | Text input + button | Text field for the specialization name and an "Add" button. Creates a new specialization via `POST /desks/{deskId}/specializations`. |
-| Delete button | Icon button (per row) | Deletes the specialization via `DELETE /desks/{deskId}/specializations/{id}`. Disabled or shows a warning if the specialization is in use by desk-agents or staffing requirements. |
+| Delete button | Icon button (per row) | Deletes the specialization via `DELETE /desks/{deskId}/specializations/{id}`. Disabled or shows a warning if the specialization is in use by agents or staffing requirements. |
 
 ### 12.4 Desk Agents Page
 
-Manages agents assigned to the selected desk — their assignment, specializations, and contracted hours (sections 5.3, 5.4, 7.2). Desk-scoped.
+Manages agents assigned to the selected desk — their assignment, specializations, and contracted hours (sections 5.3, 7.2). Desk-scoped.
 
 | Control | Type | Description |
 |---|---|---|
@@ -1668,10 +1648,11 @@ Allows administrators to submit shift preferences for an agent on the selected d
 
 | Control | Type | Description |
 |---|---|---|
-| Agent selector | Dropdown or search | Selects the desk-agent whose preferences are being viewed or edited. Only shows agents assigned to this desk. |
-| Period picker | Date range picker | Selects the target date range. Loads existing preferences via `GET /desks/{deskId}/agents/{agentId}/preferences?from={date}&to={date}`. The response includes all standing preferences for the desk-agent plus any weekly preferences within the date range. |
+| Agent selector | Dropdown or search | Selects the agent whose preferences are being viewed or edited. Only shows agents assigned to this desk. |
+| Period picker | Date range picker | Selects the target date range. Loads existing preferences via `GET /desks/{deskId}/agents/{agentId}/preferences?from={date}&to={date}`. The response includes all standing preferences for the agent plus any weekly preferences within the date range. |
 | Preferences grid | Editable table | One row per day within the selected period (e.g. Monday–Friday for a Mon–Fri schedule). Columns: **Day** (day of week + date), **Preferred start time** (time picker), **Preferred break time** (time picker), **Standing** (checkbox — each day of week may independently have its standing checkbox checked; checking it sets this row's values as the recurring default for that day of week on this desk), **Source** (read-only label: "Standing default" if the row's values are inherited from the standing preference for that day of week, "Weekly override" if a date-specific preference exists, "None" if no preference). Preferred break time pickers accept **any valid time** — alignment is not enforced at input time. Non-conforming break times are flagged during pre-solve validation (section 7.11), not at preference entry time (see section 4.6.4). The UI may show a warning icon if the entered time does not conform to the desk's most recent break alignment setting. |
-| Save button | Button | Persists all rows via `PUT /desks/{deskId}/agents/{agentId}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures at most one standing preference per desk-agent per day of week. |
+| Load Preferences button | Button | Opens a file picker to upload a `.xlsx` preferences spreadsheet via `POST /desks/{deskId}/agents/preferences/upload`. After upload, displays how many preferences were saved and how many rows were skipped (with reasons). Skipped rows are reported so the user can fix the spreadsheet. |
+| Save button | Button | Persists all rows via `PUT /desks/{deskId}/agents/{agentId}/preferences`. Disabled until a change is made. Sends the `isStanding` flag with each record; the server ensures at most one standing preference per agent per day of week. |
 | Delete button | Button (per row) | Deletes the preference for the selected row via `DELETE /desks/{deskId}/agents/{agentId}/preferences/{id}`. If the deleted preference was standing, that day of week falls back to no preference until a new standing default is set. If a weekly override is deleted, the day falls back to the standing preference for that day of week (if one exists). |
 
 ### 12.6 Agent Exceptions Page
@@ -1680,11 +1661,11 @@ Manages per-agent, per-day contracted hours overrides for the selected desk (sec
 
 | Control | Type | Description |
 |---|---|---|
-| Agent selector | Dropdown or search | Selects the desk-agent whose exceptions are being viewed or edited. Only shows agents assigned to this desk. |
+| Agent selector | Dropdown or search | Selects the agent whose exceptions are being viewed or edited. Only shows agents assigned to this desk. |
 | Period picker | Date range picker | Selects the target date range. Loads existing exceptions via `GET /desks/{deskId}/agents/{agentId}/exceptions?from={date}&to={date}`. |
-| Exceptions grid | Editable table | One row per day within the selected range. Columns: **Day**, **Standard hours** (read-only — the desk-agent's normal `contractedHoursPerDay`), **Override hours** (numeric input — the `contractedHoursOverride` for this day; blank if no exception), **Reason** (text input — required when override hours is set). Days that coincide with a day off are greyed out and cannot have an exception. |
+| Exceptions grid | Editable table | One row per day within the selected range. Columns: **Day**, **Standard hours** (read-only — the agent's normal `contractedHoursPerDay`), **Override hours** (numeric input — the `contractedHoursOverride` for this day; blank if no exception), **Reason** (text input — required when override hours is set). Days that coincide with a day off are greyed out and cannot have an exception. |
 | Save button | Button | Persists all rows with an override via `PUT /desks/{deskId}/agents/{agentId}/exceptions`. Disabled until a change is made. Validates that reason is provided for every override. |
-| Delete button | Button (per row) | Deletes the exception for the selected day via `DELETE /desks/{deskId}/agents/{agentId}/exceptions/{date}`. The desk-agent reverts to standard contracted hours for that day. |
+| Delete button | Button (per row) | Deletes the exception for the selected day via `DELETE /desks/{deskId}/agents/{agentId}/exceptions/{date}`. The agent reverts to standard contracted hours for that day. |
 
 ### 12.7 Staffing Requirements Page
 
@@ -1701,7 +1682,7 @@ Defines how many agents are needed per timeslot per specialization for the selec
 | **Demand entry** | | |
 | Input mode toggle | Tab or radio group | Switches between **Direct input** and **Erlang X calculation**. |
 | **Direct input mode** | | |
-| Demand grid | Editable table | Rows: timeslots (loaded from the database via `GET /desks/{deskId}/timeslots?from={date}&to={date}`). Columns: one per specialization (for this desk). Cells contain the required agent count (integer input). Pre-populated with existing requirements if any, via `GET /desks/{deskId}/staffing-requirements?from={date}&to={date}`. |
+| Demand grid | Editable table | Rows: timeslots (loaded from the database via `GET /desks/{deskId}/timeslots?from={date}&to={date}`). Columns: one per specialization (for this desk), plus an **FTE** summary column showing the total FTEs per row across all specializations. Cells contain the required agent count as FTEs (integer input). Pre-populated with existing requirements if any, via `GET /desks/{deskId}/staffing-requirements?from={date}&to={date}`. |
 | Copy day | Button + day selector | Copies one day's demand profile to other selected days to speed up entry. |
 | Save button | Button | Persists via `POST /desks/{deskId}/staffing-requirements`. |
 | **Erlang X mode** | | |
@@ -1737,9 +1718,10 @@ Configures solver inputs and triggers a solve run for the selected desk (section
 | Default contracted hours/day | Numeric input | Desk-level default contracted daily hours for agents without an explicit override (default 8.0). |
 | Over-allocation hard limit | Numeric input (%) | Maximum percentage by which total assigned staffing hours may exceed total predicted demand hours before triggering a hard constraint violation (default 130%). |
 | Under-allocation hard limit | Numeric input (%) | Minimum percentage of total contracted agent hours that total predicted demand must reach. Below this floor the schedule is infeasible; between the floor and 100% a soft penalty applies (default 70%). |
-| Validation summary | Read-only panel | Before solving, displays a summary: number of desk-agents, specializations configured, staffing requirements loaded, days off affecting this period, exceptions configured, and any missing data warnings (e.g. desk-agents without specializations, conflicting exceptions and days off). |
+| Solve time | Numeric input (seconds) | Optional override for the solver's time limit. When set, the solver runs for at most this many seconds (with an unimproved limit of 30% of total). When blank, the default from `solverConfig.xml` applies. Maps to the `solveTimeSeconds` field in the solve request. |
+| Validation summary | Read-only panel | Before solving, displays a summary: number of agents assigned to this desk, specializations configured, staffing requirements loaded, days off affecting this period, exceptions configured, and any missing data warnings (e.g. agents without specializations, conflicting exceptions and days off). |
 | Solve button | Button | Submits `POST /desks/{deskId}/schedules/solve`. Disabled if validation errors exist. Navigates to the Schedule Results page on success. |
-| Past schedules list | Paginated table | Lists previously completed and accepted schedules for this desk with date, score, and status, fetched via `GET /desks/{deskId}/schedules`. Accepted schedules are visually distinguished (e.g. bold or with an "Accepted" badge). Each row links to its Schedule Results page. |
+| Past schedules list | Paginated table | Lists previously completed and accepted schedules for this desk with date, score, and status, fetched via `GET /desks/{deskId}/schedules`. Accepted schedules are visually distinguished (e.g. bold or with an "Accepted" badge). Each row links to its Schedule Results page. Accepted schedules include **Accept** and **Reject** action buttons — Accept is displayed as already accepted (disabled), and a **Delete** button is available to remove accepted schedules via `DELETE /desks/{deskId}/schedules/{id}` with a confirmation dialog. |
 
 ### 12.10 Schedule Results Page
 
@@ -1747,7 +1729,7 @@ Displays solver output for a given schedule on the selected desk (section 8). Sh
 
 | Control | Type | Description |
 |---|---|---|
-| Schedule header | Read-only panel | Displays: desk name, schedule period, time range, increment, solver score (hard/soft), feasibility indicator, and solve status (running/completed/stopped/failed/accepted). Shows an **"Accepted"** badge when accepted or an **error banner** when failed (displaying `errorMessage`). |
+| Schedule header | Read-only panel | Displays: desk name, schedule period, time range, increment, solver score (hard/soft), feasibility indicator, solve status (running/completed/stopped/failed/accepted), and **elapsed time** (counting up from solve start while running, frozen at final value when completed/stopped). Shows an **"Accepted"** badge when accepted or an **error banner** when failed (displaying `errorMessage`). |
 | Non-optimal banner | Alert banner | Displayed prominently at the top of the page when `feasible == false`. Shows the text **"NON-OPTIMAL SOLUTION"** followed by a bulleted list of every violated hard constraint name (from `violatedHardConstraints`). Styled as a warning/error banner (e.g. red or amber background) so it is immediately visible. Hidden when the solution is feasible. |
 | Stop button | Button | Visible while the solver is running. Calls `PUT /desks/{deskId}/schedules/{id}/stop`. |
 | Progress indicator | Progress bar or spinner | Shown while the solver is running. Polls `GET /desks/{deskId}/schedules/{id}` for status and intermediate scores. |
@@ -1811,7 +1793,7 @@ Corresponds to section 8.4.
 
 - ~~**Per-agent time-off retrieval by desk.**~~ **Resolved.** `BambooHRClient.listTimeOff` now accepts a `wfmTenantId` parameter to filter time-off records by tenant (section 9.3). Desk assignment is determined by the `project` custom field on each employee record, matched to `Desk.name` (section 9.4). Days off remain tenant-level (not desk-scoped).
 
-- ~~**Agent-to-desk assignment from BambooHR.**~~ **Resolved.** The BambooHR custom field `project` identifies the agent's desk. During refresh, it is matched (case-insensitive) to `Desk.name` within the tenant. If matched, a `DeskAgent` record is auto-created. Manual assignment via the API remains available. See sections 3.2, 5.4, and 9.4.
+- ~~**Agent-to-desk assignment from BambooHR.**~~ **Resolved.** The BambooHR custom field `project` identifies the agent's desk. During refresh, it is matched (case-insensitive) to `Desk.name` within the tenant. If matched, the agent's `deskId` is set. Manual assignment via the API remains available. See sections 3.2, 5.3, and 9.4.
 
 ## 14. API Versioning
 
