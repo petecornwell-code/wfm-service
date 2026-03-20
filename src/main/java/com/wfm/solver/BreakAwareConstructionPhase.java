@@ -35,7 +35,7 @@ public class BreakAwareConstructionPhase {
     public int preAssign(Schedule schedule) {
         log.info("Break-aware construction phase: delegating all assignment to solver CH "
                 + "(agents={}, assignments={})",
-                schedule.getDeskAgents().size(), schedule.getAssignments().size());
+                schedule.getAgents().size(), schedule.getAssignments().size());
         return 0;
     }
 }

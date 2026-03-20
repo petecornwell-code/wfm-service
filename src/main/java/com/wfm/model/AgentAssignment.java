@@ -34,11 +34,7 @@ public class AgentAssignment {
     @JoinColumn(name = "specialization_id", nullable = false)
     private Specialization requiredSpecialization;
 
-    @PlanningVariable(valueRangeProviderRefs = "deskAgentRange", nullable = true)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "desk_agent_id")
-    private DeskAgent deskAgent;
-
+    @PlanningVariable(valueRangeProviderRefs = "agentRange", nullable = true)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agent_id")
     private Agent agent;
@@ -64,9 +60,6 @@ public class AgentAssignment {
     public void setRequiredSpecialization(Specialization requiredSpecialization) {
         this.requiredSpecialization = requiredSpecialization;
     }
-
-    public DeskAgent getDeskAgent() { return deskAgent; }
-    public void setDeskAgent(DeskAgent deskAgent) { this.deskAgent = deskAgent; }
 
     public Agent getAgent() { return agent; }
     public void setAgent(Agent agent) { this.agent = agent; }

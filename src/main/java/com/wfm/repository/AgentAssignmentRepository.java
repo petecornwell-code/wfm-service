@@ -16,9 +16,8 @@ public interface AgentAssignmentRepository extends JpaRepository<AgentAssignment
     @Query("SELECT aa FROM AgentAssignment aa " +
            "JOIN FETCH aa.timeslot t " +
            "JOIN FETCH aa.requiredSpecialization rs " +
-           "LEFT JOIN FETCH aa.deskAgent da " +
-           "LEFT JOIN FETCH da.agent a " +
-           "LEFT JOIN FETCH da.primarySpecialization ps " +
+           "LEFT JOIN FETCH aa.agent a " +
+           "LEFT JOIN FETCH a.primarySpecialization ps " +
            "WHERE aa.tenantId = :tenantId AND aa.deskId = :deskId AND aa.scheduleId = :scheduleId " +
            "ORDER BY t.date, t.startTime")
     List<AgentAssignment> findWithRelationsByTenantIdAndDeskIdAndScheduleId(

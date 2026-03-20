@@ -6,6 +6,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Desk;
 import com.wfm.model.ScheduleStatus;
+import com.wfm.repository.AgentRepository;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ public class DeskService {
     private final DeskRepository deskRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final ScheduleRepository scheduleRepository;
-    private final DeskAgentRepository deskAgentRepository;
+    private final AgentRepository agentRepository;
     private final SpecializationRepository specializationRepository;
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
@@ -33,7 +34,7 @@ public class DeskService {
     public DeskService(DeskRepository deskRepository,
                        ConstraintWeightsRepository constraintWeightsRepository,
                        ScheduleRepository scheduleRepository,
-                       DeskAgentRepository deskAgentRepository,
+                       AgentRepository agentRepository,
                        SpecializationRepository specializationRepository,
                        TimeslotRepository timeslotRepository,
                        StaffingRequirementRepository staffingRequirementRepository,
@@ -44,7 +45,7 @@ public class DeskService {
         this.deskRepository = deskRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.scheduleRepository = scheduleRepository;
-        this.deskAgentRepository = deskAgentRepository;
+        this.agentRepository = agentRepository;
         this.specializationRepository = specializationRepository;
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
@@ -138,8 +139,14 @@ public class DeskService {
         timeslotRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         // 3. Schedules themselves
         scheduleRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
-        // 4. Structural data
-        deskAgentRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        // 4. Unassign agents from this desk (don't delete them — they're tenant-level)
+        for (var agent : agentRepository.findByTenantIdAndDeskId(tenantId, deskId)) {
+            agent.setDeskId(null);
+            agent.setPrimarySpecialization(null);
+            agent.getSecondarySpecializations().clear();
+            agent.setContractedHoursPerDay(null);
+            agentRepository.save(agent);
+        }
         specializationRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         constraintWeightsRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
 

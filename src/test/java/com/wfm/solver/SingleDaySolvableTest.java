@@ -107,14 +107,12 @@ class SingleDaySolvableTest {
         Specialization billing = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
 
-        // --- Agents + DeskAgents ---
+        // --- Agents ---
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");
 
-        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(second), new BigDecimal("8.00"));
-        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(second), new BigDecimal("8.00"));
-
-        List<DeskAgent> deskAgents = List.of(daA, daB);
+        configureAgent(agentA, deskId, billing, List.of(second), new BigDecimal("8.00"));
+        configureAgent(agentB, deskId, billing, List.of(second), new BigDecimal("8.00"));
 
         // --- Timeslots: 08:00–17:00 in 15-min increments (36 slots) ---
         List<Timeslot> timeslots = new ArrayList<>();
@@ -145,19 +143,19 @@ class SingleDaySolvableTest {
             staffingReqs.add(sr);
 
             // Seat 1 → Alice
-            assignments.add(assignment(deskId, scheduleId, ts, billing, daA, agentA));
+            assignments.add(assignment(deskId, scheduleId, ts, billing, agentA));
             // Seat 2 → Bob
-            assignments.add(assignment(deskId, scheduleId, ts, billing, daB, agentB));
+            assignments.add(assignment(deskId, scheduleId, ts, billing, agentB));
         }
 
         // --- AgentDayConfig (pre-computed, mirrors SolverService logic) ---
         AgentDayConfig configA = new AgentDayConfig(
-                daA.getId(), DAY, new BigDecimal("8.00"),
+                agentA.getId(), DAY, new BigDecimal("8.00"),
                 INCREMENT, 60,
                 new BigDecimal("4.00"), new BigDecimal("1.00"),
                 BreakAlignment.ON_HOUR, 130, 70);
         AgentDayConfig configB = new AgentDayConfig(
-                daB.getId(), DAY, new BigDecimal("8.00"),
+                agentB.getId(), DAY, new BigDecimal("8.00"),
                 INCREMENT, 60,
                 new BigDecimal("4.00"), new BigDecimal("1.00"),
                 BreakAlignment.ON_HOUR, 130, 70);
@@ -189,7 +187,7 @@ class SingleDaySolvableTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(billing));
-        schedule.setDeskAgents(deskAgents);
+        schedule.setAgents(List.of(agentA, agentB));
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -220,7 +218,7 @@ class SingleDaySolvableTest {
 
     private AgentAssignment assignment(UUID deskId, UUID scheduleId,
                                        Timeslot ts, Specialization spec,
-                                       DeskAgent da, Agent agent) {
+                                       Agent agent) {
         AgentAssignment aa = new AgentAssignment();
         aa.setId(UUID.randomUUID());
         aa.setTenantId(TENANT);
@@ -228,7 +226,6 @@ class SingleDaySolvableTest {
         aa.setScheduleId(scheduleId);
         aa.setTimeslot(ts);
         aa.setRequiredSpecialization(spec);
-        aa.setDeskAgent(da);
         aa.setAgent(agent);
         return aa;
     }
@@ -252,17 +249,12 @@ class SingleDaySolvableTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
+    private void configureAgent(Agent agent, UUID deskId, Specialization primary,
                                 List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

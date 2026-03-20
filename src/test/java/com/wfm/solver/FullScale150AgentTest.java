@@ -99,7 +99,7 @@ class FullScale150AgentTest {
         HardSoftScore score = solutionManager.update(solution);
 
         System.out.println("Score: " + score);
-        System.out.println("Agents: " + solution.getDeskAgents().size());
+        System.out.println("Agents: " + solution.getAgents().size());
         System.out.println("Timeslots: " + solution.getTimeslots().size());
         System.out.println("Assignments: " + solution.getAssignments().size());
         System.out.println("Staffing requirements: " + solution.getStaffingRequirements().size());
@@ -133,7 +133,6 @@ class FullScale150AgentTest {
 
         // --- Build 150 agents matching mock BambooHR name pattern ---
         List<Agent> agentList = new ArrayList<>(150);
-        List<DeskAgent> deskAgentList = new ArrayList<>(150);
         int id = 1;
         outer:
         for (String firstName : FIRST_NAMES) {
@@ -142,9 +141,8 @@ class FullScale150AgentTest {
                 String name = firstName + " " + lastName;
                 Agent a = agent(String.valueOf(id), name);
                 List<Specialization> secondaries = agentList.size() < 20 ? List.of(second) : List.of();
-                DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+                deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
                 agentList.add(a);
-                deskAgentList.add(da);
                 id++;
             }
         }
@@ -197,19 +195,18 @@ class FullScale150AgentTest {
         // This gives each agent exactly 8 assignments × 60 min = 8 hrs = contracted hours.
         List<AgentAssignment> assignments = new ArrayList<>(1200);
         for (int i = 0; i < 150; i++) {
-            DeskAgent da = deskAgentList.get(i);
             Agent a = agentList.get(i);
             for (Timeslot ts : timeslots) {
                 if (ts.getStartTime().equals(agentBreakHour[i])) {
                     continue; // this is the agent's break hour — skip
                 }
-                assignments.add(assignment(deskId, scheduleId, ts, basic, da, a));
+                assignments.add(assignment(deskId, scheduleId, ts, basic, a));
             }
         }
 
         // --- AgentDayConfig (one per agent) ---
         List<AgentDayConfig> dayConfigs = new ArrayList<>(150);
-        for (DeskAgent da : deskAgentList) {
+        for (Agent da : agentList) {
             dayConfigs.add(new AgentDayConfig(
                     da.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
@@ -244,7 +241,7 @@ class FullScale150AgentTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(deskAgentList);
+        schedule.setAgents(agentList);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -275,7 +272,7 @@ class FullScale150AgentTest {
 
     private AgentAssignment assignment(UUID deskId, UUID scheduleId,
                                        Timeslot ts, Specialization spec,
-                                       DeskAgent da, Agent agent) {
+                                       Agent agent) {
         AgentAssignment aa = new AgentAssignment();
         aa.setId(UUID.randomUUID());
         aa.setTenantId(TENANT);
@@ -283,7 +280,6 @@ class FullScale150AgentTest {
         aa.setScheduleId(scheduleId);
         aa.setTimeslot(ts);
         aa.setRequiredSpecialization(spec);
-        aa.setDeskAgent(da);
         aa.setAgent(agent);
         return aa;
     }
@@ -307,17 +303,13 @@ class FullScale150AgentTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
-                                List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+    private Agent deskAgent(UUID deskId, Agent agent, Specialization primary,
+                            List<Specialization> secondaries, BigDecimal contractedHours) {
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
+        return agent;
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

@@ -27,7 +27,6 @@ public class BambooRefreshService {
 
     private final BambooHRClient bambooHRClient;
     private final AgentRepository agentRepository;
-    private final DeskAgentRepository deskAgentRepository;
     private final DeskRepository deskRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final SpecializationRepository specializationRepository;
@@ -43,14 +42,12 @@ public class BambooRefreshService {
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
-                                DeskAgentRepository deskAgentRepository,
                                 DeskRepository deskRepository,
                                 AgentDayOffRepository agentDayOffRepository,
                                 SpecializationRepository specializationRepository,
                                 TransactionTemplate transactionTemplate) {
         this.bambooHRClient = bambooHRClient;
         this.agentRepository = agentRepository;
-        this.deskAgentRepository = deskAgentRepository;
         this.deskRepository = deskRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.specializationRepository = specializationRepository;
@@ -95,7 +92,7 @@ public class BambooRefreshService {
                                       List<BambooEmployee> employees,
                                       List<BambooTimeOff> timeOffs,
                                       LocalDate from, LocalDate to) {
-        // 1. Ensure a default "Basic" specialization exists for this desk
+        // 1. Ensure a default specialization exists for this desk
         Specialization defaultSpec = specializationRepository
                 .findByTenantIdAndDeskIdAndName(tenantId, deskId, DEFAULT_SPECIALIZATION_NAME)
                 .orElseGet(() -> {
@@ -122,7 +119,7 @@ public class BambooRefreshService {
                 .map(BambooEmployee::id)
                 .collect(Collectors.toSet());
 
-        // 3. Upsert agents and create DeskAgent records
+        // 3. Upsert agents and assign to desk
         Set<UUID> refreshedAgentIds = new HashSet<>();
         for (BambooEmployee emp : employees) {
             Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, emp.id())
@@ -138,40 +135,31 @@ public class BambooRefreshService {
             agent.setJobTitle(emp.jobTitle());
             agent.setActive("Active".equals(emp.status()));
             agent.setLastRefreshedAt(OffsetDateTime.now());
-            agent = agentRepository.save(agent);
-            refreshedAgentIds.add(agent.getId());
 
             // Cross-desk conflict check: if agent is already assigned to a different desk, warn and skip
-            Optional<DeskAgent> existingAssignment = deskAgentRepository.findByTenantIdAndAgent_Id(tenantId, agent.getId());
-            if (existingAssignment.isPresent()) {
-                DeskAgent existing = existingAssignment.get();
-                if (!existing.getDeskId().equals(deskId)) {
-                    log.warn("Agent {} (bamboohrId={}) is already assigned to desk {}; skipping assignment to desk {}",
-                            agent.getName(), emp.id(), existing.getDeskId(), deskId);
-                    continue;
-                }
-                // Already assigned to this desk — ensure primary and secondary are set
-                existing.setPrimarySpecialization(defaultSpec);
-                existing.getSecondarySpecializations().clear();
-                existing.getSecondarySpecializations().add(secondSpec);
-                deskAgentRepository.save(existing);
-            } else {
-                // New assignment to this desk
-                DeskAgent deskAgent = new DeskAgent();
-                deskAgent.setTenantId(tenantId);
-                deskAgent.setDeskId(deskId);
-                deskAgent.setAgent(agent);
-                deskAgent.setPrimarySpecialization(defaultSpec);
-                deskAgent.setSecondarySpecializations(new ArrayList<>(List.of(secondSpec)));
-                deskAgent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
-                deskAgentRepository.save(deskAgent);
+            if (agent.getDeskId() != null && !agent.getDeskId().equals(deskId)) {
+                agent = agentRepository.save(agent);
+                log.warn("Agent {} (bamboohrId={}) is already assigned to desk {}; skipping assignment to desk {}",
+                        agent.getName(), emp.id(), agent.getDeskId(), deskId);
+                refreshedAgentIds.add(agent.getId());
+                continue;
             }
+
+            // Assign to this desk (or update existing assignment)
+            agent.setDeskId(deskId);
+            agent.setPrimarySpecialization(defaultSpec);
+            agent.getSecondarySpecializations().clear();
+            agent.getSecondarySpecializations().add(secondSpec);
+            if (agent.getContractedHoursPerDay() == null) {
+                agent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
+            }
+            agent = agentRepository.save(agent);
+            refreshedAgentIds.add(agent.getId());
         }
 
         // 4. Soft-delete: mark agents assigned to this desk that are no longer in BambooHR response as inactive
-        List<DeskAgent> currentDeskAgents = deskAgentRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        for (DeskAgent da : currentDeskAgents) {
-            Agent agent = da.getAgent();
+        List<Agent> currentDeskAgents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        for (Agent agent : currentDeskAgents) {
             if (agent.getBamboohrId() != null && !bamboohrIdsInResponse.contains(agent.getBamboohrId())) {
                 if (agent.isActive()) {
                     log.info("Soft-deleting agent {} (bamboohrId={}) — no longer in BambooHR response for desk {}",

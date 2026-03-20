@@ -48,12 +48,12 @@ class NinetyFiveAgentReproTest {
         Schedule schedule = buildUnassignedSchedule();
 
         // Verify initial state: all unassigned
-        assertThat(schedule.getAssignments().stream().filter(a -> a.getDeskAgent() != null).count())
+        assertThat(schedule.getAssignments().stream().filter(a -> a.getAgent() != null).count())
                 .as("All assignments should start unassigned").isZero();
-        assertThat(schedule.getDeskAgents().size()).isEqualTo(95);
+        assertThat(schedule.getAgents().size()).isEqualTo(95);
 
         System.out.println("Starting 95-agent reproducer with " + schedule.getAssignments().size()
-                + " assignments and " + schedule.getDeskAgents().size() + " agents");
+                + " assignments and " + schedule.getAgents().size() + " agents");
 
         // Score initial state
         SolverFactory<Schedule> scoringFactory = SolverFactory.create(
@@ -96,7 +96,7 @@ class NinetyFiveAgentReproTest {
         long elapsed = System.currentTimeMillis() - startTime;
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("\n95-agent solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore()
                 + ", elapsed=" + elapsed + "ms");
@@ -123,8 +123,8 @@ class NinetyFiveAgentReproTest {
 
         // Count unique agents assigned
         long uniqueAgents = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null)
-                .map(a -> a.getDeskAgent().getId())
+                .filter(a -> a.getAgent() != null)
+                .map(a -> a.getAgent().getId())
                 .distinct()
                 .count();
         System.out.println("Unique agents assigned: " + uniqueAgents + " / 95");
@@ -160,16 +160,16 @@ class NinetyFiveAgentReproTest {
         }
 
         // --- 95 Agents ---
-        List<DeskAgent> allDeskAgents = new ArrayList<>(95);
+        List<Agent> allAgents = new ArrayList<>(95);
         List<AgentDayConfig> dayConfigs = new ArrayList<>(95);
 
         for (int i = 0; i < 95; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
-            allDeskAgents.add(da);
+            configureAgent(a, deskId, basic, secondaries, CONTRACTED_HOURS);
+            allAgents.add(a);
             dayConfigs.add(new AgentDayConfig(
-                    da.getId(), DAY, CONTRACTED_HOURS,
+                    a.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
                     BREAK_MIN_SHIFT, BREAK_BLOCKED,
                     BREAK_ALIGNMENT, 130, 70));
@@ -200,7 +200,7 @@ class NinetyFiveAgentReproTest {
             sr.setRequiredFTEs(demandPerSlot[s]);
             staffingReqs.add(sr);
 
-            // Create assignments (ALL UNASSIGNED - deskAgent = null)
+            // Create assignments (ALL UNASSIGNED - agent = null)
             for (int i = 0; i < demandPerSlot[s]; i++) {
                 AgentAssignment aa = new AgentAssignment();
                 aa.setId(UUID.randomUUID());
@@ -209,7 +209,7 @@ class NinetyFiveAgentReproTest {
                 aa.setScheduleId(scheduleId);
                 aa.setTimeslot(ts);
                 aa.setRequiredSpecialization(basic);
-                // deskAgent = null (solver assigns)
+                // agent = null (solver assigns)
                 assignments.add(aa);
             }
         }
@@ -241,7 +241,7 @@ class NinetyFiveAgentReproTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(allDeskAgents);
+        schedule.setAgents(allAgents);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -287,17 +287,12 @@ class NinetyFiveAgentReproTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
+    private void configureAgent(Agent agent, UUID deskId, Specialization primary,
                                 List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

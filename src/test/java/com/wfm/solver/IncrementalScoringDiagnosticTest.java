@@ -80,13 +80,13 @@ class IncrementalScoringDiagnosticTest {
         assertThat(initialScore.softScore()).isEqualTo(-720000);
 
         // Now assign ONE agent to ONE seat
-        DeskAgent firstAgent = schedule.getDeskAgents().get(0);
+        Agent firstAgent = schedule.getAgents().get(0);
         AgentAssignment firstAssignment = schedule.getAssignments().get(0);
-        System.out.println("\n=== ASSIGNING agent " + firstAgent.getAgent().getName()
+        System.out.println("\n=== ASSIGNING agent " + firstAgent.getName()
                 + " to timeslot " + firstAssignment.getTimeslot().getStartTime()
                 + "-" + firstAssignment.getTimeslot().getEndTime() + " ===");
 
-        firstAssignment.setDeskAgent(firstAgent);
+        firstAssignment.setAgent(firstAgent);
 
         HardSoftScore afterScore = sm.update(schedule);
         System.out.println("\nScore after 1 assignment: " + afterScore);
@@ -148,7 +148,7 @@ class IncrementalScoringDiagnosticTest {
         Schedule solved = solverFactory.buildSolver().solve(schedule);
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
 
         System.out.println("FULL_ASSERT solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore());
@@ -173,16 +173,16 @@ class IncrementalScoringDiagnosticTest {
             tsByStart.put(t, ts);
         }
 
-        List<DeskAgent> allDeskAgents = new ArrayList<>(95);
+        List<Agent> allAgents = new ArrayList<>(95);
         List<AgentDayConfig> dayConfigs = new ArrayList<>(95);
 
         for (int i = 0; i < 95; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
-            allDeskAgents.add(da);
+            deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+            allAgents.add(a);
             dayConfigs.add(new AgentDayConfig(
-                    da.getId(), DAY, CONTRACTED_HOURS,
+                    a.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
                     BREAK_MIN_SHIFT, BREAK_BLOCKED,
                     BREAK_ALIGNMENT, 130, 70));
@@ -249,7 +249,7 @@ class IncrementalScoringDiagnosticTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(allDeskAgents);
+        schedule.setAgents(allAgents);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -293,17 +293,13 @@ class IncrementalScoringDiagnosticTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
-                                List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+    private Agent deskAgent(UUID deskId, Agent agent, Specialization primary,
+                            List<Specialization> secondaries, BigDecimal contractedHours) {
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
+        return agent;
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

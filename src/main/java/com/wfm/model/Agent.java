@@ -1,7 +1,11 @@
 package com.wfm.model;
 
+import ai.timefold.solver.core.api.domain.lookup.PlanningId;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -10,6 +14,7 @@ import java.util.UUID;
 })
 public class Agent {
 
+    @PlanningId
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -35,6 +40,26 @@ public class Agent {
 
     @Column(name = "last_refreshed_at")
     private OffsetDateTime lastRefreshedAt;
+
+    // --- Desk assignment fields (nullable = unassigned) ---
+
+    @Column(name = "desk_id")
+    private UUID deskId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "primary_specialization_id")
+    private Specialization primarySpecialization;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "agent_secondary_specialization",
+        joinColumns = @JoinColumn(name = "agent_id"),
+        inverseJoinColumns = @JoinColumn(name = "specialization_id")
+    )
+    private List<Specialization> secondarySpecializations = new ArrayList<>();
+
+    @Column(name = "contracted_hours_per_day", precision = 5, scale = 2)
+    private BigDecimal contractedHoursPerDay;
 
     public Agent() {}
 
@@ -64,4 +89,22 @@ public class Agent {
 
     public OffsetDateTime getLastRefreshedAt() { return lastRefreshedAt; }
     public void setLastRefreshedAt(OffsetDateTime lastRefreshedAt) { this.lastRefreshedAt = lastRefreshedAt; }
+
+    public UUID getDeskId() { return deskId; }
+    public void setDeskId(UUID deskId) { this.deskId = deskId; }
+
+    public Specialization getPrimarySpecialization() { return primarySpecialization; }
+    public void setPrimarySpecialization(Specialization primarySpecialization) {
+        this.primarySpecialization = primarySpecialization;
+    }
+
+    public List<Specialization> getSecondarySpecializations() { return secondarySpecializations; }
+    public void setSecondarySpecializations(List<Specialization> secondarySpecializations) {
+        this.secondarySpecializations = secondarySpecializations;
+    }
+
+    public BigDecimal getContractedHoursPerDay() { return contractedHoursPerDay; }
+    public void setContractedHoursPerDay(BigDecimal contractedHoursPerDay) {
+        this.contractedHoursPerDay = contractedHoursPerDay;
+    }
 }

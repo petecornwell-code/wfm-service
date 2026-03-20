@@ -6,7 +6,6 @@ import com.wfm.model.Agent;
 import com.wfm.model.AgentPreference;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
-import com.wfm.repository.DeskAgentRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
@@ -26,14 +25,11 @@ import java.util.UUID;
 public class PreferenceUploadService {
 
     private final AgentRepository agentRepository;
-    private final DeskAgentRepository deskAgentRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
 
     public PreferenceUploadService(AgentRepository agentRepository,
-                                    DeskAgentRepository deskAgentRepository,
                                     AgentPreferenceRepository agentPreferenceRepository) {
         this.agentRepository = agentRepository;
-        this.deskAgentRepository = deskAgentRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
     }
 
@@ -50,7 +46,6 @@ public class PreferenceUploadService {
                 throw new IllegalArgumentException("Spreadsheet has no sheets");
             }
 
-            // Expect headers in row 0: Employee Name, Email, Date, Day of Week, Preferred Start Time, Standing Preference
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
@@ -61,7 +56,6 @@ public class PreferenceUploadService {
                     continue;
                 }
 
-                // Find agent by email
                 var agentOpt = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, email.trim());
                 if (agentOpt.isEmpty()) {
                     skipped.add("Row " + (i + 1) + ": agent not found for email " + email);
@@ -70,8 +64,7 @@ public class PreferenceUploadService {
                 Agent agent = agentOpt.get();
 
                 // Verify agent is assigned to the desk
-                var deskAgentOpt = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agent.getId());
-                if (deskAgentOpt.isEmpty()) {
+                if (agent.getDeskId() == null || !agent.getDeskId().equals(deskId)) {
                     skipped.add("Row " + (i + 1) + ": agent " + email + " not assigned to desk");
                     continue;
                 }
@@ -102,7 +95,6 @@ public class PreferenceUploadService {
                     startTime = LocalTime.parse(startTimeStr.trim(), DateTimeFormatter.ofPattern("HH:mm"));
                 }
 
-                // Upsert preference
                 AgentPreference pref;
                 if (isStanding) {
                     var existing = agentPreferenceRepository

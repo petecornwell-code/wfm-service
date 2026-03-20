@@ -6,7 +6,6 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
-import com.wfm.model.DeskAgent;
 import com.wfm.model.Specialization;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
@@ -21,20 +20,17 @@ import java.util.UUID;
 @Service
 public class DeskAgentService {
 
-    private final DeskAgentRepository deskAgentRepository;
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
     private final SpecializationRepository specializationRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
 
-    public DeskAgentService(DeskAgentRepository deskAgentRepository,
-                            AgentRepository agentRepository,
+    public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
                             SpecializationRepository specializationRepository,
                             AgentPreferenceRepository agentPreferenceRepository,
                             AgentExceptionRepository agentExceptionRepository) {
-        this.deskAgentRepository = deskAgentRepository;
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
@@ -49,28 +45,26 @@ public class DeskAgentService {
                 .map(Desk::getDefaultContractedHoursPerDay)
                 .orElse(new BigDecimal("8.00"));
 
-        List<DeskAgent> deskAgents = deskAgentRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        return deskAgents.stream().map(da -> toResponse(da, deskDefault)).toList();
+        List<Agent> agents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        return agents.stream().map(a -> toResponse(a, deskDefault)).toList();
     }
 
-    private DeskAgentResponse toResponse(DeskAgent da, BigDecimal deskDefault) {
-        Agent a = da.getAgent();
-        Specialization ps = da.getPrimarySpecialization();
-        BigDecimal effective = da.getContractedHoursPerDay() != null
-                ? da.getContractedHoursPerDay() : deskDefault;
+    private DeskAgentResponse toResponse(Agent a, BigDecimal deskDefault) {
+        Specialization ps = a.getPrimarySpecialization();
+        BigDecimal effective = a.getContractedHoursPerDay() != null
+                ? a.getContractedHoursPerDay() : deskDefault;
 
         return new DeskAgentResponse(
-                da.getId(),
-                da.getDeskId(),
-                new DeskAgentResponse.AgentSummary(
-                        a.getId(), a.getName(), a.getEmail(),
-                        a.getDepartment(), a.getJobTitle(),
-                        a.isActive(), a.getLastRefreshedAt()),
+                a.getId(),
+                a.getDeskId(),
+                a.getName(), a.getEmail(),
+                a.getDepartment(), a.getJobTitle(),
+                a.isActive(), a.getLastRefreshedAt(),
                 ps != null ? new DeskAgentResponse.SpecSummary(ps.getId(), ps.getName()) : null,
-                da.getSecondarySpecializations().stream()
+                a.getSecondarySpecializations().stream()
                         .map(s -> new DeskAgentResponse.SpecSummary(s.getId(), s.getName()))
                         .toList(),
-                da.getContractedHoursPerDay(),
+                a.getContractedHoursPerDay(),
                 effective
         );
     }
@@ -91,38 +85,40 @@ public class DeskAgentService {
             throw new EntityNotFoundException("One or more agents not found");
         }
 
-        List<DeskAgent> created = new ArrayList<>();
+        List<Agent> assigned = new ArrayList<>();
         for (Agent agent : agents) {
             if (!agent.isActive()) {
                 throw new ConflictException("Agent '" + agent.getName() + "' is inactive");
             }
-            if (deskAgentRepository.existsByTenantIdAndAgent_Id(tenantId, agent.getId())) {
+            if (agent.getDeskId() != null) {
                 throw new ConflictException("Agent '" + agent.getName() + "' is already assigned to a desk");
             }
 
-            DeskAgent da = new DeskAgent();
-            da.setTenantId(tenantId);
-            da.setDeskId(deskId);
-            da.setAgent(agent);
-            created.add(deskAgentRepository.save(da));
+            agent.setDeskId(deskId);
+            assigned.add(agentRepository.save(agent));
         }
 
         BigDecimal deskDefault = desk.getDefaultContractedHoursPerDay();
-        return created.stream().map(da -> toResponse(da, deskDefault)).toList();
+        return assigned.stream().map(a -> toResponse(a, deskDefault)).toList();
     }
 
     @Transactional
     public void removeDeskAgent(UUID deskId, UUID agentId) {
         long tenantId = TenantContext.getTenantId();
 
-        DeskAgent da = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId)
-                .orElseThrow(() -> new EntityNotFoundException("DeskAgent not found for agent " + agentId));
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         // Clean up associated desk-scoped data for this agent
         agentPreferenceRepository.deleteByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId);
         agentExceptionRepository.deleteByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId);
 
-        deskAgentRepository.delete(da);
+        // Unassign: clear desk-specific fields
+        agent.setDeskId(null);
+        agent.setPrimarySpecialization(null);
+        agent.getSecondarySpecializations().clear();
+        agent.setContractedHoursPerDay(null);
+        agentRepository.save(agent);
     }
 
     @Transactional
@@ -134,16 +130,16 @@ public class DeskAgentService {
                 .map(Desk::getDefaultContractedHoursPerDay)
                 .orElse(new BigDecimal("8.00"));
 
-        DeskAgent da = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId)
-                .orElseThrow(() -> new EntityNotFoundException("DeskAgent not found for agent " + agentId));
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         if (primaryId != null) {
             Specialization primary = specializationRepository
                     .findByIdAndTenantIdAndDeskId(primaryId, tenantId, deskId)
                     .orElseThrow(() -> new EntityNotFoundException("Specialization", primaryId));
-            da.setPrimarySpecialization(primary);
+            agent.setPrimarySpecialization(primary);
         } else {
-            da.setPrimarySpecialization(null);
+            agent.setPrimarySpecialization(null);
         }
 
         if (secondaryIds != null) {
@@ -151,13 +147,13 @@ public class DeskAgentService {
                     .map(id -> specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
                             .orElseThrow(() -> new EntityNotFoundException("Specialization", id)))
                     .toList();
-            da.getSecondarySpecializations().clear();
-            da.getSecondarySpecializations().addAll(secondaries);
+            agent.getSecondarySpecializations().clear();
+            agent.getSecondarySpecializations().addAll(secondaries);
         } else {
-            da.getSecondarySpecializations().clear();
+            agent.getSecondarySpecializations().clear();
         }
 
-        DeskAgent saved = deskAgentRepository.save(da);
+        Agent saved = agentRepository.save(agent);
         return toResponse(saved, deskDefault);
     }
 
@@ -169,11 +165,11 @@ public class DeskAgentService {
                 .map(Desk::getDefaultContractedHoursPerDay)
                 .orElse(new BigDecimal("8.00"));
 
-        DeskAgent da = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId)
-                .orElseThrow(() -> new EntityNotFoundException("DeskAgent not found for agent " + agentId));
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
-        da.setContractedHoursPerDay(BigDecimals.normalize(hours));
-        DeskAgent saved = deskAgentRepository.save(da);
+        agent.setContractedHoursPerDay(BigDecimals.normalize(hours));
+        Agent saved = agentRepository.save(agent);
         return toResponse(saved, deskDefault);
     }
 }

@@ -58,7 +58,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() == null)
+                .filter(a -> a.getAgent() == null)
                 .penalizeConfigurable()
                 .asConstraint("Unassigned assignment");
     }
@@ -68,9 +68,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint agentDayOff(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .join(AgentDayOff.class,
-                        equal(a -> a.getDeskAgent().getAgent().getId(), d -> d.getAgent().getId()),
+                        equal(a -> a.getAgent().getId(), d -> d.getAgent().getId()),
                         equal(a -> a.getTimeslot().getDate(), AgentDayOff::getDate))
                 .penalizeConfigurable()
                 .asConstraint("Agent day off");
@@ -82,9 +82,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint specializationMatch(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .filter(a -> {
-                    DeskAgent da = a.getDeskAgent();
+                    Agent da = a.getAgent();
                     UUID reqSpecId = a.getRequiredSpecialization().getId();
                     if (da.getPrimarySpecialization() != null
                             && da.getPrimarySpecialization().getId().equals(reqSpecId)) {
@@ -102,15 +102,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * in the same timeslot.
      *
      * Uses forEach-based groupBy instead of forEachUniquePair to avoid
-     * O(N²) pairing of unassigned entities. Groups by (deskAgentId, timeslotId)
+     * O(N²) pairing of unassigned entities. Groups by (agentId, timeslotId)
      * and penalizes when count > 1 (agent appears in multiple seats of the
      * same timeslot). Penalty = (count - 1) so 2 seats = 1, 3 seats = 2, etc.
      */
     private Constraint oneAssignmentPerTimeslot(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getId(),
                         count())
                 .filter((daId, tsId, cnt) -> cnt > 1)
@@ -132,13 +132,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
@@ -185,13 +185,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint breakDuration(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
@@ -214,13 +214,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint breakBlockedWindow(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
@@ -254,13 +254,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint breakStartAlignment(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         toList())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, assignments) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
@@ -283,13 +283,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint contractedHoursOver(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         count())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
                     int expectedSlots = expectedWorkSlots(dayConfig);
@@ -312,13 +312,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint contractedHoursUnder(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent().getId(),
+                        a -> a.getAgent().getId(),
                         a -> a.getTimeslot().getDate(),
                         count())
                 .join(AgentDayConfig.class,
-                        equal((daId, date, cnt) -> daId, AgentDayConfig::deskAgentId),
+                        equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
                     int expectedSlots = expectedWorkSlots(dayConfig);
@@ -342,7 +342,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint contractedHoursUnderZero(ConstraintFactory factory) {
         return factory.forEach(AgentDayConfig.class)
                 .ifNotExists(AgentAssignment.class,
-                        equal(AgentDayConfig::deskAgentId, a -> a.getDeskAgent() != null ? a.getDeskAgent().getId() : null),
+                        equal(AgentDayConfig::agentId, a -> a.getAgent() != null ? a.getAgent().getId() : null),
                         equal(AgentDayConfig::date, a -> a.getTimeslot().getDate()))
                 .penalizeConfigurable(dayConfig -> expectedWorkSlots(dayConfig))
                 .asConstraint("Contracted hours (under, zero)");
@@ -355,7 +355,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint bulkOverallocationLimit(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(a -> a.getTimeslot(), count())
                 .join(TimeslotDemandConfig.class,
                         equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
@@ -386,7 +386,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint bulkUnderallocationHard(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
                 .groupBy(a -> a.getTimeslot(),
-                        sum((AgentAssignment a) -> a.getDeskAgent() != null ? 1 : 0))
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
                 .join(TimeslotDemandConfig.class,
                         equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
                 .join(ScheduleConfig.class)
@@ -412,9 +412,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint preferPrimarySpecialization(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .filter(a -> {
-                    DeskAgent da = a.getDeskAgent();
+                    Agent da = a.getAgent();
                     return da.getPrimarySpecialization() == null
                             || !da.getPrimarySpecialization().getId()
                                     .equals(a.getRequiredSpecialization().getId());
@@ -431,9 +431,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint honourPreferredStartTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .join(AgentPreference.class,
-                        equal(a -> a.getDeskAgent().getAgent().getId(), p -> p.getAgent().getId()),
+                        equal(a -> a.getAgent().getId(), p -> p.getAgent().getId()),
                         equal(a -> a.getTimeslot().getDate(), AgentPreference::getDate))
                 .filter((a, p) -> {
                     if (p.getPreferredStartTime() == null) return false;
@@ -450,24 +450,24 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint honourPreferredBreakTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .groupBy(
-                        a -> a.getDeskAgent(),
+                        a -> a.getAgent(),
                         a -> a.getTimeslot().getDate(),
                         toList())
                 .join(AgentPreference.class,
-                        equal((da, date, assignments) -> da.getAgent().getId(),
+                        equal((agent, date, assignments) -> agent.getId(),
                                 p -> p.getAgent().getId()),
-                        equal((da, date, assignments) -> date,
+                        equal((agent, date, assignments) -> date,
                                 AgentPreference::getDate))
-                .filter((da, date, assignments, pref) -> {
+                .filter((agent, date, assignments, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
                     int increment = deriveIncrement(assignments);
                     LocalTime breakStart = findBreakStart(assignments, increment);
                     if (breakStart == null) return false;
                     return !breakStart.equals(pref.getPreferredBreakTime());
                 })
-                .penalizeConfigurable((da, date, assignments, pref) -> 1)
+                .penalizeConfigurable((agent, date, assignments, pref) -> 1)
                 .asConstraint("Honour preferred break time");
     }
 
@@ -479,7 +479,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint breakClustering(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .penalizeConfigurable(a -> 0)
                 .asConstraint("Break clustering");
     }
@@ -490,7 +490,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private Constraint bulkUnderallocationSoft(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .penalizeConfigurable(a -> 0)
                 .asConstraint("Bulk under-allocation soft");
     }

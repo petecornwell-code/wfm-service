@@ -4,7 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Specialization;
-import com.wfm.repository.DeskAgentRepository;
+import com.wfm.repository.AgentRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import org.springframework.stereotype.Service;
@@ -17,14 +17,14 @@ import java.util.UUID;
 public class SpecializationService {
 
     private final SpecializationRepository specializationRepository;
-    private final DeskAgentRepository deskAgentRepository;
+    private final AgentRepository agentRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
 
     public SpecializationService(SpecializationRepository specializationRepository,
-                                 DeskAgentRepository deskAgentRepository,
+                                 AgentRepository agentRepository,
                                  StaffingRequirementRepository staffingRequirementRepository) {
         this.specializationRepository = specializationRepository;
-        this.deskAgentRepository = deskAgentRepository;
+        this.agentRepository = agentRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
     }
 
@@ -76,8 +76,8 @@ public class SpecializationService {
         Specialization spec = specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Specialization", id));
 
-        if (deskAgentRepository.existsByPrimarySpecialization_Id(id)
-                || deskAgentRepository.existsBySecondarySpecializationsContaining(id)) {
+        if (agentRepository.existsByPrimarySpecialization_Id(id)
+                || agentRepository.existsBySecondarySpecializationsContaining(id)) {
             throw new ConflictException("Cannot delete specialization that is assigned to agents");
         }
         if (staffingRequirementRepository.existsBySpecialization_Id(id)) {

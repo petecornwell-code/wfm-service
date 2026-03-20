@@ -53,7 +53,7 @@ class BreakAwareConstructionTest {
         Schedule schedule = buildTwoAgentSchedule();
 
         // Verify all assignments start unassigned
-        assertThat(schedule.getAssignments().stream().filter(a -> a.getDeskAgent() != null).count())
+        assertThat(schedule.getAssignments().stream().filter(a -> a.getAgent() != null).count())
                 .as("All assignments should start unassigned")
                 .isZero();
 
@@ -61,7 +61,7 @@ class BreakAwareConstructionTest {
         Schedule solved = runSolver(schedule, Duration.ofSeconds(10));
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("2-agent solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore());
 
@@ -84,7 +84,7 @@ class BreakAwareConstructionTest {
         Schedule solved = runSolver(schedule, Duration.ofSeconds(30));
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("10-agent solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore());
 
@@ -107,7 +107,7 @@ class BreakAwareConstructionTest {
         Schedule solved = runSolver(schedule, Duration.ofSeconds(120));
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("30-agent 30-min solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore());
 
@@ -185,12 +185,12 @@ class BreakAwareConstructionTest {
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
 
-        List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
+        List<Agent> agentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
-            deskAgentList.add(da);
+            deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+            agentList.add(a);
         }
 
         List<Timeslot> timeslots = new ArrayList<>();
@@ -255,7 +255,7 @@ class BreakAwareConstructionTest {
         }
 
         List<AgentDayConfig> dayConfigs = new ArrayList<>(agentCount);
-        for (DeskAgent da : deskAgentList) {
+        for (Agent da : agentList) {
             dayConfigs.add(new AgentDayConfig(
                     da.getId(), DAY, CONTRACTED_HOURS,
                     increment, BREAK_DURATION,
@@ -288,7 +288,7 @@ class BreakAwareConstructionTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(deskAgentList);
+        schedule.setAgents(agentList);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -323,12 +323,12 @@ class BreakAwareConstructionTest {
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
 
-        List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
+        List<Agent> agentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
             List<Specialization> secondaries = i < 20 ? List.of(second) : List.of();
-            DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
-            deskAgentList.add(da);
+            deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+            agentList.add(a);
         }
 
         List<Timeslot> timeslots = new ArrayList<>();
@@ -363,7 +363,7 @@ class BreakAwareConstructionTest {
         }
 
         List<AgentDayConfig> dayConfigs = new ArrayList<>(agentCount);
-        for (DeskAgent da : deskAgentList) {
+        for (Agent da : agentList) {
             dayConfigs.add(new AgentDayConfig(
                     da.getId(), DAY, CONTRACTED_HOURS,
                     increment, BREAK_DURATION,
@@ -396,7 +396,7 @@ class BreakAwareConstructionTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(deskAgentList);
+        schedule.setAgents(agentList);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -424,8 +424,8 @@ class BreakAwareConstructionTest {
 
         Agent agentA = agent("A-001", "Alice");
         Agent agentB = agent("B-002", "Bob");
-        DeskAgent daA = deskAgent(deskId, agentA, billing, List.of(second), new BigDecimal("8.00"));
-        DeskAgent daB = deskAgent(deskId, agentB, billing, List.of(second), new BigDecimal("8.00"));
+        deskAgent(deskId, agentA, billing, List.of(second), new BigDecimal("8.00"));
+        deskAgent(deskId, agentB, billing, List.of(second), new BigDecimal("8.00"));
 
         // 36 timeslots: 08:00-17:00 in 15-min increments
         List<Timeslot> timeslots = new ArrayList<>();
@@ -467,11 +467,11 @@ class BreakAwareConstructionTest {
         }
 
         AgentDayConfig configA = new AgentDayConfig(
-                daA.getId(), DAY, new BigDecimal("8.00"),
+                agentA.getId(), DAY, new BigDecimal("8.00"),
                 increment, 60, new BigDecimal("4.00"), new BigDecimal("1.00"),
                 BreakAlignment.ON_HOUR, 130, 70);
         AgentDayConfig configB = new AgentDayConfig(
-                daB.getId(), DAY, new BigDecimal("8.00"),
+                agentB.getId(), DAY, new BigDecimal("8.00"),
                 increment, 60, new BigDecimal("4.00"), new BigDecimal("1.00"),
                 BreakAlignment.ON_HOUR, 130, 70);
 
@@ -500,7 +500,7 @@ class BreakAwareConstructionTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(billing));
-        schedule.setDeskAgents(List.of(daA, daB));
+        schedule.setAgents(List.of(agentA, agentB));
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -548,17 +548,13 @@ class BreakAwareConstructionTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
-                                List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+    private Agent deskAgent(UUID deskId, Agent agent, Specialization primary,
+                            List<Specialization> secondaries, BigDecimal contractedHours) {
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
+        return agent;
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

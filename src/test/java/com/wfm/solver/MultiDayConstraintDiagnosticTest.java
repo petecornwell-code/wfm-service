@@ -52,7 +52,7 @@ class MultiDayConstraintDiagnosticTest {
         Schedule solved = runSolver(schedule, Duration.ofSeconds(120));
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("Multi-day solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore());
 
@@ -61,8 +61,8 @@ class MultiDayConstraintDiagnosticTest {
         // Check per-agent-day assignment counts
         Map<String, Integer> agentDayCounts = new LinkedHashMap<>();
         for (AgentAssignment aa : solved.getAssignments()) {
-            if (aa.getDeskAgent() != null) {
-                String key = aa.getDeskAgent().getAgent().getName() + "|" + aa.getTimeslot().getDate();
+            if (aa.getAgent() != null) {
+                String key = aa.getAgent().getName() + "|" + aa.getTimeslot().getDate();
                 agentDayCounts.merge(key, 1, Integer::sum);
             }
         }
@@ -167,11 +167,11 @@ class MultiDayConstraintDiagnosticTest {
         Specialization basic = spec(deskId, "IT Support");
         Specialization second = spec(deskId, "IT Support (Spanish)");
 
-        List<DeskAgent> deskAgentList = new ArrayList<>(agentCount);
+        List<Agent> agentList = new ArrayList<>(agentCount);
         for (int i = 0; i < agentCount; i++) {
             Agent a = agent(String.valueOf(i + 1), "Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, basic, List.of(second), CONTRACTED_HOURS);
-            deskAgentList.add(da);
+            configureAgent(a, deskId, basic, List.of(second), CONTRACTED_HOURS);
+            agentList.add(a);
         }
 
         // Build timeslots for all days
@@ -233,7 +233,7 @@ class MultiDayConstraintDiagnosticTest {
 
         // AgentDayConfigs for all agent-days
         List<AgentDayConfig> dayConfigs = new ArrayList<>();
-        for (DeskAgent da : deskAgentList) {
+        for (Agent da : agentList) {
             for (LocalDate d = startDate; !d.isAfter(endDate); d = d.plusDays(1)) {
                 dayConfigs.add(new AgentDayConfig(
                         da.getId(), d, CONTRACTED_HOURS,
@@ -268,7 +268,7 @@ class MultiDayConstraintDiagnosticTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(deskAgentList);
+        schedule.setAgents(agentList);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -322,17 +322,12 @@ class MultiDayConstraintDiagnosticTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
+    private void configureAgent(Agent agent, UUID deskId, Specialization primary,
                                 List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

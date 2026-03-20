@@ -103,15 +103,15 @@ class TwelveHourUniformDemandTest {
         HardSoftScore score = solutionManager.update(solution);
 
         System.out.println("Score: " + score);
-        System.out.println("Agents: " + solution.getDeskAgents().size());
+        System.out.println("Agents: " + solution.getAgents().size());
         System.out.println("Timeslots: " + solution.getTimeslots().size());
         System.out.println("Assignments: " + solution.getAssignments().size());
 
         // Print per-agent assignment counts
         Map<UUID, Integer> agentSlotCounts = new HashMap<>();
         for (AgentAssignment aa : solution.getAssignments()) {
-            if (aa.getDeskAgent() != null) {
-                agentSlotCounts.merge(aa.getDeskAgent().getId(), 1, Integer::sum);
+            if (aa.getAgent() != null) {
+                agentSlotCounts.merge(aa.getAgent().getId(), 1, Integer::sum);
             }
         }
         System.out.println("Agent slot counts — min: " +
@@ -120,7 +120,7 @@ class TwelveHourUniformDemandTest {
 
         // Print per-slot coverage
         Map<LocalTime, Long> coveragePerSlot = solution.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .collect(java.util.stream.Collectors.groupingBy(
                         a -> a.getTimeslot().getStartTime(),
                         java.util.stream.Collectors.counting()));
@@ -163,14 +163,12 @@ class TwelveHourUniformDemandTest {
         Specialization support = spec(deskId, "IT Support");
 
         // --- 120 agents: 60 early + 60 late ---
-        List<DeskAgent> deskAgents = new ArrayList<>(120);
         List<Agent> agents = new ArrayList<>(120);
         for (int i = 0; i < 120; i++) {
             String label = (i < AGENTS_PER_SHIFT) ? "Early" : "Late";
             Agent a = agent(String.valueOf(i + 1), label + "-Agent-" + (i + 1));
-            DeskAgent da = deskAgent(deskId, a, support, CONTRACTED_HOURS);
+            configureAgent(a, deskId, support, CONTRACTED_HOURS);
             agents.add(a);
-            deskAgents.add(da);
         }
 
         // --- 12 timeslots: 08:00–20:00 ---
@@ -212,30 +210,28 @@ class TwelveHourUniformDemandTest {
 
         // Assign early agents (indices 0-59)
         for (int i = 0; i < AGENTS_PER_SHIFT; i++) {
-            DeskAgent da = deskAgents.get(i);
             Agent a = agents.get(i);
             for (LocalTime t = EARLY_START; t.isBefore(EARLY_END); t = t.plusMinutes(INCREMENT)) {
                 if (t.equals(EARLY_BREAK)) continue; // break at 11:00
                 Timeslot ts = timeslotByStart.get(t);
-                assignments.add(assignment(deskId, scheduleId, ts, support, da, a));
+                assignments.add(assignment(deskId, scheduleId, ts, support, a));
                 demandSeatsUsed.merge(t, 1, Integer::sum);
             }
         }
 
         // Assign late agents (indices 60-119)
         for (int i = AGENTS_PER_SHIFT; i < 2 * AGENTS_PER_SHIFT; i++) {
-            DeskAgent da = deskAgents.get(i);
             Agent a = agents.get(i);
             for (LocalTime t = LATE_START; t.isBefore(LATE_END); t = t.plusMinutes(INCREMENT)) {
                 if (t.equals(LATE_BREAK)) continue; // break at 12:00
                 Timeslot ts = timeslotByStart.get(t);
-                assignments.add(assignment(deskId, scheduleId, ts, support, da, a));
+                assignments.add(assignment(deskId, scheduleId, ts, support, a));
             }
         }
 
         // --- AgentDayConfigs ---
         List<AgentDayConfig> dayConfigs = new ArrayList<>(120);
-        for (DeskAgent da : deskAgents) {
+        for (Agent da : agents) {
             dayConfigs.add(new AgentDayConfig(
                     da.getId(), DAY, CONTRACTED_HOURS,
                     INCREMENT, BREAK_DURATION,
@@ -275,7 +271,7 @@ class TwelveHourUniformDemandTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(support));
-        schedule.setDeskAgents(deskAgents);
+        schedule.setAgents(agents);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -306,7 +302,7 @@ class TwelveHourUniformDemandTest {
 
     private AgentAssignment assignment(UUID deskId, UUID scheduleId,
                                        Timeslot ts, Specialization spec,
-                                       DeskAgent da, Agent agent) {
+                                       Agent agent) {
         AgentAssignment aa = new AgentAssignment();
         aa.setId(UUID.randomUUID());
         aa.setTenantId(TENANT);
@@ -314,7 +310,6 @@ class TwelveHourUniformDemandTest {
         aa.setScheduleId(scheduleId);
         aa.setTimeslot(ts);
         aa.setRequiredSpecialization(spec);
-        aa.setDeskAgent(da);
         aa.setAgent(agent);
         return aa;
     }
@@ -338,17 +333,12 @@ class TwelveHourUniformDemandTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
+    private void configureAgent(Agent agent, UUID deskId, Specialization primary,
                                 BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>()); // no secondary
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>()); // no secondary
+        agent.setContractedHoursPerDay(contractedHours);
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

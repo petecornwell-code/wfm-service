@@ -10,7 +10,15 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.*;
-import com.wfm.repository.*;
+import com.wfm.repository.AgentPreferenceRepository;
+import com.wfm.repository.AgentDayOffRepository;
+import com.wfm.repository.AgentExceptionRepository;
+import com.wfm.repository.AgentRepository;
+import com.wfm.repository.ConstraintWeightsRepository;
+import com.wfm.repository.DeskRepository;
+import com.wfm.repository.SpecializationRepository;
+import com.wfm.repository.StaffingRequirementRepository;
+import com.wfm.repository.TimeslotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,7 +43,7 @@ public class SolverService {
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
     private final DeskRepository deskRepository;
-    private final DeskAgentRepository deskAgentRepository;
+    private final AgentRepository agentRepository;
     private final SpecializationRepository specializationRepository;
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
@@ -47,7 +55,7 @@ public class SolverService {
     public SolverService(InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
                          DeskRepository deskRepository,
-                         DeskAgentRepository deskAgentRepository,
+                         AgentRepository agentRepository,
                          SpecializationRepository specializationRepository,
                          TimeslotRepository timeslotRepository,
                          StaffingRequirementRepository staffingRequirementRepository,
@@ -58,7 +66,7 @@ public class SolverService {
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
         this.deskRepository = deskRepository;
-        this.deskAgentRepository = deskAgentRepository;
+        this.agentRepository = agentRepository;
         this.specializationRepository = specializationRepository;
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
@@ -99,7 +107,7 @@ public class SolverService {
         Schedule schedule = buildSchedule(tenantId, deskId, request, desk);
 
         // 4. Load all problem facts from database
-        List<DeskAgent> allDeskAgents = deskAgentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        List<Agent> allAgents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
         List<Specialization> specializations = specializationRepository.findByTenantIdAndDeskId(tenantId, deskId);
         List<Timeslot> timeslots = timeslotRepository
                 .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
@@ -108,17 +116,17 @@ public class SolverService {
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        // Filter desk-agents: only active agents with specializations assigned (spec §5.12)
-        List<DeskAgent> eligibleDeskAgents = allDeskAgents.stream()
-                .filter(da -> da.getAgent().isActive())
-                .filter(da -> da.getPrimarySpecialization() != null)
-                .filter(da -> da.getSecondarySpecializations() != null
-                        && !da.getSecondarySpecializations().isEmpty())
+        // Filter agents: only active agents with specializations assigned (spec §5.12)
+        List<Agent> eligibleAgents = allAgents.stream()
+                .filter(Agent::isActive)
+                .filter(a -> a.getPrimarySpecialization() != null)
+                .filter(a -> a.getSecondarySpecializations() != null
+                        && !a.getSecondarySpecializations().isEmpty())
                 .toList();
 
-        // Load agent IDs for eligible desk-agents
-        Set<UUID> eligibleAgentIds = eligibleDeskAgents.stream()
-                .map(da -> da.getAgent().getId())
+        // Load agent IDs for eligible agents
+        Set<UUID> eligibleAgentIds = eligibleAgents.stream()
+                .map(Agent::getId)
                 .collect(Collectors.toSet());
 
         // Load days off for eligible agents in the schedule period
@@ -149,8 +157,8 @@ public class SolverService {
         List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule);
 
         // 6. Run pre-solve validation (12 checks from spec §7.11)
-        runPreSolveValidation(schedule, allDeskAgents, timeslots, staffingRequirements,
-                eligibleDeskAgents, allDaysOff, exceptions, resolvedPreferences);
+        runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
+                eligibleAgents, allDaysOff, exceptions, resolvedPreferences);
 
         // 7. Build lookup maps for days off and exceptions
         Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
@@ -165,16 +173,16 @@ public class SolverService {
 
         // 8. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
         List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
-                eligibleDeskAgents, schedule, agentDaysOffMap, agentExceptionMap);
+                eligibleAgents, schedule, agentDaysOffMap, agentExceptionMap);
 
         // 8b. Compute capacity warnings (demand vs supply)
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
 
         // 9. Detach Hibernate proxy collections into plain ArrayList/HashSet
-        List<DeskAgent> detachedDeskAgents = new ArrayList<>();
-        for (DeskAgent da : eligibleDeskAgents) {
-            da.setSecondarySpecializations(new ArrayList<>(da.getSecondarySpecializations()));
-            detachedDeskAgents.add(da);
+        List<Agent> detachedAgents = new ArrayList<>();
+        for (Agent agent : eligibleAgents) {
+            agent.setSecondarySpecializations(new ArrayList<>(agent.getSecondarySpecializations()));
+            detachedAgents.add(agent);
         }
 
         // 10. Expand staffing requirements into AgentAssignment planning entities
@@ -198,8 +206,8 @@ public class SolverService {
         log.debug("Overflow assignments: {} demand + {} overflow = {} total",
                 demandAssignments.size(), overflowAssignments.size(), assignments.size());
 
-        log.debug("Solver input — schedule={}, deskAgents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
-                schedule.getId(), detachedDeskAgents.size(), timeslots.size(),
+        log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
+                schedule.getId(), detachedAgents.size(), timeslots.size(),
                 staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
                 resolvedPreferences.size());
         log.debug("Constraint weights — unassigned={}, dayOff={}, specMatch={}, contractedOver={}, contractedUnder={}",
@@ -210,7 +218,7 @@ public class SolverService {
         // 11. Populate the schedule with all collections
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(new ArrayList<>(specializations));
-        schedule.setDeskAgents(detachedDeskAgents);
+        schedule.setAgents(detachedAgents);
         schedule.setTimeslots(new ArrayList<>(timeslots));
         schedule.setStaffingRequirements(new ArrayList<>(staffingRequirements));
         schedule.setAgentPreferences(new ArrayList<>(resolvedPreferences));
@@ -437,15 +445,15 @@ public class SolverService {
     // --- Pre-compute AgentDayConfig problem facts ---
 
     private List<AgentDayConfig> computeAgentDayConfigs(
-            List<DeskAgent> eligibleDeskAgents,
+            List<Agent> eligibleAgents,
             Schedule schedule,
             Map<UUID, Set<LocalDate>> agentDaysOffMap,
             Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap) {
 
         List<AgentDayConfig> configs = new ArrayList<>();
 
-        for (DeskAgent da : eligibleDeskAgents) {
-            UUID agentId = da.getAgent().getId();
+        for (Agent agent : eligibleAgents) {
+            UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
 
@@ -454,11 +462,11 @@ public class SolverService {
 
                 if (dayOffSet.contains(d)) continue;
 
-                BigDecimal effectiveHours = getEffectiveHours(da, d, exMap, schedule);
+                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
                 if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) continue;
 
                 configs.add(new AgentDayConfig(
-                        da.getId(),
+                        agent.getId(),
                         d,
                         effectiveHours,
                         schedule.getIncrementMinutes(),
@@ -533,10 +541,10 @@ public class SolverService {
     // --- Pre-solve validation (12 checks from spec §7.11) ---
 
     private void runPreSolveValidation(Schedule schedule,
-                                       List<DeskAgent> allDeskAgents,
+                                       List<Agent> allAgents,
                                        List<Timeslot> timeslots,
                                        List<StaffingRequirement> staffingRequirements,
-                                       List<DeskAgent> eligibleDeskAgents,
+                                       List<Agent> eligibleAgents,
                                        List<AgentDayOff> daysOff,
                                        List<AgentException> exceptions,
                                        List<AgentPreference> preferences) {
@@ -597,39 +605,39 @@ public class SolverService {
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
 
-        // 4. Every active desk-agent must have a primary specialization and at least one secondary
-        for (DeskAgent da : allDeskAgents) {
-            if (!da.getAgent().isActive()) continue;
-            if (da.getPrimarySpecialization() == null) {
-                errors.add(new ErrorDetail("deskAgent.specializations",
-                        "Agent " + da.getAgent().getName()
+        // 4. Every active agent must have a primary specialization and at least one secondary
+        for (Agent agent : allAgents) {
+            if (!agent.isActive()) continue;
+            if (agent.getPrimarySpecialization() == null) {
+                errors.add(new ErrorDetail("agent.specializations",
+                        "Agent " + agent.getName()
                                 + " must have a primary specialization assigned",
-                        da.getAgent().getId().toString()));
+                        agent.getId().toString()));
             }
-            if (da.getSecondarySpecializations() == null || da.getSecondarySpecializations().isEmpty()) {
-                errors.add(new ErrorDetail("deskAgent.specializations",
-                        "Agent " + da.getAgent().getName()
+            if (agent.getSecondarySpecializations() == null || agent.getSecondarySpecializations().isEmpty()) {
+                errors.add(new ErrorDetail("agent.specializations",
+                        "Agent " + agent.getName()
                                 + " must have at least one secondary specialization assigned",
-                        da.getAgent().getId().toString()));
+                        agent.getId().toString()));
             }
         }
 
-        // 5. Every desk-agent's effective contracted hours must be a multiple of incrementMinutes/60
+        // 5. Every agent's effective contracted hours must be a multiple of incrementMinutes/60
         BigDecimal incrementHours = BigDecimal.valueOf(schedule.getIncrementMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-        for (DeskAgent da : eligibleDeskAgents) {
-            UUID agentId = da.getAgent().getId();
+        for (Agent agent : eligibleAgents) {
+            UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
 
             for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                 if (dayOffSet.contains(d)) continue;
-                BigDecimal effectiveHours = getEffectiveHours(da, d, exMap, schedule);
+                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
                 if (effectiveHours != null && effectiveHours.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal remainder = effectiveHours.remainder(incrementHours);
                     if (remainder.compareTo(BigDecimal.ZERO) != 0) {
-                        errors.add(new ErrorDetail("deskAgent.contractedHoursPerDay",
-                                "Agent " + da.getAgent().getName() + " has contracted hours "
+                        errors.add(new ErrorDetail("agent.contractedHoursPerDay",
+                                "Agent " + agent.getName() + " has contracted hours "
                                         + effectiveHours + " on " + d
                                         + " which is not a multiple of " + incrementHours + " hours",
                                 effectiveHours.toString()));
@@ -644,10 +652,10 @@ public class SolverService {
                     "No staffing requirements found for the schedule period", null));
         }
 
-        // 7. At least one active desk-agent must be available (not day-off every day)
+        // 7. At least one active agent must be available (not day-off every day)
         boolean anyAvailable = false;
-        for (DeskAgent da : eligibleDeskAgents) {
-            Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(da.getAgent().getId(), Set.of());
+        for (Agent agent : eligibleAgents) {
+            Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agent.getId(), Set.of());
             for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                 if (!dayOffSet.contains(d)) {
                     anyAvailable = true;
@@ -657,8 +665,8 @@ public class SolverService {
             if (anyAvailable) break;
         }
         if (!anyAvailable) {
-            errors.add(new ErrorDetail("deskAgents",
-                    "No active desk-agents are available (all are on day off for every day of the period)", null));
+            errors.add(new ErrorDetail("agents",
+                    "No active agents are available (all are on day off for every day of the period)", null));
         }
 
         // 8. breakDurationMinutes must be a positive multiple of incrementMinutes
@@ -699,14 +707,14 @@ public class SolverService {
         BigDecimal breakHours = BigDecimal.valueOf(schedule.getBreakDurationMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
 
-        for (DeskAgent da : eligibleDeskAgents) {
-            UUID agentId = da.getAgent().getId();
+        for (Agent agent : eligibleAgents) {
+            UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
 
             for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                 if (dayOffSet.contains(d)) continue;
-                BigDecimal effectiveHours = getEffectiveHours(da, d, exMap, schedule);
+                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
                 if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) continue;
 
                 boolean needsBreak = effectiveHours.compareTo(schedule.getBreakMinShiftHours()) > 0;
@@ -715,8 +723,8 @@ public class SolverService {
                         : effectiveHours;
 
                 if (coverageHours.compareTo(requiredWindow) < 0) {
-                    errors.add(new ErrorDetail("deskAgent.contractedHoursPerDay",
-                            "Agent " + da.getAgent().getName() + " on " + d
+                    errors.add(new ErrorDetail("agent.contractedHoursPerDay",
+                            "Agent " + agent.getName() + " on " + d
                                     + " needs " + requiredWindow + " hours window"
                                     + (needsBreak ? " (incl. break)" : "")
                                     + " but coverage window is only " + coverageHours + " hours",
@@ -747,13 +755,13 @@ public class SolverService {
                     .map(sr -> sr.getSpecialization().getName())
                     .orElse(specId.toString());
 
-            boolean hasEligible = eligibleDeskAgents.stream().anyMatch(da -> {
-                boolean matchesPrimary = da.getPrimarySpecialization() != null
-                        && da.getPrimarySpecialization().getId().equals(specId);
-                boolean matchesSecondary = da.getSecondarySpecializations().stream()
+            boolean hasEligible = eligibleAgents.stream().anyMatch(agent -> {
+                boolean matchesPrimary = agent.getPrimarySpecialization() != null
+                        && agent.getPrimarySpecialization().getId().equals(specId);
+                boolean matchesSecondary = agent.getSecondarySpecializations().stream()
                         .anyMatch(s -> s.getId().equals(specId));
                 if (!matchesPrimary && !matchesSecondary) return false;
-                Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(da.getAgent().getId(), Set.of());
+                Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agent.getId(), Set.of());
                 for (LocalDate d = schedule.getPeriodStartDate();
                      !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                     if (!dayOffSet.contains(d)) return true;
@@ -774,14 +782,14 @@ public class SolverService {
         }
     }
 
-    private BigDecimal getEffectiveHours(DeskAgent da, LocalDate date,
+    private BigDecimal getEffectiveHours(Agent agent, LocalDate date,
                                          Map<LocalDate, BigDecimal> exceptionMap,
                                          Schedule schedule) {
         if (exceptionMap.containsKey(date)) {
             return exceptionMap.get(date);
         }
-        return da.getContractedHoursPerDay() != null
-                ? da.getContractedHoursPerDay()
+        return agent.getContractedHoursPerDay() != null
+                ? agent.getContractedHoursPerDay()
                 : schedule.getDefaultContractedHoursPerDay();
     }
 
@@ -810,7 +818,7 @@ public class SolverService {
                 a.setScheduleId(scheduleId);
                 a.setTimeslot(sr.getTimeslot());
                 a.setRequiredSpecialization(sr.getSpecialization());
-                // deskAgent is the planning variable — initially null, solver assigns
+                // agent is the planning variable — initially null, solver assigns
                 assignments.add(a);
             }
         }
@@ -881,11 +889,11 @@ public class SolverService {
             });
 
             // Try assigning one agent to one seat
-            if (!schedule.getDeskAgents().isEmpty() && !schedule.getAssignments().isEmpty()) {
-                DeskAgent testAgent = schedule.getDeskAgents().get(0);
+            if (!schedule.getAgents().isEmpty() && !schedule.getAssignments().isEmpty()) {
+                Agent testAgent = schedule.getAgents().get(0);
                 AgentAssignment testAssignment = schedule.getAssignments().get(0);
 
-                testAssignment.setDeskAgent(testAgent);
+                testAssignment.setAgent(testAgent);
                 var afterScore = sm.update(schedule);
 
                 int hardDelta = afterScore.hardScore() - initialScore.hardScore();
@@ -897,7 +905,7 @@ public class SolverService {
                 if (hardDelta <= 0) {
                     log.error("DIAGNOSTIC FAILURE: assigning agent {} to timeslot {} makes score WORSE "
                             + "(delta={}hard). The CH will pick null for every step!",
-                            testAgent.getAgent().getName(),
+                            testAgent.getName(),
                             testAssignment.getTimeslot().getStartTime(),
                             hardDelta);
 
@@ -911,7 +919,7 @@ public class SolverService {
                 }
 
                 // Revert the test assignment
-                testAssignment.setDeskAgent(null);
+                testAssignment.setAgent(null);
                 sm.update(schedule);
             }
         } catch (Exception e) {

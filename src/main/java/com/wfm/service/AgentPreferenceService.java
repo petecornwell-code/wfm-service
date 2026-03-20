@@ -6,7 +6,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentPreference;
 import com.wfm.repository.AgentPreferenceRepository;
-import com.wfm.repository.DeskAgentRepository;
+import com.wfm.repository.AgentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,12 +20,12 @@ import java.util.UUID;
 public class AgentPreferenceService {
 
     private final AgentPreferenceRepository agentPreferenceRepository;
-    private final DeskAgentRepository deskAgentRepository;
+    private final AgentRepository agentRepository;
 
     public AgentPreferenceService(AgentPreferenceRepository agentPreferenceRepository,
-                                   DeskAgentRepository deskAgentRepository) {
+                                   AgentRepository agentRepository) {
         this.agentPreferenceRepository = agentPreferenceRepository;
-        this.deskAgentRepository = deskAgentRepository;
+        this.agentRepository = agentRepository;
     }
 
     public List<PreferenceResponse> listPreferences(UUID deskId, UUID agentId, String from, String to) {
@@ -33,7 +33,6 @@ public class AgentPreferenceService {
 
         List<AgentPreference> prefs;
         if (from != null && to != null) {
-            // Return standing preferences plus weekly preferences in the date range
             List<AgentPreference> standing = agentPreferenceRepository
                     .findByTenantIdAndDeskIdAndAgent_IdAndIsStandingTrue(tenantId, deskId, agentId);
             List<AgentPreference> weekly = agentPreferenceRepository
@@ -53,16 +52,14 @@ public class AgentPreferenceService {
                                                      List<PreferenceResponse> preferences) {
         long tenantId = TenantContext.getTenantId();
 
-        Agent agent = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId)
-                .orElseThrow(() -> new EntityNotFoundException("DeskAgent not found for agent " + agentId))
-                .getAgent();
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         List<AgentPreference> saved = new ArrayList<>();
         for (PreferenceResponse pref : preferences) {
             AgentPreference entity;
 
             if (pref.isStanding()) {
-                // Standing: replace any existing standing preference for same dayOfWeek
                 DayOfWeek dow = pref.dayOfWeek();
                 if (dow == null) {
                     throw new IllegalArgumentException("dayOfWeek is required for standing preferences");
@@ -81,7 +78,6 @@ public class AgentPreferenceService {
                     entity.setStanding(true);
                 }
             } else {
-                // Weekly: upsert by (tenant, desk, agent, date)
                 if (pref.date() == null) {
                     throw new IllegalArgumentException("date is required for weekly preferences");
                 }

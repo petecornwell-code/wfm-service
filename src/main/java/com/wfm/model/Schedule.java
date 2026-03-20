@@ -98,10 +98,10 @@ public class Schedule {
     @Transient
     private List<Specialization> specializations = new ArrayList<>();
 
-    @ValueRangeProvider(id = "deskAgentRange")
+    @ValueRangeProvider(id = "agentRange")
     @ProblemFactCollectionProperty
     @Transient
-    private List<DeskAgent> deskAgents = new ArrayList<>();
+    private List<Agent> agents = new ArrayList<>();
 
     @ProblemFactCollectionProperty
     @Transient
@@ -208,8 +208,8 @@ public class Schedule {
     public List<Specialization> getSpecializations() { return specializations; }
     public void setSpecializations(List<Specialization> specializations) { this.specializations = specializations; }
 
-    public List<DeskAgent> getDeskAgents() { return deskAgents; }
-    public void setDeskAgents(List<DeskAgent> deskAgents) { this.deskAgents = deskAgents; }
+    public List<Agent> getAgents() { return agents; }
+    public void setAgents(List<Agent> agents) { this.agents = agents; }
 
     public List<Timeslot> getTimeslots() { return timeslots; }
     public void setTimeslots(List<Timeslot> timeslots) { this.timeslots = timeslots; }

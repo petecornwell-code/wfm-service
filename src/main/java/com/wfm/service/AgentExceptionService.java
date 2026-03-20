@@ -8,7 +8,7 @@ import com.wfm.model.Agent;
 import com.wfm.model.AgentException;
 import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentExceptionRepository;
-import com.wfm.repository.DeskAgentRepository;
+import com.wfm.repository.AgentRepository;
 import com.wfm.util.BigDecimals;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,14 +24,14 @@ public class AgentExceptionService {
 
     private final AgentExceptionRepository agentExceptionRepository;
     private final AgentDayOffRepository agentDayOffRepository;
-    private final DeskAgentRepository deskAgentRepository;
+    private final AgentRepository agentRepository;
 
     public AgentExceptionService(AgentExceptionRepository agentExceptionRepository,
                                  AgentDayOffRepository agentDayOffRepository,
-                                 DeskAgentRepository deskAgentRepository) {
+                                 AgentRepository agentRepository) {
         this.agentExceptionRepository = agentExceptionRepository;
         this.agentDayOffRepository = agentDayOffRepository;
-        this.deskAgentRepository = deskAgentRepository;
+        this.agentRepository = agentRepository;
     }
 
     public List<ExceptionResponse> listExceptions(UUID deskId, UUID agentId, String from, String to) {
@@ -54,9 +54,8 @@ public class AgentExceptionService {
                                                     List<ExceptionResponse> exceptions) {
         long tenantId = TenantContext.getTenantId();
 
-        Agent agent = deskAgentRepository.findByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId)
-                .orElseThrow(() -> new EntityNotFoundException("DeskAgent not found for agent " + agentId))
-                .getAgent();
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         List<AgentException> saved = new ArrayList<>();
         for (ExceptionResponse ex : exceptions) {
@@ -70,14 +69,12 @@ public class AgentExceptionService {
                 throw new IllegalArgumentException("reason is required");
             }
 
-            // Check for conflict with days off
             if (!agentDayOffRepository.findByTenantIdAndAgent_IdAndDateBetweenOrderByDateAsc(
                     tenantId, agentId, ex.date(), ex.date()).isEmpty()) {
                 throw new ConflictException("Agent has a day off on " + ex.date()
                         + "; cannot create exception");
             }
 
-            // Upsert: update if exists for same date, create if not
             Optional<AgentException> existing = agentExceptionRepository
                     .findByTenantIdAndDeskIdAndAgent_IdAndDate(tenantId, deskId, agentId, ex.date());
 

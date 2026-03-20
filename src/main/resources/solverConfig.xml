@@ -10,7 +10,7 @@
     </scoreDirectorFactory>
 
     <!-- Construction heuristic: builds the initial solution from scratch.
-         All planning variables (AgentAssignment.deskAgent) start as null.
+         All planning variables (AgentAssignment.agent) start as null.
          The CH assigns agents to seats one at a time, evaluating all 18
          constraints per move to find feasible break positions, respect
          contracted hours, and match specializations. -->

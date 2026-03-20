@@ -49,10 +49,10 @@ public class ScheduleOutputService {
                     .merge(sr.getSpecialization().getName(), fteHours, BigDecimal::add);
         }
 
-        // Group assigned (non-null deskAgent) assignments by (date, requiredSpec name) → count
+        // Group assigned (non-null agent) assignments by (date, requiredSpec name) → count
         Map<LocalDate, Map<String, Integer>> actualCounts = new LinkedHashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
-            if (a.getDeskAgent() == null) continue;
+            if (a.getAgent() == null) continue;
             actualCounts
                     .computeIfAbsent(a.getTimeslot().getDate(), k -> new LinkedHashMap<>())
                     .merge(a.getRequiredSpecialization().getName(), 1, Integer::sum);
@@ -129,12 +129,12 @@ public class ScheduleOutputService {
         BigDecimal incrementHours = BigDecimal.valueOf(schedule.getIncrementMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
 
-        // Group assigned assignments by (deskAgentId, date)
+        // Group assigned assignments by (agentId, date)
         Map<UUID, Map<LocalDate, List<AgentAssignment>>> grouped = new LinkedHashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
-            if (a.getDeskAgent() == null) continue;
+            if (a.getAgent() == null) continue;
             grouped
-                    .computeIfAbsent(a.getDeskAgent().getId(), k -> new LinkedHashMap<>())
+                    .computeIfAbsent(a.getAgent().getId(), k -> new LinkedHashMap<>())
                     .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
                     .add(a);
         }
@@ -146,9 +146,9 @@ public class ScheduleOutputService {
                 dayAssignments.sort(Comparator.comparing(a -> a.getTimeslot().getStartTime()));
 
                 AgentAssignment first = dayAssignments.get(0);
-                DeskAgent da = first.getDeskAgent();
-                UUID agentId = da.getAgent().getId();
-                String agentName = da.getAgent().getName();
+                Agent da = first.getAgent();
+                UUID agentId = da.getId();
+                String agentName = da.getName();
                 LocalDate date = dateEntry.getKey();
 
                 LocalTime shiftStart = first.getTimeslot().getStartTime();
@@ -191,8 +191,8 @@ public class ScheduleOutputService {
 
         Map<UUID, Map<LocalDate, List<AgentAssignment>>> grouped = new HashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
-            if (a.getDeskAgent() == null) continue;
-            UUID agentId = a.getDeskAgent().getAgent().getId();
+            if (a.getAgent() == null) continue;
+            UUID agentId = a.getAgent().getId();
             grouped
                     .computeIfAbsent(agentId, k -> new HashMap<>())
                     .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
@@ -344,9 +344,9 @@ public class ScheduleOutputService {
 
                     for (Object justification : match.getIndictedObjectList()) {
                         if (justification instanceof AgentAssignment aa) {
-                            if (aa.getDeskAgent() != null) {
-                                agentId = aa.getDeskAgent().getAgent().getId();
-                                agentName = aa.getDeskAgent().getAgent().getName();
+                            if (aa.getAgent() != null) {
+                                agentId = aa.getAgent().getId();
+                                agentName = aa.getAgent().getName();
                             }
                             timeslotId = aa.getTimeslot().getId();
                             timeslotLabel = aa.getTimeslot().getDate() + " "
@@ -385,7 +385,7 @@ public class ScheduleOutputService {
 
     // --- Helpers ---
 
-    private String determineMatchType(DeskAgent da, Specialization requiredSpec) {
+    private String determineMatchType(Agent da, Specialization requiredSpec) {
         if (da.getPrimarySpecialization() != null
                 && da.getPrimarySpecialization().getId().equals(requiredSpec.getId())) {
             return "PRIMARY";

@@ -82,13 +82,13 @@ class NinetyAgent12HourTest {
         HardSoftScore score = solutionManager.update(solution);
 
         System.out.println("Score: " + score);
-        System.out.println("Agents: " + solution.getDeskAgents().size());
+        System.out.println("Agents: " + solution.getAgents().size());
         System.out.println("Timeslots: " + solution.getTimeslots().size());
         System.out.println("Assignments: " + solution.getAssignments().size());
 
         // Per-slot coverage
         Map<LocalTime, Long> coveragePerSlot = solution.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null)
+                .filter(a -> a.getAgent() != null)
                 .collect(java.util.stream.Collectors.groupingBy(
                         a -> a.getTimeslot().getStartTime(),
                         java.util.stream.Collectors.counting()));
@@ -128,16 +128,15 @@ class NinetyAgent12HourTest {
 
         // Clear all assignments to simulate all-unassigned start
         for (AgentAssignment a : schedule.getAssignments()) {
-            a.setDeskAgent(null);
             a.setAgent(null);
         }
 
         // Verify all unassigned
-        assertThat(schedule.getAssignments().stream().filter(a -> a.getDeskAgent() != null).count())
+        assertThat(schedule.getAssignments().stream().filter(a -> a.getAgent() != null).count())
                 .as("All assignments should start unassigned").isZero();
 
         System.out.println("Starting 90-agent solver test with " + schedule.getAssignments().size()
-                + " assignments and " + schedule.getDeskAgents().size() + " agents");
+                + " assignments and " + schedule.getAgents().size() + " agents");
 
         // Run solver: CH + 30s local search
         SolverConfig solverConfig = new SolverConfig()
@@ -158,7 +157,7 @@ class NinetyAgent12HourTest {
         long elapsed = System.currentTimeMillis() - startTime;
 
         long assigned = solved.getAssignments().stream()
-                .filter(a -> a.getDeskAgent() != null).count();
+                .filter(a -> a.getAgent() != null).count();
         System.out.println("90-agent solver: assigned=" + assigned + "/"
                 + solved.getAssignments().size() + ", score=" + solved.getScore()
                 + ", elapsed=" + elapsed + "ms");
@@ -273,7 +272,7 @@ class NinetyAgent12HourTest {
                 {4,4,4, 5,5,5, 6,6,6,6, 7,7,7, 8,8,8, 9,9,9,9},
         };
 
-        List<DeskAgent> allDeskAgents = new ArrayList<>(90);
+        List<Agent> allAgents = new ArrayList<>(90);
         List<AgentAssignment> assignments = new ArrayList<>(720);
         List<AgentDayConfig> dayConfigs = new ArrayList<>(90);
         // Track working agents per slot for demand
@@ -288,10 +287,10 @@ class NinetyAgent12HourTest {
             for (int i = 0; i < count; i++) {
                 Agent a = agent(String.valueOf(agentIdx + 1), "Agent-" + (agentIdx + 1));
                 List<Specialization> secondaries = agentIdx < 20 ? List.of(second) : List.of();
-                DeskAgent da = deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
-                allDeskAgents.add(da);
+                deskAgent(deskId, a, basic, secondaries, CONTRACTED_HOURS);
+                allAgents.add(a);
                 dayConfigs.add(new AgentDayConfig(
-                        da.getId(), DAY, CONTRACTED_HOURS,
+                        a.getId(), DAY, CONTRACTED_HOURS,
                         INCREMENT, BREAK_DURATION,
                         BREAK_MIN_SHIFT, BREAK_BLOCKED,
                         BREAK_ALIGNMENT, 130, 70));
@@ -303,7 +302,7 @@ class NinetyAgent12HourTest {
                     if (s == breakSlot) continue;
                     LocalTime slotTime = START.plusMinutes((long) s * INCREMENT);
                     Timeslot ts = tsByStart.get(slotTime);
-                    assignments.add(assignment(deskId, scheduleId, ts, basic, da, a));
+                    assignments.add(assignment(deskId, scheduleId, ts, basic, a));
                     workingPerSlot[s]++;
                 }
                 agentIdx++;
@@ -365,7 +364,7 @@ class NinetyAgent12HourTest {
 
         schedule.setConstraintWeights(weights);
         schedule.setSpecializations(List.of(basic));
-        schedule.setDeskAgents(allDeskAgents);
+        schedule.setAgents(allAgents);
         schedule.setTimeslots(timeslots);
         schedule.setStaffingRequirements(staffingReqs);
         schedule.setAgentPreferences(List.of());
@@ -394,7 +393,7 @@ class NinetyAgent12HourTest {
 
     private AgentAssignment assignment(UUID deskId, UUID scheduleId,
                                        Timeslot ts, Specialization spec,
-                                       DeskAgent da, Agent agent) {
+                                       Agent agent) {
         AgentAssignment aa = new AgentAssignment();
         aa.setId(UUID.randomUUID());
         aa.setTenantId(TENANT);
@@ -402,7 +401,6 @@ class NinetyAgent12HourTest {
         aa.setScheduleId(scheduleId);
         aa.setTimeslot(ts);
         aa.setRequiredSpecialization(spec);
-        aa.setDeskAgent(da);
         aa.setAgent(agent);
         return aa;
     }
@@ -426,17 +424,13 @@ class NinetyAgent12HourTest {
         return a;
     }
 
-    private DeskAgent deskAgent(UUID deskId, Agent agent, Specialization primary,
-                                List<Specialization> secondaries, BigDecimal contractedHours) {
-        DeskAgent da = new DeskAgent();
-        da.setId(UUID.randomUUID());
-        da.setTenantId(TENANT);
-        da.setDeskId(deskId);
-        da.setAgent(agent);
-        da.setPrimarySpecialization(primary);
-        da.setSecondarySpecializations(new ArrayList<>(secondaries));
-        da.setContractedHoursPerDay(contractedHours);
-        return da;
+    private Agent deskAgent(UUID deskId, Agent agent, Specialization primary,
+                            List<Specialization> secondaries, BigDecimal contractedHours) {
+        agent.setDeskId(deskId);
+        agent.setPrimarySpecialization(primary);
+        agent.setSecondarySpecializations(new ArrayList<>(secondaries));
+        agent.setContractedHoursPerDay(contractedHours);
+        return agent;
     }
 
     private Timeslot timeslot(UUID deskId, UUID scheduleId,

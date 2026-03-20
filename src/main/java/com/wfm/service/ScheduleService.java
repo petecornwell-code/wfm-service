@@ -252,7 +252,7 @@ public class ScheduleService {
         // 5. Write solver's agent assignments → remap to snapshot timeslots
         List<AgentAssignment> snapshotAssignments = new ArrayList<>();
         for (AgentAssignment assignment : schedule.getAssignments()) {
-            if (assignment.getDeskAgent() == null) continue;
+            if (assignment.getAgent() == null) continue;
 
             UUID snapshotTimeslotId = timeslotRemap.get(assignment.getTimeslot().getId());
             if (snapshotTimeslotId == null) continue;
@@ -267,8 +267,7 @@ public class ScheduleService {
             persisted.setScheduleId(saved.getId());
             persisted.setTimeslot(snapshotTs);
             persisted.setRequiredSpecialization(assignment.getRequiredSpecialization());
-            persisted.setDeskAgent(assignment.getDeskAgent());
-            persisted.setAgent(assignment.getDeskAgent().getAgent());
+            persisted.setAgent(assignment.getAgent());
             snapshotAssignments.add(persisted);
         }
         agentAssignmentRepository.saveAll(snapshotAssignments);
