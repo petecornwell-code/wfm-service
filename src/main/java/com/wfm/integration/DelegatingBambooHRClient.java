@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wfm.service.AppConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -13,11 +14,12 @@ import java.util.List;
  * Delegates to HttpBambooHRClient when server and API key are configured in the
  * database (via the Configuration UI), otherwise falls back to MockBambooHRClient.
  *
- * This replaces the previous @ConditionalOnProperty approach which required a
- * static property in application.yml — meaning the HTTP client was never used
- * even after the user configured credentials through the UI.
+ * Marked @Primary so services get this by default. Services that always need mock
+ * data (e.g. BambooRefreshService for desk agents) inject MockBambooHRClient
+ * directly via @Qualifier("mockBambooHRClient").
  */
 @Component
+@Primary
 public class DelegatingBambooHRClient implements BambooHRClient {
 
     private static final Logger log = LoggerFactory.getLogger(DelegatingBambooHRClient.class);
@@ -27,10 +29,11 @@ public class DelegatingBambooHRClient implements BambooHRClient {
     private final MockBambooHRClient mockClient;
 
     public DelegatingBambooHRClient(AppConfigurationService configurationService,
+                                     MockBambooHRClient mockClient,
                                      ObjectMapper objectMapper) {
         this.configurationService = configurationService;
         this.httpClient = new HttpBambooHRClient(configurationService, objectMapper);
-        this.mockClient = new MockBambooHRClient();
+        this.mockClient = mockClient;
     }
 
     private boolean isConfigured() {

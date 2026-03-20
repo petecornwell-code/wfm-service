@@ -1,5 +1,7 @@
 package com.wfm.integration;
 
+import org.springframework.stereotype.Component;
+
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -10,8 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory mock BambooHR client for development.
- * Used as fallback when BambooHR credentials are not configured.
+ * Used by BambooRefreshService (desk agents) and as fallback when
+ * BambooHR credentials are not configured.
  */
+@Component("mockBambooHRClient")
 public class MockBambooHRClient implements BambooHRClient {
 
     private static final String[] FIRST_NAMES = {
