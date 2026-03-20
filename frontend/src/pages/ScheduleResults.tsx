@@ -20,6 +20,7 @@ export default function ScheduleResults() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -40,6 +41,21 @@ export default function ScheduleResults() {
     poll()
     return () => { if (pollRef.current) clearTimeout(pollRef.current) }
   }, [deskId, scheduleId])
+
+  // Live elapsed-time counter while solver is running
+  useEffect(() => {
+    if (!schedule?.createdAt) return
+    const start = new Date(schedule.createdAt).getTime()
+    if (isNaN(start)) return
+
+    const tick = () => setElapsedSeconds(Math.floor((Date.now() - start) / 1000))
+    tick()
+
+    if (schedule.status === 'RUNNING') {
+      const id = setInterval(tick, 1000)
+      return () => clearInterval(id)
+    }
+  }, [schedule?.createdAt, schedule?.status])
 
   if (loading && !schedule) return <p>Loading schedule...</p>
   if (error && !schedule) return <p style={{ color: '#dc2626' }}>{error}</p>
@@ -148,6 +164,11 @@ export default function ScheduleResults() {
           {schedule.feasible !== null && schedule.feasible !== undefined && (
             <span style={{ color: schedule.feasible ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
               {schedule.feasible ? 'Feasible' : 'NOT FEASIBLE'}
+            </span>
+          )}
+          {elapsedSeconds !== null && (
+            <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>
+              {formatElapsed(elapsedSeconds)}
             </span>
           )}
         </div>
@@ -465,6 +486,16 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
       })}
     </>
   )
+}
+
+/** Format elapsed seconds as "Xm Ys" or "Xh Ym" */
+function formatElapsed(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
+  if (mins < 60) return `${mins}m ${secs}s`
+  const hrs = Math.floor(mins / 60)
+  const remMins = mins % 60
+  return `${hrs}h ${remMins}m`
 }
 
 /** Normalize time to "HH:MM" — strips seconds from "HH:MM:SS" */
