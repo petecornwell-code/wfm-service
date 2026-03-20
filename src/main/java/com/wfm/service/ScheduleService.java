@@ -194,10 +194,11 @@ public class ScheduleService {
             scheduleRepository.delete(old);
         }
 
-        // 2. Save the Schedule record — the entity already has a generated UUID
-        //    from the in-memory store, so use merge (persist rejects detached entities)
+        // 2. Save the Schedule record — flush deletes first, then persist the new entity
+        entityManager.flush();
         schedule.setStatus(ScheduleStatus.ACCEPTED);
-        Schedule saved = entityManager.merge(schedule);
+        entityManager.persist(schedule);
+        Schedule saved = schedule;
 
         // 3. Snapshot live timeslots → new IDs with schedule_id set
         Map<UUID, UUID> timeslotRemap = new HashMap<>();
