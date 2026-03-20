@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -14,16 +15,17 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Iterator;
 import java.util.List;
 
 /**
  * Live HTTP BambooHR client.
- * Active when bamboohr.mock=false and credentials are configured.
+ * Active when bamboohr.mock=false.
  *
  * Uses the BambooHR REST API v1:
- * - GET /api/gateway.php/{subdomain}/v1/employees/directory  (employee directory)
- * - GET /api/gateway.php/{subdomain}/v1/employees/{id}?fields=...  (single employee)
- * - GET /api/gateway.php/{subdomain}/v1/time_off/requests?start=...&end=...&status=approved
+ * - POST /reports/custom?format=json  (custom report with explicit fields)
+ * - GET  /employees/{id}?fields=...   (single employee)
+ * - GET  /time_off/requests/?...       (approved time-off)
  */
 @Component
 @ConditionalOnProperty(name = "bamboohr.mock", havingValue = "false")
@@ -59,7 +61,6 @@ public class HttpBambooHRClient implements BambooHRClient {
     }
 
     private String basicAuth() {
-        // BambooHR uses the API key as username with "x" as the password
         return "Basic " + Base64.getEncoder().encodeToString((getApiKey() + ":x").getBytes());
     }
 
@@ -69,28 +70,43 @@ public class HttpBambooHRClient implements BambooHRClient {
 
     @Override
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
-        log.info("Fetching employee directory from BambooHR for tenant={}, project={}", wfmTenantId, project);
+        log.info("Fetching employees from BambooHR custom report for tenant={}, project={}", wfmTenantId, project);
 
-        String json = restClient.get()
-                .uri(baseUrl() + "/employees/directory")
+        // Use the custom report API so we explicitly request the fields we need.
+        // The /employees/directory endpoint only returns fields configured in the
+        // company directory, which may not include department or other fields we need.
+        String requestBody = """
+                {"title":"WFM Employee Report","fields":["id","displayName","workEmail","department","jobTitle","status"]}""";
+
+        String json = restClient.post()
+                .uri(baseUrl() + "/reports/custom?format=json&onlyCurrent=true")
                 .header(HttpHeaders.AUTHORIZATION, basicAuth())
                 .header(HttpHeaders.ACCEPT, "application/json")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(requestBody)
                 .retrieve()
                 .body(String.class);
 
         List<BambooEmployee> employees = new ArrayList<>();
         try {
             JsonNode root = objectMapper.readTree(json);
-            JsonNode fields = root.path("fields");
             JsonNode rows = root.path("employees");
 
+            if (rows.isMissingNode() || !rows.isArray()) {
+                log.warn("BambooHR custom report response has no 'employees' array. Response: {}",
+                        json != null && json.length() > 500 ? json.substring(0, 500) + "..." : json);
+                return employees;
+            }
+
             for (JsonNode emp : rows) {
-                String id = emp.path("id").asText();
+                String id = emp.path("id").asText("");
                 String displayName = emp.path("displayName").asText("");
                 String workEmail = emp.path("workEmail").asText("");
                 String department = emp.path("department").asText("");
                 String jobTitle = emp.path("jobTitle").asText("");
                 String status = emp.path("status").asText("Active");
+
+                if (id.isEmpty()) continue;
 
                 employees.add(new BambooEmployee(
                         id, displayName, workEmail, department, jobTitle, status,
@@ -98,10 +114,10 @@ public class HttpBambooHRClient implements BambooHRClient {
                 ));
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse BambooHR employee directory response", e);
+            throw new RuntimeException("Failed to parse BambooHR custom report response", e);
         }
 
-        log.info("Fetched {} employees from BambooHR directory", employees.size());
+        log.info("Fetched {} employees from BambooHR", employees.size());
         return employees;
     }
 
@@ -151,22 +167,16 @@ public class HttpBambooHRClient implements BambooHRClient {
         try {
             JsonNode rows = objectMapper.readTree(json);
             for (JsonNode req : rows) {
-                String employeeId = req.path("employeeId").asText();
+                String employeeId = req.path("employeeId").asText("");
+                if (employeeId.isEmpty()) continue;
+
                 String type = req.path("type").path("name").asText("pto");
+
+                // BambooHR time-off responses include start/end dates per request,
+                // plus a "dates" object keyed by date string → amount.
                 JsonNode dates = req.path("dates");
-
-                // BambooHR returns individual dates within each request
-                for (JsonNode dateKey : dates) {
-                    String dateStr = dateKey.asText();
-                    LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE);
-                    if (!date.isBefore(from) && !date.isAfter(to)) {
-                        timeOffs.add(new BambooTimeOff(employeeId, date, type));
-                    }
-                }
-
-                // Alternatively, if dates is an object with date keys
                 if (dates.isObject()) {
-                    var fieldNames = dates.fieldNames();
+                    Iterator<String> fieldNames = dates.fieldNames();
                     while (fieldNames.hasNext()) {
                         String dateStr = fieldNames.next();
                         try {
@@ -176,6 +186,31 @@ public class HttpBambooHRClient implements BambooHRClient {
                             }
                         } catch (Exception ignored) {
                             // skip unparseable date keys
+                        }
+                    }
+                } else if (dates.isArray()) {
+                    for (JsonNode dateNode : dates) {
+                        String dateStr = dateNode.asText("");
+                        try {
+                            LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE);
+                            if (!date.isBefore(from) && !date.isAfter(to)) {
+                                timeOffs.add(new BambooTimeOff(employeeId, date, type));
+                            }
+                        } catch (Exception ignored) {
+                            // skip unparseable dates
+                        }
+                    }
+                } else {
+                    // Fallback: generate dates from start/end on the request
+                    String reqStart = req.path("start").asText("");
+                    String reqEnd = req.path("end").asText("");
+                    if (!reqStart.isEmpty() && !reqEnd.isEmpty()) {
+                        LocalDate s = LocalDate.parse(reqStart, DateTimeFormatter.ISO_LOCAL_DATE);
+                        LocalDate e = LocalDate.parse(reqEnd, DateTimeFormatter.ISO_LOCAL_DATE);
+                        for (LocalDate d = s; !d.isAfter(e); d = d.plusDays(1)) {
+                            if (!d.isBefore(from) && !d.isAfter(to)) {
+                                timeOffs.add(new BambooTimeOff(employeeId, d, type));
+                            }
                         }
                     }
                 }
