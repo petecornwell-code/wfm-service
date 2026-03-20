@@ -34,12 +34,13 @@ SET agent_id = da.agent_id
 FROM desk_agent da
 WHERE aa.desk_agent_id = da.id AND aa.agent_id IS NULL;
 
--- 5. Drop desk_agent_secondary_specialization and desk_agent tables
+-- 5. Drop the desk_agent_id column from agent_assignment BEFORE dropping desk_agent
+--    (the FK constraint agent_assignment_desk_agent_id_fkey blocks the DROP TABLE)
+ALTER TABLE agent_assignment DROP COLUMN desk_agent_id;
+
+-- 6. Drop desk_agent_secondary_specialization and desk_agent tables
 DROP TABLE desk_agent_secondary_specialization;
 DROP TABLE desk_agent;
-
--- 6. Drop the now-unused desk_agent_id column from agent_assignment
-ALTER TABLE agent_assignment DROP COLUMN desk_agent_id;
 
 -- 7. Add indexes for the new columns on agent
 CREATE INDEX idx_agent_desk ON agent(tenant_id, desk_id) WHERE desk_id IS NOT NULL;
