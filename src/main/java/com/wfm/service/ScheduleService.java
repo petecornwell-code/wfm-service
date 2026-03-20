@@ -197,7 +197,9 @@ public class ScheduleService {
         // 2. Save the Schedule record — flush deletes first, then persist the new entity
         entityManager.flush();
         schedule.setStatus(ScheduleStatus.ACCEPTED);
-        Schedule saved = entityManager.merge(schedule);
+        schedule.setId(null);
+        entityManager.persist(schedule);
+        Schedule saved = schedule;
 
         // 3. Snapshot live timeslots → new IDs with schedule_id set
         Map<UUID, UUID> timeslotRemap = new HashMap<>();
