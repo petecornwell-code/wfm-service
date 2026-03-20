@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { appConfiguration, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
@@ -39,6 +40,7 @@ export default function Configuration() {
 
   return (
     <div className="main-content">
+      <p style={{ marginBottom: '1rem' }}><Link to="/">Back to Desk Selector</Link></p>
       <h1>Configuration</h1>
       <div style={{ maxWidth: '500px' }}>
         <div style={{ marginBottom: '1rem' }}>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { clientManagement, type BambooEmployeeResponse, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
@@ -41,6 +42,7 @@ export default function ClientManagement() {
 
   return (
     <div className="main-content">
+      <p style={{ marginBottom: '1rem' }}><Link to="/">Back to Desk Selector</Link></p>
       <h1>Client Management</h1>
       <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
         Search BambooHR employees by department name.
