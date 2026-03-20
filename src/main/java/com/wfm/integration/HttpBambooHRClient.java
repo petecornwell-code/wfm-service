@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Live HTTP BambooHR client.
@@ -115,7 +116,15 @@ public class HttpBambooHRClient implements BambooHRClient {
             throw new RuntimeException("Failed to parse BambooHR custom report response", e);
         }
 
-        log.info("Fetched {} employees from BambooHR", employees.size());
+        // Filter by department/project if specified (BambooHR custom reports API
+        // does not support server-side filtering, so we filter here)
+        if (project != null && !project.isBlank()) {
+            employees = employees.stream()
+                    .filter(e -> project.equalsIgnoreCase(e.department()))
+                    .collect(Collectors.toList());
+        }
+
+        log.info("Fetched {} employees from BambooHR (project filter={})", employees.size(), project);
         return employees;
     }
 
