@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -61,7 +62,7 @@ public class HttpBambooHRClient implements BambooHRClient {
     }
 
     private String basicAuth() {
-        return "Basic " + Base64.getEncoder().encodeToString((getApiKey() + ":x").getBytes());
+        return "Basic " + Base64.getEncoder().encodeToString((getApiKey() + ":x").getBytes(StandardCharsets.UTF_8));
     }
 
     private String baseUrl() {
@@ -72,14 +73,15 @@ public class HttpBambooHRClient implements BambooHRClient {
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
         log.info("Fetching employees from BambooHR custom report for tenant={}, project={}", wfmTenantId, project);
 
-        // Use the custom report API so we explicitly request the fields we need.
-        // The /employees/directory endpoint only returns fields configured in the
-        // company directory, which may not include department or other fields we need.
         String requestBody = """
-                {"title":"WFM Employee Report","fields":["id","displayName","workEmail","department","jobTitle","status"]}""";
+                {
+                  "title": "WFM Employee Report",
+                  "fields": ["id", "displayName", "workEmail", "department", "jobTitle", "status"]
+                }
+                """;
 
         String json = restClient.post()
-                .uri(baseUrl() + "/reports/custom?format=json&onlyCurrent=true")
+                .uri(baseUrl() + "/reports/custom?format=JSON")
                 .header(HttpHeaders.AUTHORIZATION, basicAuth())
                 .header(HttpHeaders.ACCEPT, "application/json")
                 .contentType(MediaType.APPLICATION_JSON)
