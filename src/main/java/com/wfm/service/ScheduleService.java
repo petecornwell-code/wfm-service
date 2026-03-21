@@ -207,23 +207,16 @@ public class ScheduleService {
                 .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
                         tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        List<Timeslot> snapshotTimeslots = new ArrayList<>(liveTimeslots.size());
         for (Timeslot live : liveTimeslots) {
-            UUID snapshotId = UUID.randomUUID();
-            timeslotRemap.put(live.getId(), snapshotId);
-
             Timeslot snapshot = new Timeslot();
-            snapshot.setId(snapshotId);
             snapshot.setTenantId(tenantId);
             snapshot.setDeskId(deskId);
             snapshot.setScheduleId(saved.getId());
             snapshot.setDate(live.getDate());
             snapshot.setStartTime(live.getStartTime());
             snapshot.setEndTime(live.getEndTime());
-            snapshotTimeslots.add(snapshot);
-        }
-        for (Timeslot snapshot : snapshotTimeslots) {
             entityManager.persist(snapshot);
+            timeslotRemap.put(live.getId(), snapshot.getId());
         }
 
         // 4. Snapshot live staffing requirements → remap to snapshot timeslots
@@ -231,16 +224,13 @@ public class ScheduleService {
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        List<StaffingRequirement> snapshotRequirements = new ArrayList<>(liveRequirements.size());
         for (StaffingRequirement live : liveRequirements) {
             UUID snapshotTimeslotId = timeslotRemap.get(live.getTimeslot().getId());
             if (snapshotTimeslotId == null) continue;
 
-            Timeslot snapshotTs = new Timeslot();
-            snapshotTs.setId(snapshotTimeslotId);
+            Timeslot snapshotTs = entityManager.getReference(Timeslot.class, snapshotTimeslotId);
 
             StaffingRequirement snapshot = new StaffingRequirement();
-            snapshot.setId(UUID.randomUUID());
             snapshot.setTenantId(tenantId);
             snapshot.setDeskId(deskId);
             snapshot.setScheduleId(saved.getId());
@@ -248,34 +238,25 @@ public class ScheduleService {
             snapshot.setSpecialization(live.getSpecialization());
             snapshot.setRequiredFTEs(live.getRequiredFTEs());
             snapshot.setSource(live.getSource());
-            snapshotRequirements.add(snapshot);
-        }
-        for (StaffingRequirement snapshot : snapshotRequirements) {
             entityManager.persist(snapshot);
         }
 
         // 5. Write solver's agent assignments → remap to snapshot timeslots
-        List<AgentAssignment> snapshotAssignments = new ArrayList<>();
         for (AgentAssignment assignment : schedule.getAssignments()) {
             if (assignment.getAgent() == null) continue;
 
             UUID snapshotTimeslotId = timeslotRemap.get(assignment.getTimeslot().getId());
             if (snapshotTimeslotId == null) continue;
 
-            Timeslot snapshotTs = new Timeslot();
-            snapshotTs.setId(snapshotTimeslotId);
+            Timeslot snapshotTs = entityManager.getReference(Timeslot.class, snapshotTimeslotId);
 
             AgentAssignment persisted = new AgentAssignment();
-            persisted.setId(UUID.randomUUID());
             persisted.setTenantId(tenantId);
             persisted.setDeskId(deskId);
             persisted.setScheduleId(saved.getId());
             persisted.setTimeslot(snapshotTs);
             persisted.setRequiredSpecialization(assignment.getRequiredSpecialization());
             persisted.setAgent(assignment.getAgent());
-            snapshotAssignments.add(persisted);
-        }
-        for (AgentAssignment persisted : snapshotAssignments) {
             entityManager.persist(persisted);
         }
 
