@@ -222,7 +222,9 @@ public class ScheduleService {
             snapshot.setEndTime(live.getEndTime());
             snapshotTimeslots.add(snapshot);
         }
-        timeslotRepository.saveAll(snapshotTimeslots);
+        for (Timeslot snapshot : snapshotTimeslots) {
+            entityManager.persist(snapshot);
+        }
 
         // 4. Snapshot live staffing requirements → remap to snapshot timeslots
         List<StaffingRequirement> liveRequirements = staffingRequirementRepository
@@ -248,7 +250,9 @@ public class ScheduleService {
             snapshot.setSource(live.getSource());
             snapshotRequirements.add(snapshot);
         }
-        staffingRequirementRepository.saveAll(snapshotRequirements);
+        for (StaffingRequirement snapshot : snapshotRequirements) {
+            entityManager.persist(snapshot);
+        }
 
         // 5. Write solver's agent assignments → remap to snapshot timeslots
         List<AgentAssignment> snapshotAssignments = new ArrayList<>();
@@ -271,7 +275,9 @@ public class ScheduleService {
             persisted.setAgent(assignment.getAgent());
             snapshotAssignments.add(persisted);
         }
-        agentAssignmentRepository.saveAll(snapshotAssignments);
+        for (AgentAssignment persisted : snapshotAssignments) {
+            entityManager.persist(persisted);
+        }
 
         // 6. Remove from in-memory store
         inMemoryStore.remove(scheduleId);
