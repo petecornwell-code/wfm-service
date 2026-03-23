@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
+
+type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitle' | 'status'
+type AgentSortField = 'name' | 'email' | 'department' | 'jobTitle' | 'active'
+type SortDir = 'asc' | 'desc'
 
 export default function ClientManagement() {
   const [department, setDepartment] = useState('')
@@ -27,6 +31,16 @@ export default function ClientManagement() {
   // Desk assignment upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Employees table sorting & search
+  const [empSortField, setEmpSortField] = useState<EmpSortField | null>(null)
+  const [empSortDir, setEmpSortDir] = useState<SortDir>('asc')
+  const [empSearch, setEmpSearch] = useState('')
+
+  // Desk agents table sorting & search
+  const [agentSortField, setAgentSortField] = useState<AgentSortField | null>(null)
+  const [agentSortDir, setAgentSortDir] = useState<SortDir>('asc')
+  const [agentSearch, setAgentSearch] = useState('')
 
   useEffect(() => {
     desksApi.list().then(setDeskList).catch(() => {})
@@ -158,6 +172,88 @@ export default function ClientManagement() {
     }
   }
 
+  // Employee sort helpers
+  const handleEmpSort = (field: EmpSortField) => {
+    if (empSortField === field) {
+      setEmpSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setEmpSortField(field)
+      setEmpSortDir('asc')
+    }
+  }
+  const empSortIndicator = (field: EmpSortField) => {
+    if (empSortField !== field) return ' ↕'
+    return empSortDir === 'asc' ? ' ↑' : ' ↓'
+  }
+
+  const filteredEmployees = useMemo(() => {
+    if (!empSearch.trim()) return employees
+    const q = empSearch.toLowerCase()
+    return employees.filter(e =>
+      e.id.toLowerCase().includes(q) ||
+      e.displayName.toLowerCase().includes(q) ||
+      e.workEmail.toLowerCase().includes(q) ||
+      e.department.toLowerCase().includes(q) ||
+      e.jobTitle.toLowerCase().includes(q) ||
+      e.status.toLowerCase().includes(q)
+    )
+  }, [employees, empSearch])
+
+  const sortedEmployees = useMemo(() => {
+    if (!empSortField) return filteredEmployees
+    const sorted = [...filteredEmployees]
+    sorted.sort((a, b) => {
+      const aVal = String(a[empSortField] ?? '')
+      const bVal = String(b[empSortField] ?? '')
+      const cmp = aVal.localeCompare(bVal)
+      return empSortDir === 'asc' ? cmp : -cmp
+    })
+    return sorted
+  }, [filteredEmployees, empSortField, empSortDir])
+
+  // Desk agent sort helpers
+  const handleAgentSort = (field: AgentSortField) => {
+    if (agentSortField === field) {
+      setAgentSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setAgentSortField(field)
+      setAgentSortDir('asc')
+    }
+  }
+  const agentSortIndicator = (field: AgentSortField) => {
+    if (agentSortField !== field) return ' ↕'
+    return agentSortDir === 'asc' ? ' ↑' : ' ↓'
+  }
+
+  const filteredAgents = useMemo(() => {
+    if (!agentSearch.trim()) return deskAgentList
+    const q = agentSearch.toLowerCase()
+    return deskAgentList.filter(a =>
+      a.name.toLowerCase().includes(q) ||
+      a.email.toLowerCase().includes(q) ||
+      a.department.toLowerCase().includes(q) ||
+      a.jobTitle.toLowerCase().includes(q)
+    )
+  }, [deskAgentList, agentSearch])
+
+  const sortedAgents = useMemo(() => {
+    if (!agentSortField) return filteredAgents
+    const sorted = [...filteredAgents]
+    sorted.sort((a, b) => {
+      let aVal: string, bVal: string
+      if (agentSortField === 'active') {
+        aVal = a.active ? 'Yes' : 'No'
+        bVal = b.active ? 'Yes' : 'No'
+      } else {
+        aVal = String(a[agentSortField] ?? '')
+        bVal = String(b[agentSortField] ?? '')
+      }
+      const cmp = aVal.localeCompare(bVal)
+      return agentSortDir === 'asc' ? cmp : -cmp
+    })
+    return sorted
+  }, [filteredAgents, agentSortField, agentSortDir])
+
   const viewDeskName = deskList.find(d => d.id === viewDeskId)?.name
 
   return (
@@ -233,8 +329,17 @@ export default function ClientManagement() {
               </select>
             </label>
             <span style={{ marginLeft: 'auto' }}>
-              {employees.length} employee{employees.length !== 1 ? 's' : ''} on this page
+              {sortedEmployees.length} employee{sortedEmployees.length !== 1 ? 's' : ''}{empSearch ? ' (filtered)' : ' on this page'}
             </span>
+          </div>
+
+          <div style={{ marginBottom: '0.5rem' }}>
+            <input
+              value={empSearch}
+              onChange={e => setEmpSearch(e.target.value)}
+              placeholder="Filter employees..."
+              style={{ padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '4px', width: '300px' }}
+            />
           </div>
 
           <table>
@@ -243,22 +348,22 @@ export default function ClientManagement() {
                 <th style={{ width: '40px' }}>
                   <input
                     type="checkbox"
-                    checked={employees.length > 0 && selectedEmployeeIds.size === employees.length}
+                    checked={sortedEmployees.length > 0 && selectedEmployeeIds.size === sortedEmployees.length}
                     onChange={toggleAll}
                   />
                 </th>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Department</th>
-                <th>Job Title</th>
-                <th>Status</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('id')}>ID{empSortIndicator('id')}</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('displayName')}>Name{empSortIndicator('displayName')}</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('workEmail')}>Email{empSortIndicator('workEmail')}</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('department')}>Department{empSortIndicator('department')}</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('jobTitle')}>Job Title{empSortIndicator('jobTitle')}</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleEmpSort('status')}>Status{empSortIndicator('status')}</th>
               </tr>
             </thead>
             <tbody>
-              {employees.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#6b7280' }}>No employees found for this department.</td></tr>
-              ) : employees.map(emp => (
+              {sortedEmployees.length === 0 ? (
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#6b7280' }}>No employees found{empSearch ? ' matching filter' : ' for this department'}.</td></tr>
+              ) : sortedEmployees.map(emp => (
                 <tr key={emp.id} style={{ background: selectedEmployeeIds.has(emp.id) ? '#eff6ff' : undefined }}>
                   <td>
                     <input
@@ -312,24 +417,32 @@ export default function ClientManagement() {
 
         {viewDeskId && (
           <>
-            <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-              {deskAgentList.length} agent{deskAgentList.length !== 1 ? 's' : ''} assigned to {viewDeskName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                {sortedAgents.length} agent{sortedAgents.length !== 1 ? 's' : ''} assigned to {viewDeskName}{agentSearch ? ' (filtered)' : ''}
+              </div>
+              <input
+                value={agentSearch}
+                onChange={e => setAgentSearch(e.target.value)}
+                placeholder="Filter agents..."
+                style={{ padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '4px', width: '250px' }}
+              />
             </div>
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Department</th>
-                  <th>Job Title</th>
-                  <th>Active</th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('name')}>Name{agentSortIndicator('name')}</th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('email')}>Email{agentSortIndicator('email')}</th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('department')}>Department{agentSortIndicator('department')}</th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('jobTitle')}>Job Title{agentSortIndicator('jobTitle')}</th>
+                  <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('active')}>Active{agentSortIndicator('active')}</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {deskAgentList.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No agents assigned to this desk.</td></tr>
-                ) : deskAgentList.map(agent => (
+                {sortedAgents.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No agents{agentSearch ? ' matching filter' : ' assigned to this desk'}.</td></tr>
+                ) : sortedAgents.map(agent => (
                   <tr key={agent.id}>
                     <td>{agent.name}</td>
                     <td>{agent.email}</td>
