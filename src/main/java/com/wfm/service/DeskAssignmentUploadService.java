@@ -2,6 +2,8 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.integration.BambooEmployee;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.repository.AgentRepository;
@@ -26,13 +28,16 @@ public class DeskAssignmentUploadService {
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
     private final ClientManagementService clientManagementService;
+    private final BambooHRClient bambooHRClient;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
-                                        ClientManagementService clientManagementService) {
+                                        ClientManagementService clientManagementService,
+                                        BambooHRClient bambooHRClient) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
+        this.bambooHRClient = bambooHRClient;
     }
 
     @Transactional
@@ -86,15 +91,30 @@ public class DeskAssignmentUploadService {
                         hasEmail ? email.trim() : null,
                         hasName ? name.trim() : null);
 
+                // If not in cache, try individual BambooHR lookup as fallback
+                if (cached == null && hasBambooId) {
+                    try {
+                        BambooEmployee fetched = bambooHRClient.getEmployee(bamboohrId.trim());
+                        if (fetched != null) {
+                            cached = new BambooEmployeeResponse(
+                                    fetched.id(), fetched.displayName(), fetched.workEmail(),
+                                    fetched.department(), fetched.jobTitle(), fetched.status());
+                        }
+                    } catch (Exception e) {
+                        log.warn("Row {}: could not fetch employee {} from BambooHR: {}",
+                                i + 1, bamboohrId.trim(), e.getMessage());
+                    }
+                }
+
                 if (cached == null) {
-                    // Agent not found in BambooHR cache — log and skip
+                    // Not in BambooHR at all — skip (BambooHR is the source of truth)
                     String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
-                    log.warn("Row {}: agent '{}' from spreadsheet not found in BambooHR cache — skipping desk assignment", i + 1, identifier);
-                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in BambooHR cache");
+                    log.warn("Row {}: agent '{}' not found in BambooHR — skipping", i + 1, identifier);
+                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in BambooHR");
                     continue;
                 }
 
-                // Find existing agent in DB, or create a new one from the cached BambooHR data
+                // Find existing agent in DB, or create a new one from BambooHR data
                 Agent agent = null;
 
                 if (hasBambooId) {
@@ -117,7 +137,7 @@ public class DeskAssignmentUploadService {
                 }
 
                 if (agent == null) {
-                    // Create new agent from BambooHR cache data
+                    // Create new agent from BambooHR data
                     agent = new Agent();
                     agent.setTenantId(tenantId);
                     agent.setBamboohrId(cached.id());
@@ -129,7 +149,7 @@ public class DeskAssignmentUploadService {
                     agent.setLastRefreshedAt(OffsetDateTime.now());
                 }
 
-                // Backfill missing fields from BambooHR cache
+                // Backfill missing fields from BambooHR data
                 if (agent.getEmail() == null || agent.getEmail().isBlank()) {
                     agent.setEmail(cached.workEmail());
                 }
