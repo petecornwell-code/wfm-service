@@ -14,7 +14,9 @@ import java.util.List;
  * Delegates to HttpBambooHRClient when server and API key are configured in the
  * database (via the Configuration UI), otherwise falls back to MockBambooHRClient.
  *
- * Marked @Primary so all services get this by default.
+ * Marked @Primary so services get this by default. Services that always need mock
+ * data (e.g. BambooRefreshService for desk agents) inject MockBambooHRClient
+ * directly via @Qualifier("mockBambooHRClient").
  */
 @Component
 @Primary
