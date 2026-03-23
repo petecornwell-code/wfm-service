@@ -46,11 +46,15 @@ export default function StaffingRequirements() {
   const loadExisting = useCallback(async (generatedSlots: Timeslot[]) => {
     if (!deskId || !periodStart || !periodEnd || generatedSlots.length === 0) return
     try {
-      const resp = await srApi.list(deskId, { from: periodStart, to: periodEnd })
       const loaded: DemandMap = {}
-      for (const item of resp.data) {
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
-      }
+      let cursor: string | undefined
+      do {
+        const resp = await srApi.list(deskId, { from: periodStart, to: periodEnd, cursor })
+        for (const item of resp.data) {
+          loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
+        }
+        cursor = resp.hasMore ? resp.nextCursor : undefined
+      } while (cursor)
       setDemand(loaded)
     } catch {
       setDemand({})
