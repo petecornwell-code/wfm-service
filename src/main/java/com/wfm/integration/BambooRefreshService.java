@@ -123,16 +123,19 @@ public class BambooRefreshService {
                 .map(BambooEmployee::id)
                 .collect(Collectors.toSet());
 
-        // 3. Upsert agents and assign to desk
+        // 3. Update existing desk agents from BambooHR data.
+        // Only agents already assigned to this desk are updated — new desk assignments
+        // must come from spreadsheet upload or manual assignment, not from BambooHR refresh.
+        Map<String, BambooEmployee> employeesByBambooId = employees.stream()
+                .collect(Collectors.toMap(BambooEmployee::id, e -> e, (a, b) -> a));
+
         Set<UUID> refreshedAgentIds = new HashSet<>();
-        for (BambooEmployee emp : employees) {
-            Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, emp.id())
-                    .orElseGet(() -> {
-                        Agent a = new Agent();
-                        a.setTenantId(tenantId);
-                        a.setBamboohrId(emp.id());
-                        return a;
-                    });
+        List<Agent> currentDeskAgentsList = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        for (Agent agent : currentDeskAgentsList) {
+            if (agent.getBamboohrId() == null) continue;
+            BambooEmployee emp = employeesByBambooId.get(agent.getBamboohrId());
+            if (emp == null) continue; // not in BambooHR response — handled by soft-delete below
+
             agent.setName(emp.displayName());
             agent.setEmail(emp.workEmail());
             agent.setDepartment(emp.department());
@@ -140,20 +143,13 @@ public class BambooRefreshService {
             agent.setActive("Active".equals(emp.status()));
             agent.setLastRefreshedAt(OffsetDateTime.now());
 
-            // Cross-desk conflict check: if agent is already assigned to a different desk, warn and skip
-            if (agent.getDeskId() != null && !agent.getDeskId().equals(deskId)) {
-                agent = agentRepository.save(agent);
-                log.warn("Agent {} (bamboohrId={}) is already assigned to desk {}; skipping assignment to desk {}",
-                        agent.getName(), emp.id(), agent.getDeskId(), deskId);
-                refreshedAgentIds.add(agent.getId());
-                continue;
+            // Preserve existing specializations and contracted hours — only set defaults if missing
+            if (agent.getPrimarySpecialization() == null) {
+                agent.setPrimarySpecialization(defaultSpec);
             }
-
-            // Assign to this desk (or update existing assignment)
-            agent.setDeskId(deskId);
-            agent.setPrimarySpecialization(defaultSpec);
-            agent.getSecondarySpecializations().clear();
-            agent.getSecondarySpecializations().add(secondSpec);
+            if (agent.getSecondarySpecializations().isEmpty()) {
+                agent.getSecondarySpecializations().add(secondSpec);
+            }
             if (agent.getContractedHoursPerDay() == null) {
                 agent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
             }
@@ -162,8 +158,7 @@ public class BambooRefreshService {
         }
 
         // 4. Soft-delete: mark agents assigned to this desk that are no longer in BambooHR response as inactive
-        List<Agent> currentDeskAgents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        for (Agent agent : currentDeskAgents) {
+        for (Agent agent : currentDeskAgentsList) {
             if (agent.getBamboohrId() != null && !bamboohrIdsInResponse.contains(agent.getBamboohrId())) {
                 if (agent.isActive()) {
                     log.info("Soft-deleting agent {} (bamboohrId={}) — no longer in BambooHR response for desk {}",
