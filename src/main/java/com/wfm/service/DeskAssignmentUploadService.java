@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.integration.BambooEmployee;
 import com.wfm.integration.BambooHRClient;
@@ -28,13 +29,16 @@ public class DeskAssignmentUploadService {
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
     private final BambooHRClient bambooHRClient;
+    private final ClientManagementService clientManagementService;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
-                                        BambooHRClient bambooHRClient) {
+                                        BambooHRClient bambooHRClient,
+                                        ClientManagementService clientManagementService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.bambooHRClient = bambooHRClient;
+        this.clientManagementService = clientManagementService;
     }
 
     @Transactional
@@ -115,6 +119,25 @@ public class DeskAssignmentUploadService {
                         }
                     } catch (Exception e) {
                         log.warn("Could not fetch employee {} from BambooHR: {}", bamboohrId, e.getMessage());
+                    }
+                }
+
+                // If not found in DB or BambooHR API, check the BambooHR employee cache
+                if (agent == null) {
+                    BambooEmployeeResponse cached = clientManagementService.findCachedEmployee(
+                            hasBambooId ? bamboohrId.trim() : null,
+                            hasEmail ? email.trim() : null,
+                            hasName ? name.trim() : null);
+                    if (cached != null) {
+                        agent = new Agent();
+                        agent.setTenantId(tenantId);
+                        agent.setBamboohrId(cached.id());
+                        agent.setName(cached.displayName());
+                        agent.setEmail(cached.workEmail());
+                        agent.setDepartment(cached.department());
+                        agent.setJobTitle(cached.jobTitle());
+                        agent.setActive("Active".equalsIgnoreCase(cached.status()));
+                        agent.setLastRefreshedAt(OffsetDateTime.now());
                     }
                 }
 

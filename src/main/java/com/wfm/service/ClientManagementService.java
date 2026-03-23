@@ -85,6 +85,30 @@ public class ClientManagementService {
         cache.clear();
     }
 
+    /**
+     * Search all cached employee lists for a match by bambooHR ID, email, or name.
+     * Returns the first match found, or null.
+     */
+    public BambooEmployeeResponse findCachedEmployee(String bamboohrId, String email, String name) {
+        for (List<BambooEmployeeResponse> cached : cache.values()) {
+            for (BambooEmployeeResponse emp : cached) {
+                if (bamboohrId != null && !bamboohrId.isBlank()
+                        && bamboohrId.trim().equals(emp.id())) {
+                    return emp;
+                }
+                if (email != null && !email.isBlank()
+                        && email.trim().equalsIgnoreCase(emp.workEmail())) {
+                    return emp;
+                }
+                if (name != null && !name.isBlank()
+                        && name.trim().equalsIgnoreCase(emp.displayName())) {
+                    return emp;
+                }
+            }
+        }
+        return null;
+    }
+
     private int getCacheMaxSize() {
         String value = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_CACHE_MAX_SIZE);
         if (value == null || value.isBlank()) {
