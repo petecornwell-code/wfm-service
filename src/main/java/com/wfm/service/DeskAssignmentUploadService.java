@@ -4,6 +4,8 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
+import com.wfm.repository.AgentExceptionRepository;
+import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
 import org.apache.poi.ss.usermodel.*;
@@ -26,13 +28,19 @@ public class DeskAssignmentUploadService {
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
     private final ClientManagementService clientManagementService;
+    private final AgentPreferenceRepository agentPreferenceRepository;
+    private final AgentExceptionRepository agentExceptionRepository;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
-                                        ClientManagementService clientManagementService) {
+                                        ClientManagementService clientManagementService,
+                                        AgentPreferenceRepository agentPreferenceRepository,
+                                        AgentExceptionRepository agentExceptionRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
+        this.agentPreferenceRepository = agentPreferenceRepository;
+        this.agentExceptionRepository = agentExceptionRepository;
     }
 
     @Transactional
@@ -53,6 +61,19 @@ public class DeskAssignmentUploadService {
             Sheet sheet = workbook.getSheetAt(0);
             if (sheet == null) {
                 throw new IllegalArgumentException("Spreadsheet has no sheets");
+            }
+
+            // Clear all desks referenced in the spreadsheet before re-assigning
+            Set<UUID> clearedDeskIds = new HashSet<>();
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                String dn = getCellString(row.getCell(3));
+                if (dn == null || dn.isBlank()) continue;
+                Desk d = deskByName.get(dn.trim().toLowerCase());
+                if (d != null && clearedDeskIds.add(d.getId())) {
+                    clearDesk(tenantId, d.getId());
+                }
             }
 
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
@@ -166,6 +187,22 @@ public class DeskAssignmentUploadService {
         }
 
         return new DeskAssignmentUploadResult(assigned.size(), skipped.size(), assigned, skipped);
+    }
+
+    private void clearDesk(long tenantId, UUID deskId) {
+        log.info("Clearing desk {} for tenant {} before spreadsheet re-import", deskId, tenantId);
+        // Remove desk-scoped data
+        agentPreferenceRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        agentExceptionRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        // Unassign all agents from the desk
+        List<Agent> deskAgents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        for (Agent agent : deskAgents) {
+            agent.setDeskId(null);
+            agent.setPrimarySpecialization(null);
+            agent.getSecondarySpecializations().clear();
+            agent.setContractedHoursPerDay(null);
+            agentRepository.save(agent);
+        }
     }
 
     private String getCellString(Cell cell) {
