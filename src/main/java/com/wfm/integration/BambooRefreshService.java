@@ -72,10 +72,8 @@ public class BambooRefreshService {
 
             // 2. Fetch from BambooHR BEFORE the transactional boundary
             String deskName = desk.getName();
-            List<BambooEmployee> allEmployees = bambooHRClient.listEmployees(
-                    String.valueOf(tenantId), deskName);
-            // Department-filtered list used only for soft-delete detection
-            List<BambooEmployee> deskEmployees = allEmployees.stream()
+            List<BambooEmployee> employees = bambooHRClient.listEmployees(
+                    String.valueOf(tenantId), deskName).stream()
                     .filter(e -> deskName.equalsIgnoreCase(e.department()))
                     .toList();
 
@@ -87,15 +85,14 @@ public class BambooRefreshService {
             // Use TransactionTemplate instead of @Transactional on a self-invoked method,
             // which Spring proxies cannot intercept.
             transactionTemplate.executeWithoutResult(status ->
-                    persistRefreshData(deskId, tenantId, desk, allEmployees, deskEmployees, timeOffs, from, to));
+                    persistRefreshData(deskId, tenantId, desk, employees, timeOffs, from, to));
         } finally {
             refreshInProgress.remove(deskId);
         }
     }
 
     private void persistRefreshData(UUID deskId, long tenantId, Desk desk,
-                                      List<BambooEmployee> allEmployees,
-                                      List<BambooEmployee> deskEmployees,
+                                      List<BambooEmployee> employees,
                                       List<BambooTimeOff> timeOffs,
                                       LocalDate from, LocalDate to) {
         // 1. Ensure a default specialization exists for this desk
@@ -120,15 +117,15 @@ public class BambooRefreshService {
                     return specializationRepository.save(spec);
                 });
 
-        // 2. Collect bamboohrIds from department-filtered list for soft-delete detection
-        Set<String> bamboohrIdsInDeskDept = deskEmployees.stream()
+        // 2. Collect bamboohrIds from the response for soft-delete detection
+        Set<String> bamboohrIdsInResponse = employees.stream()
                 .map(BambooEmployee::id)
                 .collect(Collectors.toSet());
 
         // 3. Update existing desk agents from BambooHR data.
-        // Use the FULL employee list so agents whose BambooHR department differs
-        // from the desk name still get their email, department, and jobTitle updated.
-        Map<String, BambooEmployee> employeesByBambooId = allEmployees.stream()
+        // Only agents already assigned to this desk are updated — new desk assignments
+        // must come from spreadsheet upload or manual assignment, not from BambooHR refresh.
+        Map<String, BambooEmployee> employeesByBambooId = employees.stream()
                 .collect(Collectors.toMap(BambooEmployee::id, e -> e, (a, b) -> a));
 
         Set<UUID> refreshedAgentIds = new HashSet<>();
@@ -159,12 +156,9 @@ public class BambooRefreshService {
             refreshedAgentIds.add(agent.getId());
         }
 
-        // 4. Soft-delete: mark agents assigned to this desk that are no longer in the
-        //    department-filtered BambooHR response as inactive (only if also absent from full list)
+        // 4. Soft-delete: mark agents assigned to this desk that are no longer in BambooHR response as inactive
         for (Agent agent : currentDeskAgentsList) {
-            if (agent.getBamboohrId() != null
-                    && !bamboohrIdsInDeskDept.contains(agent.getBamboohrId())
-                    && !employeesByBambooId.containsKey(agent.getBamboohrId())) {
+            if (agent.getBamboohrId() != null && !bamboohrIdsInResponse.contains(agent.getBamboohrId())) {
                 if (agent.isActive()) {
                     log.info("Soft-deleting agent {} (bamboohrId={}) — no longer in BambooHR response for desk {}",
                             agent.getName(), agent.getBamboohrId(), deskId);
