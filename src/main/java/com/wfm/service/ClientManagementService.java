@@ -87,9 +87,12 @@ public class ClientManagementService {
 
     /**
      * Search all cached employee lists for a match by bambooHR ID, email, or name.
+     * Name matching allows a 1-character trailing difference (e.g. "John Smith" matches "John Smith1").
      * Returns the first match found, or null.
      */
     public BambooEmployeeResponse findCachedEmployee(String bamboohrId, String email, String name) {
+        BambooEmployeeResponse fuzzyMatch = null;
+
         for (List<BambooEmployeeResponse> cached : cache.values()) {
             for (BambooEmployeeResponse emp : cached) {
                 if (bamboohrId != null && !bamboohrId.isBlank()
@@ -100,13 +103,34 @@ public class ClientManagementService {
                         && email.trim().equalsIgnoreCase(emp.workEmail())) {
                     return emp;
                 }
-                if (name != null && !name.isBlank()
-                        && name.trim().equalsIgnoreCase(emp.displayName())) {
-                    return emp;
+                if (name != null && !name.isBlank()) {
+                    String trimmedName = name.trim();
+                    if (trimmedName.equalsIgnoreCase(emp.displayName())) {
+                        return emp;
+                    }
+                    // Allow fuzzy match: names that differ by only 1 trailing character
+                    if (fuzzyMatch == null && namesMatchWithTrailingChar(trimmedName, emp.displayName())) {
+                        fuzzyMatch = emp;
+                    }
                 }
             }
         }
-        return null;
+        return fuzzyMatch;
+    }
+
+    /**
+     * Returns true if one name is the same as the other except for a single trailing character.
+     * E.g. "John Smith" and "John Smith1" match, but "John Smith" and "John Smit" do not
+     * (the shorter must be a prefix of the longer, and the longer must be exactly 1 char more).
+     */
+    static boolean namesMatchWithTrailingChar(String a, String b) {
+        if (a == null || b == null) return false;
+        String lowerA = a.toLowerCase();
+        String lowerB = b.toLowerCase();
+        if (Math.abs(lowerA.length() - lowerB.length()) != 1) return false;
+        String shorter = lowerA.length() < lowerB.length() ? lowerA : lowerB;
+        String longer = lowerA.length() < lowerB.length() ? lowerB : lowerA;
+        return longer.startsWith(shorter);
     }
 
     private int getCacheMaxSize() {

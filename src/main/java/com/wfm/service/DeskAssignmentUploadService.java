@@ -2,9 +2,6 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
-import com.wfm.exception.EntityNotFoundException;
-import com.wfm.integration.BambooEmployee;
-import com.wfm.integration.BambooHRClient;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.repository.AgentRepository;
@@ -28,16 +25,13 @@ public class DeskAssignmentUploadService {
 
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
-    private final BambooHRClient bambooHRClient;
     private final ClientManagementService clientManagementService;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
-                                        BambooHRClient bambooHRClient,
                                         ClientManagementService clientManagementService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
-        this.bambooHRClient = bambooHRClient;
         this.clientManagementService = clientManagementService;
     }
 
@@ -102,27 +96,7 @@ public class DeskAssignmentUploadService {
                             .orElse(null);
                 }
 
-                if (agent == null && hasBambooId) {
-                    // Try to fetch from BambooHR
-                    try {
-                        BambooEmployee emp = bambooHRClient.getEmployee(bamboohrId.trim());
-                        if (emp != null) {
-                            agent = new Agent();
-                            agent.setTenantId(tenantId);
-                            agent.setBamboohrId(bamboohrId.trim());
-                            agent.setName(emp.displayName());
-                            agent.setEmail(emp.workEmail());
-                            agent.setDepartment(emp.department());
-                            agent.setJobTitle(emp.jobTitle());
-                            agent.setActive("Active".equalsIgnoreCase(emp.status()));
-                            agent.setLastRefreshedAt(OffsetDateTime.now());
-                        }
-                    } catch (Exception e) {
-                        log.warn("Could not fetch employee {} from BambooHR: {}", bamboohrId, e.getMessage());
-                    }
-                }
-
-                // If not found in DB or BambooHR API, check the BambooHR employee cache
+                // If not found in DB, check the BambooHR employee cache
                 if (agent == null) {
                     BambooEmployeeResponse cached = clientManagementService.findCachedEmployee(
                             hasBambooId ? bamboohrId.trim() : null,
@@ -142,7 +116,7 @@ public class DeskAssignmentUploadService {
                 }
 
                 if (agent == null) {
-                    // Agent not found in DB, BambooHR API, or cache — log and skip
+                    // Agent not found in DB or cache — log and skip
                     String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
                     log.warn("Row {}: agent '{}' from spreadsheet not found in cache — skipping desk assignment", i + 1, identifier);
                     skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in cache");
