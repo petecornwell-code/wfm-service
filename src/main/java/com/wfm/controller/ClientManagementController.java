@@ -1,9 +1,13 @@
 package com.wfm.controller;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.AgentResponse;
+import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,5 +38,14 @@ public class ClientManagementController {
         boolean hasMore = end < all.size();
 
         return new PaginatedResponse<>(pageData, hasMore ? String.valueOf(page + 1) : null, hasMore, all.size());
+    }
+
+    @PostMapping("/assign-to-desk")
+    public ResponseEntity<List<AgentResponse>> assignEmployeesToDesk(
+            @RequestBody AssignEmployeesToDeskRequest request) {
+        long tenantId = TenantContext.getTenantId();
+        List<AgentResponse> assigned = clientManagementService.assignEmployeesToDesk(
+                tenantId, request.deskId(), request.bambooEmployeeIds());
+        return ResponseEntity.status(HttpStatus.CREATED).body(assigned);
     }
 }

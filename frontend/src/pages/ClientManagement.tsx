@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, type BambooEmployeeResponse, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, type BambooEmployeeResponse, type Desk, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function ClientManagement() {
@@ -12,6 +12,16 @@ export default function ClientManagement() {
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
+
+  // Desk assignment
+  const [deskList, setDeskList] = useState<Desk[]>([])
+  const [selectedDeskId, setSelectedDeskId] = useState('')
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set())
+  const [assigning, setAssigning] = useState(false)
+
+  useEffect(() => {
+    desksApi.list().then(setDeskList).catch(() => {})
+  }, [])
 
   const fetchEmployees = async (page = 1, refresh = false) => {
     if (!department.trim()) {
@@ -26,6 +36,7 @@ export default function ClientManagement() {
       setTotalCount(res.totalCount)
       setCurrentPage(page)
       setSearched(true)
+      setSelectedEmployeeIds(new Set())
     } catch (err) {
       showToast('error', getErrorMessage(err))
     } finally {
@@ -42,12 +53,50 @@ export default function ClientManagement() {
     if (e.key === 'Enter') handleSearch()
   }
 
+  const toggleEmployee = (id: string) => {
+    setSelectedEmployeeIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    if (selectedEmployeeIds.size === employees.length) {
+      setSelectedEmployeeIds(new Set())
+    } else {
+      setSelectedEmployeeIds(new Set(employees.map(e => e.id)))
+    }
+  }
+
+  const handleAssignToDesk = async () => {
+    if (!selectedDeskId) {
+      showToast('error', 'Please select a desk')
+      return
+    }
+    if (selectedEmployeeIds.size === 0) {
+      showToast('error', 'Please select at least one employee')
+      return
+    }
+    setAssigning(true)
+    try {
+      const assigned = await clientManagement.assignToDesk(selectedDeskId, Array.from(selectedEmployeeIds))
+      showToast('success', `${assigned.length} agent(s) assigned to desk`)
+      setSelectedEmployeeIds(new Set())
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   return (
     <div className="main-content">
       <p style={{ marginBottom: '1rem' }}><Link to="/">Back to Desk Selector</Link></p>
       <h1>Client Management</h1>
       <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
-        Search BambooHR employees by department name.
+        Search BambooHR employees by department name, then assign them to a desk.
       </p>
 
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '1rem', flexWrap: 'wrap' }}>
@@ -68,11 +117,34 @@ export default function ClientManagement() {
 
       {searched && (
         <>
-          <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
-            Total records: {totalCount.toLocaleString()}
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '0.75rem', flexWrap: 'wrap', padding: '0.75rem', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+            <div>
+              <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem', fontSize: '0.85rem' }}>Assign to Desk</label>
+              <select
+                value={selectedDeskId}
+                onChange={e => setSelectedDeskId(e.target.value)}
+                style={{ padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '4px', minWidth: '200px' }}
+              >
+                <option value="">-- Select a desk --</option>
+                {deskList.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              className="primary"
+              onClick={handleAssignToDesk}
+              disabled={assigning || selectedEmployeeIds.size === 0 || !selectedDeskId}
+            >
+              {assigning ? 'Assigning...' : `Assign Selected (${selectedEmployeeIds.size})`}
+            </button>
           </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-            <label>
+            <div style={{ fontWeight: 600 }}>
+              Total records: {totalCount.toLocaleString()}
+            </div>
+            <label style={{ marginLeft: '1rem' }}>
               Rows per page:{' '}
               <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); }}>
                 {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
@@ -86,6 +158,13 @@ export default function ClientManagement() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: '40px' }}>
+                  <input
+                    type="checkbox"
+                    checked={employees.length > 0 && selectedEmployeeIds.size === employees.length}
+                    onChange={toggleAll}
+                  />
+                </th>
                 <th>ID</th>
                 <th>Name</th>
                 <th>Email</th>
@@ -96,9 +175,16 @@ export default function ClientManagement() {
             </thead>
             <tbody>
               {employees.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No employees found for this department.</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#6b7280' }}>No employees found for this department.</td></tr>
               ) : employees.map(emp => (
-                <tr key={emp.id}>
+                <tr key={emp.id} style={{ background: selectedEmployeeIds.has(emp.id) ? '#eff6ff' : undefined }}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployeeIds.has(emp.id)}
+                      onChange={() => toggleEmployee(emp.id)}
+                    />
+                  </td>
                   <td>{emp.id}</td>
                   <td>{emp.displayName}</td>
                   <td>{emp.workEmail}</td>

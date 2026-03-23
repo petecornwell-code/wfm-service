@@ -363,4 +363,6 @@ export const appConfiguration = {
 export const clientManagement = {
   listEmployees: (department: string, page = 1, pageSize = 20, refresh = false) =>
     request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}&refresh=${refresh}`),
+  assignToDesk: (deskId: string, bambooEmployeeIds: string[]) =>
+    request<Agent[]>(`/client-management/assign-to-desk`, { method: 'POST', body: JSON.stringify({ deskId, bambooEmployeeIds }) }),
 }
