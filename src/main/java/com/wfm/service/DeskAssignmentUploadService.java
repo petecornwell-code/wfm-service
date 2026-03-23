@@ -80,7 +80,21 @@ public class DeskAssignmentUploadService {
                 boolean hasEmail = email != null && !email.isBlank();
                 boolean hasName = name != null && !name.isBlank();
 
-                // Find the agent using cascading match: bambooHR ID -> email -> name
+                // Verify the agent exists in the BambooHR cache before proceeding
+                BambooEmployeeResponse cached = clientManagementService.findCachedEmployee(
+                        hasBambooId ? bamboohrId.trim() : null,
+                        hasEmail ? email.trim() : null,
+                        hasName ? name.trim() : null);
+
+                if (cached == null) {
+                    // Agent not found in BambooHR cache — log and skip
+                    String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
+                    log.warn("Row {}: agent '{}' from spreadsheet not found in BambooHR cache — skipping desk assignment", i + 1, identifier);
+                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in BambooHR cache");
+                    continue;
+                }
+
+                // Find existing agent in DB, or create a new one from the cached BambooHR data
                 Agent agent = null;
 
                 if (hasBambooId) {
@@ -96,44 +110,36 @@ public class DeskAssignmentUploadService {
                             .orElse(null);
                 }
 
-                // If not found in DB, check the BambooHR employee cache
+                // Also try matching by the cached BambooHR ID in case spreadsheet identifiers differ
                 if (agent == null) {
-                    BambooEmployeeResponse cached = clientManagementService.findCachedEmployee(
-                            hasBambooId ? bamboohrId.trim() : null,
-                            hasEmail ? email.trim() : null,
-                            hasName ? name.trim() : null);
-                    if (cached != null) {
-                        agent = new Agent();
-                        agent.setTenantId(tenantId);
-                        agent.setBamboohrId(cached.id());
-                        agent.setName(cached.displayName());
-                        agent.setEmail(cached.workEmail());
-                        agent.setDepartment(cached.department());
-                        agent.setJobTitle(cached.jobTitle());
-                        agent.setActive("Active".equalsIgnoreCase(cached.status()));
-                        agent.setLastRefreshedAt(OffsetDateTime.now());
-                    }
+                    agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, cached.id())
+                            .orElse(null);
                 }
 
                 if (agent == null) {
-                    // Agent not found in DB or cache — log and skip
-                    String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
-                    log.warn("Row {}: agent '{}' from spreadsheet not found in cache — skipping desk assignment", i + 1, identifier);
-                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in cache");
-                    continue;
-                } else {
-                    // Update fields from spreadsheet if provided
-                    if (hasName) {
-                        agent.setName(name.trim());
-                    }
-                    if (hasEmail) {
-                        agent.setEmail(email.trim());
-                    }
-                    if (hasBambooId && (agent.getBamboohrId() == null || agent.getBamboohrId().startsWith("UPLOAD-"))) {
-                        agent.setBamboohrId(bamboohrId.trim());
-                    }
+                    // Create new agent from BambooHR cache data
+                    agent = new Agent();
+                    agent.setTenantId(tenantId);
+                    agent.setBamboohrId(cached.id());
+                    agent.setName(cached.displayName());
+                    agent.setEmail(cached.workEmail());
+                    agent.setDepartment(cached.department());
+                    agent.setJobTitle(cached.jobTitle());
+                    agent.setActive("Active".equalsIgnoreCase(cached.status()));
                     agent.setLastRefreshedAt(OffsetDateTime.now());
                 }
+
+                // Update fields from spreadsheet if provided
+                if (hasName) {
+                    agent.setName(name.trim());
+                }
+                if (hasEmail) {
+                    agent.setEmail(email.trim());
+                }
+                if (hasBambooId && (agent.getBamboohrId() == null || agent.getBamboohrId().startsWith("UPLOAD-"))) {
+                    agent.setBamboohrId(bamboohrId.trim());
+                }
+                agent.setLastRefreshedAt(OffsetDateTime.now());
 
                 // Check if already assigned to a different desk
                 if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
