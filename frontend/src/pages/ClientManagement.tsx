@@ -176,7 +176,7 @@ export default function ClientManagement() {
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadDeskAssignments} />
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Upload an .xlsx file with columns: BambooHR ID, Name, Email, Desk Assignment
+            Upload an .xlsx file with columns: BambooHR ID, Name, Email, Desk Assignment. Only Desk Assignment is required — agents are matched by ID, then email, then name.
           </span>
         </div>
       </div>

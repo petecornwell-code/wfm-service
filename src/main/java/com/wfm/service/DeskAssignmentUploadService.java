@@ -66,10 +66,6 @@ public class DeskAssignmentUploadService {
                 String email = getCellString(row.getCell(2));
                 String deskName = getCellString(row.getCell(3));
 
-                if (bamboohrId == null || bamboohrId.isBlank()) {
-                    skipped.add("Row " + (i + 1) + ": missing BambooHR ID");
-                    continue;
-                }
                 if (deskName == null || deskName.isBlank()) {
                     skipped.add("Row " + (i + 1) + ": missing Desk Assignment");
                     continue;
@@ -82,11 +78,27 @@ public class DeskAssignmentUploadService {
                     continue;
                 }
 
-                // Find or create the agent by bambooHR ID
-                Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, bamboohrId.trim())
-                        .orElse(null);
+                boolean hasBambooId = bamboohrId != null && !bamboohrId.isBlank();
+                boolean hasEmail = email != null && !email.isBlank();
+                boolean hasName = name != null && !name.isBlank();
 
-                if (agent == null) {
+                // Find the agent using cascading match: bambooHR ID -> email -> name
+                Agent agent = null;
+
+                if (hasBambooId) {
+                    agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, bamboohrId.trim())
+                            .orElse(null);
+                }
+                if (agent == null && hasEmail) {
+                    agent = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, email.trim())
+                            .orElse(null);
+                }
+                if (agent == null && hasName) {
+                    agent = agentRepository.findByTenantIdAndNameIgnoreCase(tenantId, name.trim())
+                            .orElse(null);
+                }
+
+                if (agent == null && hasBambooId) {
                     // Try to fetch from BambooHR
                     try {
                         BambooEmployee emp = bambooHRClient.getEmployee(bamboohrId.trim());
@@ -104,24 +116,32 @@ public class DeskAssignmentUploadService {
                     } catch (Exception e) {
                         log.warn("Could not fetch employee {} from BambooHR: {}", bamboohrId, e.getMessage());
                     }
+                }
 
-                    if (agent == null) {
-                        // Create agent from spreadsheet data
-                        agent = new Agent();
-                        agent.setTenantId(tenantId);
-                        agent.setBamboohrId(bamboohrId.trim());
-                        agent.setName(name != null && !name.isBlank() ? name.trim() : "Unknown");
-                        agent.setEmail(email != null ? email.trim() : null);
-                        agent.setActive(true);
-                        agent.setLastRefreshedAt(OffsetDateTime.now());
+                if (agent == null) {
+                    // Cannot match or create without at least a bambooHR ID or name
+                    if (!hasBambooId && !hasName) {
+                        skipped.add("Row " + (i + 1) + ": no BambooHR ID, email, or name to identify agent");
+                        continue;
                     }
+                    // Create agent from spreadsheet data
+                    agent = new Agent();
+                    agent.setTenantId(tenantId);
+                    agent.setBamboohrId(hasBambooId ? bamboohrId.trim() : "UPLOAD-" + UUID.randomUUID().toString().substring(0, 8));
+                    agent.setName(hasName ? name.trim() : "Unknown");
+                    agent.setEmail(hasEmail ? email.trim() : null);
+                    agent.setActive(true);
+                    agent.setLastRefreshedAt(OffsetDateTime.now());
                 } else {
-                    // Update name/email from spreadsheet if provided
-                    if (name != null && !name.isBlank()) {
+                    // Update fields from spreadsheet if provided
+                    if (hasName) {
                         agent.setName(name.trim());
                     }
-                    if (email != null && !email.isBlank()) {
+                    if (hasEmail) {
                         agent.setEmail(email.trim());
+                    }
+                    if (hasBambooId && (agent.getBamboohrId() == null || agent.getBamboohrId().startsWith("UPLOAD-"))) {
+                        agent.setBamboohrId(bamboohrId.trim());
                     }
                     agent.setLastRefreshedAt(OffsetDateTime.now());
                 }
