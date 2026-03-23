@@ -142,19 +142,11 @@ public class DeskAssignmentUploadService {
                 }
 
                 if (agent == null) {
-                    // Cannot match or create without at least a bambooHR ID or name
-                    if (!hasBambooId && !hasName) {
-                        skipped.add("Row " + (i + 1) + ": no BambooHR ID, email, or name to identify agent");
-                        continue;
-                    }
-                    // Create agent from spreadsheet data
-                    agent = new Agent();
-                    agent.setTenantId(tenantId);
-                    agent.setBamboohrId(hasBambooId ? bamboohrId.trim() : "UPLOAD-" + UUID.randomUUID().toString().substring(0, 8));
-                    agent.setName(hasName ? name.trim() : "Unknown");
-                    agent.setEmail(hasEmail ? email.trim() : null);
-                    agent.setActive(true);
-                    agent.setLastRefreshedAt(OffsetDateTime.now());
+                    // Agent not found in DB, BambooHR API, or cache — log and skip
+                    String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
+                    log.warn("Row {}: agent '{}' from spreadsheet not found in cache — skipping desk assignment", i + 1, identifier);
+                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in cache");
+                    continue;
                 } else {
                     // Update fields from spreadsheet if provided
                     if (hasName) {
