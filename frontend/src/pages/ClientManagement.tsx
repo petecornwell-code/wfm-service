@@ -190,12 +190,12 @@ export default function ClientManagement() {
     if (!empSearch.trim()) return employees
     const q = empSearch.toLowerCase()
     return employees.filter(e =>
-      e.id.toLowerCase().includes(q) ||
-      e.displayName.toLowerCase().includes(q) ||
-      e.workEmail.toLowerCase().includes(q) ||
-      e.department.toLowerCase().includes(q) ||
-      e.jobTitle.toLowerCase().includes(q) ||
-      e.status.toLowerCase().includes(q)
+      (e.id ?? '').toLowerCase().includes(q) ||
+      (e.displayName ?? '').toLowerCase().includes(q) ||
+      (e.workEmail ?? '').toLowerCase().includes(q) ||
+      (e.department ?? '').toLowerCase().includes(q) ||
+      (e.jobTitle ?? '').toLowerCase().includes(q) ||
+      (e.status ?? '').toLowerCase().includes(q)
     )
   }, [employees, empSearch])
 
@@ -229,10 +229,10 @@ export default function ClientManagement() {
     if (!agentSearch.trim()) return deskAgentList
     const q = agentSearch.toLowerCase()
     return deskAgentList.filter(a =>
-      a.name.toLowerCase().includes(q) ||
-      a.email.toLowerCase().includes(q) ||
-      a.department.toLowerCase().includes(q) ||
-      a.jobTitle.toLowerCase().includes(q)
+      (a.name ?? '').toLowerCase().includes(q) ||
+      (a.email ?? '').toLowerCase().includes(q) ||
+      (a.department ?? '').toLowerCase().includes(q) ||
+      (a.jobTitle ?? '').toLowerCase().includes(q)
     )
   }, [deskAgentList, agentSearch])
 
