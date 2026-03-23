@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.*;
@@ -140,6 +141,100 @@ public class DeskAssignmentUploadService {
         }
 
         return new DeskAssignmentUploadResult(assigned.size(), skipped.size(), assigned, skipped);
+    }
+
+    /**
+     * Export desk assignments to XLSX. Uses the BambooHR cache from ClientManagementService
+     * when a department is provided, otherwise falls back to all agents in the DB for the tenant.
+     * Desk column is left empty when the agent has no desk assigned.
+     */
+    public byte[] exportDeskAssignments(long tenantId, String department,
+                                         ClientManagementService clientManagementService) {
+        // Build a desk-ID-to-name lookup
+        List<Desk> allDesks = deskRepository.findByTenantId(tenantId);
+        Map<UUID, String> deskNames = new HashMap<>();
+        for (Desk d : allDesks) {
+            deskNames.put(d.getId(), d.getName());
+        }
+
+        // Collect rows: bamboohrId, name, email, deskName
+        List<String[]> rows = new ArrayList<>();
+
+        if (department != null && !department.isBlank()) {
+            // Pull from cache (or load fresh if not cached / exceeds cache size)
+            String tenantStr = String.valueOf(tenantId);
+            List<com.wfm.dto.BambooEmployeeResponse> employees =
+                    clientManagementService.listEmployeesByDepartment(tenantStr, department, false);
+
+            for (com.wfm.dto.BambooEmployeeResponse emp : employees) {
+                // Look up the agent record to find their desk assignment
+                String deskName = "";
+                Optional<Agent> agentOpt = agentRepository.findByTenantIdAndBamboohrId(tenantId, emp.id());
+                if (agentOpt.isPresent()) {
+                    Agent agent = agentOpt.get();
+                    if (agent.getDeskId() != null) {
+                        deskName = deskNames.getOrDefault(agent.getDeskId(), "");
+                    }
+                }
+                rows.add(new String[]{emp.id(), emp.displayName(), emp.workEmail(), deskName});
+            }
+        } else {
+            // No department specified — export all agents from DB
+            List<Agent> agents = agentRepository.findByTenantId(tenantId,
+                    org.springframework.data.domain.Pageable.unpaged());
+            for (Agent agent : agents) {
+                String deskName = "";
+                if (agent.getDeskId() != null) {
+                    deskName = deskNames.getOrDefault(agent.getDeskId(), "");
+                }
+                rows.add(new String[]{
+                        agent.getBamboohrId(),
+                        agent.getName(),
+                        agent.getEmail() != null ? agent.getEmail() : "",
+                        deskName
+                });
+            }
+        }
+
+        // Write XLSX
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Desk Assignments");
+
+            // Header style
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font font = workbook.createFont();
+            font.setBold(true);
+            headerStyle.setFont(font);
+
+            // Header row
+            Row header = sheet.createRow(0);
+            String[] cols = {"BambooHR ID", "Name", "Email", "Desk Assignment"};
+            for (int i = 0; i < cols.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(cols[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Data rows
+            int rowNum = 1;
+            for (String[] data : rows) {
+                Row row = sheet.createRow(rowNum++);
+                for (int i = 0; i < data.length; i++) {
+                    row.createCell(i).setCellValue(data[i]);
+                }
+            }
+
+            // Auto-size columns
+            for (int i = 0; i < cols.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to generate desk assignments export", e);
+        }
     }
 
     private String getCellString(Cell cell) {

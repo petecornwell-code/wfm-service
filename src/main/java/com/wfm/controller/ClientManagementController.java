@@ -8,7 +8,9 @@ import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementService;
 import com.wfm.service.DeskAgentService;
 import com.wfm.service.DeskAssignmentUploadService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -71,5 +73,19 @@ public class ClientManagementController {
     public DeskAssignmentUploadService.DeskAssignmentUploadResult uploadDeskAssignments(
             @RequestParam("file") MultipartFile file) throws IOException {
         return deskAssignmentUploadService.uploadDeskAssignments(file);
+    }
+
+    @GetMapping("/export-desk-assignments")
+    public ResponseEntity<byte[]> exportDeskAssignments(
+            @RequestParam(required = false) String department) {
+        long tenantId = TenantContext.getTenantId();
+        byte[] xlsx = deskAssignmentUploadService.exportDeskAssignments(
+                tenantId, department, clientManagementService);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDispositionFormData("attachment", "desk_assignments.xlsx");
+        return new ResponseEntity<>(xlsx, headers, HttpStatus.OK);
     }
 }

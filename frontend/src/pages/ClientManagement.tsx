@@ -24,8 +24,9 @@ export default function ClientManagement() {
   const [deskAgentList, setDeskAgentList] = useState<DeskAgent[]>([])
   const [loadingAgents, setLoadingAgents] = useState(false)
 
-  // Desk assignment upload
+  // Desk assignment upload / download
   const [uploading, setUploading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -158,6 +159,31 @@ export default function ClientManagement() {
     }
   }
 
+  const handleExportDeskAssignments = async () => {
+    setExporting(true)
+    try {
+      const response = await clientManagement.exportDeskAssignments(searched ? department.trim() : undefined)
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.error?.message || body?.message || response.statusText)
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'desk_assignments.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+      showToast('success', 'Desk assignments exported')
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const viewDeskName = deskList.find(d => d.id === viewDeskId)?.name
 
   return (
@@ -175,6 +201,10 @@ export default function ClientManagement() {
             {uploading ? 'Uploading...' : 'Upload Desk Assignments'}
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadDeskAssignments} />
+          <button className="primary" onClick={handleExportDeskAssignments} disabled={exporting}
+            style={{ background: '#059669' }}>
+            {exporting ? 'Exporting...' : 'Download Desk Assignments'}
+          </button>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
             Upload an .xlsx file with columns: BambooHR ID, Name, Email, Desk Assignment
           </span>
