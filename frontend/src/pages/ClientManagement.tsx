@@ -432,6 +432,7 @@ export default function ClientManagement() {
               <thead>
                 <tr>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('name')}>Name{agentSortIndicator('name')}</th>
+                  <th>ID</th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('email')}>Email{agentSortIndicator('email')}</th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('department')}>Department{agentSortIndicator('department')}</th>
                   <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleAgentSort('jobTitle')}>Job Title{agentSortIndicator('jobTitle')}</th>
@@ -441,10 +442,11 @@ export default function ClientManagement() {
               </thead>
               <tbody>
                 {sortedAgents.length === 0 ? (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No agents{agentSearch ? ' matching filter' : ' assigned to this desk'}.</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', color: '#6b7280' }}>No agents{agentSearch ? ' matching filter' : ' assigned to this desk'}.</td></tr>
                 ) : sortedAgents.map(agent => (
                   <tr key={agent.id}>
                     <td>{agent.name}</td>
+                    <td>{agent.bamboohrId}</td>
                     <td>{agent.email}</td>
                     <td>{agent.department}</td>
                     <td>{agent.jobTitle}</td>
