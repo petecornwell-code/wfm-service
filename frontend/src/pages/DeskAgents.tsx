@@ -260,7 +260,7 @@ export default function DeskAgents() {
             <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('lastName')}>
               Last Name{sortIndicator('lastName')}
             </th>
-            <th>Email</th><th>Department</th><th>Job Title</th>
+            <th>ID</th><th>Email</th><th>Department</th><th>Job Title</th>
             <th>Primary Spec</th><th>Secondary Specs</th><th>Hours/Day</th>
             <th>Active</th><th>Last Refreshed</th><th>Actions</th>
           </tr>
@@ -270,6 +270,7 @@ export default function DeskAgents() {
             <tr key={da.id}>
               <td>{getFirstName(da.name)}</td>
               <td>{getLastName(da.name)}</td>
+              <td>{da.bamboohrId}</td>
               <td>{da.email}</td>
               <td>{da.department}</td>
               <td>{da.jobTitle}</td>

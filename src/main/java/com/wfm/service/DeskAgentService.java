@@ -57,6 +57,7 @@ public class DeskAgentService {
         return new DeskAgentResponse(
                 a.getId(),
                 a.getDeskId(),
+                a.getBamboohrId(),
                 a.getName(), a.getEmail(),
                 a.getDepartment(), a.getJobTitle(),
                 a.isActive(), a.getLastRefreshedAt(),
