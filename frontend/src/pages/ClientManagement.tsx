@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, desks as desksApi, type BambooEmployeeResponse, type Desk, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function ClientManagement() {
@@ -18,6 +18,15 @@ export default function ClientManagement() {
   const [selectedDeskId, setSelectedDeskId] = useState('')
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set())
   const [assigning, setAssigning] = useState(false)
+
+  // Desk agents (for remove feature)
+  const [viewDeskId, setViewDeskId] = useState('')
+  const [deskAgentList, setDeskAgentList] = useState<DeskAgent[]>([])
+  const [loadingAgents, setLoadingAgents] = useState(false)
+
+  // Desk assignment upload
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     desksApi.list().then(setDeskList).catch(() => {})
@@ -84,12 +93,72 @@ export default function ClientManagement() {
       const assigned = await clientManagement.assignToDesk(selectedDeskId, Array.from(selectedEmployeeIds))
       showToast('success', `${assigned.length} agent(s) assigned to desk`)
       setSelectedEmployeeIds(new Set())
+      // Refresh desk agents if viewing the same desk
+      if (viewDeskId === selectedDeskId) {
+        loadDeskAgents(viewDeskId)
+      }
     } catch (err) {
       showToast('error', getErrorMessage(err))
     } finally {
       setAssigning(false)
     }
   }
+
+  const loadDeskAgents = async (deskId: string) => {
+    if (!deskId) {
+      setDeskAgentList([])
+      return
+    }
+    setLoadingAgents(true)
+    try {
+      const res = await deskAgents.list(deskId)
+      setDeskAgentList(res.data)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setLoadingAgents(false)
+    }
+  }
+
+  const handleViewDeskChange = (deskId: string) => {
+    setViewDeskId(deskId)
+    loadDeskAgents(deskId)
+  }
+
+  const handleRemoveAgent = async (agentId: string, agentName: string) => {
+    if (!viewDeskId || !confirm(`Remove ${agentName} from this desk?`)) return
+    try {
+      await clientManagement.removeAgentFromDesk(viewDeskId, agentId)
+      setDeskAgentList(prev => prev.filter(a => a.id !== agentId))
+      showToast('success', `${agentName} removed from desk`)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    }
+  }
+
+  const handleUploadDeskAssignments = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const result: DeskAssignmentUploadResult = await clientManagement.uploadDeskAssignments(file)
+      showToast('success', `Desk assignments: ${result.assignedCount} assigned, ${result.skippedCount} skipped`)
+      if (result.skippedDetails.length > 0) {
+        console.warn('Skipped rows:', result.skippedDetails)
+      }
+      // Refresh desk agents view if a desk is selected
+      if (viewDeskId) {
+        loadDeskAgents(viewDeskId)
+      }
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const viewDeskName = deskList.find(d => d.id === viewDeskId)?.name
 
   return (
     <div className="main-content">
@@ -98,6 +167,19 @@ export default function ClientManagement() {
       <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
         Search BambooHR employees by department name, then assign them to a desk.
       </p>
+
+      {/* Upload Desk Assignments */}
+      <div style={{ marginBottom: '1.5rem', padding: '0.75rem', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            {uploading ? 'Uploading...' : 'Upload Desk Assignments'}
+          </button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadDeskAssignments} />
+          <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+            Upload an .xlsx file with columns: BambooHR ID, Name, Email, Desk Assignment
+          </span>
+        </div>
+      </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <div>
@@ -203,6 +285,69 @@ export default function ClientManagement() {
           </div>
         </>
       )}
+
+      {/* Desk Agents - View & Remove */}
+      <div style={{ marginTop: '2rem', padding: '1rem', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+        <h2 style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '1.1rem' }}>Desk Agents</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem', fontSize: '0.85rem' }}>View Desk</label>
+            <select
+              value={viewDeskId}
+              onChange={e => handleViewDeskChange(e.target.value)}
+              style={{ padding: '0.4rem', border: '1px solid #d1d5db', borderRadius: '4px', minWidth: '200px' }}
+            >
+              <option value="">-- Select a desk --</option>
+              {deskList.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          {viewDeskId && (
+            <button onClick={() => loadDeskAgents(viewDeskId)} disabled={loadingAgents} style={{ padding: '0.4rem 0.75rem' }}>
+              {loadingAgents ? 'Loading...' : 'Refresh'}
+            </button>
+          )}
+        </div>
+
+        {viewDeskId && (
+          <>
+            <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
+              {deskAgentList.length} agent{deskAgentList.length !== 1 ? 's' : ''} assigned to {viewDeskName}
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th>Job Title</th>
+                  <th>Active</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deskAgentList.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No agents assigned to this desk.</td></tr>
+                ) : deskAgentList.map(agent => (
+                  <tr key={agent.id}>
+                    <td>{agent.name}</td>
+                    <td>{agent.email}</td>
+                    <td>{agent.department}</td>
+                    <td>{agent.jobTitle}</td>
+                    <td>{agent.active ? 'Yes' : 'No'}</td>
+                    <td>
+                      <button className="danger" onClick={() => handleRemoveAgent(agent.id, agent.name)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
     </div>
   )
 }

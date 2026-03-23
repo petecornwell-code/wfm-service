@@ -6,20 +6,31 @@ import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementService;
+import com.wfm.service.DeskAgentService;
+import com.wfm.service.DeskAssignmentUploadService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/client-management")
 public class ClientManagementController {
 
     private final ClientManagementService clientManagementService;
+    private final DeskAgentService deskAgentService;
+    private final DeskAssignmentUploadService deskAssignmentUploadService;
 
-    public ClientManagementController(ClientManagementService clientManagementService) {
+    public ClientManagementController(ClientManagementService clientManagementService,
+                                       DeskAgentService deskAgentService,
+                                       DeskAssignmentUploadService deskAssignmentUploadService) {
         this.clientManagementService = clientManagementService;
+        this.deskAgentService = deskAgentService;
+        this.deskAssignmentUploadService = deskAssignmentUploadService;
     }
 
     @GetMapping("/employees")
@@ -47,5 +58,18 @@ public class ClientManagementController {
         List<AgentResponse> assigned = clientManagementService.assignEmployeesToDesk(
                 tenantId, request.deskId(), request.bambooEmployeeIds());
         return ResponseEntity.status(HttpStatus.CREATED).body(assigned);
+    }
+
+    @DeleteMapping("/desks/{deskId}/agents/{agentId}")
+    public ResponseEntity<Void> removeAgentFromDesk(@PathVariable UUID deskId,
+                                                     @PathVariable UUID agentId) {
+        deskAgentService.removeDeskAgent(deskId, agentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/upload-desk-assignments")
+    public DeskAssignmentUploadService.DeskAssignmentUploadResult uploadDeskAssignments(
+            @RequestParam("file") MultipartFile file) throws IOException {
+        return deskAssignmentUploadService.uploadDeskAssignments(file);
     }
 }

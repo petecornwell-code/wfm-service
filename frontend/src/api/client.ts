@@ -365,4 +365,23 @@ export const clientManagement = {
     request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}&refresh=${refresh}`),
   assignToDesk: (deskId: string, bambooEmployeeIds: string[]) =>
     request<Agent[]>(`/client-management/assign-to-desk`, { method: 'POST', body: JSON.stringify({ deskId, bambooEmployeeIds }) }),
+  removeAgentFromDesk: (deskId: string, agentId: string) =>
+    request<void>(`/client-management/desks/${deskId}/agents/${agentId}`, { method: 'DELETE' }),
+  uploadDeskAssignments: async (file: File): Promise<DeskAssignmentUploadResult> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${API_BASE}/client-management/upload-desk-assignments`, {
+      method: 'POST',
+      headers: { 'X-Tenant-ID': currentTenantId },
+      body: formData,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      if (body?.error) throw new ApiRequestError(response.status, body.error)
+      throw new ApiRequestError(response.status, { code: 'UNKNOWN', message: body?.message || response.statusText })
+    }
+    return response.json()
+  },
 }
+
+export interface DeskAssignmentUploadResult { assignedCount: number; skippedCount: number; assignedDetails: string[]; skippedDetails: string[] }
