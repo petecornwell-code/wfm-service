@@ -129,6 +129,17 @@ public class DeskAssignmentUploadService {
                     agent.setLastRefreshedAt(OffsetDateTime.now());
                 }
 
+                // Backfill missing fields from BambooHR cache
+                if (agent.getEmail() == null || agent.getEmail().isBlank()) {
+                    agent.setEmail(cached.workEmail());
+                }
+                if (agent.getDepartment() == null || agent.getDepartment().isBlank()) {
+                    agent.setDepartment(cached.department());
+                }
+                if (agent.getJobTitle() == null || agent.getJobTitle().isBlank()) {
+                    agent.setJobTitle(cached.jobTitle());
+                }
+
                 // Update fields from spreadsheet if provided
                 if (hasName) {
                     agent.setName(name.trim());
