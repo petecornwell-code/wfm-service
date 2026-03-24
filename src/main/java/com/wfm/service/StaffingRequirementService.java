@@ -11,6 +11,7 @@ import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
 import com.wfm.util.CursorPagination;
+import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -27,15 +28,18 @@ public class StaffingRequirementService {
     private final TimeslotRepository timeslotRepository;
     private final SpecializationRepository specializationRepository;
     private final ErlangXService erlangXService;
+    private final EntityManager entityManager;
 
     public StaffingRequirementService(StaffingRequirementRepository staffingRequirementRepository,
                                       TimeslotRepository timeslotRepository,
                                       SpecializationRepository specializationRepository,
-                                      ErlangXService erlangXService) {
+                                      ErlangXService erlangXService,
+                                      EntityManager entityManager) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
         this.erlangXService = erlangXService;
+        this.entityManager = entityManager;
     }
 
     public PaginatedResponse<StaffingRequirementResponse.Item> listRequirements(
@@ -134,6 +138,12 @@ public class StaffingRequirementService {
         // Delete existing live requirements in this date range
         staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, minDate, maxDate);
 
+        // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
+        // processes inserts before deletes in the same flush, which would hit the
+        // unique constraint on idx_staffing_requirement_live.
+        entityManager.flush();
+        entityManager.clear();
+
         // Insert new requirements
         List<StaffingRequirement> saved = new ArrayList<>();
         for (StaffingRequirementRequest.Item item : request.requirements()) {
@@ -183,6 +193,12 @@ public class StaffingRequirementService {
 
         // Delete existing live requirements in the specified date range
         staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, from, to);
+
+        // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
+        // processes inserts before deletes in the same flush, which would hit the
+        // unique constraint on idx_staffing_requirement_live.
+        entityManager.flush();
+        entityManager.clear();
 
         // Calculate and persist
         List<StaffingRequirement> saved = new ArrayList<>();
