@@ -4,6 +4,7 @@ import { constraintWeights as cwApi, type ConstraintWeightsData, type Score, get
 import { showToast } from '../components/Toast'
 
 const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = [
+  { key: 'unassignedAssignmentWeight', label: 'Unassigned Assignment', description: 'Prefer filling every staffing slot with an agent' },
   { key: 'agentDayOffWeight', label: 'Agent Day Off', description: 'Agents must not be assigned on their days off' },
   { key: 'specMatchWeight', label: 'Specialization Match', description: 'Assignments must match agent specializations' },
   { key: 'noOverlapWeight', label: 'One Assignment per Timeslot', description: 'Agent can only be assigned once per timeslot' },
@@ -23,6 +24,7 @@ const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = 
 ]
 
 const DEFAULTS: Record<string, Score> = {
+  unassignedAssignmentWeight: { hardScore: 0, softScore: 1000 },
   agentDayOffWeight: { hardScore: 1, softScore: 0 },
   specMatchWeight: { hardScore: 1, softScore: 0 },
   noOverlapWeight: { hardScore: 1, softScore: 0 },
