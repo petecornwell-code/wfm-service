@@ -189,6 +189,10 @@ public class DeskAssignmentUploadService {
                     agent.setLastRefreshedAt(OffsetDateTime.now());
                 }
 
+                // Re-activate: the agent is in the BambooHR cache (Active status),
+                // so mark active even if a prior refresh soft-deleted them
+                agent.setActive("Active".equalsIgnoreCase(cached.status()));
+
                 // Backfill missing fields from BambooHR cache
                 if (agent.getEmail() == null || agent.getEmail().isBlank()) {
                     agent.setEmail(cached.workEmail());
