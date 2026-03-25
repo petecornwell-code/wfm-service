@@ -43,22 +43,32 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // ============================================================
 
     /**
-     * 0. Unassigned assignment — prefer filling every seat with an agent.
+     * 0. Unassigned assignment — penalises timeslots where the total assigned
+     * agents fall outside the acceptable allocation range defined by
+     * {@code underallocationHardLimitPct} and {@code overallocationHardLimitPct}.
      *
-     * This is a SOFT constraint: leaving a slot unallocated is acceptable
-     * as long as the total allocation remains within the underflow/overflow
-     * tolerance enforced by the bulk allocation hard constraints
-     * ({@code bulkUnderallocationHard} / {@code bulkOverallocationLimit}).
+     * <p>This is a SOFT constraint that complements the hard bulk allocation
+     * constraints. It counts the number of timeslots where the assigned agent
+     * count is below the under-allocation minimum or above the over-allocation
+     * maximum, penalising by 1 per violating timeslot.
      *
-     * Must use forEachIncludingUnassigned() because Timefold's forEach()
-     * excludes entities whose planning variable is null. Without this,
-     * null-assigned entities are invisible to all constraint streams,
-     * producing a 0-penalty score that the CH always prefers over any
-     * real assignment.
+     * <p>Uses forEachIncludingUnassigned() with sum so the constraint fires
+     * even when all entities are null (CH-friendly).
      */
     private Constraint unassignedAssignment(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(AgentAssignment.class)
-                .filter(a -> a.getAgent() == null)
+                .groupBy(a -> a.getTimeslot(),
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
+                .join(TimeslotDemandConfig.class,
+                        equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
+                .join(ScheduleConfig.class)
+                .filter((ts, totalAssigned, tsDemand, config) -> {
+                    int minRequired = tsDemand.totalDemandFTEs()
+                            * config.underallocationHardLimitPct() / 100;
+                    int maxAllowed = tsDemand.totalDemandFTEs()
+                            * config.overallocationHardLimitPct() / 100;
+                    return totalAssigned < minRequired || totalAssigned > maxAllowed;
+                })
                 .penalizeConfigurable()
                 .asConstraint("Unassigned assignment");
     }

@@ -77,7 +77,8 @@ class IncrementalScoringDiagnosticTest {
         // underZero: 95 agents × 8 expectedSlots × weight 100 = 76,000
         // bulkUnderHard: per-timeslot sum of floor(demand × 70/100) = 500
         assertThat(initialScore.hardScore()).isEqualTo(-76500);
-        assertThat(initialScore.softScore()).isEqualTo(-720000);
+        // Unassigned assignment is now per-timeslot: 12 timeslots × weight 1000 = 12,000
+        assertThat(initialScore.softScore()).isEqualTo(-12000);
 
         // Now assign ONE agent to ONE seat
         Agent firstAgent = schedule.getAgents().get(0);
