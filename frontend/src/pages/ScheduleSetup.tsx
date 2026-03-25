@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { schedules, deskAgents, specializations as specApi, staffingRequirements as srApi, type ScheduleSummary, getErrorMessage } from '../api/client'
-import { loadTimeslotParams } from '../timeslotParams'
+import { loadTimeslotParams, saveTimeslotParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
 const DEFAULTS = {
@@ -120,6 +120,7 @@ export default function ScheduleSetup() {
 
   const handleSolve = async () => {
     if (!deskId || !periodStart || !periodEnd) return
+    saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
     setSolving(true)
     setError('')
     try {
