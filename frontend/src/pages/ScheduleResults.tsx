@@ -445,7 +445,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: Schedul
                             const mt = matchTypes[slot]
                             const sn = specNames[slot]
                             bg = specColorMap[sn] || MATCH_COLORS[mt] || '#dcfce7'
-                            label = mt === 'SECONDARY' ? 'S' : ''
+                            label = ''
                           } else if (isBreak) {
                             bg = '#e5e7eb'
                             label = 'B'
@@ -504,7 +504,6 @@ function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: Schedul
                   {name}
                 </span>
               ))}
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '0.7rem', fontWeight: 600 }}>S</span> = secondary match</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fecaca', border: '1px solid #fca5a5', borderRadius: '2px' }} /> Unfilled seat(s)</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>
