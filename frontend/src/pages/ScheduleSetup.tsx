@@ -4,25 +4,42 @@ import { schedules, deskAgents, specializations as specApi, staffingRequirements
 import { loadTimeslotParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
+const DEFAULTS = {
+  periodStart: '',
+  periodEnd: '',
+  startTime: '08:00',
+  endTime: '18:00',
+  increment: 15,
+  breakBlocked: 1.0,
+  breakDuration: 60,
+  breakMinShift: 4.0,
+  breakAlignment: 'ON_HOUR',
+  breakCluster: 20,
+  defaultHours: 8.0,
+  overallocationLimit: 130,
+  underallocationLimit: 70,
+  solveTimeMinutes: 10,
+}
+
 export default function ScheduleSetup() {
   const { deskId } = useParams<{ deskId: string }>()
   const navigate = useNavigate()
   const saved = deskId ? loadTimeslotParams(deskId) : {}
 
-  const [periodStart, setPeriodStart] = useState(saved.periodStart ?? '')
-  const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? '')
-  const [startTime, setStartTime] = useState(saved.startTime ?? '08:00')
-  const [endTime, setEndTime] = useState(saved.endTime ?? '18:00')
-  const [increment, setIncrement] = useState(saved.increment ?? 15)
-  const [breakBlocked, setBreakBlocked] = useState(1.0)
-  const [breakDuration, setBreakDuration] = useState(60)
-  const [breakMinShift, setBreakMinShift] = useState(4.0)
-  const [breakAlignment, setBreakAlignment] = useState('ON_HOUR')
-  const [breakCluster, setBreakCluster] = useState(20)
-  const [defaultHours, setDefaultHours] = useState(8.0)
-  const [overallocationLimit, setOverallocationLimit] = useState(130)
-  const [underallocationLimit, setUnderallocationLimit] = useState(70)
-  const [solveTimeMinutes, setSolveTimeMinutes] = useState(10)
+  const [periodStart, setPeriodStart] = useState(saved.periodStart ?? DEFAULTS.periodStart)
+  const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? DEFAULTS.periodEnd)
+  const [startTime, setStartTime] = useState(saved.startTime ?? DEFAULTS.startTime)
+  const [endTime, setEndTime] = useState(saved.endTime ?? DEFAULTS.endTime)
+  const [increment, setIncrement] = useState(saved.increment ?? DEFAULTS.increment)
+  const [breakBlocked, setBreakBlocked] = useState(DEFAULTS.breakBlocked)
+  const [breakDuration, setBreakDuration] = useState(DEFAULTS.breakDuration)
+  const [breakMinShift, setBreakMinShift] = useState(DEFAULTS.breakMinShift)
+  const [breakAlignment, setBreakAlignment] = useState(DEFAULTS.breakAlignment)
+  const [breakCluster, setBreakCluster] = useState(DEFAULTS.breakCluster)
+  const [defaultHours, setDefaultHours] = useState(DEFAULTS.defaultHours)
+  const [overallocationLimit, setOverallocationLimit] = useState(DEFAULTS.overallocationLimit)
+  const [underallocationLimit, setUnderallocationLimit] = useState(DEFAULTS.underallocationLimit)
+  const [solveTimeMinutes, setSolveTimeMinutes] = useState(DEFAULTS.solveTimeMinutes)
   const [solving, setSolving] = useState(false)
   const [error, setError] = useState('')
 
@@ -80,6 +97,23 @@ export default function ScheduleSetup() {
     if (!deskId || !periodStart || !periodEnd) { setSrCount(null); return }
     srApi.list(deskId, { from: periodStart, to: periodEnd }).then(res => setSrCount(res.data.length)).catch(() => setSrCount(0))
   }, [deskId, periodStart, periodEnd])
+
+  const handleReset = () => {
+    setPeriodStart(DEFAULTS.periodStart)
+    setPeriodEnd(DEFAULTS.periodEnd)
+    setStartTime(DEFAULTS.startTime)
+    setEndTime(DEFAULTS.endTime)
+    setIncrement(DEFAULTS.increment)
+    setBreakBlocked(DEFAULTS.breakBlocked)
+    setBreakDuration(DEFAULTS.breakDuration)
+    setBreakMinShift(DEFAULTS.breakMinShift)
+    setBreakAlignment(DEFAULTS.breakAlignment)
+    setBreakCluster(DEFAULTS.breakCluster)
+    setDefaultHours(DEFAULTS.defaultHours)
+    setOverallocationLimit(DEFAULTS.overallocationLimit)
+    setUnderallocationLimit(DEFAULTS.underallocationLimit)
+    setSolveTimeMinutes(DEFAULTS.solveTimeMinutes)
+  }
 
   // Filter break duration options to multiples of increment
   const breakDurationOptions = [15, 30, 45, 60, 90, 120].filter(d => d % increment === 0)
@@ -164,9 +198,14 @@ export default function ScheduleSetup() {
 
         {error && <p style={{ color: '#dc2626', marginTop: '0.75rem' }}>{error}</p>}
 
-        <button className="primary" onClick={handleSolve} disabled={solving} style={{ marginTop: '1.5rem' }}>
-          {solving ? 'Starting solve...' : 'Solve'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+          <button className="primary" onClick={handleSolve} disabled={solving}>
+            {solving ? 'Starting solve...' : 'Solve'}
+          </button>
+          <button onClick={handleReset} disabled={solving}>
+            Reset to Defaults
+          </button>
+        </div>
       </div>
 
       {/* Past schedules */}
