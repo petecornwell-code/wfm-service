@@ -9,6 +9,7 @@ public record DeskAgentResponse(UUID id, UUID deskId, String bamboohrId, String 
                                 String department, String jobTitle, boolean active,
                                 OffsetDateTime lastRefreshedAt,
                                 SpecSummary primarySpecialization, List<SpecSummary> secondarySpecializations,
-                                BigDecimal contractedHoursPerDay, BigDecimal effectiveContractedHoursPerDay) {
+                                BigDecimal contractedHoursPerDay, BigDecimal effectiveContractedHoursPerDay,
+                                boolean shippingAndDelivery, boolean paymentsAndSafety) {
     public record SpecSummary(UUID id, String name) {}
 }

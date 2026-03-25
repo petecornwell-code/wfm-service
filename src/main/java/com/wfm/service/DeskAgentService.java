@@ -66,7 +66,9 @@ public class DeskAgentService {
                         .map(s -> new DeskAgentResponse.SpecSummary(s.getId(), s.getName()))
                         .toList(),
                 a.getContractedHoursPerDay(),
-                effective
+                effective,
+                a.isShippingAndDelivery(),
+                a.isPaymentsAndSafety()
         );
     }
 
