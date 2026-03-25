@@ -16,15 +16,8 @@
          contracted hours, and match specializations. -->
     <constructionHeuristic/>
 
-    <!-- Local search: improve the CH-built solution -->
-    <localSearch>
-        <termination>
-            <!-- Stop after 10 minutes OR 3 minutes without improvement.
-                 Break rearrangement requires coordinated multi-slot moves
-                 that need longer plateaus to discover. -->
-            <spentLimit>PT10M</spentLimit>
-            <unimprovedSpentLimit>PT3M</unimprovedSpentLimit>
-        </termination>
-    </localSearch>
+    <!-- Local search: improve the CH-built solution.
+         Termination is configured programmatically from the solver.time-limit property. -->
+    <localSearch/>
 
 </solver>

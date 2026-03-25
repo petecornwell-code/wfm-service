@@ -21,6 +21,7 @@ import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +41,7 @@ public class SolverService {
 
     private static final Logger log = LoggerFactory.getLogger(SolverService.class);
 
+    private final Duration defaultTimeLimit;
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
     private final DeskRepository deskRepository;
@@ -52,7 +54,8 @@ public class SolverService {
     private final AgentExceptionRepository agentExceptionRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
 
-    public SolverService(InMemoryScheduleStore inMemoryStore,
+    public SolverService(@Value("${solver.time-limit:PT5M}") Duration defaultTimeLimit,
+                         InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
                          DeskRepository deskRepository,
                          AgentRepository agentRepository,
@@ -63,6 +66,7 @@ public class SolverService {
                          AgentDayOffRepository agentDayOffRepository,
                          AgentExceptionRepository agentExceptionRepository,
                          ConstraintWeightsRepository constraintWeightsRepository) {
+        this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
         this.deskRepository = deskRepository;
@@ -290,16 +294,21 @@ public class SolverService {
                     }
                 });
 
+        Duration solveTime;
         if (request.solveTimeSeconds() != null && request.solveTimeSeconds() > 0) {
-            long seconds = request.solveTimeSeconds();
-            long unimprovedSeconds = Math.max(30, seconds * 3 / 10); // 30% of total, min 30s
-            log.info("Custom solve time: {}s total, {}s unimproved limit", seconds, unimprovedSeconds);
-            solveBuilder = solveBuilder.withConfigOverride(
-                    new SolverConfigOverride<Schedule>()
-                            .withTerminationConfig(new TerminationConfig()
-                                    .withSpentLimit(Duration.ofSeconds(seconds))
-                                    .withUnimprovedSpentLimit(Duration.ofSeconds(unimprovedSeconds))));
+            solveTime = Duration.ofSeconds(request.solveTimeSeconds());
+            log.info("Custom solve time: {}", solveTime);
+        } else {
+            solveTime = defaultTimeLimit;
+            log.info("Default solve time from solver.time-limit: {}", solveTime);
         }
+        long totalSeconds = solveTime.toSeconds();
+        long unimprovedSeconds = Math.max(30, totalSeconds * 3 / 10); // 30% of total, min 30s
+        solveBuilder = solveBuilder.withConfigOverride(
+                new SolverConfigOverride<Schedule>()
+                        .withTerminationConfig(new TerminationConfig()
+                                .withSpentLimit(solveTime)
+                                .withUnimprovedSpentLimit(Duration.ofSeconds(unimprovedSeconds))));
 
         solveBuilder.run();
 
