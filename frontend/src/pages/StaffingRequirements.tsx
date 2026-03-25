@@ -33,12 +33,6 @@ export default function StaffingRequirements() {
   const [erlangParams, setErlangParams] = useState<Record<string, Partial<ErlangXParam>>>({})
 
   useEffect(() => {
-    if (deskId) {
-      saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
-    }
-  }, [deskId, periodStart, periodEnd, startTime, endTime, increment])
-
-  useEffect(() => {
     if (!deskId) return
     specApi.list(deskId).then(setSpecs).catch(err => showToast('error', getErrorMessage(err)))
   }, [deskId])
@@ -78,6 +72,11 @@ export default function StaffingRequirements() {
           incrementMinutes: increment,
         })
         setSlots(generated)
+        // Persist params to localStorage only after generate succeeds, so that
+        // navigating away mid-debounce doesn't store params that don't match
+        // the timeslots in the database (which would cause timeslotsMatch to
+        // fail on return, deleting all saved staffing requirements).
+        saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
         await loadExisting(generated)
       } catch (err) {
         setError(getErrorMessage(err))
