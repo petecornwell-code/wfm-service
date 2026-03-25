@@ -262,7 +262,6 @@ export default function DeskAgents() {
             </th>
             <th>ID</th><th>Email</th><th>Department</th><th>Job Title</th>
             <th>Primary Spec</th><th>Secondary Specs</th><th>Hours/Day</th>
-            <th>Shipping and Delivery</th><th>Payments and Safety</th>
             <th>Active</th><th>Last Refreshed</th><th>Actions</th>
           </tr>
         </thead>
@@ -325,8 +324,6 @@ export default function DeskAgents() {
                   </span>
                 )}
               </td>
-              <td>{da.shippingAndDelivery ? 'Yes' : 'No'}</td>
-              <td>{da.paymentsAndSafety ? 'Yes' : 'No'}</td>
               <td>{da.active ? 'Yes' : 'No'}</td>
               <td style={{ fontSize: '0.8rem' }}>{da.lastRefreshedAt ? new Date(da.lastRefreshedAt).toLocaleDateString() : '—'}</td>
               <td>

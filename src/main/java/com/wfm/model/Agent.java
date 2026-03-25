@@ -61,12 +61,6 @@ public class Agent {
     @Column(name = "contracted_hours_per_day", precision = 5, scale = 2)
     private BigDecimal contractedHoursPerDay;
 
-    @Column(name = "shipping_and_delivery", nullable = false)
-    private boolean shippingAndDelivery = true;
-
-    @Column(name = "payments_and_safety", nullable = false)
-    private boolean paymentsAndSafety = true;
-
     public Agent() {}
 
     public UUID getId() { return id; }
@@ -114,9 +108,4 @@ public class Agent {
         this.contractedHoursPerDay = contractedHoursPerDay;
     }
 
-    public boolean isShippingAndDelivery() { return shippingAndDelivery; }
-    public void setShippingAndDelivery(boolean shippingAndDelivery) { this.shippingAndDelivery = shippingAndDelivery; }
-
-    public boolean isPaymentsAndSafety() { return paymentsAndSafety; }
-    public void setPaymentsAndSafety(boolean paymentsAndSafety) { this.paymentsAndSafety = paymentsAndSafety; }
 }
