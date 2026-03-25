@@ -642,7 +642,7 @@ function AgentScheduleTab({ data }: { data: AgentScheduleEntry[] }) {
       ))}
       <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.PRIMARY, borderRadius: '2px' }} /> Primary</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, borderRadius: '2px' }} /> Secondary</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, borderRadius: '2px' }} /> secondary</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.NONE, borderRadius: '2px' }} /> None</span>
       </div>
     </>
