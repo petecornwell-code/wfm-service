@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { schedules, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, getErrorMessage } from '../api/client'
+import { schedules, specializations as specApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 const MATCH_COLORS: Record<string, string> = {
@@ -17,6 +17,7 @@ export default function ScheduleResults() {
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
+  const [specs, setSpecs] = useState<Specialization[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -41,6 +42,10 @@ export default function ScheduleResults() {
     poll()
     return () => { if (pollRef.current) clearTimeout(pollRef.current) }
   }, [deskId, scheduleId])
+
+  useEffect(() => {
+    if (deskId) specApi.list(deskId).then(setSpecs).catch(() => {})
+  }, [deskId])
 
   // Live elapsed-time counter while solver is running
   useEffect(() => {
@@ -244,7 +249,7 @@ export default function ScheduleResults() {
       <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', overflowX: 'auto' }}>
         {activeTab === 'staffing' && <StaffingTab data={filteredStaffing} />}
         {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} />}
-        {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} />}
+        {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} specs={specs} />}
         {activeTab === 'preferences' && <PreferenceTab schedule={schedule} dateFilter={dateFilter} />}
         {activeTab === 'violations' && (
           <ViolationsTab
@@ -260,9 +265,22 @@ export default function ScheduleResults() {
   )
 }
 
-function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilter: string }) {
+function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: ScheduleDetail; dateFilter: string; specs: Specialization[] }) {
   const agentSchedule = schedule.agentSchedule || []
   const violations = schedule.constraintViolations || []
+
+  // Build specialization name -> color map
+  const specColorMap: Record<string, string> = {}
+  for (const s of specs) {
+    if (s.color) specColorMap[s.name] = s.color
+  }
+  // Collect all specialization names used in assignments (for the legend)
+  const usedSpecNames = new Set<string>()
+  for (const entry of agentSchedule) {
+    for (const a of entry.assignments) {
+      if (a.specializationName) usedSpecNames.add(a.specializationName)
+    }
+  }
 
   // Collect agent IDs that have hard constraint violations
   const failedAgentIds = new Set<string>()
@@ -385,7 +403,11 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                     // Build lookup for this agent's slot status
                     const workSlots = new Set(entry.assignments.map(a => toHHMM(a.startTime)))
                     const matchTypes: Record<string, string> = {}
-                    for (const a of entry.assignments) matchTypes[toHHMM(a.startTime)] = a.matchType
+                    const specNames: Record<string, string> = {}
+                    for (const a of entry.assignments) {
+                      matchTypes[toHHMM(a.startTime)] = a.matchType
+                      specNames[toHHMM(a.startTime)] = a.specializationName
+                    }
 
                     const breakSlots = new Set<string>()
                     const inc = entry.assignments.length > 0
@@ -421,7 +443,8 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
                           let label = ''
                           if (isWork) {
                             const mt = matchTypes[slot]
-                            bg = MATCH_COLORS[mt] || '#dcfce7'
+                            const sn = specNames[slot]
+                            bg = specColorMap[sn] || MATCH_COLORS[mt] || '#dcfce7'
                             label = mt === 'SECONDARY' ? 'S' : ''
                           } else if (isBreak) {
                             bg = '#e5e7eb'
@@ -475,8 +498,13 @@ function AgentAllocationTab({ schedule, dateFilter }: { schedule: ScheduleDetail
             </div>
             {/* Legend */}
             <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.PRIMARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (primary)</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, border: '1px solid #d1d5db', borderRadius: '2px' }} /> Working (secondary) S</span>
+              {[...usedSpecNames].sort().map(name => (
+                <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '12px', height: '12px', background: specColorMap[name] || '#dcfce7', border: '1px solid #d1d5db', borderRadius: '2px' }} />
+                  {name}
+                </span>
+              ))}
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ fontSize: '0.7rem', fontWeight: 600 }}>S</span> = secondary match</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fecaca', border: '1px solid #fca5a5', borderRadius: '2px' }} /> Unfilled seat(s)</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>

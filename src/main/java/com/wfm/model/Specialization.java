@@ -22,6 +22,9 @@ public class Specialization {
     @Column(nullable = false)
     private String name;
 
+    @Column(length = 7)
+    private String color;
+
     public Specialization() {}
 
     public UUID getId() { return id; }
@@ -35,4 +38,7 @@ public class Specialization {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public String getColor() { return color; }
+    public void setColor(String color) { this.color = color; }
 }

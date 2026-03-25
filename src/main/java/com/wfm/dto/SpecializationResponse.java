@@ -2,4 +2,4 @@ package com.wfm.dto;
 
 import java.util.UUID;
 
-public record SpecializationResponse(UUID id, String name) {}
+public record SpecializationResponse(UUID id, String name, String color) {}

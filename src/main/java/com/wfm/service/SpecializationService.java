@@ -33,7 +33,7 @@ public class SpecializationService {
     }
 
     @Transactional
-    public Specialization createSpecialization(UUID deskId, String name) {
+    public Specialization createSpecialization(UUID deskId, String name, String color) {
         long tenantId = TenantContext.getTenantId();
 
         if (name == null || name.isBlank()) {
@@ -47,11 +47,12 @@ public class SpecializationService {
         spec.setTenantId(tenantId);
         spec.setDeskId(deskId);
         spec.setName(name);
+        spec.setColor(color);
         return specializationRepository.save(spec);
     }
 
     @Transactional
-    public Specialization updateSpecialization(UUID deskId, UUID id, String name) {
+    public Specialization updateSpecialization(UUID deskId, UUID id, String name, String color) {
         long tenantId = TenantContext.getTenantId();
 
         Specialization spec = specializationRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
@@ -66,6 +67,7 @@ public class SpecializationService {
         }
 
         spec.setName(name);
+        spec.setColor(color);
         return specializationRepository.save(spec);
     }
 

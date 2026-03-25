@@ -146,10 +146,10 @@ export const deskAgents = {
 // --- Specializations ---
 export const specializations = {
   list: (deskId: string) => request<Specialization[]>(`/desks/${deskId}/specializations`),
-  create: (deskId: string, name: string) =>
-    request<Specialization>(`/desks/${deskId}/specializations`, { method: 'POST', body: JSON.stringify({ name }) }),
-  update: (deskId: string, id: string, name: string) =>
-    request<Specialization>(`/desks/${deskId}/specializations/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  create: (deskId: string, name: string, color?: string) =>
+    request<Specialization>(`/desks/${deskId}/specializations`, { method: 'POST', body: JSON.stringify({ name, color }) }),
+  update: (deskId: string, id: string, name: string, color?: string) =>
+    request<Specialization>(`/desks/${deskId}/specializations/${id}`, { method: 'PUT', body: JSON.stringify({ name, color }) }),
   delete: (deskId: string, id: string) =>
     request<void>(`/desks/${deskId}/specializations/${id}`, { method: 'DELETE' }),
 }
@@ -244,7 +244,7 @@ export interface Desk { id: string; name: string; description?: string; defaultC
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
 export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number }
-export interface Specialization { id: string; name: string }
+export interface Specialization { id: string; name: string; color?: string }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
 export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number }

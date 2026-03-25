@@ -30,7 +30,7 @@ public class SpecializationController {
     @PostMapping
     public ResponseEntity<SpecializationResponse> createSpecialization(@PathVariable UUID deskId,
                                                                         @RequestBody Map<String, String> body) {
-        Specialization created = specializationService.createSpecialization(deskId, body.get("name"));
+        Specialization created = specializationService.createSpecialization(deskId, body.get("name"), body.get("color"));
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created));
     }
 
@@ -38,7 +38,7 @@ public class SpecializationController {
     public SpecializationResponse updateSpecialization(@PathVariable UUID deskId,
                                                         @PathVariable UUID id,
                                                         @RequestBody Map<String, String> body) {
-        return toResponse(specializationService.updateSpecialization(deskId, id, body.get("name")));
+        return toResponse(specializationService.updateSpecialization(deskId, id, body.get("name"), body.get("color")));
     }
 
     @DeleteMapping("/{id}")
@@ -48,6 +48,6 @@ public class SpecializationController {
     }
 
     private SpecializationResponse toResponse(Specialization spec) {
-        return new SpecializationResponse(spec.getId(), spec.getName());
+        return new SpecializationResponse(spec.getId(), spec.getName(), spec.getColor());
     }
 }
