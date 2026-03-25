@@ -112,6 +112,12 @@ public class DeskAgentController {
         return preferenceUploadService.uploadPreferences(deskId, file);
     }
 
+    @PutMapping("/preferences/bulk")
+    public BulkPreferenceResult saveBulkPreferences(@PathVariable UUID deskId,
+                                                     @RequestBody BulkPreferenceRequest request) {
+        return agentPreferenceService.saveBulkPreferences(deskId, request);
+    }
+
     // --- Exceptions ---
 
     @GetMapping("/{agentId}/exceptions")

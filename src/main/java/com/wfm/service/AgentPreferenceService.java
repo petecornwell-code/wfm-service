@@ -1,6 +1,8 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.BulkPreferenceRequest;
+import com.wfm.dto.BulkPreferenceResult;
 import com.wfm.dto.PreferenceResponse;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Agent;
@@ -55,7 +57,54 @@ public class AgentPreferenceService {
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
+        List<AgentPreference> saved = savePreferencesForAgent(tenantId, deskId, agent, preferences);
+        return saved.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public BulkPreferenceResult saveBulkPreferences(UUID deskId, BulkPreferenceRequest request) {
+        long tenantId = TenantContext.getTenantId();
+
+        if (request.preferences() == null || request.preferences().isEmpty()) {
+            throw new IllegalArgumentException("preferences list must not be empty");
+        }
+
+        List<Agent> agents;
+        if (request.agentIds() == null || request.agentIds().isEmpty()) {
+            agents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
+            if (agents.isEmpty()) {
+                throw new EntityNotFoundException("No agents found on desk: " + deskId);
+            }
+        } else {
+            agents = new ArrayList<>();
+            for (UUID agentId : request.agentIds()) {
+                Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                        .orElseThrow(() -> new EntityNotFoundException(
+                                "Agent not found for desk: " + agentId));
+                agents.add(agent);
+            }
+        }
+
+        int totalSaved = 0;
+        for (Agent agent : agents) {
+            List<AgentPreference> saved = savePreferencesForAgent(
+                    tenantId, deskId, agent, request.preferences());
+            totalSaved += saved.size();
+        }
+
+        return new BulkPreferenceResult(
+                agents.size(),
+                request.preferences().size(),
+                totalSaved
+        );
+    }
+
+    private List<AgentPreference> savePreferencesForAgent(long tenantId, UUID deskId,
+                                                           Agent agent,
+                                                           List<PreferenceResponse> preferences) {
+        UUID agentId = agent.getId();
         List<AgentPreference> saved = new ArrayList<>();
+
         for (PreferenceResponse pref : preferences) {
             AgentPreference entity;
 
@@ -101,7 +150,7 @@ public class AgentPreferenceService {
             saved.add(agentPreferenceRepository.save(entity));
         }
 
-        return saved.stream().map(this::toResponse).toList();
+        return saved;
     }
 
     @Transactional
