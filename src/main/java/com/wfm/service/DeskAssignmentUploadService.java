@@ -4,10 +4,12 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
+import com.wfm.model.Specialization;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.SpecializationRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
@@ -30,17 +32,20 @@ public class DeskAssignmentUploadService {
     private final ClientManagementService clientManagementService;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final SpecializationRepository specializationRepository;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
                                         ClientManagementService clientManagementService,
                                         AgentPreferenceRepository agentPreferenceRepository,
-                                        AgentExceptionRepository agentExceptionRepository) {
+                                        AgentExceptionRepository agentExceptionRepository,
+                                        SpecializationRepository specializationRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.specializationRepository = specializationRepository;
     }
 
     @Transactional
@@ -55,6 +60,17 @@ public class DeskAssignmentUploadService {
         Map<String, Desk> deskByName = new HashMap<>();
         for (Desk d : allDesks) {
             deskByName.put(d.getName().toLowerCase(), d);
+        }
+
+        // Pre-load specializations per desk: deskId -> (lowercased name -> Specialization)
+        Map<UUID, Map<String, Specialization>> specsByDesk = new HashMap<>();
+        for (Desk d : allDesks) {
+            List<Specialization> specs = specializationRepository.findByTenantIdAndDeskId(tenantId, d.getId());
+            Map<String, Specialization> specMap = new HashMap<>();
+            for (Specialization s : specs) {
+                specMap.put(s.getName().toLowerCase(), s);
+            }
+            specsByDesk.put(d.getId(), specMap);
         }
 
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
@@ -85,6 +101,14 @@ public class DeskAssignmentUploadService {
                 String email = getCellString(row.getCell(2));
                 String deskName = getCellString(row.getCell(3));
 
+                // Parse specialty columns (4..N) — dynamic number of columns
+                List<String> specialtyNames = new ArrayList<>();
+                for (int col = 4; ; col++) {
+                    String val = getCellString(row.getCell(col));
+                    if (val == null || val.isBlank()) break;
+                    specialtyNames.add(val.trim());
+                }
+
                 if (deskName == null || deskName.isBlank()) {
                     skipped.add("Row " + (i + 1) + ": missing Desk Assignment");
                     continue;
@@ -96,6 +120,21 @@ public class DeskAssignmentUploadService {
                     skipped.add("Row " + (i + 1) + ": desk '" + deskName.trim() + "' not found");
                     continue;
                 }
+
+                // Resolve specialty names against desk specializations
+                Map<String, Specialization> deskSpecs = specsByDesk.getOrDefault(desk.getId(), Map.of());
+                List<Specialization> resolvedSpecialties = new ArrayList<>();
+                boolean specialtyError = false;
+                for (String specName : specialtyNames) {
+                    Specialization spec = deskSpecs.get(specName.toLowerCase());
+                    if (spec == null) {
+                        skipped.add("Row " + (i + 1) + ": specialty '" + specName + "' not found on desk '" + desk.getName() + "'");
+                        specialtyError = true;
+                        break;
+                    }
+                    resolvedSpecialties.add(spec);
+                }
+                if (specialtyError) continue;
 
                 boolean hasBambooId = bamboohrId != null && !bamboohrId.isBlank();
                 boolean hasEmail = email != null && !email.isBlank();
@@ -181,6 +220,19 @@ public class DeskAssignmentUploadService {
                 }
 
                 agent.setDeskId(desk.getId());
+
+                // Assign specializations
+                if (resolvedSpecialties.isEmpty()) {
+                    agent.setPrimarySpecialization(null);
+                    agent.setSecondarySpecializations(new ArrayList<>());
+                } else {
+                    agent.setPrimarySpecialization(resolvedSpecialties.get(0));
+                    agent.setSecondarySpecializations(
+                            resolvedSpecialties.size() > 1
+                                    ? new ArrayList<>(resolvedSpecialties.subList(1, resolvedSpecialties.size()))
+                                    : new ArrayList<>());
+                }
+
                 agentRepository.save(agent);
                 assigned.add("Row " + (i + 1) + ": " + agent.getName() + " -> " + desk.getName());
             }
