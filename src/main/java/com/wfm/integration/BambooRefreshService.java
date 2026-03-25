@@ -177,21 +177,32 @@ public class BambooRefreshService {
             agentDayOffRepository.deleteByAgent_IdAndDateBetween(agentId, from, to);
         }
 
+        // Deduplicate by (agentId, date) — BambooHR can return overlapping time-off entries
+        // for the same employee+date, which would violate the unique constraint.
+        // When duplicates exist, prefer MANDATORY over PTO.
+        Map<String, AgentDayOff> dedupedDaysOff = new LinkedHashMap<>();
         for (BambooTimeOff timeOff : timeOffs) {
             agentRepository.findByTenantIdAndBamboohrId(tenantId, timeOff.employeeId())
                     .ifPresent(agent -> {
-                        // Only insert days off for agents included in this desk's refresh (spec §9.4)
                         if (!refreshedAgentIds.contains(agent.getId())) return;
-                        AgentDayOff dayOff = new AgentDayOff();
-                        dayOff.setTenantId(tenantId);
-                        dayOff.setAgent(agent);
-                        dayOff.setDate(timeOff.date());
                         String type = timeOff.type();
-                        dayOff.setType("MANDATORY".equalsIgnoreCase(type)
+                        DayOffType dayOffType = "MANDATORY".equalsIgnoreCase(type)
                                 || "holiday".equalsIgnoreCase(type)
-                                ? DayOffType.MANDATORY : DayOffType.PTO);
-                        agentDayOffRepository.save(dayOff);
+                                ? DayOffType.MANDATORY : DayOffType.PTO;
+                        String key = agent.getId() + "|" + timeOff.date();
+                        AgentDayOff existing = dedupedDaysOff.get(key);
+                        if (existing == null || (dayOffType == DayOffType.MANDATORY && existing.getType() != DayOffType.MANDATORY)) {
+                            AgentDayOff dayOff = new AgentDayOff();
+                            dayOff.setTenantId(tenantId);
+                            dayOff.setAgent(agent);
+                            dayOff.setDate(timeOff.date());
+                            dayOff.setType(dayOffType);
+                            dedupedDaysOff.put(key, dayOff);
+                        }
                     });
+        }
+        for (AgentDayOff dayOff : dedupedDaysOff.values()) {
+            agentDayOffRepository.save(dayOff);
         }
     }
 }
