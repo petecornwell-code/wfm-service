@@ -7,7 +7,6 @@ import com.wfm.model.*;
 import com.wfm.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -41,7 +40,7 @@ public class BambooRefreshService {
     private static final String DEFAULT_SPECIALIZATION_NAME = "Shipping and Delivery";
     private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety";
 
-    public BambooRefreshService(@Qualifier("mockBambooHRClient") BambooHRClient bambooHRClient,
+    public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
                                 DeskRepository deskRepository,
                                 AgentDayOffRepository agentDayOffRepository,
