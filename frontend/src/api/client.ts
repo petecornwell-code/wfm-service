@@ -126,6 +126,8 @@ export const deskAgents = {
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
   refresh: (deskId: string) =>
     request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
+  bulkSavePreferences: (deskId: string, data: BulkPreferenceRequest) =>
+    request<BulkPreferenceResult>(`/desks/${deskId}/agents/preferences/bulk`, { method: 'PUT', body: JSON.stringify(data) }),
   uploadPreferences: async (deskId: string, file: File): Promise<PreferenceUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -347,6 +349,8 @@ export interface ScheduleDetail extends ScheduleSummary {
   errorMessage?: string
 }
 
+export interface BulkPreferenceRequest { agentIds?: string[]; preferences: AgentPreference[] }
+export interface BulkPreferenceResult { updatedAgentCount: number; preferencesPerAgent: number; totalPreferencesSaved: number }
 export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean; totalCount: number }
 
