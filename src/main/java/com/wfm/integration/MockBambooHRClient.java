@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory mock BambooHR client for development.
@@ -47,12 +46,9 @@ public class MockBambooHRClient implements BambooHRClient {
         "Wilson", "Wright", "Young"
     };
 
-    /** Incremented on each listEmployees call so each refresh produces a different roster. */
-    private final AtomicInteger callCount = new AtomicInteger(0);
-
     /**
-     * Build a shuffled roster of Vinted agents. The seed controls which employees
-     * appear and in what order, so each refresh call returns a visibly different list.
+     * Build a stable roster of Vinted agents. The seed is derived from the desk name
+     * so the same employees are always returned for a given desk (preventing spurious soft-deletes).
      */
     private static List<BambooEmployee> buildVintedAgents(String wfmTenantId, int seed) {
         // Build the full pool of possible employees
@@ -81,14 +77,16 @@ public class MockBambooHRClient implements BambooHRClient {
 
     @Override
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
-        int seed = callCount.getAndIncrement();
+        // Use a stable seed derived from the desk name so the same employees are
+        // always returned for a given desk — prevents spurious soft-deletes on refresh.
+        int seed = (project != null ? project.toLowerCase() : "").hashCode();
 
         // Case-insensitive desk name matching
         if ("Vinted".equalsIgnoreCase(project)) {
             return buildVintedAgents(wfmTenantId, seed);
         }
 
-        // For non-Vinted desks, generate a varying roster from the name pools
+        // For non-Vinted desks, generate a stable roster from the name pools
         Random rng = new Random(seed);
         int count = 3 + rng.nextInt(6); // 3-8 employees
         List<Integer> indices = new ArrayList<>();
