@@ -225,16 +225,18 @@ public class DeskAssignmentUploadService {
 
                 agent.setDeskId(desk.getId());
 
-                // Assign specializations
+                // Assign specializations — modify the existing JPA-managed collection
+                // in place (clear + addAll) rather than replacing the reference, so
+                // Hibernate properly tracks changes to the join table.
                 if (resolvedSpecialties.isEmpty()) {
                     agent.setPrimarySpecialization(null);
-                    agent.setSecondarySpecializations(new ArrayList<>());
                 } else {
                     agent.setPrimarySpecialization(resolvedSpecialties.get(0));
-                    agent.setSecondarySpecializations(
-                            resolvedSpecialties.size() > 1
-                                    ? new ArrayList<>(resolvedSpecialties.subList(1, resolvedSpecialties.size()))
-                                    : new ArrayList<>());
+                }
+                agent.getSecondarySpecializations().clear();
+                if (resolvedSpecialties.size() > 1) {
+                    agent.getSecondarySpecializations().addAll(
+                            resolvedSpecialties.subList(1, resolvedSpecialties.size()));
                 }
 
                 agentRepository.save(agent);

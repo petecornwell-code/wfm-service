@@ -71,11 +71,12 @@ public class BambooRefreshService {
                     .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
 
             // 2. Fetch from BambooHR BEFORE the transactional boundary
+            // Do NOT filter by department — desk names often differ from BambooHR departments
+            // (e.g. desk "EN I" vs department "Vinted - UA"). Matching happens by bamboohrId
+            // against agents already assigned to this desk.
             String deskName = desk.getName();
             List<BambooEmployee> employees = bambooHRClient.listEmployees(
-                    String.valueOf(tenantId), deskName).stream()
-                    .filter(e -> deskName.equalsIgnoreCase(e.department()))
-                    .toList();
+                    String.valueOf(tenantId), deskName);
 
             LocalDate from = LocalDate.now();
             LocalDate to = from.plusWeeks(lookaheadWeeks);
@@ -139,7 +140,7 @@ public class BambooRefreshService {
             agent.setEmail(emp.workEmail());
             agent.setDepartment(emp.department());
             agent.setJobTitle(emp.jobTitle());
-            agent.setActive("Active".equals(emp.status()));
+            agent.setActive("Active".equalsIgnoreCase(emp.status()));
             agent.setLastRefreshedAt(OffsetDateTime.now());
 
             // Preserve existing specializations and contracted hours — only set defaults if missing
