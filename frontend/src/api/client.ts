@@ -209,6 +209,8 @@ export const schedules = {
     fetch(`${API_BASE}/desks/${deskId}/schedules/${id}/export`, {
       headers: { 'X-Tenant-ID': currentTenantId },
     }),
+  delete: (deskId: string, id: string) =>
+    request<void>(`/desks/${deskId}/schedules/${id}`, { method: 'DELETE' }),
 }
 
 // --- Preferences ---

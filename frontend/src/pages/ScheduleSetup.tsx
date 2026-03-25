@@ -93,6 +93,21 @@ export default function ScheduleSetup() {
     }
   }
 
+  const handleDeleteSchedule = async (id: string) => {
+    if (!deskId || actionLoading) return
+    if (!confirm('Are you sure you want to delete this schedule? This cannot be undone.')) return
+    setActionLoading(id)
+    try {
+      await schedules.delete(deskId, id)
+      showToast('success', 'Schedule deleted')
+      loadSchedules()
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   useEffect(() => {
     if (!deskId || !periodStart || !periodEnd) { setSrCount(null); return }
     srApi.list(deskId, { from: periodStart, to: periodEnd }).then(res => setSrCount(res.data.length)).catch(() => setSrCount(0))
@@ -246,6 +261,12 @@ export default function ScheduleSetup() {
                         <button className="danger" style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
                           disabled={actionLoading === s.id} onClick={() => handleRejectSchedule(s.id)}>
                           Reject
+                        </button>
+                      )}
+                      {s.status === 'ACCEPTED' && (
+                        <button className="danger" style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
+                          disabled={actionLoading === s.id} onClick={() => handleDeleteSchedule(s.id)}>
+                          Delete
                         </button>
                       )}
                     </td>
