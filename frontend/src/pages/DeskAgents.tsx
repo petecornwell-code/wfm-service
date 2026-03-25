@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, type AgentPreference, getErrorMessage } from '../api/client'
+import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type SortField = 'firstName' | 'lastName'
@@ -47,16 +47,6 @@ export default function DeskAgents() {
   // Preference upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Bulk preferences modal
-  const [showBulkPrefs, setShowBulkPrefs] = useState(false)
-  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set())
-  const [bulkApplyToAll, setBulkApplyToAll] = useState(true)
-  const [bulkPrefs, setBulkPrefs] = useState<AgentPreference[]>([])
-  const [bulkNewDay, setBulkNewDay] = useState('MONDAY')
-  const [bulkNewStart, setBulkNewStart] = useState('')
-  const [bulkNewBreak, setBulkNewBreak] = useState('')
-  const [bulkSaving, setBulkSaving] = useState(false)
 
   const loadAgents = async () => {
     if (!deskId) return
@@ -193,51 +183,6 @@ export default function DeskAgents() {
     }
   }
 
-  const DAYS_OF_WEEK = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
-
-  const openBulkPrefs = () => {
-    setBulkSelectedIds(new Set())
-    setBulkApplyToAll(true)
-    setBulkPrefs([])
-    setBulkNewDay('MONDAY')
-    setBulkNewStart('')
-    setBulkNewBreak('')
-    setShowBulkPrefs(true)
-  }
-
-  const bulkAddPref = () => {
-    if (!bulkNewStart && !bulkNewBreak) return
-    setBulkPrefs([...bulkPrefs, {
-      dayOfWeek: bulkNewDay,
-      isStanding: true,
-      preferredStartTime: bulkNewStart || undefined,
-      preferredBreakTime: bulkNewBreak || undefined,
-    }])
-    setBulkNewStart('')
-    setBulkNewBreak('')
-  }
-
-  const bulkRemovePref = (index: number) => {
-    setBulkPrefs(bulkPrefs.filter((_, i) => i !== index))
-  }
-
-  const handleBulkSave = async () => {
-    if (!deskId || bulkPrefs.length === 0) return
-    setBulkSaving(true)
-    try {
-      const result = await deskAgents.bulkSavePreferences(deskId, {
-        agentIds: bulkApplyToAll ? undefined : Array.from(bulkSelectedIds),
-        preferences: bulkPrefs,
-      })
-      showToast('success', `Bulk preferences saved: ${result.totalPreferencesSaved} preferences across ${result.updatedAgentCount} agents`)
-      setShowBulkPrefs(false)
-    } catch (err) {
-      showToast('error', getErrorMessage(err))
-    } finally {
-      setBulkSaving(false)
-    }
-  }
-
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -287,7 +232,6 @@ export default function DeskAgents() {
         <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
           {uploading ? 'Uploading...' : 'Load Preferences'}
         </button>
-        <button className="primary" onClick={openBulkPrefs}>Bulk Preferences</button>
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadPreferences} />
         <label style={{ marginLeft: 'auto', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
           <input type="checkbox" checked={showActiveOnly} onChange={e => setShowActiveOnly(e.target.checked)} />
@@ -458,85 +402,6 @@ export default function DeskAgents() {
               )}
             </div>
             <button onClick={() => setShowDaysOff(null)} style={{ marginTop: '0.75rem', alignSelf: 'flex-end' }}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Preferences Modal */}
-      {showBulkPrefs && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: '8px', padding: '1.5rem', width: '600px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <h3>Bulk Assign Preferences</h3>
-
-            {/* Agent selection */}
-            <div style={{ marginTop: '0.75rem' }}>
-              <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem' }}>
-                <input type="checkbox" checked={bulkApplyToAll} onChange={e => setBulkApplyToAll(e.target.checked)} />
-                Apply to all agents on this desk
-              </label>
-              {!bulkApplyToAll && (
-                <div style={{ border: '1px solid #e5e7eb', borderRadius: '4px', maxHeight: '150px', overflowY: 'auto' }}>
-                  {filteredAgents.map(da => (
-                    <label key={da.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.3rem 0.5rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      <input type="checkbox" checked={bulkSelectedIds.has(da.id)}
-                        onChange={e => {
-                          const next = new Set(bulkSelectedIds)
-                          e.target.checked ? next.add(da.id) : next.delete(da.id)
-                          setBulkSelectedIds(next)
-                        }} />
-                      {da.name}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Add preference row */}
-            <div style={{ marginTop: '1rem' }}>
-              <h4 style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>Standing Preferences</h4>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <select value={bulkNewDay} onChange={e => setBulkNewDay(e.target.value)} style={{ fontSize: '0.85rem' }}>
-                  {DAYS_OF_WEEK.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                <label style={{ fontSize: '0.85rem' }}>Start: <input type="time" value={bulkNewStart} onChange={e => setBulkNewStart(e.target.value)} /></label>
-                <label style={{ fontSize: '0.85rem' }}>Break: <input type="time" value={bulkNewBreak} onChange={e => setBulkNewBreak(e.target.value)} /></label>
-                <button className="primary" onClick={bulkAddPref} style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem' }}>Add</button>
-              </div>
-            </div>
-
-            {/* Preferences list */}
-            {bulkPrefs.length > 0 && (
-              <div style={{ marginTop: '0.75rem', flex: 1, overflowY: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr><th>Day</th><th>Start Time</th><th>Break Time</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {bulkPrefs.map((p, i) => (
-                      <tr key={i}>
-                        <td>{p.dayOfWeek}</td>
-                        <td>{p.preferredStartTime || '—'}</td>
-                        <td>{p.preferredBreakTime || '—'}</td>
-                        <td><button className="danger" onClick={() => bulkRemovePref(i)} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>Remove</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {bulkPrefs.length === 0 && (
-              <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: '0.75rem' }}>Add at least one preference above.</p>
-            )}
-
-            {/* Footer */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowBulkPrefs(false)}>Cancel</button>
-              <button className="primary" onClick={handleBulkSave}
-                disabled={bulkSaving || bulkPrefs.length === 0 || (!bulkApplyToAll && bulkSelectedIds.size === 0)}>
-                {bulkSaving ? 'Saving...' : `Apply to ${bulkApplyToAll ? 'All Agents' : `${bulkSelectedIds.size} Agent(s)`}`}
-              </button>
-            </div>
           </div>
         </div>
       )}
