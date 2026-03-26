@@ -850,7 +850,7 @@ public class SolverService {
         List<AgentAssignment> overflow = new ArrayList<>();
         for (StaffingRequirement sr : staffingRequirements) {
             int requiredAgents = sr.getRequiredFTEs();
-            int maxAgents = requiredAgents * overallocationHardLimitPct / 100;
+            int maxAgents = (requiredAgents * overallocationHardLimitPct + 99) / 100;
             int overflowAgents = maxAgents - requiredAgents;
 
             for (int i = 0; i < overflowAgents; i++) {
