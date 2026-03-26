@@ -5,10 +5,13 @@ import com.wfm.dto.AgentResponse;
 import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.PaginatedResponse;
+import com.wfm.service.ClientManagementExportService;
 import com.wfm.service.ClientManagementService;
 import com.wfm.service.DeskAgentService;
 import com.wfm.service.DeskAssignmentUploadService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,13 +25,16 @@ import java.util.UUID;
 public class ClientManagementController {
 
     private final ClientManagementService clientManagementService;
+    private final ClientManagementExportService clientManagementExportService;
     private final DeskAgentService deskAgentService;
     private final DeskAssignmentUploadService deskAssignmentUploadService;
 
     public ClientManagementController(ClientManagementService clientManagementService,
+                                       ClientManagementExportService clientManagementExportService,
                                        DeskAgentService deskAgentService,
                                        DeskAssignmentUploadService deskAssignmentUploadService) {
         this.clientManagementService = clientManagementService;
+        this.clientManagementExportService = clientManagementExportService;
         this.deskAgentService = deskAgentService;
         this.deskAssignmentUploadService = deskAssignmentUploadService;
     }
@@ -65,6 +71,22 @@ public class ClientManagementController {
                                                      @PathVariable UUID agentId) {
         deskAgentService.removeDeskAgent(deskId, agentId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/employees/export")
+    public ResponseEntity<byte[]> exportEmployees(@RequestParam String department) {
+        String tenantId = String.valueOf(TenantContext.getTenantId());
+        List<BambooEmployeeResponse> employees = clientManagementService.listEmployeesByDepartment(tenantId, department, false);
+
+        byte[] xlsx = clientManagementExportService.exportEmployeesToExcel(employees);
+
+        String sanitizedDepartment = department.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+        String filename = sanitizedDepartment + "-employees.xlsx";
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
     }
 
     @PostMapping("/upload-desk-assignments")

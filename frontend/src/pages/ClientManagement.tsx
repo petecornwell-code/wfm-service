@@ -28,6 +28,9 @@ export default function ClientManagement() {
   const [deskAgentList, setDeskAgentList] = useState<DeskAgent[]>([])
   const [loadingAgents, setLoadingAgents] = useState(false)
 
+  // Export
+  const [exporting, setExporting] = useState(false)
+
   // Desk assignment upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -169,6 +172,29 @@ export default function ClientManagement() {
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleExportEmployees = async () => {
+    if (!department.trim()) return
+    setExporting(true)
+    try {
+      const res = await clientManagement.exportEmployees(department.trim())
+      if (!res.ok) {
+        showToast('error', 'Export failed')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${department.trim().replace(/[^a-zA-Z0-9_\-]/g, '_')}-employees.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -322,6 +348,13 @@ export default function ClientManagement() {
             <div style={{ fontWeight: 600 }}>
               Total records: {totalCount.toLocaleString()}
             </div>
+            <button
+              onClick={handleExportEmployees}
+              disabled={exporting || totalCount === 0}
+              style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+            >
+              {exporting ? 'Exporting...' : 'Export to XLSX'}
+            </button>
             <label style={{ marginLeft: '1rem' }}>
               Rows per page:{' '}
               <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); }}>
