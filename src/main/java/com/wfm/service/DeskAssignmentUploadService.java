@@ -174,9 +174,18 @@ public class DeskAssignmentUploadService {
                             .orElse(null);
                 }
 
-                // Also try matching by the cached BambooHR ID in case spreadsheet identifiers differ
+                // Also try matching by the cached BambooHR data in case spreadsheet
+                // identifiers differ (e.g. fuzzy name like "Olena Yaremenko1")
                 if (agent == null) {
                     agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, cached.id())
+                            .orElse(null);
+                }
+                if (agent == null && cached.workEmail() != null && !cached.workEmail().isBlank()) {
+                    agent = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, cached.workEmail())
+                            .orElse(null);
+                }
+                if (agent == null && cached.displayName() != null && !cached.displayName().isBlank()) {
+                    agent = agentRepository.findByTenantIdAndNameIgnoreCase(tenantId, cached.displayName())
                             .orElse(null);
                 }
 
