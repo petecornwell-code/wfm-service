@@ -369,6 +369,10 @@ export const clientManagement = {
     request<Agent[]>(`/client-management/assign-to-desk`, { method: 'POST', body: JSON.stringify({ deskId, bambooEmployeeIds }) }),
   removeAgentFromDesk: (deskId: string, agentId: string) =>
     request<void>(`/client-management/desks/${deskId}/agents/${agentId}`, { method: 'DELETE' }),
+  exportEmployees: (department: string) =>
+    fetch(`${API_BASE}/client-management/employees/export?department=${encodeURIComponent(department)}`, {
+      headers: { 'X-Tenant-ID': currentTenantId },
+    }),
   uploadDeskAssignments: async (file: File): Promise<DeskAssignmentUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
