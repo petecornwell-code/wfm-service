@@ -18,6 +18,11 @@
 
     <!-- Local search: improve the CH-built solution.
          Termination is configured programmatically from the solver.time-limit property. -->
-    <localSearch/>
+    <localSearch>
+        <acceptor>
+            <entityTabuSize>7</entityTabuSize>
+            <simulatedAnnealingStartingTemperature>0hard/500soft</simulatedAnnealingStartingTemperature>
+        </acceptor>
+    </localSearch>
 
 </solver>
