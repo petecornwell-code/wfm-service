@@ -52,6 +52,10 @@ public class DeskAssignmentUploadService {
     public DeskAssignmentUploadResult uploadDeskAssignments(MultipartFile file) throws IOException {
         long tenantId = TenantContext.getTenantId();
 
+        // Pre-populate the BambooHR cache so findCachedEmployee can match agents
+        // even if the user hasn't manually fetched a department on this page yet.
+        clientManagementService.ensureCachePopulatedForUpload(tenantId);
+
         List<String> assigned = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
 

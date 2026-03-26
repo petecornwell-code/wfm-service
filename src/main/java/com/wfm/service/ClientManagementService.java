@@ -86,6 +86,33 @@ public class ClientManagementService {
     }
 
     /**
+     * Ensure the BambooHR cache is populated with all active employees for the given tenant.
+     * Called by the desk-assignment upload flow so that {@link #findCachedEmployee} can match
+     * agents even when the user hasn't manually fetched a department first.
+     */
+    public void ensureCachePopulatedForUpload(long tenantId) {
+        String cacheKey = tenantId + "::__all__";
+        if (cache.containsKey(cacheKey)) return;
+
+        log.info("Pre-populating BambooHR cache for desk-assignment upload (tenant={})", tenantId);
+        List<BambooEmployee> employees = bambooHRClient.listEmployees(String.valueOf(tenantId), null);
+        List<BambooEmployeeResponse> result = employees.stream()
+                .filter(e -> "Active".equalsIgnoreCase(e.status()))
+                .map(e -> new BambooEmployeeResponse(
+                        e.id(), e.displayName(), e.workEmail(),
+                        e.department(), e.jobTitle(), e.status()))
+                .toList();
+
+        int maxCacheSize = getCacheMaxSize();
+        if (result.size() <= maxCacheSize) {
+            cache.put(cacheKey, result);
+            log.info("Cached {} employees for upload (tenant={})", result.size(), tenantId);
+        } else {
+            log.warn("Skipping cache for {} employees (exceeds maxCacheSize={})", result.size(), maxCacheSize);
+        }
+    }
+
+    /**
      * Search all cached employee lists for a match by bambooHR ID, email, or name.
      * Name matching allows a 1-character trailing difference (e.g. "John Smith" matches "John Smith1").
      * Returns the first match found, or null.
