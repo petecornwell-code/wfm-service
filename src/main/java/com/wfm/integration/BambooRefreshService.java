@@ -38,7 +38,7 @@ public class BambooRefreshService {
     private int lookaheadWeeks;
 
     private static final String DEFAULT_SPECIALIZATION_NAME = "Shipping and Delivery";
-    private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety & DSA";
+    private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety";
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
