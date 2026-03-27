@@ -40,6 +40,8 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
 
     Optional<Agent> findByTenantIdAndEmailIgnoreCase(long tenantId, String email);
 
+    Optional<Agent> findByTenantIdAndDeskIdAndEmailIgnoreCase(long tenantId, UUID deskId, String email);
+
     Optional<Agent> findByTenantIdAndNameIgnoreCase(long tenantId, String name);
 
     // --- Desk-scoped queries (formerly on DeskAgentRepository) ---

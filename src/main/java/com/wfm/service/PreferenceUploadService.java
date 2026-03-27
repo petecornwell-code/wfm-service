@@ -56,18 +56,12 @@ public class PreferenceUploadService {
                     continue;
                 }
 
-                var agentOpt = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, email.trim());
+                var agentOpt = agentRepository.findByTenantIdAndDeskIdAndEmailIgnoreCase(tenantId, deskId, email.trim());
                 if (agentOpt.isEmpty()) {
-                    skipped.add("Row " + (i + 1) + ": agent not found for email " + email);
+                    skipped.add("Row " + (i + 1) + ": agent not found for email " + email + " on this desk");
                     continue;
                 }
                 Agent agent = agentOpt.get();
-
-                // Verify agent is assigned to the desk
-                if (agent.getDeskId() == null || !agent.getDeskId().equals(deskId)) {
-                    skipped.add("Row " + (i + 1) + ": agent " + email + " not assigned to desk");
-                    continue;
-                }
 
                 String dateStr = getCellString(row.getCell(2));
                 String dayOfWeekStr = getCellString(row.getCell(3));
