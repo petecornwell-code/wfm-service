@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { schedules, deskAgents, specializations as specApi, staffingRequirements as srApi, type ScheduleSummary, getErrorMessage } from '../api/client'
-import { loadTimeslotParams, saveTimeslotParams } from '../timeslotParams'
+import { saveTimeslotParams, loadScheduleSetup, saveScheduleSetup, clearScheduleSetup } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
 const DEFAULTS = {
@@ -24,22 +24,22 @@ const DEFAULTS = {
 export default function ScheduleSetup() {
   const { deskId } = useParams<{ deskId: string }>()
   const navigate = useNavigate()
-  const saved = deskId ? loadTimeslotParams(deskId) : {}
+  const saved = deskId ? loadScheduleSetup(deskId) : {}
 
   const [periodStart, setPeriodStart] = useState(saved.periodStart ?? DEFAULTS.periodStart)
   const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? DEFAULTS.periodEnd)
   const [startTime, setStartTime] = useState(saved.startTime ?? DEFAULTS.startTime)
   const [endTime, setEndTime] = useState(saved.endTime ?? DEFAULTS.endTime)
   const [increment, setIncrement] = useState(saved.increment ?? DEFAULTS.increment)
-  const [breakBlocked, setBreakBlocked] = useState(DEFAULTS.breakBlocked)
-  const [breakDuration, setBreakDuration] = useState(DEFAULTS.breakDuration)
-  const [breakMinShift, setBreakMinShift] = useState(DEFAULTS.breakMinShift)
-  const [breakAlignment, setBreakAlignment] = useState(DEFAULTS.breakAlignment)
-  const [breakCluster, setBreakCluster] = useState(DEFAULTS.breakCluster)
-  const [defaultHours, setDefaultHours] = useState(DEFAULTS.defaultHours)
-  const [overallocationLimit, setOverallocationLimit] = useState(DEFAULTS.overallocationLimit)
-  const [underallocationLimit, setUnderallocationLimit] = useState(DEFAULTS.underallocationLimit)
-  const [solveTimeMinutes, setSolveTimeMinutes] = useState(DEFAULTS.solveTimeMinutes)
+  const [breakBlocked, setBreakBlocked] = useState(saved.breakBlocked ?? DEFAULTS.breakBlocked)
+  const [breakDuration, setBreakDuration] = useState(saved.breakDuration ?? DEFAULTS.breakDuration)
+  const [breakMinShift, setBreakMinShift] = useState(saved.breakMinShift ?? DEFAULTS.breakMinShift)
+  const [breakAlignment, setBreakAlignment] = useState(saved.breakAlignment ?? DEFAULTS.breakAlignment)
+  const [breakCluster, setBreakCluster] = useState(saved.breakCluster ?? DEFAULTS.breakCluster)
+  const [defaultHours, setDefaultHours] = useState(saved.defaultHours ?? DEFAULTS.defaultHours)
+  const [overallocationLimit, setOverallocationLimit] = useState(saved.overallocationLimit ?? DEFAULTS.overallocationLimit)
+  const [underallocationLimit, setUnderallocationLimit] = useState(saved.underallocationLimit ?? DEFAULTS.underallocationLimit)
+  const [solveTimeMinutes, setSolveTimeMinutes] = useState(saved.solveTimeMinutes ?? DEFAULTS.solveTimeMinutes)
   const [solving, setSolving] = useState(false)
   const [error, setError] = useState('')
 
@@ -128,6 +128,7 @@ export default function ScheduleSetup() {
     setOverallocationLimit(DEFAULTS.overallocationLimit)
     setUnderallocationLimit(DEFAULTS.underallocationLimit)
     setSolveTimeMinutes(DEFAULTS.solveTimeMinutes)
+    if (deskId) clearScheduleSetup(deskId)
   }
 
   // Filter break duration options to multiples of increment
@@ -136,6 +137,11 @@ export default function ScheduleSetup() {
   const handleSolve = async () => {
     if (!deskId || !periodStart || !periodEnd) return
     saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
+    saveScheduleSetup(deskId, {
+      periodStart, periodEnd, startTime, endTime, increment,
+      breakBlocked, breakDuration, breakMinShift, breakAlignment, breakCluster,
+      defaultHours, overallocationLimit, underallocationLimit, solveTimeMinutes,
+    })
     setSolving(true)
     setError('')
     try {
