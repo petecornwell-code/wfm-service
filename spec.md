@@ -282,6 +282,7 @@ classDiagram
         +long tenantId
         +UUID deskId
         +String name
+        +String color
     }
 
     class Agent {
@@ -465,6 +466,7 @@ A reference entity representing a named area of expertise (e.g. "Billing", "Tech
 | `tenantId` | `long` | Tenant identifier (from platform) |
 | `deskId` | `UUID` | Desk this specialization belongs to |
 | `name` | `String` | Unique specialization name (unique per desk) |
+| `color` | `String` | Hex colour code for UI display (e.g. `"#FF5733"`). Optional — used to visually distinguish specializations in the Agent Allocation grid and other UI views. Stored as `VARCHAR(7)`. |
 
 ### 5.3 Agent
 
@@ -635,6 +637,19 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 The "One agent per seat" constraint is structural (enforced by the planning variable) and has no configurable weight.
 
 **JPA mapping of `HardSoftScore` fields.** Each `HardSoftScore` field is stored as a **single VARCHAR column** using Timefold's `HardSoftScoreConverter` (`@Convert(converter = HardSoftScoreConverter.class)` from the `timefold-solver-jpa` dependency). The converter serialises scores to the format `"<hard>hard/<soft>soft"` (e.g. `"1hard/0soft"`). Each weight field also carries an explicit `@Column(name = "...")` annotation. The `constraint_weights` table therefore has 18 VARCHAR columns (one per weight). The `schedule` table stores its solver score the same way (a single `score VARCHAR` column).
+
+### 5.10.1 AppConfiguration
+
+A tenant-level key-value configuration store used for runtime settings that are not part of the scheduling domain model (e.g. BambooHR server URL, API keys). Each configuration entry is a simple key-value pair scoped to a tenant.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `UUID` | Primary key |
+| `tenantId` | `long` | Tenant identifier (from platform) |
+| `configKey` | `String` | Configuration key (unique per tenant) |
+| `configValue` | `String` | Configuration value (free-text) |
+
+**Uniqueness constraint:** Unique on (`tenantId`, `configKey`) — each tenant has at most one value per configuration key.
 
 ### 5.10a AgentDayConfig (Problem Fact)
 
@@ -885,6 +900,7 @@ Manages which agents are assigned to a desk and their desk-specific configuratio
 | `DELETE` | `/desks/{deskId}/agents/{agentId}` | Remove an agent from this desk. Clears the agent's desk fields (`deskId`, `primarySpecialization`, `secondarySpecializations`, `contractedHoursPerDay`) and deletes all associated desk-scoped data for this agent (preferences, exceptions). Returns `204 No Content` on success. **Deferred:** the in-progress schedule check (`409 Conflict` if the desk has a non-accepted schedule) is not yet implemented and is planned for Phase 4. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/specializations` | Set primary and secondary specializations for an agent on this desk. Specializations must belong to this desk. Request body: `{ "primarySpecializationId": "uuid", "secondarySpecializationIds": ["uuid1", "uuid2"] }`. Returns `200` with the updated DeskAgentResponse. Returns `404 Not Found` if any specialization does not belong to this desk. **Deferred:** the validation that primary must not appear in the secondary list is not yet implemented. |
 | `PUT` | `/desks/{deskId}/agents/{agentId}/contracted-hours` | Set the agent's contracted hours per day for this desk. Accepts `{ "contractedHoursPerDay": 8.0 }`. Returns `200` with the updated DeskAgentResponse. If not set, the desk's `defaultContractedHoursPerDay` is used. |
+| `GET` | `/desks/{deskId}/agents/export` | Export desk agents to a `.xlsx` spreadsheet. Returns the full list of agents assigned to this desk as a downloadable Excel file with columns: name, email, department, job title, primary specialization, secondary specializations, contracted hours, active status. The response streams the file with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`. |
 | `POST` | `/desks/{deskId}/agents/refresh` | Trigger a desk-scoped refresh of agent data from BambooHR (section 9.4). Uses the desk's `name` as the BambooHR `project` filter to pull only employees assigned to this desk. Returns `200` with the full list of agents assigned to this desk after the refresh completes (same shape as `GET /desks/{deskId}/agents` items but **not paginated** — returns all agents in a flat array so the UI can replace its local state in one shot). Returns `409 Conflict` if a refresh is already in progress for this desk. |
 
 **Desk-agent response format** (used by `GET /desks/{deskId}/agents` list items and `POST /desks/{deskId}/agents` response). Since `DeskAgent` has been merged into `Agent`, the response is a flat structure:
@@ -950,9 +966,9 @@ Desk-scoped. Each desk defines its own set of specializations.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk. Returns a flat JSON array (not paginated — bounded by business constraints; a desk typically has fewer than 20 specializations). Each object: `{ "id": "uuid", "name": "Billing" }`. |
-| `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "..." }`. Name must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the name is already taken. Returns `201` with the created specialization. |
-| `PUT` | `/desks/{deskId}/specializations/{id}` | Rename a specialization. Request body: `{ "name": "..." }`. Name must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the new name is already taken. Returns `200` with the updated specialization. |
+| `GET` | `/desks/{deskId}/specializations` | List all specializations for this desk. Returns a flat JSON array (not paginated — bounded by business constraints; a desk typically has fewer than 20 specializations). Each object: `{ "id": "uuid", "name": "Billing", "color": "#FF5733" }`. |
+| `POST` | `/desks/{deskId}/specializations` | Create specialization for this desk. Request body: `{ "name": "...", "color": "#FF5733" }`. `name` is required and must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the name is already taken. `color` is optional (hex colour code for UI display). Returns `201` with the created specialization. |
+| `PUT` | `/desks/{deskId}/specializations/{id}` | Update a specialization's name and/or colour. Request body: `{ "name": "...", "color": "#FF5733" }`. Name must be unique per desk — returns `409 Conflict` (error code `CONFLICT`) if the new name is already taken. Returns `200` with the updated specialization. |
 | `DELETE` | `/desks/{deskId}/specializations/{id}` | Delete specialization. Returns `204 No Content` on success. Returns `409 Conflict` (error code `CONFLICT`) if the specialization is referenced by any agent (as primary or secondary) or by any staffing requirement. The references must be removed before the specialization can be deleted — no cascade. |
 
 ### 7.6 Agent Preferences
@@ -1011,6 +1027,34 @@ Desk-scoped. Each desk has its own constraint weight configuration.
 ```
 
 Each weight is a `HardSoftScore` object. To promote a constraint from soft to hard (or vice versa), change the score component — e.g. `{ "hardScore": 0, "softScore": 0 }` disables a constraint entirely.
+
+### 7.8a App Configuration
+
+Tenant-level key-value configuration. Not desk-scoped.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/configuration` | Get all configuration entries for the tenant. Returns a flat JSON object `{ "key1": "value1", "key2": "value2" }`. |
+| `PUT` | `/configuration` | Update configuration entries for the tenant. Request body: `{ "key1": "value1", "key2": "value2" }`. Upserts each entry — existing keys are updated, new keys are created. Returns the full configuration object after the update. |
+
+**Known configuration keys:**
+
+| Key | Description |
+|---|---|
+| `bamboohr.server` | BambooHR server URL for live API integration |
+| `bamboohr.apiKey` | BambooHR API key |
+
+### 7.8b Client Management
+
+Provides a higher-level interface for managing BambooHR employee assignment to desks. This is an alternative to the desk-scoped agent refresh (section 7.2) — it allows browsing the full BambooHR employee directory by department and assigning employees to desks in bulk. These endpoints are **tenant-level** and do not require a desk context.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/client-management/employees` | List BambooHR employees filtered by department. Query parameters: `department` (required), `page` (default 1), `pageSize` (default 20), `refresh` (boolean, default false — when true, bypasses the in-memory cache and fetches fresh data from BambooHR). Returns a paginated response of employee records. Each item: `{ "id": "bamboo-id", "displayName": "Jane Smith", "workEmail": "jane@example.com", "department": "Support", "jobTitle": "Senior Agent", "status": "Active" }`. |
+| `POST` | `/client-management/assign-to-desk` | Assign BambooHR employees to a desk. Request body: `{ "deskId": "uuid", "bambooEmployeeIds": ["id1", "id2"] }`. Creates or updates agent records for the given BambooHR employee IDs and assigns them to the specified desk. Returns `201` with the assigned agent records. |
+| `DELETE` | `/client-management/desks/{deskId}/agents/{agentId}` | Remove an agent from a desk. Same behaviour as `DELETE /desks/{deskId}/agents/{agentId}` (section 7.2). Returns `204 No Content`. |
+| `GET` | `/client-management/employees/export` | Export BambooHR employees to `.xlsx` spreadsheet. Query parameter: `department` (required). Returns the employee list as a downloadable Excel file. |
+| `POST` | `/client-management/upload-desk-assignments` | Upload desk assignments from a `.xlsx` spreadsheet. Accepts `multipart/form-data` with a `file` field. The spreadsheet must have columns: **BambooHR ID**, **Name**, **Email**, **Desk Assignment**, and optionally specialization columns. Agents are matched by BambooHR ID, then email, then name. Returns `{ "savedCount": n, "skippedCount": n, "skippedDetails": [...] }`. |
 
 ### 7.9 Timeslots
 
@@ -1456,6 +1500,7 @@ src/main/java/com/wfm/
 │   ├── AgentException.java
 │   ├── AgentAssignment.java
 │   ├── ConstraintWeights.java
+│   ├── AppConfiguration.java          (tenant-level key-value config store)
 │   ├── ScheduleConfig.java            (record: immutable schedule config for constraint access)
 │   ├── AgentDayConfig.java            (record: per-agent-day effective hours + break config)
 │   ├── TimeslotDemandConfig.java      (record: per-timeslot demand FTE totals for bulk allocation constraints)
@@ -1476,17 +1521,23 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirementRepository.java
 │   ├── ConstraintWeightsRepository.java
 │   ├── AgentAssignmentRepository.java
+│   ├── AppConfigurationRepository.java
 │   └── ScheduleRepository.java
 ├── service/
 │   ├── DeskService.java
 │   ├── AgentService.java
 │   ├── DeskAgentService.java
+│   ├── DeskAgentExportService.java    (desk agent list → .xlsx export)
+│   ├── DeskAssignmentUploadService.java (desk assignment .xlsx upload and processing)
 │   ├── PreferenceUploadService.java
 │   ├── AgentPreferenceService.java
 │   ├── AgentDayOffService.java
 │   ├── AgentExceptionService.java
 │   ├── SpecializationService.java
 │   ├── ConstraintWeightsService.java
+│   ├── AppConfigurationService.java   (tenant-level key-value configuration CRUD)
+│   ├── ClientManagementService.java   (BambooHR employee browsing, caching, desk assignment)
+│   ├── ClientManagementExportService.java (BambooHR employee list → .xlsx export)
 │   ├── StaffingRequirementService.java
 │   ├── TimeslotGeneratorService.java
 │   ├── ErlangXService.java
@@ -1505,13 +1556,16 @@ src/main/java/com/wfm/
 │   ├── StaffingRequirementController.java
 │   ├── ConstraintWeightsController.java
 │   ├── ScheduleController.java
-│   └── GlobalExceptionHandler.java    (centralized error handling: 400/404/409/422/500)
+│   ├── AppConfigurationController.java  (tenant-level key-value configuration)
+│   ├── ClientManagementController.java  (BambooHR employee browsing and desk assignment)
+│   └── GlobalExceptionHandler.java      (centralized error handling: 400/404/409/422/500)
 ├── integration/
 │   ├── BambooHRClient.java
 │   ├── BambooEmployee.java
 │   ├── BambooTimeOff.java
 │   ├── MockBambooHRClient.java
 │   ├── HttpBambooHRClient.java
+│   ├── DelegatingBambooHRClient.java  (delegates to mock or HTTP based on configuration)
 │   └── BambooRefreshService.java
 ├── dto/                               (request/response DTOs for all API endpoints)
 │   ├── DeskRequest.java
@@ -1520,6 +1574,8 @@ src/main/java/com/wfm/
 │   ├── AgentDayOffResponse.java
 │   ├── DeskAgentResponse.java          (flat agent response with desk fields — name kept for API compatibility)
 │   ├── AssignAgentsRequest.java
+│   ├── AssignEmployeesToDeskRequest.java (client management: deskId + bambooEmployeeIds)
+│   ├── BambooEmployeeResponse.java     (client management: BambooHR employee data for browsing)
 │   ├── SetSpecializationsRequest.java
 │   ├── SetContractedHoursRequest.java
 │   ├── SpecializationResponse.java
@@ -1534,7 +1590,7 @@ src/main/java/com/wfm/
 │   ├── SolveRequest.java
 │   ├── ScheduleSummary.java
 │   ├── ScheduleDetailResponse.java
-│   ├── PaginatedResponse.java         (standard pagination envelope: data, nextCursor, hasMore)
+│   ├── PaginatedResponse.java         (standard pagination envelope: data, nextCursor, hasMore, totalCount)
 │   └── ErrorResponse.java
 ├── config/
 │   ├── TenantFilter.java
@@ -1579,11 +1635,12 @@ Every tenant-owned table carries a `tenant_id BIGINT NOT NULL` column. Desk-scop
 - `desk` (`tenant_id`, `name`, `description`, `default_contracted_hours_per_day`, unique on `tenant_id` + `name`)
 - `agent` (`tenant_id`, `desk_id` (nullable FK → `desk`), `primary_specialization_id` (nullable FK → `specialization`), `contracted_hours_per_day`, unique on `tenant_id` + `bamboohr_id`)
 - `agent_day_off` (`tenant_id`, FK → `agent`, `date`, `type`, unique on `agent` + `date`). The `tenant_id` column is present for query filtering but not needed in the uniqueness constraint since `agent` already implies tenant.
+- `app_configuration` (`tenant_id`, `config_key` VARCHAR(255), `config_value` TEXT, unique on `tenant_id` + `config_key`). Stores runtime key-value configuration per tenant (e.g. BambooHR server URL, API key).
 
 **Desk-scoped tables** (`tenant_id` + `desk_id`):
 
 - `agent_secondary_specialization` (join table: FK → `agent`, FK → `specialization`)
-- `specialization` (`tenant_id`, `desk_id`, FK → `desk`, unique on `tenant_id` + `desk_id` + `name`)
+- `specialization` (`tenant_id`, `desk_id`, FK → `desk`, `color` VARCHAR(7), unique on `tenant_id` + `desk_id` + `name`)
 - `agent_preference` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `day_of_week`, `date`, `is_standing`; partial unique on `tenant_id` + `desk_id` + `agent` + `day_of_week` where `is_standing = true`; partial unique on `tenant_id` + `desk_id` + `agent` + `date` where `is_standing = false`)
 - `agent_exception` (`tenant_id`, `desk_id`, FK → `desk`, FK → `agent`, `date`, `contracted_hours_override`, `reason`, unique on `tenant_id` + `desk_id` + `agent` + `date`)
 - `timeslot` (`tenant_id`, `desk_id`, FK → `desk`, nullable FK → `schedule` (`schedule_id`), unique on `tenant_id` + `desk_id` + `date` + `start_time` + `end_time` where `schedule_id IS NULL`). Rows with `schedule_id IS NULL` are live input data; rows with a `schedule_id` are accepted schedule snapshots.
