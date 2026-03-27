@@ -135,7 +135,13 @@ export default function ScheduleSetup() {
   const breakDurationOptions = [15, 30, 45, 60, 90, 120].filter(d => d % increment === 0)
 
   const handleSolve = async () => {
-    if (!deskId || !periodStart || !periodEnd) return
+    if (!deskId) return
+    if (!periodStart || !periodEnd) {
+      const msg = 'Please select both a period start and end date'
+      setError(msg)
+      showToast('error', msg)
+      return
+    }
     saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
     saveScheduleSetup(deskId, {
       periodStart, periodEnd, startTime, endTime, increment,
@@ -186,8 +192,8 @@ export default function ScheduleSetup() {
 
       <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-          <label>Period Start<input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} /></label>
-          <label>Period End<input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} /></label>
+          <label>Period Start<input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} required /></label>
+          <label>Period End<input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} required /></label>
           <label>Start Time<input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} /></label>
           <label>End Time<input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} /></label>
           <label>Increment
