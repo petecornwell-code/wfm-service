@@ -17,6 +17,7 @@ export default function ScheduleResults() {
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
+  const [specFilter, setSpecFilter] = useState('')
   const [specs, setSpecs] = useState<Specialization[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -248,8 +249,8 @@ export default function ScheduleResults() {
       {/* Tab content */}
       <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', overflowX: 'auto' }}>
         {activeTab === 'staffing' && <StaffingTab data={filteredStaffing} />}
-        {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} />}
-        {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} specs={specs} />}
+        {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} specs={specs} />}
+        {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} specs={specs} specFilter={specFilter} onSpecFilterChange={setSpecFilter} />}
         {activeTab === 'preferences' && <PreferenceTab schedule={schedule} dateFilter={dateFilter} />}
         {activeTab === 'violations' && (
           <ViolationsTab
@@ -265,7 +266,7 @@ export default function ScheduleResults() {
   )
 }
 
-function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: ScheduleDetail; dateFilter: string; specs: Specialization[] }) {
+function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFilterChange }: { schedule: ScheduleDetail; dateFilter: string; specs: Specialization[]; specFilter: string; onSpecFilterChange: (v: string) => void }) {
   const agentSchedule = schedule.agentSchedule || []
   const violations = schedule.constraintViolations || []
 
@@ -281,6 +282,11 @@ function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: Schedul
       if (a.specializationName) usedSpecNames.add(a.specializationName)
     }
   }
+
+  // Filter agents by specialization: keep only entries where at least one assignment matches
+  const specFiltered = specFilter
+    ? agentSchedule.filter(e => e.assignments.some(a => a.specializationName === specFilter))
+    : agentSchedule
 
   // Collect agent IDs that have hard constraint violations
   const failedAgentIds = new Set<string>()
@@ -308,7 +314,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: Schedul
   }
 
   // Filter by date
-  const filtered = dateFilter ? agentSchedule.filter(e => e.date === dateFilter) : agentSchedule
+  const filtered = dateFilter ? specFiltered.filter(e => e.date === dateFilter) : specFiltered
 
   // Get unique dates — include dates from unfilled slots even if no agent is scheduled
   const dateSet = new Set<string>()
@@ -319,10 +325,22 @@ function AgentAllocationTab({ schedule, dateFilter, specs }: { schedule: Schedul
   }
   const dates = [...dateSet].sort()
 
-  if (dates.length === 0) return <p style={{ color: '#6b7280' }}>No agent allocation data available.</p>
+  if (dates.length === 0 && !specFilter) return <p style={{ color: '#6b7280' }}>No agent allocation data available.</p>
 
   return (
     <>
+      {[...usedSpecNames].length > 0 && (
+        <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <label style={{ fontSize: '0.85rem' }}>Filter by speciality:</label>
+          <select value={specFilter} onChange={e => onSpecFilterChange(e.target.value)}>
+            <option value="">All specialities</option>
+            {[...usedSpecNames].sort().map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {dates.length === 0 && <p style={{ color: '#6b7280' }}>No agent allocation data for the selected speciality.</p>}
       {dates.map(date => {
         const dayEntries = filtered.filter(e => e.date === date)
 
@@ -585,8 +603,22 @@ function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
   )
 }
 
-function AgentScheduleTab({ data }: { data: AgentScheduleEntry[] }) {
+function AgentScheduleTab({ data, specs }: { data: AgentScheduleEntry[]; specs: Specialization[] }) {
   if (!data || data.length === 0) return <p style={{ color: '#6b7280' }}>No agent schedule data available.</p>
+
+  // Build specialization name -> color map
+  const specColorMap: Record<string, string> = {}
+  for (const s of specs) {
+    if (s.color) specColorMap[s.name] = s.color
+  }
+
+  // Collect all specialization names used (for the legend)
+  const usedSpecNames = new Set<string>()
+  for (const entry of data) {
+    for (const a of entry.assignments) {
+      if (a.specializationName) usedSpecNames.add(a.specializationName)
+    }
+  }
 
   // Group by agent
   const byAgent = data.reduce<Record<string, AgentScheduleEntry[]>>((acc, e) => {
@@ -620,7 +652,7 @@ function AgentScheduleTab({ data }: { data: AgentScheduleEntry[] }) {
                       {e.assignments.map((a, j) => (
                         <span key={j} title={`${a.specializationName} (${a.matchType})`}
                           style={{ padding: '1px 4px', borderRadius: '2px', fontSize: '0.75rem',
-                            background: MATCH_COLORS[a.matchType] || '#f3f4f6' }}>
+                            background: specColorMap[a.specializationName] || MATCH_COLORS[a.matchType] || '#f3f4f6' }}>
                           {a.startTime}-{a.endTime} {a.specializationName}
                         </span>
                       ))}
@@ -639,10 +671,13 @@ function AgentScheduleTab({ data }: { data: AgentScheduleEntry[] }) {
           </table>
         </div>
       ))}
-      <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.PRIMARY, borderRadius: '2px' }} /> Primary</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.SECONDARY, borderRadius: '2px' }} /> secondary</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: MATCH_COLORS.NONE, borderRadius: '2px' }} /> None</span>
+      <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+        {[...usedSpecNames].sort().map(name => (
+          <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '12px', height: '12px', background: specColorMap[name] || '#dcfce7', border: '1px solid #d1d5db', borderRadius: '2px' }} />
+            {name}
+          </span>
+        ))}
       </div>
     </>
   )
