@@ -4,9 +4,12 @@ import com.wfm.dto.*;
 import com.wfm.integration.BambooRefreshService;
 import com.wfm.service.AgentExceptionService;
 import com.wfm.service.AgentPreferenceService;
+import com.wfm.service.DeskAgentExportService;
 import com.wfm.service.DeskAgentService;
 import com.wfm.service.PreferenceUploadService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,17 +23,20 @@ import java.util.UUID;
 public class DeskAgentController {
 
     private final DeskAgentService deskAgentService;
+    private final DeskAgentExportService deskAgentExportService;
     private final AgentPreferenceService agentPreferenceService;
     private final AgentExceptionService agentExceptionService;
     private final BambooRefreshService bambooRefreshService;
     private final PreferenceUploadService preferenceUploadService;
 
     public DeskAgentController(DeskAgentService deskAgentService,
+                               DeskAgentExportService deskAgentExportService,
                                AgentPreferenceService agentPreferenceService,
                                AgentExceptionService agentExceptionService,
                                BambooRefreshService bambooRefreshService,
                                PreferenceUploadService preferenceUploadService) {
         this.deskAgentService = deskAgentService;
+        this.deskAgentExportService = deskAgentExportService;
         this.agentPreferenceService = agentPreferenceService;
         this.agentExceptionService = agentExceptionService;
         this.bambooRefreshService = bambooRefreshService;
@@ -78,6 +84,18 @@ public class DeskAgentController {
     public List<DeskAgentResponse> refreshFromBamboo(@PathVariable UUID deskId) {
         bambooRefreshService.refreshDeskAgents(deskId);
         return deskAgentService.listDeskAgentResponses(deskId, null, null, 500);
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportDeskAgents(@PathVariable UUID deskId) {
+        List<DeskAgentResponse> agents = deskAgentService.listDeskAgentResponses(deskId, null, null, Integer.MAX_VALUE);
+        byte[] xlsx = deskAgentExportService.exportDeskAgentsToExcel(agents);
+
+        String filename = "desk-agents-" + deskId + ".xlsx";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
     }
 
     // --- Preferences ---
