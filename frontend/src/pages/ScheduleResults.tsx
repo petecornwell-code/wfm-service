@@ -283,9 +283,17 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
     }
   }
 
-  // Filter agents by specialization: keep only entries where at least one assignment matches
+  // Filter agents by specialization: keep only entries where at least one assignment matches,
+  // and narrow assignments within each entry to only the matching specialization
   const specFiltered = specFilter
-    ? agentSchedule.filter(e => e.assignments.some(a => a.specializationName === specFilter))
+    ? agentSchedule
+        .map(e => {
+          const matchedAssignments = e.assignments.filter(a => a.specializationName === specFilter)
+          if (matchedAssignments.length === 0) return null
+          const totalMinutes = matchedAssignments.reduce((sum, a) => sum + timeDiffMinutes(a.startTime, a.endTime), 0)
+          return { ...e, assignments: matchedAssignments, totalHours: totalMinutes / 60 }
+        })
+        .filter((e): e is NonNullable<typeof e> => e !== null)
     : agentSchedule
 
   // Collect agent IDs that have hard constraint violations
