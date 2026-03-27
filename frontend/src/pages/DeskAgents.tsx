@@ -44,6 +44,9 @@ export default function DeskAgents() {
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
 
+  // Export
+  const [exporting, setExporting] = useState(false)
+
   // Preference upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -183,6 +186,29 @@ export default function DeskAgents() {
     }
   }
 
+  const handleExport = async () => {
+    if (!deskId) return
+    setExporting(true)
+    try {
+      const res = await deskAgents.exportToExcel(deskId)
+      if (!res.ok) {
+        showToast('error', 'Export failed')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `desk-agents-${deskId}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -231,6 +257,9 @@ export default function DeskAgents() {
         <button className="primary" onClick={openAssignModal}>Assign Agents</button>
         <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
           {uploading ? 'Uploading...' : 'Load Preferences'}
+        </button>
+        <button className="primary" onClick={handleExport} disabled={exporting}>
+          {exporting ? 'Exporting...' : 'Export to XLSX'}
         </button>
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadPreferences} />
         <label style={{ marginLeft: 'auto', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>

@@ -126,6 +126,10 @@ export const deskAgents = {
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
   refresh: (deskId: string) =>
     request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
+  exportToExcel: (deskId: string) =>
+    fetch(`${API_BASE}/desks/${deskId}/agents/export`, {
+      headers: { 'X-Tenant-ID': currentTenantId },
+    }),
   uploadPreferences: async (deskId: string, file: File): Promise<PreferenceUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
