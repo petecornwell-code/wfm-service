@@ -61,8 +61,10 @@ public class ScheduleController {
     }
 
     @PutMapping("/{id}/accept")
-    public ResponseEntity<ScheduleSummary> acceptSchedule(@PathVariable UUID deskId, @PathVariable UUID id) {
-        Schedule schedule = scheduleService.acceptSchedule(deskId, id);
+    public ResponseEntity<ScheduleSummary> acceptSchedule(@PathVariable UUID deskId,
+                                                           @PathVariable UUID id,
+                                                           @RequestParam int version) {
+        Schedule schedule = scheduleService.acceptSchedule(deskId, id, version);
         return ResponseEntity.ok(toSummary(schedule));
     }
 

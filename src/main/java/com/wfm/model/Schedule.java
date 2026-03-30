@@ -17,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import jakarta.persistence.Version;
 
 @PlanningSolution
 @Entity
@@ -87,6 +88,10 @@ public class Schedule {
 
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
+
+    @Version
+    @Column(nullable = false)
+    private int version;
 
     // --- Solver collections (transient for JPA, used by Timefold) ---
 
@@ -201,6 +206,9 @@ public class Schedule {
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+
+    public int getVersion() { return version; }
+    public void setVersion(int version) { this.version = version; }
 
     public ConstraintWeights getConstraintWeights() { return constraintWeights; }
     public void setConstraintWeights(ConstraintWeights constraintWeights) { this.constraintWeights = constraintWeights; }

@@ -22,6 +22,7 @@ import java.util.*;
 public class ScheduleService {
 
     private final ScheduleRepository scheduleRepository;
+    private final AcceptedScheduleDateRepository acceptedScheduleDateRepository;
     private final InMemoryScheduleStore inMemoryStore;
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
@@ -30,6 +31,7 @@ public class ScheduleService {
     private final EntityManager entityManager;
 
     public ScheduleService(ScheduleRepository scheduleRepository,
+                           AcceptedScheduleDateRepository acceptedScheduleDateRepository,
                            InMemoryScheduleStore inMemoryStore,
                            TimeslotRepository timeslotRepository,
                            StaffingRequirementRepository staffingRequirementRepository,
@@ -37,6 +39,7 @@ public class ScheduleService {
                            ScheduleOutputService scheduleOutputService,
                            EntityManager entityManager) {
         this.scheduleRepository = scheduleRepository;
+        this.acceptedScheduleDateRepository = acceptedScheduleDateRepository;
         this.inMemoryStore = inMemoryStore;
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
@@ -52,7 +55,6 @@ public class ScheduleService {
         int clamped = CursorPagination.clampLimit(limit);
 
         // Load accepted schedules from DB (ordered by createdAt desc)
-        // Use a generous limit since schedule count per desk is typically small
         List<Schedule> dbSchedules = scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(
                 tenantId, deskId, PageRequest.of(0, CursorPagination.MAX_LIMIT + 1));
 
@@ -167,7 +169,7 @@ public class ScheduleService {
     // --- Task 26: acceptSchedule ---
 
     @Transactional
-    public Schedule acceptSchedule(UUID deskId, UUID scheduleId) {
+    public Schedule acceptSchedule(UUID deskId, UUID scheduleId, int expectedVersion) {
         long tenantId = TenantContext.getTenantId();
 
         Schedule schedule = inMemoryStore.get(scheduleId)
@@ -184,24 +186,34 @@ public class ScheduleService {
                     + schedule.getStatus() + ")");
         }
 
-        // 1. Delete overlapping accepted schedules for same desk/date range
-        List<Schedule> overlapping = scheduleRepository.findOverlapping(
-                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-        for (Schedule old : overlapping) {
-            agentAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, old.getId());
-            staffingRequirementRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, old.getId());
-            timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, old.getId());
-            scheduleRepository.delete(old);
+        // Validate version for optimistic locking
+        if (schedule.getVersion() != expectedVersion) {
+            throw new ConflictException(
+                    "Version conflict: expected " + expectedVersion + ", actual " + schedule.getVersion());
         }
 
-        // 2. Save the Schedule record — flush deletes first, then persist the new entity
+        // Compute covered dates
+        List<LocalDate> coveredDates = new ArrayList<>();
+        LocalDate d = schedule.getPeriodStartDate();
+        while (!d.isAfter(schedule.getPeriodEndDate())) {
+            coveredDates.add(d);
+            d = d.plusDays(1);
+        }
+
+        // Supersede any currently-ACCEPTED entries for these (tenant, desk, date) combos
+        // Old schedules and their data are preserved; only the date-level status changes
+        acceptedScheduleDateRepository.updateStatusByTenantIdAndDeskIdAndDateIn(
+                tenantId, deskId, coveredDates,
+                AcceptedScheduleDateStatus.ACCEPTED, AcceptedScheduleDateStatus.SUPERSEDED);
+
+        // Save the Schedule record — flush supersede updates first, then persist
         entityManager.flush();
         schedule.setStatus(ScheduleStatus.ACCEPTED);
         schedule.setId(null);
         entityManager.persist(schedule);
         Schedule saved = schedule;
 
-        // 3. Snapshot live timeslots → new IDs with schedule_id set
+        // Snapshot live timeslots → new IDs with schedule_id set
         Map<UUID, UUID> timeslotRemap = new HashMap<>();
         List<Timeslot> liveTimeslots = timeslotRepository
                 .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
@@ -219,7 +231,7 @@ public class ScheduleService {
             timeslotRemap.put(live.getId(), snapshot.getId());
         }
 
-        // 4. Snapshot live staffing requirements → remap to snapshot timeslots
+        // Snapshot live staffing requirements → remap to snapshot timeslots
         List<StaffingRequirement> liveRequirements = staffingRequirementRepository
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
@@ -241,7 +253,7 @@ public class ScheduleService {
             entityManager.persist(snapshot);
         }
 
-        // 5. Write solver's agent assignments → remap to snapshot timeslots
+        // Write solver's agent assignments → remap to snapshot timeslots
         for (AgentAssignment assignment : schedule.getAssignments()) {
             if (assignment.getAgent() == null) continue;
 
@@ -260,7 +272,13 @@ public class ScheduleService {
             entityManager.persist(persisted);
         }
 
-        // 6. Remove from in-memory store
+        // Insert accepted_schedule_date rows for all covered dates
+        List<AcceptedScheduleDate> dateEntries = coveredDates.stream()
+                .map(date -> new AcceptedScheduleDate(saved.getId(), tenantId, deskId, date))
+                .toList();
+        acceptedScheduleDateRepository.saveAll(dateEntries);
+
+        // Remove from in-memory store
         inMemoryStore.remove(scheduleId);
 
         return saved;
