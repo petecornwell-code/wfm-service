@@ -72,12 +72,12 @@ public class ConstraintWeights {
     @ConstraintWeight("Honour preferred start time")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "honour_start_time_weight")
-    private HardSoftScore honourStartTimeWeight = HardSoftScore.ofSoft(1);
+    private HardSoftScore honourStartTimeWeight = HardSoftScore.ofSoft(5);
 
     @ConstraintWeight("Honour preferred break time")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "honour_break_time_weight")
-    private HardSoftScore honourBreakTimeWeight = HardSoftScore.ofSoft(1);
+    private HardSoftScore honourBreakTimeWeight = HardSoftScore.ofSoft(5);
 
     @ConstraintWeight("Break clustering")
     @Convert(converter = HardSoftScoreConverter.class)

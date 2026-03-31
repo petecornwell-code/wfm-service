@@ -37,8 +37,8 @@ const DEFAULTS: Record<string, Score> = {
   bulkOverallocationLimitWeight: { hardScore: 1, softScore: 0 },
   bulkUnderallocationHardWeight: { hardScore: 1, softScore: 0 },
   preferPrimaryWeight: { hardScore: 0, softScore: 1 },
-  honourStartTimeWeight: { hardScore: 0, softScore: 1 },
-  honourBreakTimeWeight: { hardScore: 0, softScore: 1 },
+  honourStartTimeWeight: { hardScore: 0, softScore: 5 },
+  honourBreakTimeWeight: { hardScore: 0, softScore: 5 },
   breakClusteringWeight: { hardScore: 0, softScore: 2 },
   bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
 }

@@ -623,8 +623,8 @@ A Timefold `@ConstraintConfiguration` class that holds a `@ConstraintWeight` fie
 | `breakBlockedWindowWeight` | `HardSoftScore` | `hard(10)` | Break blocked window |
 | `breakAlignmentWeight` | `HardSoftScore` | `hard(10)` | Break start alignment |
 | `preferPrimaryWeight` | `HardSoftScore` | `soft(1)` | Prefer primary specialization |
-| `honourStartTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred start time |
-| `honourBreakTimeWeight` | `HardSoftScore` | `soft(1)` | Honour preferred break time |
+| `honourStartTimeWeight` | `HardSoftScore` | `soft(5)` | Honour preferred start time |
+| `honourBreakTimeWeight` | `HardSoftScore` | `soft(5)` | Honour preferred break time |
 | `breakClusteringWeight` | `HardSoftScore` | `soft(2)` | Break clustering (placeholder — full implementation deferred; see section 6) |
 | `contractedHoursOverWeight` | `HardSoftScore` | `hard(1001)` | Contracted hours — over: penalizes assigning more timeslots than the agent's contracted hours allow. The highest hard weight ensures over-assignment is strongly penalized. |
 | `contractedHoursUnderWeight` | `HardSoftScore` | `hard(100)` | Contracted hours — under: penalizes assigning fewer timeslots than contracted hours for agents who have at least one assignment on a given day. |
@@ -1014,8 +1014,8 @@ Desk-scoped. Each desk has its own constraint weight configuration.
   "breakBlockedWindowWeight": { "hardScore": 10, "softScore": 0 },
   "breakAlignmentWeight": { "hardScore": 10, "softScore": 0 },
   "preferPrimaryWeight": { "hardScore": 0, "softScore": 1 },
-  "honourStartTimeWeight": { "hardScore": 0, "softScore": 1 },
-  "honourBreakTimeWeight": { "hardScore": 0, "softScore": 1 },
+  "honourStartTimeWeight": { "hardScore": 0, "softScore": 5 },
+  "honourBreakTimeWeight": { "hardScore": 0, "softScore": 5 },
   "breakClusteringWeight": { "hardScore": 0, "softScore": 2 },
   "contractedHoursOverWeight": { "hardScore": 1001, "softScore": 0 },
   "contractedHoursUnderWeight": { "hardScore": 100, "softScore": 0 },
