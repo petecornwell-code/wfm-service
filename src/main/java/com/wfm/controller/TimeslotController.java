@@ -1,6 +1,7 @@
 package com.wfm.controller;
 
 import com.wfm.dto.GenerateTimeslotsRequest;
+import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.dto.TimeslotResponse;
 import com.wfm.model.Timeslot;
 import com.wfm.service.TimeslotGeneratorService;
@@ -28,6 +29,13 @@ public class TimeslotController {
                                                  @RequestParam String to) {
         return timeslotGeneratorService.listTimeslots(deskId, LocalDate.parse(from), LocalDate.parse(to))
                 .stream().map(this::toResponse).toList();
+    }
+
+    @GetMapping("/bounds")
+    public ResponseEntity<TimeslotBoundsResponse> getTimeslotBounds(@PathVariable UUID deskId) {
+        return timeslotGeneratorService.getLiveBounds(deskId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping("/generate")

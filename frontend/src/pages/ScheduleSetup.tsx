@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { schedules, deskAgents, specializations as specApi, staffingRequirements as srApi, type ScheduleSummary, getErrorMessage } from '../api/client'
+import { schedules, deskAgents, specializations as specApi, staffingRequirements as srApi, timeslots as tsApi, type ScheduleSummary, getErrorMessage } from '../api/client'
 import { saveTimeslotParams, loadScheduleSetup, saveScheduleSetup, clearScheduleSetup } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
@@ -62,6 +62,18 @@ export default function ScheduleSetup() {
     deskAgents.list(deskId).then(res => setAgentCount(res.data.filter(da => da.active).length)).catch(() => {})
     specApi.list(deskId).then(s => setSpecCount(s.length)).catch(() => {})
     loadSchedules()
+
+    // Pre-populate from existing timeslot bounds when no saved period exists
+    if (!saved.periodStart) {
+      tsApi.bounds(deskId).then(bounds => {
+        if (!bounds) return
+        setPeriodStart(bounds.periodStart)
+        setPeriodEnd(bounds.periodEnd)
+        setStartTime(bounds.startTime)
+        setEndTime(bounds.endTime)
+        setIncrement(bounds.incrementMinutes)
+      }).catch(() => {})
+    }
   }, [deskId, loadSchedules])
 
   const handleAcceptSchedule = async (id: string) => {

@@ -162,6 +162,8 @@ export const specializations = {
 export const timeslots = {
   list: (deskId: string, from: string, to: string) =>
     request<Timeslot[]>(`/desks/${deskId}/timeslots?from=${from}&to=${to}`),
+  bounds: (deskId: string) =>
+    request<TimeslotBounds | undefined>(`/desks/${deskId}/timeslots/bounds`),
   generate: (deskId: string, data: GenerateTimeslotsRequest) =>
     request<Timeslot[]>(`/desks/${deskId}/timeslots/generate`, { method: 'POST', body: JSON.stringify(data) }),
   delete: (deskId: string, from: string, to: string) =>
@@ -268,6 +270,7 @@ export interface DeskAgent { id: string; deskId: string; bamboohrId: string; nam
 export interface Specialization { id: string; name: string; color?: string }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
+export interface TimeslotBounds { periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
 export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }

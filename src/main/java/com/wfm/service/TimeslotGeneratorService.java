@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.model.ScheduleStatus;
 import com.wfm.model.Timeslot;
@@ -16,6 +17,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -39,6 +41,21 @@ public class TimeslotGeneratorService {
     public List<Timeslot> listTimeslots(UUID deskId, LocalDate from, LocalDate to) {
         return timeslotRepository.findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
                 TenantContext.getTenantId(), deskId, from, to);
+    }
+
+    public Optional<TimeslotBoundsResponse> getLiveBounds(UUID deskId) {
+        Object[] row = timeslotRepository.findLiveBoundsByDeskRaw(TenantContext.getTenantId(), deskId);
+        if (row == null || row.length == 0) return Optional.empty();
+        // Native query returns a single row; columns may be null if no timeslots exist
+        Object[] cols = (row[0] instanceof Object[]) ? (Object[]) row[0] : row;
+        if (cols[0] == null) return Optional.empty();
+        return Optional.of(new TimeslotBoundsResponse(
+                ((java.sql.Date) cols[0]).toLocalDate(),
+                ((java.sql.Date) cols[1]).toLocalDate(),
+                ((java.sql.Time) cols[2]).toLocalTime(),
+                ((java.sql.Time) cols[3]).toLocalTime(),
+                ((Number) cols[4]).intValue()
+        ));
     }
 
     @Transactional
