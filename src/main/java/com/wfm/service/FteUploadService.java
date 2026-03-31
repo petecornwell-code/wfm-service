@@ -241,7 +241,8 @@ public class FteUploadService {
             }
 
             log.info("FTE upload for desk {}: {} requirements saved, {} issues", deskId, totalSaved, skipped.size());
-            return new FteUploadResult(totalSaved, skipped.size(), saved, skipped);
+            return new FteUploadResult(totalSaved, skipped.size(), saved, skipped,
+                    minDate, maxDate, startTime, endTime, incrementMinutes);
         }
     }
 }

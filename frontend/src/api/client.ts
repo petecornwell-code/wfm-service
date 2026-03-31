@@ -369,7 +369,7 @@ export interface ScheduleDetail extends ScheduleSummary {
 }
 
 export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
-export interface FteUploadResult { savedCount: number; skippedCount: number; savedDetails: string[]; skippedDetails: string[] }
+export interface FteUploadResult { savedCount: number; skippedCount: number; savedDetails: string[]; skippedDetails: string[]; periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean; totalCount: number }
 
 export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }

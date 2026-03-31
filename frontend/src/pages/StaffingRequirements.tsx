@@ -199,10 +199,40 @@ export default function StaffingRequirements() {
     try {
       const result: FteUploadResult = await srApi.uploadFtes(deskId, file)
       showToast('success', `Uploaded: ${result.savedCount} requirements saved, ${result.skippedCount} skipped`)
-      // Reload existing requirements to reflect the upload
-      if (periodStart && periodEnd && slots.length > 0) {
-        await loadExisting(slots)
-      }
+      // Update period/time config to match the uploaded spreadsheet so the
+      // grid regenerates with the correct date range and timeslots.
+      setPeriodStart(result.periodStart)
+      setPeriodEnd(result.periodEnd)
+      setStartTime(result.startTime)
+      setEndTime(result.endTime)
+      setIncrement(result.incrementMinutes)
+      // Regenerate timeslots to match the uploaded data, then load FTEs
+      const generated = await timeslotApi.generate(deskId, {
+        periodStartDate: result.periodStart,
+        periodEndDate: result.periodEnd,
+        startTime: result.startTime,
+        endTime: result.endTime,
+        incrementMinutes: result.incrementMinutes,
+      })
+      setSlots(generated)
+      saveTimeslotParams(deskId, {
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+        startTime: result.startTime,
+        endTime: result.endTime,
+        increment: result.incrementMinutes,
+      })
+      // Load the newly saved FTE values into the demand map
+      const loaded: Record<string, number> = {}
+      let cursor: string | undefined
+      do {
+        const resp = await srApi.list(deskId, { from: result.periodStart, to: result.periodEnd, cursor })
+        for (const item of resp.data) {
+          loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
+        }
+        cursor = resp.hasMore ? resp.nextCursor : undefined
+      } while (cursor)
+      setDemand(loaded)
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
