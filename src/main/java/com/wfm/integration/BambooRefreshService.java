@@ -39,6 +39,8 @@ public class BambooRefreshService {
 
     private static final String DEFAULT_SPECIALIZATION_NAME = "Shipping and Delivery";
     private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety";
+    private static final String TERTIARY_SPECIALIZATION_NAME = "Order Quality and Usability";
+    private static final String QUATERNARY_SPECIALIZATION_NAME = "Privacy and Legal & DSA";
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
@@ -115,6 +117,27 @@ public class BambooRefreshService {
                     spec.setTenantId(tenantId);
                     spec.setDeskId(deskId);
                     spec.setName(SECONDARY_SPECIALIZATION_NAME);
+                    return specializationRepository.save(spec);
+                });
+
+        // 1c. Ensure third and fourth specializations exist for this desk
+        specializationRepository
+                .findByTenantIdAndDeskIdAndName(tenantId, deskId, TERTIARY_SPECIALIZATION_NAME)
+                .orElseGet(() -> {
+                    Specialization spec = new Specialization();
+                    spec.setTenantId(tenantId);
+                    spec.setDeskId(deskId);
+                    spec.setName(TERTIARY_SPECIALIZATION_NAME);
+                    return specializationRepository.save(spec);
+                });
+
+        specializationRepository
+                .findByTenantIdAndDeskIdAndName(tenantId, deskId, QUATERNARY_SPECIALIZATION_NAME)
+                .orElseGet(() -> {
+                    Specialization spec = new Specialization();
+                    spec.setTenantId(tenantId);
+                    spec.setDeskId(deskId);
+                    spec.setName(QUATERNARY_SPECIALIZATION_NAME);
                     return specializationRepository.save(spec);
                 });
 

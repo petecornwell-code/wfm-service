@@ -82,7 +82,8 @@ public class FteSpreadsheetGenerator {
                 LocalTime.of(8, 0),
                 LocalTime.of(22, 0),
                 60,
-                List.of("Billing", "Technical Support", "Sales", "Retention"));
+                List.of("Order Quality and Usability", "Payments and Safety",
+                        "Privacy and Legal & DSA", "Shipping and Delivery"));
         System.out.println("Generated " + path);
     }
 }
