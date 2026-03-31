@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { timeslots as timeslotApi, specializations as specApi, staffingRequirements as srApi, getErrorMessage } from '../api/client'
-import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam } from '../api/client'
+import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, FteUploadResult } from '../api/client'
 import { saveTimeslotParams, loadTimeslotParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
@@ -28,6 +28,9 @@ export default function StaffingRequirements() {
   const [saveMsg, setSaveMsg] = useState('')
   const [mode, setMode] = useState<'direct' | 'erlang'>('direct')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Erlang X default params per timeslot+spec
   const [erlangParams, setErlangParams] = useState<Record<string, Partial<ErlangXParam>>>({})
@@ -187,6 +190,27 @@ export default function StaffingRequirements() {
     }
   }
 
+  const handleFteUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !deskId) return
+    setUploading(true)
+    setError('')
+    setSaveMsg('')
+    try {
+      const result: FteUploadResult = await srApi.uploadFtes(deskId, file)
+      showToast('success', `Uploaded: ${result.savedCount} requirements saved, ${result.skippedCount} skipped`)
+      // Reload existing requirements to reflect the upload
+      if (periodStart && periodEnd && slots.length > 0) {
+        await loadExisting(slots)
+      }
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   return (
     <>
       <h1>Staffing Requirements</h1>
@@ -217,22 +241,26 @@ export default function StaffingRequirements() {
             <button onClick={() => setMode('direct')} style={{ background: mode === 'direct' ? '#3b82f6' : '#e5e7eb', color: mode === 'direct' ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>Direct</button>
             <button onClick={() => setMode('erlang')} style={{ background: mode === 'erlang' ? '#3b82f6' : '#e5e7eb', color: mode === 'erlang' ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>Erlang X</button>
           </div>
-          {slots.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              {saveMsg && <span style={{ color: '#16a34a', fontSize: '0.85rem' }}>{saveMsg}</span>}
-              {mode === 'direct' ? (
-                <button onClick={handleSave} disabled={saving}
-                  style={{ padding: '0.4rem 1.2rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              ) : (
-                <button onClick={handleErlangCalculate} disabled={saving}
-                  style={{ padding: '0.4rem 1.2rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'Calculating...' : 'Calculate Erlang X'}
-                </button>
-              )}
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {saveMsg && <span style={{ color: '#16a34a', fontSize: '0.85rem' }}>{saveMsg}</span>}
+            <input type="file" accept=".xlsx" ref={fileInputRef} onChange={handleFteUpload} style={{ display: 'none' }} />
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              style={{ padding: '0.4rem 1.2rem', background: '#059669', color: '#fff', border: 'none', borderRadius: '4px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
+              {uploading ? 'Uploading...' : 'Upload XLSX'}
+            </button>
+            {slots.length > 0 && mode === 'direct' && (
+              <button onClick={handleSave} disabled={saving}
+                style={{ padding: '0.4rem 1.2rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            )}
+            {slots.length > 0 && mode === 'erlang' && (
+              <button onClick={handleErlangCalculate} disabled={saving}
+                style={{ padding: '0.4rem 1.2rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Calculating...' : 'Calculate Erlang X'}
+              </button>
+            )}
+          </div>
         </div>
 
         {slots.length === 0 && !loading ? (

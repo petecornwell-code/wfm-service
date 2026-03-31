@@ -1,9 +1,12 @@
 package com.wfm.controller;
 
 import com.wfm.dto.*;
+import com.wfm.service.FteUploadService;
 import com.wfm.service.StaffingRequirementService;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.UUID;
 
 @RestController
@@ -11,9 +14,12 @@ import java.util.UUID;
 public class StaffingRequirementController {
 
     private final StaffingRequirementService staffingRequirementService;
+    private final FteUploadService fteUploadService;
 
-    public StaffingRequirementController(StaffingRequirementService staffingRequirementService) {
+    public StaffingRequirementController(StaffingRequirementService staffingRequirementService,
+                                         FteUploadService fteUploadService) {
         this.staffingRequirementService = staffingRequirementService;
+        this.fteUploadService = fteUploadService;
     }
 
     @GetMapping
@@ -36,5 +42,11 @@ public class StaffingRequirementController {
     public StaffingRequirementResponse calculateErlangX(@PathVariable UUID deskId,
                                                          @RequestBody ErlangXRequest request) {
         return staffingRequirementService.calculateErlangX(deskId, request);
+    }
+
+    @PostMapping("/upload")
+    public FteUploadResult uploadFtes(@PathVariable UUID deskId,
+                                      @RequestParam("file") MultipartFile file) throws IOException {
+        return fteUploadService.uploadFtes(deskId, file);
     }
 }

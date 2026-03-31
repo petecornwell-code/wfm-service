@@ -48,3 +48,8 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+tasks.register('generateFteSpreadsheet', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.wfm.util.FteSpreadsheetGenerator'
+}

@@ -181,6 +181,21 @@ export const staffingRequirements = {
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements`, { method: 'POST', body: JSON.stringify({ requirements }) }),
   calculateErlangX: (deskId: string, data: ErlangXRequest) =>
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements/erlang-x`, { method: 'POST', body: JSON.stringify(data) }),
+  uploadFtes: async (deskId: string, file: File): Promise<FteUploadResult> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${API_BASE}/desks/${deskId}/staffing-requirements/upload`, {
+      method: 'POST',
+      headers: { 'X-Tenant-ID': currentTenantId },
+      body: formData,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      if (body?.error) throw new ApiRequestError(response.status, body.error)
+      throw new ApiRequestError(response.status, { code: 'UNKNOWN', message: body?.message || response.statusText })
+    }
+    return response.json()
+  },
 }
 
 // --- Constraint Weights ---
@@ -354,6 +369,7 @@ export interface ScheduleDetail extends ScheduleSummary {
 }
 
 export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
+export interface FteUploadResult { savedCount: number; skippedCount: number; savedDetails: string[]; skippedDetails: string[] }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean; totalCount: number }
 
 export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }
