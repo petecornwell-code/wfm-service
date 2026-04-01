@@ -35,6 +35,7 @@ public class ScheduleService {
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentAssignmentRepository agentAssignmentRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
+    private final AgentDayOffRepository agentDayOffRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final ScheduleOutputService scheduleOutputService;
     private final EntityManager entityManager;
@@ -47,6 +48,7 @@ public class ScheduleService {
                            StaffingRequirementRepository staffingRequirementRepository,
                            AgentAssignmentRepository agentAssignmentRepository,
                            AgentPreferenceRepository agentPreferenceRepository,
+                           AgentDayOffRepository agentDayOffRepository,
                            ConstraintWeightsRepository constraintWeightsRepository,
                            ScheduleOutputService scheduleOutputService,
                            EntityManager entityManager) {
@@ -58,6 +60,7 @@ public class ScheduleService {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentAssignmentRepository = agentAssignmentRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
+        this.agentDayOffRepository = agentDayOffRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.scheduleOutputService = scheduleOutputService;
         this.entityManager = entityManager;
@@ -363,9 +366,18 @@ public class ScheduleService {
                 .findByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
         schedule.setStaffingRequirements(requirements);
 
+        // Load days off for the schedule period to exclude PTO days from preferences
+        List<AgentDayOff> allDaysOff = agentDayOffRepository.findByTenantIdAndDeskIdAndDateBetween(
+                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
+        for (AgentDayOff d : allDaysOff) {
+            agentDaysOffMap.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
+        }
+
         // Load and resolve agent preferences (standing + weekly override logic per §5.8)
+        // Preferences on PTO days are excluded so they don't affect constraint violation display.
         List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        schedule.setAgentPreferences(resolvePreferences(allPreferences, schedule));
+        schedule.setAgentPreferences(resolvePreferences(allPreferences, schedule, agentDaysOffMap));
 
         // Load constraint weights so buildConstraintViolations can explain the score
         constraintWeightsRepository.findByTenantIdAndDeskId(tenantId, deskId)
@@ -376,7 +388,9 @@ public class ScheduleService {
      * Resolve preferences: weekly overrides standing per agent-day (spec §5.8).
      * Mirrors the logic in SolverService.resolvePreferences.
      */
-    private List<AgentPreference> resolvePreferences(List<AgentPreference> allPreferences, Schedule schedule) {
+    private List<AgentPreference> resolvePreferences(List<AgentPreference> allPreferences,
+                                                     Schedule schedule,
+                                                     Map<UUID, Set<LocalDate>> agentDaysOffMap) {
         Map<UUID, Map<DayOfWeek, AgentPreference>> standingByAgent = new HashMap<>();
         Map<UUID, Map<LocalDate, AgentPreference>> weeklyByAgent = new HashMap<>();
 
@@ -400,9 +414,13 @@ public class ScheduleService {
         for (UUID agentId : allAgentIds) {
             Map<DayOfWeek, AgentPreference> standing = standingByAgent.getOrDefault(agentId, Map.of());
             Map<LocalDate, AgentPreference> weekly = weeklyByAgent.getOrDefault(agentId, Map.of());
+            Set<LocalDate> daysOff = agentDaysOffMap.getOrDefault(agentId, Set.of());
 
             for (LocalDate d = schedule.getPeriodStartDate();
                  !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
+
+                // Skip PTO / day-off dates — preference stays in DB but is excluded from display
+                if (daysOff.contains(d)) continue;
 
                 AgentPreference weeklyPref = weekly.get(d);
                 boolean weeklyHasData = weeklyPref != null

@@ -156,33 +156,36 @@ public class SolverService {
                     return cw;
                 });
 
-        // 5. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
-        // Done before validation so break alignment check uses effective preferences.
-        List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule);
-
-        // 6. Run pre-solve validation (12 checks from spec §7.11)
-        runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
-                eligibleAgents, allDaysOff, exceptions, resolvedPreferences);
-
-        // 7. Build lookup maps for days off and exceptions
+        // 5. Build lookup map for days off (needed for preference resolution and later)
         Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
         for (AgentDayOff d : allDaysOff) {
             agentDaysOffMap.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
         }
+
+        // 6. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
+        // Done before validation so break alignment check uses effective preferences.
+        // Preferences on PTO days are excluded so they don't affect solver scoring.
+        List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule, agentDaysOffMap);
+
+        // 7. Run pre-solve validation (12 checks from spec §7.11)
+        runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
+                eligibleAgents, allDaysOff, exceptions, resolvedPreferences);
+
+        // 8. Build lookup map for exceptions
         Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap = new HashMap<>();
         for (AgentException ex : exceptions) {
             agentExceptionMap.computeIfAbsent(ex.getAgent().getId(), k -> new HashMap<>())
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
 
-        // 8. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
+        // 9. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
         List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
                 eligibleAgents, schedule, agentDaysOffMap, agentExceptionMap);
 
-        // 8b. Compute capacity warnings (demand vs supply)
+        // 9b. Compute capacity warnings (demand vs supply)
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
 
-        // 9. Detach Hibernate proxy collections into plain ArrayList/HashSet
+        // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();
         for (Agent agent : eligibleAgents) {
             agent.setSecondarySpecializations(new ArrayList<>(agent.getSecondarySpecializations()));
@@ -389,7 +392,8 @@ public class SolverService {
      * can match on exact dates without needing standing/weekly resolution logic.
      */
     private List<AgentPreference> resolvePreferences(List<AgentPreference> allPreferences,
-                                                     Schedule schedule) {
+                                                     Schedule schedule,
+                                                     Map<UUID, Set<LocalDate>> agentDaysOffMap) {
         // Index standing and weekly preferences by agent
         Map<UUID, Map<DayOfWeek, AgentPreference>> standingByAgent = new HashMap<>();
         Map<UUID, Map<LocalDate, AgentPreference>> weeklyByAgent = new HashMap<>();
@@ -415,8 +419,13 @@ public class SolverService {
             Map<DayOfWeek, AgentPreference> standing = standingByAgent.getOrDefault(agentId, Map.of());
             Map<LocalDate, AgentPreference> weekly = weeklyByAgent.getOrDefault(agentId, Map.of());
 
+            Set<LocalDate> daysOff = agentDaysOffMap.getOrDefault(agentId, Set.of());
+
             for (LocalDate d = schedule.getPeriodStartDate();
                  !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
+
+                // Skip PTO / day-off dates — preference stays in DB but is excluded from solver scoring
+                if (daysOff.contains(d)) continue;
 
                 AgentPreference weeklyPref = weekly.get(d);
                 boolean weeklyHasData = weeklyPref != null
