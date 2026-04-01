@@ -37,6 +37,9 @@ public class BambooRefreshService {
     @Value("${bamboohr.time-off.lookahead-weeks:8}")
     private int lookaheadWeeks;
 
+    @Value("${bamboohr.time-off.lookback-weeks:12}")
+    private int lookbackWeeks;
+
     private static final String DEFAULT_SPECIALIZATION_NAME = "Shipping and Delivery";
     private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety";
     private static final String TERTIARY_SPECIALIZATION_NAME = "Order Quality and Usability";
@@ -80,8 +83,8 @@ public class BambooRefreshService {
             List<BambooEmployee> employees = bambooHRClient.listEmployees(
                     String.valueOf(tenantId), deskName);
 
-            LocalDate from = LocalDate.now();
-            LocalDate to = from.plusWeeks(lookaheadWeeks);
+            LocalDate from = LocalDate.now().minusWeeks(lookbackWeeks);
+            LocalDate to = LocalDate.now().plusWeeks(lookaheadWeeks);
             List<BambooTimeOff> timeOffs = bambooHRClient.listTimeOff(String.valueOf(tenantId), from, to);
 
             // 3. Persist everything in a single transaction

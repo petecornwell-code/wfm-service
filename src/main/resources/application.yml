@@ -31,6 +31,7 @@ bamboohr:
   subdomain:
   time-off:
     lookahead-weeks: 8
+    lookback-weeks: 12
 
 # Solver
 solver:
