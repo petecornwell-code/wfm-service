@@ -8,6 +8,8 @@ import ai.timefold.solver.core.api.score.constraint.ConstraintMatch;
 import com.wfm.dto.ScheduleDetailResponse.*;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -23,6 +25,8 @@ import java.util.*;
  */
 @Service
 public class ScheduleOutputService {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduleOutputService.class);
 
     private final SolutionManager<Schedule, HardSoftScore> solutionManager;
 
@@ -378,7 +382,7 @@ public class ScheduleOutputService {
             return entries;
 
         } catch (Exception e) {
-            // If constraint explanation fails (e.g. incomplete solution), return empty
+            log.warn("Constraint explanation failed for schedule {}: {}", schedule.getId(), e.getMessage());
             return List.of();
         }
     }

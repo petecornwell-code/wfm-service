@@ -14,12 +14,18 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
 @Service
 public class ScheduleService {
+
+    private static final Logger log = LoggerFactory.getLogger(ScheduleService.class);
 
     private final ScheduleRepository scheduleRepository;
     private final AcceptedScheduleDateRepository acceptedScheduleDateRepository;
@@ -28,6 +34,8 @@ public class ScheduleService {
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentAssignmentRepository agentAssignmentRepository;
+    private final AgentPreferenceRepository agentPreferenceRepository;
+    private final ConstraintWeightsRepository constraintWeightsRepository;
     private final ScheduleOutputService scheduleOutputService;
     private final EntityManager entityManager;
 
@@ -38,6 +46,8 @@ public class ScheduleService {
                            TimeslotRepository timeslotRepository,
                            StaffingRequirementRepository staffingRequirementRepository,
                            AgentAssignmentRepository agentAssignmentRepository,
+                           AgentPreferenceRepository agentPreferenceRepository,
+                           ConstraintWeightsRepository constraintWeightsRepository,
                            ScheduleOutputService scheduleOutputService,
                            EntityManager entityManager) {
         this.scheduleRepository = scheduleRepository;
@@ -47,6 +57,8 @@ public class ScheduleService {
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentAssignmentRepository = agentAssignmentRepository;
+        this.agentPreferenceRepository = agentPreferenceRepository;
+        this.constraintWeightsRepository = constraintWeightsRepository;
         this.scheduleOutputService = scheduleOutputService;
         this.entityManager = entityManager;
     }
@@ -351,7 +363,77 @@ public class ScheduleService {
                 .findByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
         schedule.setStaffingRequirements(requirements);
 
-        schedule.setAgentPreferences(List.of());
+        // Load and resolve agent preferences (standing + weekly override logic per §5.8)
+        List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        schedule.setAgentPreferences(resolvePreferences(allPreferences, schedule));
+
+        // Load constraint weights so buildConstraintViolations can explain the score
+        constraintWeightsRepository.findByTenantIdAndDeskId(tenantId, deskId)
+                .ifPresent(schedule::setConstraintWeights);
+    }
+
+    /**
+     * Resolve preferences: weekly overrides standing per agent-day (spec §5.8).
+     * Mirrors the logic in SolverService.resolvePreferences.
+     */
+    private List<AgentPreference> resolvePreferences(List<AgentPreference> allPreferences, Schedule schedule) {
+        Map<UUID, Map<DayOfWeek, AgentPreference>> standingByAgent = new HashMap<>();
+        Map<UUID, Map<LocalDate, AgentPreference>> weeklyByAgent = new HashMap<>();
+
+        for (AgentPreference p : allPreferences) {
+            UUID agentId = p.getAgent().getId();
+            if (p.isStanding()) {
+                standingByAgent.computeIfAbsent(agentId, k -> new HashMap<>())
+                        .put(p.getDayOfWeek(), p);
+            } else if (p.getDate() != null) {
+                weeklyByAgent.computeIfAbsent(agentId, k -> new HashMap<>())
+                        .put(p.getDate(), p);
+            }
+        }
+
+        Set<UUID> allAgentIds = new HashSet<>();
+        allAgentIds.addAll(standingByAgent.keySet());
+        allAgentIds.addAll(weeklyByAgent.keySet());
+
+        List<AgentPreference> resolved = new ArrayList<>();
+
+        for (UUID agentId : allAgentIds) {
+            Map<DayOfWeek, AgentPreference> standing = standingByAgent.getOrDefault(agentId, Map.of());
+            Map<LocalDate, AgentPreference> weekly = weeklyByAgent.getOrDefault(agentId, Map.of());
+
+            for (LocalDate d = schedule.getPeriodStartDate();
+                 !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
+
+                AgentPreference weeklyPref = weekly.get(d);
+                boolean weeklyHasData = weeklyPref != null
+                        && (weeklyPref.getPreferredStartTime() != null
+                        || weeklyPref.getPreferredBreakTime() != null);
+
+                AgentPreference effective;
+                if (weeklyHasData) {
+                    effective = weeklyPref;
+                } else {
+                    effective = standing.get(d.getDayOfWeek());
+                }
+
+                if (effective == null) continue;
+                if (effective.getPreferredStartTime() == null && effective.getPreferredBreakTime() == null) continue;
+
+                AgentPreference rp = new AgentPreference();
+                rp.setId(effective.getId());
+                rp.setTenantId(effective.getTenantId());
+                rp.setDeskId(effective.getDeskId());
+                rp.setAgent(effective.getAgent());
+                rp.setDayOfWeek(d.getDayOfWeek());
+                rp.setDate(d);
+                rp.setStanding(effective.isStanding());
+                rp.setPreferredStartTime(effective.getPreferredStartTime());
+                rp.setPreferredBreakTime(effective.getPreferredBreakTime());
+                resolved.add(rp);
+            }
+        }
+
+        return resolved;
     }
 
     private ScheduleDetailResponse buildDetailResponse(Schedule s) {
