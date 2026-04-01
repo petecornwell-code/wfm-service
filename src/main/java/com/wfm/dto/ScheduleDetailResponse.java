@@ -34,6 +34,7 @@ public class ScheduleDetailResponse {
     private PreferenceReport preferenceReport;
     private List<ConstraintViolationEntry> constraintViolations;
     private List<String> warnings;
+    private int version;
 
     // --- Output view sub-DTOs ---
 
@@ -163,4 +164,6 @@ public class ScheduleDetailResponse {
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> v) { this.warnings = v; }
+    public int getVersion() { return version; }
+    public void setVersion(int v) { this.version = v; }
 }

@@ -373,6 +373,7 @@ public class ScheduleService {
         r.setErrorMessage(s.getErrorMessage());
         r.setCreatedAt(s.getCreatedAt());
         r.setWarnings(s.getWarnings() != null ? s.getWarnings() : List.of());
+        r.setVersion(s.getVersion());
         return r;
     }
 
