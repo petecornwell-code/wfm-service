@@ -49,14 +49,13 @@ export default function ScheduleResults() {
     if (deskId) specApi.list(deskId).then(setSpecs).catch(() => {})
   }, [deskId])
 
-  // Fetch PTO/days-off data for the schedule period
+  // Fetch PTO/days-off data for the schedule period (load immediately so PTO tab is visible while solving)
   useEffect(() => {
     if (!schedule?.periodStartDate || !schedule?.periodEndDate) return
-    if (schedule.status === 'RUNNING') return
     daysOffApi.listAll(schedule.periodStartDate, schedule.periodEndDate)
       .then(res => setPtoData(res.data))
       .catch(() => {})
-  }, [schedule?.periodStartDate, schedule?.periodEndDate, schedule?.status])
+  }, [schedule?.periodStartDate, schedule?.periodEndDate])
 
   // Live elapsed-time counter while solver is running
   useEffect(() => {
