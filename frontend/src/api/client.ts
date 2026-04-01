@@ -117,6 +117,8 @@ export const daysOff = {
     query.set('limit', '1000')
     return request<PaginatedResponse<DayOffWithAgent>>(`/days-off?${query}`)
   },
+  listForDesk: (deskId: string, from: string, to: string) =>
+    request<DayOffWithAgent[]>(`/desks/${deskId}/days-off?from=${from}&to=${to}`),
 }
 
 // --- Desk Agents ---

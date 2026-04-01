@@ -49,13 +49,13 @@ export default function ScheduleResults() {
     if (deskId) specApi.list(deskId).then(setSpecs).catch(() => {})
   }, [deskId])
 
-  // Fetch PTO/days-off data for the schedule period (load immediately so PTO tab is visible while solving)
+  // Fetch PTO/days-off data for the schedule period, filtered to agents at this desk
   useEffect(() => {
-    if (!schedule?.periodStartDate || !schedule?.periodEndDate) return
-    daysOffApi.listAll(schedule.periodStartDate, schedule.periodEndDate)
-      .then(res => setPtoData(res.data))
+    if (!deskId || !schedule?.periodStartDate || !schedule?.periodEndDate) return
+    daysOffApi.listForDesk(deskId, schedule.periodStartDate, schedule.periodEndDate)
+      .then(data => setPtoData(data))
       .catch(err => console.error('Failed to fetch PTO data:', err))
-  }, [schedule?.periodStartDate, schedule?.periodEndDate])
+  }, [deskId, schedule?.periodStartDate, schedule?.periodEndDate])
 
   // Live elapsed-time counter while solver is running
   useEffect(() => {

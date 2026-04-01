@@ -33,4 +33,11 @@ public class AgentDayOffController {
             @RequestParam(required = false, defaultValue = "50") int limit) {
         return agentDayOffService.listAllDaysOff(from, to, cursor, limit);
     }
+
+    @GetMapping("/desks/{deskId}/days-off")
+    public List<AgentDayOffResponse> listDaysOffForDesk(@PathVariable UUID deskId,
+                                                         @RequestParam String from,
+                                                         @RequestParam String to) {
+        return agentDayOffService.listDaysOffForDesk(deskId, from, to);
+    }
 }

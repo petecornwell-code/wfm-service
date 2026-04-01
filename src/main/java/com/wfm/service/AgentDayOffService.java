@@ -82,4 +82,18 @@ public class AgentDayOffService {
         return CursorPagination.buildPage(responses, clamped,
                 r -> Map.of("date", r.date().toString(), "id", r.id().toString()));
     }
+
+    public List<AgentDayOffResponse> listDaysOffForDesk(UUID deskId, String from, String to) {
+        long tenantId = TenantContext.getTenantId();
+        LocalDate fromDate = LocalDate.parse(from);
+        LocalDate toDate = LocalDate.parse(to);
+
+        List<AgentDayOff> daysOff = agentDayOffRepository.findByTenantIdAndDeskIdAndDateBetween(
+                tenantId, deskId, fromDate, toDate);
+
+        return daysOff.stream()
+                .map(d -> AgentDayOffResponse.withAgent(d.getId(), d.getDate(), d.getType().name(),
+                        d.getAgent().getId(), d.getAgent().getName()))
+                .toList();
+    }
 }

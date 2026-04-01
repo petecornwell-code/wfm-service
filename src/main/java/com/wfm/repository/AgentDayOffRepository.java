@@ -38,4 +38,10 @@ public interface AgentDayOffRepository extends JpaRepository<AgentDayOff, UUID> 
                                                                 LocalDate cursorDate, UUID cursorId, Pageable pageable);
 
     void deleteByAgent_IdAndDateBetween(UUID agentId, LocalDate from, LocalDate to);
+
+    @EntityGraph(attributePaths = {"agent"})
+    @Query("SELECT d FROM AgentDayOff d WHERE d.tenantId = :tenantId " +
+           "AND d.agent.deskId = :deskId AND d.date BETWEEN :from AND :to " +
+           "ORDER BY d.date, d.id")
+    List<AgentDayOff> findByTenantIdAndDeskIdAndDateBetween(long tenantId, UUID deskId, LocalDate from, LocalDate to);
 }
