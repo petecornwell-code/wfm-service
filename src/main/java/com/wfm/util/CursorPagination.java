@@ -25,7 +25,7 @@ public final class CursorPagination {
     private static final TypeReference<LinkedHashMap<String, String>> MAP_TYPE = new TypeReference<>() {};
 
     public static final int DEFAULT_LIMIT = 50;
-    public static final int MAX_LIMIT = 200;
+    public static final int MAX_LIMIT = 1000;
 
     private CursorPagination() {}
 

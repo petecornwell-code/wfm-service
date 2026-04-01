@@ -124,65 +124,75 @@ public class MockBambooHRClient implements BambooHRClient {
     public List<BambooTimeOff> listTimeOff(String wfmTenantId, LocalDate from, LocalDate to) {
         List<BambooTimeOff> timeOffs = new ArrayList<>();
 
-        // Generate test day-off data for the first 5 mock employees within the requested window.
-        // Employee "1" (Jane Smith / Olivia Smith): one mandatory holiday per month
-        // Employee "2" (John Doe / Liam Johnson): PTO every other Friday
-        // Employee "3" (Alice Brown / Emma Williams): one week PTO block starting 2 weeks from 'from'
-        // Employees "4" and "5": scattered mandatory holidays
+        // Generate time-off data for all mock employee IDs (1..FIRST_NAMES.length)
+        // so that PTO shows regardless of which employees are assigned to the desk.
+        // Use a deterministic pattern based on employee ID so results are stable.
+        for (int empIdx = 0; empIdx < FIRST_NAMES.length; empIdx++) {
+            String employeeId = String.valueOf(empIdx + 1);
+            int pattern = empIdx % 5;
 
-        // Employee 1: one mandatory holiday on the first Monday of each month in range
-        LocalDate date = from;
-        while (!date.isAfter(to)) {
-            if (date.getDayOfMonth() <= 7 && date.getDayOfWeek() == DayOfWeek.MONDAY) {
-                timeOffs.add(new BambooTimeOff("1", date, "holiday"));
-            }
-            date = date.plusDays(1);
-        }
-
-        // Employee 2: PTO every other Friday
-        date = from;
-        int fridayCount = 0;
-        while (!date.isAfter(to)) {
-            if (date.getDayOfWeek() == DayOfWeek.FRIDAY) {
-                fridayCount++;
-                if (fridayCount % 2 == 0) {
-                    timeOffs.add(new BambooTimeOff("2", date, "pto"));
+            switch (pattern) {
+                case 0 -> {
+                    // Mandatory holiday on the first Monday of each month in range
+                    LocalDate date = from;
+                    while (!date.isAfter(to)) {
+                        if (date.getDayOfMonth() <= 7 && date.getDayOfWeek() == DayOfWeek.MONDAY) {
+                            timeOffs.add(new BambooTimeOff(employeeId, date, "holiday"));
+                        }
+                        date = date.plusDays(1);
+                    }
+                }
+                case 1 -> {
+                    // PTO every other Friday
+                    LocalDate date = from;
+                    int fridayCount = 0;
+                    while (!date.isAfter(to)) {
+                        if (date.getDayOfWeek() == DayOfWeek.FRIDAY) {
+                            fridayCount++;
+                            if (fridayCount % 2 == 0) {
+                                timeOffs.add(new BambooTimeOff(employeeId, date, "pto"));
+                            }
+                        }
+                        date = date.plusDays(1);
+                    }
+                }
+                case 2 -> {
+                    // One week PTO block starting 2 weeks from 'from'
+                    LocalDate ptoStart = from.plusWeeks(2);
+                    for (int i = 0; i < 5 && !ptoStart.plusDays(i).isAfter(to); i++) {
+                        LocalDate ptoDate = ptoStart.plusDays(i);
+                        if (ptoDate.getDayOfWeek() != DayOfWeek.SATURDAY && ptoDate.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                            timeOffs.add(new BambooTimeOff(employeeId, ptoDate, "pto"));
+                        }
+                    }
+                }
+                case 3 -> {
+                    // Mandatory holiday on the 15th of each month (if weekday)
+                    LocalDate date = from;
+                    while (!date.isAfter(to)) {
+                        if (date.getDayOfMonth() == 15
+                                && date.getDayOfWeek() != DayOfWeek.SATURDAY
+                                && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                            timeOffs.add(new BambooTimeOff(employeeId, date, "mandatory"));
+                        }
+                        date = date.plusDays(1);
+                    }
+                }
+                case 4 -> {
+                    // PTO on the last Friday of each month
+                    LocalDate date = from.withDayOfMonth(1);
+                    while (!date.isAfter(to)) {
+                        LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
+                        while (lastDay.getDayOfWeek() != DayOfWeek.FRIDAY) {
+                            lastDay = lastDay.minusDays(1);
+                        }
+                        if (!lastDay.isBefore(from) && !lastDay.isAfter(to)) {
+                            timeOffs.add(new BambooTimeOff(employeeId, lastDay, "pto"));
+                        }
+                        date = date.plusMonths(1);
+                    }
                 }
             }
-            date = date.plusDays(1);
-        }
-
-        // Employee 3: one week PTO block starting 2 weeks from 'from'
-        LocalDate ptoStart = from.plusWeeks(2);
-        for (int i = 0; i < 5 && !ptoStart.plusDays(i).isAfter(to); i++) {
-            LocalDate ptoDate = ptoStart.plusDays(i);
-            if (ptoDate.getDayOfWeek() != DayOfWeek.SATURDAY && ptoDate.getDayOfWeek() != DayOfWeek.SUNDAY) {
-                timeOffs.add(new BambooTimeOff("3", ptoDate, "pto"));
-            }
-        }
-
-        // Employee 4: mandatory holiday on the 15th of each month (if weekday)
-        date = from;
-        while (!date.isAfter(to)) {
-            if (date.getDayOfMonth() == 15
-                    && date.getDayOfWeek() != DayOfWeek.SATURDAY
-                    && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
-                timeOffs.add(new BambooTimeOff("4", date, "mandatory"));
-            }
-            date = date.plusDays(1);
-        }
-
-        // Employee 5: PTO on the last Friday of each month
-        date = from.withDayOfMonth(1);
-        while (!date.isAfter(to)) {
-            LocalDate lastDay = date.withDayOfMonth(date.lengthOfMonth());
-            while (lastDay.getDayOfWeek() != DayOfWeek.FRIDAY) {
-                lastDay = lastDay.minusDays(1);
-            }
-            if (!lastDay.isBefore(from) && !lastDay.isAfter(to)) {
-                timeOffs.add(new BambooTimeOff("5", lastDay, "pto"));
-            }
-            date = date.plusMonths(1);
         }
 
         return timeOffs;

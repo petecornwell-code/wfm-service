@@ -54,7 +54,7 @@ export default function ScheduleResults() {
     if (!schedule?.periodStartDate || !schedule?.periodEndDate) return
     daysOffApi.listAll(schedule.periodStartDate, schedule.periodEndDate)
       .then(res => setPtoData(res.data))
-      .catch(() => {})
+      .catch(err => console.error('Failed to fetch PTO data:', err))
   }, [schedule?.periodStartDate, schedule?.periodEndDate])
 
   // Live elapsed-time counter while solver is running

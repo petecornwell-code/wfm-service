@@ -9,6 +9,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -16,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
+
+import org.springframework.web.util.UriComponentsBuilder;
 
 
 /**
@@ -155,8 +158,15 @@ public class HttpBambooHRClient implements BambooHRClient {
         String start = from.format(DateTimeFormatter.ISO_LOCAL_DATE);
         String end = to.format(DateTimeFormatter.ISO_LOCAL_DATE);
 
+        URI uri = UriComponentsBuilder.fromUriString(baseUrl() + "/time_off/requests")
+                .queryParam("start", start)
+                .queryParam("end", end)
+                .queryParam("status", "approved")
+                .build()
+                .toUri();
+
         String json = restClient.get()
-                .uri(baseUrl() + "/time_off/requests/?start=" + start + "&end=" + end + "&status=approved")
+                .uri(uri)
                 .header(HttpHeaders.AUTHORIZATION, basicAuth())
                 .header(HttpHeaders.ACCEPT, "application/json")
                 .retrieve()
