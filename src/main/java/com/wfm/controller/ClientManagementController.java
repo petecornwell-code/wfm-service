@@ -4,6 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.AgentResponse;
 import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.DepartmentTimeOffResponse;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementExportService;
 import com.wfm.service.ClientManagementService;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -87,6 +89,15 @@ public class ClientManagementController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
+    }
+
+    @GetMapping("/employees/time-off")
+    public List<DepartmentTimeOffResponse> listTimeOffByDepartment(
+            @RequestParam String department,
+            @RequestParam LocalDate start,
+            @RequestParam LocalDate end) {
+        String tenantId = String.valueOf(TenantContext.getTenantId());
+        return clientManagementService.listTimeOffByDepartment(tenantId, department, start, end);
     }
 
     @PostMapping("/upload-desk-assignments")

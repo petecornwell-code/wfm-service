@@ -2,6 +2,8 @@ package com.wfm.service;
 
 import com.wfm.dto.AgentResponse;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.DepartmentTimeOffResponse;
+import com.wfm.integration.BambooTimeOff;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.integration.BambooEmployee;
@@ -15,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,6 +82,44 @@ public class ClientManagementService {
         }
 
         return result;
+    }
+
+    /**
+     * Get time-off entries for employees in a department, using the desk cache
+     * to resolve employee IDs instead of making a separate BambooHR employee list call.
+     * The cache must already be populated (via listEmployeesByDepartment) for the given department.
+     */
+    public List<DepartmentTimeOffResponse> listTimeOffByDepartment(String tenantId, String department,
+                                                                    LocalDate from, LocalDate to) {
+        // 1. Get employee IDs from the desk cache
+        List<BambooEmployeeResponse> cached = listEmployeesByDepartment(tenantId, department, false);
+        if (cached.isEmpty()) {
+            log.warn("No cached employees for tenant={}, department={}. Call listEmployeesByDepartment first.", tenantId, department);
+            return List.of();
+        }
+
+        Map<String, BambooEmployeeResponse> employeeById = cached.stream()
+                .collect(Collectors.toMap(BambooEmployeeResponse::id, e -> e, (a, b) -> a));
+        Set<String> departmentEmployeeIds = employeeById.keySet();
+
+        log.info("Found {} cached employees in department '{}', fetching time-off from {} to {}",
+                departmentEmployeeIds.size(), department, from, to);
+
+        // 2. Fetch all time-off from BambooHR for the date range
+        List<BambooTimeOff> allTimeOff = bambooHRClient.listTimeOff(tenantId, from, to);
+
+        // 3. Filter to employees in the department
+        return allTimeOff.stream()
+                .filter(t -> departmentEmployeeIds.contains(t.employeeId()))
+                .map(t -> {
+                    BambooEmployeeResponse emp = employeeById.get(t.employeeId());
+                    return new DepartmentTimeOffResponse(
+                            t.employeeId(),
+                            emp != null ? emp.displayName() : null,
+                            t.date(),
+                            t.type());
+                })
+                .toList();
     }
 
     public void clearCache() {
