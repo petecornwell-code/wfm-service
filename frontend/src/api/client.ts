@@ -108,6 +108,17 @@ export const agents = {
   },
 }
 
+// --- Days Off (bulk) ---
+export const daysOff = {
+  listAll: (from?: string, to?: string) => {
+    const query = new URLSearchParams()
+    if (from) query.set('from', from)
+    if (to) query.set('to', to)
+    query.set('limit', '1000')
+    return request<PaginatedResponse<DayOffWithAgent>>(`/days-off?${query}`)
+  },
+}
+
 // --- Desk Agents ---
 export const deskAgents = {
   list: (deskId: string, params?: { search?: string; cursor?: string }) => {
@@ -278,6 +289,7 @@ export interface StaffingRequirementResponse { requirements: StaffingRequirement
 export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[] }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
 export interface DayOff { id: string; date: string; type: string }
+export interface DayOffWithAgent { id: string; date: string; type: string; agent: { id: string; name: string } | null }
 export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
 export interface Score { hardScore: number; softScore: number }

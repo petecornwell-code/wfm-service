@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { schedules, specializations as specApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, getErrorMessage } from '../api/client'
+import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 const MATCH_COLORS: Record<string, string> = {
@@ -13,12 +13,13 @@ export default function ScheduleResults() {
   const { deskId, scheduleId } = useParams<{ deskId: string; scheduleId: string }>()
   const navigate = useNavigate()
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null)
-  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'violations'>('staffing')
+  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'violations' | 'pto'>('staffing')
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
   const [specFilter, setSpecFilter] = useState('')
   const [specs, setSpecs] = useState<Specialization[]>([])
+  const [ptoData, setPtoData] = useState<DayOffWithAgent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -47,6 +48,15 @@ export default function ScheduleResults() {
   useEffect(() => {
     if (deskId) specApi.list(deskId).then(setSpecs).catch(() => {})
   }, [deskId])
+
+  // Fetch PTO/days-off data for the schedule period
+  useEffect(() => {
+    if (!schedule?.periodStartDate || !schedule?.periodEndDate) return
+    if (schedule.status === 'RUNNING') return
+    daysOffApi.listAll(schedule.periodStartDate, schedule.periodEndDate)
+      .then(res => setPtoData(res.data))
+      .catch(() => {})
+  }, [schedule?.periodStartDate, schedule?.periodEndDate, schedule?.status])
 
   // Live elapsed-time counter while solver is running
   useEffect(() => {
@@ -239,10 +249,10 @@ export default function ScheduleResults() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {(['staffing', 'agents', 'allocation', 'preferences', 'violations'] as const).map(tab => (
+        {(['staffing', 'agents', 'allocation', 'preferences', 'violations', 'pto'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ background: activeTab === tab ? '#3b82f6' : '#e5e7eb', color: activeTab === tab ? '#fff' : '#374151', borderRadius: 0, padding: '0.5rem 1.25rem' }}>
-            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : 'Constraint Violations'}
+            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
           </button>
         ))}
       </div>
@@ -262,6 +272,7 @@ export default function ScheduleResults() {
             onToggle={c => setExpandedConstraint(expandedConstraint === c ? null : c)}
           />
         )}
+        {activeTab === 'pto' && <PtoTab data={ptoData} dateFilter={dateFilter} dates={dates} />}
       </div>
     </>
   )
@@ -745,6 +756,76 @@ function PreferenceTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dat
         </tbody>
       </table>
     </>
+  )
+}
+
+function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilter: string; dates: string[] }) {
+  if (!data || data.length === 0) return <p style={{ color: '#6b7280' }}>No PTO / days-off data for this schedule period.</p>
+
+  const filtered = dateFilter ? data.filter(d => d.date === dateFilter) : data
+
+  // Build a matrix: rows = agents (sorted by name), columns = dates
+  // Each cell shows the day-off type (PTO / MANDATORY) or is empty
+  const agentMap = new Map<string, { id: string; name: string; daysByDate: Map<string, string> }>()
+  for (const d of filtered) {
+    if (!d.agent) continue
+    let entry = agentMap.get(d.agent.id)
+    if (!entry) {
+      entry = { id: d.agent.id, name: d.agent.name, daysByDate: new Map() }
+      agentMap.set(d.agent.id, entry)
+    }
+    entry.daysByDate.set(d.date, d.type)
+  }
+
+  const agents = [...agentMap.values()].sort((a, b) => a.name.localeCompare(b.name))
+  const displayDates = dateFilter ? [dateFilter] : dates
+
+  if (agents.length === 0) return <p style={{ color: '#6b7280' }}>No agents are on PTO / day off during this period.</p>
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+      <thead>
+        <tr>
+          <th style={{ textAlign: 'left', padding: '6px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
+          {displayDates.map(d => (
+            <th key={d} style={{ textAlign: 'center', padding: '6px 8px', borderLeft: '1px solid #e5e7eb' }}>{d}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {agents.map(agent => (
+          <tr key={agent.id}>
+            <td style={{ padding: '4px 8px', fontWeight: 500, position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>{agent.name}</td>
+            {displayDates.map(d => {
+              const type = agent.daysByDate.get(d)
+              return (
+                <td key={d} style={{
+                  textAlign: 'center', padding: '4px 8px', borderLeft: '1px solid #e5e7eb',
+                  background: type === 'PTO' ? '#eff6ff' : type === 'MANDATORY' ? '#fef2f2' : undefined,
+                  color: type === 'PTO' ? '#2563eb' : type === 'MANDATORY' ? '#dc2626' : '#d1d5db',
+                  fontWeight: type ? 600 : 400, fontSize: '0.8rem',
+                }}>
+                  {type || '—'}
+                </td>
+              )
+            })}
+          </tr>
+        ))}
+        <tr style={{ fontWeight: 700, background: '#f9fafb', borderTop: '2px solid #d1d5db' }}>
+          <td style={{ padding: '6px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1 }}>
+            Total: {agents.length} agents
+          </td>
+          {displayDates.map(d => {
+            const count = agents.filter(a => a.daysByDate.has(d)).length
+            return (
+              <td key={d} style={{ textAlign: 'center', padding: '4px 8px', borderLeft: '1px solid #e5e7eb', fontSize: '0.8rem' }}>
+                {count > 0 ? count : ''}
+              </td>
+            )
+          })}
+        </tr>
+      </tbody>
+    </table>
   )
 }
 
