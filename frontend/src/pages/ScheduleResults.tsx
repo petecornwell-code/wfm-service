@@ -777,7 +777,10 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
   }
 
   const agents = [...agentMap.values()].sort((a, b) => a.name.localeCompare(b.name))
-  const displayDates = dateFilter ? [dateFilter] : dates
+  // Use schedule dates if available; otherwise derive from PTO data itself
+  // so PTO is visible even while the solver is still running (dates may be empty).
+  const ptoDates = dates.length > 0 ? dates : [...new Set(filtered.map(d => d.date))].sort()
+  const displayDates = dateFilter ? [dateFilter] : ptoDates
 
   if (agents.length === 0) return <p style={{ color: '#6b7280' }}>No agents are on PTO / day off during this period.</p>
 
