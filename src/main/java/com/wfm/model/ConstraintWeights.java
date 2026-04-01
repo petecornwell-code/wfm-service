@@ -32,7 +32,7 @@ public class ConstraintWeights {
     @ConstraintWeight("Agent day off")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "agent_day_off_weight")
-    private HardSoftScore agentDayOffWeight = HardSoftScore.ofHard(1);
+    private HardSoftScore agentDayOffWeight = HardSoftScore.ofHard(10_000);
 
     @ConstraintWeight("Specialization match")
     @Convert(converter = HardSoftScoreConverter.class)
