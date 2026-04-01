@@ -89,7 +89,7 @@ export default function ScheduleResults() {
     }
     setSubmitting(true)
     try {
-      const updated = await schedules.accept(deskId, scheduleId)
+      const updated = await schedules.accept(deskId, scheduleId, schedule.version)
       setSchedule({ ...schedule, ...updated })
       showToast('success', 'Schedule accepted')
     } catch (err) {

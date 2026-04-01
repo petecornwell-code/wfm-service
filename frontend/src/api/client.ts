@@ -222,8 +222,8 @@ export const schedules = {
   },
   stop: (deskId: string, id: string) =>
     request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/stop`, { method: 'PUT' }),
-  accept: (deskId: string, id: string) =>
-    request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/accept`, { method: 'PUT' }),
+  accept: (deskId: string, id: string, version: number) =>
+    request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/accept?version=${version}`, { method: 'PUT' }),
   reject: (deskId: string, id: string) =>
     request<void>(`/desks/${deskId}/schedules/${id}/reject`, { method: 'PUT' }),
   export: (deskId: string, id: string) =>
@@ -283,7 +283,7 @@ export interface AgentException { id?: string; date: string; contractedHoursOver
 export interface Score { hardScore: number; softScore: number }
 export interface ConstraintWeightsData { [key: string]: Score }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
-export interface ScheduleSummary { id: string; deskId: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; createdAt: string }
+export interface ScheduleSummary { id: string; deskId: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; createdAt: string; version: number }
 
 export interface StaffingSummaryEntry {
   date: string | null

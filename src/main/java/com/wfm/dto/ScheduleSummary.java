@@ -16,7 +16,8 @@ public record ScheduleSummary(
         int incrementMinutes,
         ScoreDto score,
         Boolean feasible,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        int version
 ) {
     public record ScoreDto(
             Integer hardScore,

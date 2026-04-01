@@ -76,11 +76,11 @@ export default function ScheduleSetup() {
     }
   }, [deskId, loadSchedules])
 
-  const handleAcceptSchedule = async (id: string) => {
+  const handleAcceptSchedule = async (id: string, version: number) => {
     if (!deskId || actionLoading) return
     setActionLoading(id)
     try {
-      await schedules.accept(deskId, id)
+      await schedules.accept(deskId, id, version)
       showToast('success', 'Schedule accepted')
       loadSchedules()
     } catch (err) {
@@ -277,7 +277,7 @@ export default function ScheduleSetup() {
                       <Link to={`/desks/${deskId}/schedules/${s.id}`}>View</Link>
                       {canAccept && (
                         <button className="primary" style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}
-                          disabled={actionLoading === s.id} onClick={() => handleAcceptSchedule(s.id)}>
+                          disabled={actionLoading === s.id} onClick={() => handleAcceptSchedule(s.id, s.version)}>
                           Accept
                         </button>
                       )}
