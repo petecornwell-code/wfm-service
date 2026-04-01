@@ -377,7 +377,22 @@ public class ScheduleOutputService {
                         constraintName, level, weight, violationCount, totalPenalty, violations));
             }
 
+            // Time-related hard constraints surface first for quick visibility.
+            Set<String> timeConstraints = Set.of(
+                    "Contracted hours (over)",
+                    "Contracted hours (under)",
+                    "Contracted hours (under, zero)",
+                    "Honour preferred start time",
+                    "Honour preferred break time",
+                    "Break duration",
+                    "Break blocked window",
+                    "Break start alignment",
+                    "Break clustering",
+                    "Exactly one break"
+            );
             entries.sort(Comparator.comparing(ConstraintViolationEntry::level)
+                    .thenComparing((ConstraintViolationEntry e) ->
+                            timeConstraints.contains(e.constraintName()) ? 0 : 1)
                     .thenComparing(ConstraintViolationEntry::constraintName));
             return entries;
 
