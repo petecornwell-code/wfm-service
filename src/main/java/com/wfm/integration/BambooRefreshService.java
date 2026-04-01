@@ -215,14 +215,20 @@ public class BambooRefreshService {
                         DayOffType dayOffType = "MANDATORY".equalsIgnoreCase(type)
                                 || "holiday".equalsIgnoreCase(type)
                                 ? DayOffType.MANDATORY : DayOffType.PTO;
+                        DayOffStatus dayOffStatus = "approved".equalsIgnoreCase(timeOff.status())
+                                ? DayOffStatus.APPROVED : DayOffStatus.REQUESTED;
                         String key = agent.getId() + "|" + timeOff.date();
                         AgentDayOff existing = dedupedDaysOff.get(key);
-                        if (existing == null || (dayOffType == DayOffType.MANDATORY && existing.getType() != DayOffType.MANDATORY)) {
+                        // Priority: MANDATORY > PTO; within same type, APPROVED > REQUESTED
+                        if (existing == null
+                                || (dayOffType == DayOffType.MANDATORY && existing.getType() != DayOffType.MANDATORY)
+                                || (dayOffType == existing.getType() && dayOffStatus == DayOffStatus.APPROVED && existing.getStatus() != DayOffStatus.APPROVED)) {
                             AgentDayOff dayOff = new AgentDayOff();
                             dayOff.setTenantId(tenantId);
                             dayOff.setAgent(agent);
                             dayOff.setDate(timeOff.date());
                             dayOff.setType(dayOffType);
+                            dayOff.setStatus(dayOffStatus);
                             dedupedDaysOff.put(key, dayOff);
                         }
                     });

@@ -290,8 +290,8 @@ export interface StaffingRequirementItem { timeslotId: string; specializationId:
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
 export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[] }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
-export interface DayOff { id: string; date: string; type: string }
-export interface DayOffWithAgent { id: string; date: string; type: string; agent: { id: string; name: string } | null }
+export interface DayOff { id: string; date: string; type: string; status: string }
+export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }
 export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
 export interface Score { hardScore: number; softScore: number }

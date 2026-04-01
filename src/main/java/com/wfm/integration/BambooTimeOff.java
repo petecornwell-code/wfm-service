@@ -5,5 +5,6 @@ import java.time.LocalDate;
 public record BambooTimeOff(
     String employeeId,
     LocalDate date,
-    String type
+    String type,
+    String status
 ) {}

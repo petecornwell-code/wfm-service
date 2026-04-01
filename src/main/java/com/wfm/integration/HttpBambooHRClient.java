@@ -155,13 +155,23 @@ public class HttpBambooHRClient implements BambooHRClient {
     public List<BambooTimeOff> listTimeOff(String wfmTenantId, LocalDate from, LocalDate to) {
         log.info("Fetching time-off requests from BambooHR ({} to {})", from, to);
 
+        List<BambooTimeOff> timeOffs = new ArrayList<>();
+        for (String status : List.of("approved", "requested")) {
+            timeOffs.addAll(fetchTimeOffByStatus(from, to, status));
+        }
+
+        log.info("Fetched {} time-off entries from BambooHR (approved + requested)", timeOffs.size());
+        return timeOffs;
+    }
+
+    private List<BambooTimeOff> fetchTimeOffByStatus(LocalDate from, LocalDate to, String status) {
         String start = from.format(DateTimeFormatter.ISO_LOCAL_DATE);
         String end = to.format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         URI uri = UriComponentsBuilder.fromUriString(baseUrl() + "/time_off/requests")
                 .queryParam("start", start)
                 .queryParam("end", end)
-                .queryParam("status", "approved")
+                .queryParam("status", status)
                 .build()
                 .toUri();
 
@@ -191,7 +201,7 @@ public class HttpBambooHRClient implements BambooHRClient {
                         try {
                             LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE);
                             if (!date.isBefore(from) && !date.isAfter(to)) {
-                                timeOffs.add(new BambooTimeOff(employeeId, date, type));
+                                timeOffs.add(new BambooTimeOff(employeeId, date, type, status));
                             }
                         } catch (Exception ignored) {
                             // skip unparseable date keys
@@ -203,7 +213,7 @@ public class HttpBambooHRClient implements BambooHRClient {
                         try {
                             LocalDate date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE);
                             if (!date.isBefore(from) && !date.isAfter(to)) {
-                                timeOffs.add(new BambooTimeOff(employeeId, date, type));
+                                timeOffs.add(new BambooTimeOff(employeeId, date, type, status));
                             }
                         } catch (Exception ignored) {
                             // skip unparseable dates
@@ -218,17 +228,16 @@ public class HttpBambooHRClient implements BambooHRClient {
                         LocalDate e = LocalDate.parse(reqEnd, DateTimeFormatter.ISO_LOCAL_DATE);
                         for (LocalDate d = s; !d.isAfter(e); d = d.plusDays(1)) {
                             if (!d.isBefore(from) && !d.isAfter(to)) {
-                                timeOffs.add(new BambooTimeOff(employeeId, d, type));
+                                timeOffs.add(new BambooTimeOff(employeeId, d, type, status));
                             }
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse BambooHR time-off response", e);
+            throw new RuntimeException("Failed to parse BambooHR time-off response for status=" + status, e);
         }
 
-        log.info("Fetched {} time-off entries from BambooHR", timeOffs.size());
         return timeOffs;
     }
 }

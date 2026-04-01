@@ -765,7 +765,7 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
 
   // Build a matrix: rows = agents (sorted by name), columns = dates
   // Each cell shows the day-off type (PTO / MANDATORY) or is empty
-  const agentMap = new Map<string, { id: string; name: string; daysByDate: Map<string, string> }>()
+  const agentMap = new Map<string, { id: string; name: string; daysByDate: Map<string, { type: string; status: string }> }>()
   for (const d of filtered) {
     if (!d.agent) continue
     let entry = agentMap.get(d.agent.id)
@@ -773,7 +773,7 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
       entry = { id: d.agent.id, name: d.agent.name, daysByDate: new Map() }
       agentMap.set(d.agent.id, entry)
     }
-    entry.daysByDate.set(d.date, d.type)
+    entry.daysByDate.set(d.date, { type: d.type, status: d.status })
   }
 
   const agents = [...agentMap.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -785,6 +785,7 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
   if (agents.length === 0) return <p style={{ color: '#6b7280' }}>No agents are on PTO / day off during this period.</p>
 
   return (
+    <>
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
       <thead>
         <tr>
@@ -799,15 +800,18 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
           <tr key={agent.id}>
             <td style={{ padding: '4px 8px', fontWeight: 500, position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>{agent.name}</td>
             {displayDates.map(d => {
-              const type = agent.daysByDate.get(d)
+              const info = agent.daysByDate.get(d)
+              const type = info?.type
+              const isRequested = info?.status === 'REQUESTED'
+              const label = type ? (isRequested ? `${type} (Req)` : type) : null
               return (
                 <td key={d} style={{
                   textAlign: 'center', padding: '4px 8px', borderLeft: '1px solid #e5e7eb',
-                  background: type === 'PTO' ? '#eff6ff' : type === 'MANDATORY' ? '#fef2f2' : undefined,
-                  color: type === 'PTO' ? '#2563eb' : type === 'MANDATORY' ? '#dc2626' : '#d1d5db',
+                  background: isRequested ? '#fefce8' : type === 'PTO' ? '#eff6ff' : type === 'MANDATORY' ? '#fef2f2' : undefined,
+                  color: isRequested ? '#a16207' : type === 'PTO' ? '#2563eb' : type === 'MANDATORY' ? '#dc2626' : '#d1d5db',
                   fontWeight: type ? 600 : 400, fontSize: '0.8rem',
                 }}>
-                  {type || '—'}
+                  {label || '—'}
                 </td>
               )
             })}
@@ -828,6 +832,21 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
         </tr>
       </tbody>
     </table>
+    <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.75rem', fontSize: '0.8rem', color: '#6b7280', padding: '0.5rem 0.25rem' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', background: '#eff6ff', border: '1px solid #bfdbfe' }} />
+        PTO (Approved)
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', background: '#fefce8', border: '1px solid #fde68a' }} />
+        PTO (Requested)
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', background: '#fef2f2', border: '1px solid #fecaca' }} />
+        Mandatory
+      </span>
+    </div>
+    </>
   )
 }
 

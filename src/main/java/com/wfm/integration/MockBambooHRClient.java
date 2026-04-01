@@ -137,7 +137,7 @@ public class MockBambooHRClient implements BambooHRClient {
                     LocalDate date = from;
                     while (!date.isAfter(to)) {
                         if (date.getDayOfMonth() <= 7 && date.getDayOfWeek() == DayOfWeek.MONDAY) {
-                            timeOffs.add(new BambooTimeOff(employeeId, date, "holiday"));
+                            timeOffs.add(new BambooTimeOff(employeeId, date, "holiday", "approved"));
                         }
                         date = date.plusDays(1);
                     }
@@ -150,7 +150,7 @@ public class MockBambooHRClient implements BambooHRClient {
                         if (date.getDayOfWeek() == DayOfWeek.FRIDAY) {
                             fridayCount++;
                             if (fridayCount % 2 == 0) {
-                                timeOffs.add(new BambooTimeOff(employeeId, date, "pto"));
+                                timeOffs.add(new BambooTimeOff(employeeId, date, "pto", "requested"));
                             }
                         }
                         date = date.plusDays(1);
@@ -162,7 +162,7 @@ public class MockBambooHRClient implements BambooHRClient {
                     for (int i = 0; i < 5 && !ptoStart.plusDays(i).isAfter(to); i++) {
                         LocalDate ptoDate = ptoStart.plusDays(i);
                         if (ptoDate.getDayOfWeek() != DayOfWeek.SATURDAY && ptoDate.getDayOfWeek() != DayOfWeek.SUNDAY) {
-                            timeOffs.add(new BambooTimeOff(employeeId, ptoDate, "pto"));
+                            timeOffs.add(new BambooTimeOff(employeeId, ptoDate, "pto", "approved"));
                         }
                     }
                 }
@@ -173,7 +173,7 @@ public class MockBambooHRClient implements BambooHRClient {
                         if (date.getDayOfMonth() == 15
                                 && date.getDayOfWeek() != DayOfWeek.SATURDAY
                                 && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
-                            timeOffs.add(new BambooTimeOff(employeeId, date, "mandatory"));
+                            timeOffs.add(new BambooTimeOff(employeeId, date, "mandatory", "approved"));
                         }
                         date = date.plusDays(1);
                     }
@@ -187,7 +187,7 @@ public class MockBambooHRClient implements BambooHRClient {
                             lastDay = lastDay.minusDays(1);
                         }
                         if (!lastDay.isBefore(from) && !lastDay.isAfter(to)) {
-                            timeOffs.add(new BambooTimeOff(employeeId, lastDay, "pto"));
+                            timeOffs.add(new BambooTimeOff(employeeId, lastDay, "pto", "approved"));
                         }
                         date = date.plusMonths(1);
                     }

@@ -28,6 +28,10 @@ public class AgentDayOff {
     @Column(nullable = false)
     private DayOffType type;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private DayOffStatus status = DayOffStatus.APPROVED;
+
     public AgentDayOff() {}
 
     public UUID getId() { return id; }
@@ -44,4 +48,7 @@ public class AgentDayOff {
 
     public DayOffType getType() { return type; }
     public void setType(DayOffType type) { this.type = type; }
+
+    public DayOffStatus getStatus() { return status; }
+    public void setStatus(DayOffStatus status) { this.status = status; }
 }

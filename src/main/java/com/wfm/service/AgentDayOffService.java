@@ -37,7 +37,7 @@ public class AgentDayOffService {
         }
 
         return daysOff.stream()
-                .map(d -> AgentDayOffResponse.forAgent(d.getId(), d.getDate(), d.getType().name()))
+                .map(d -> AgentDayOffResponse.forAgent(d.getId(), d.getDate(), d.getType().name(), d.getStatus().name()))
                 .toList();
     }
 
@@ -75,7 +75,7 @@ public class AgentDayOffService {
         }
 
         List<AgentDayOffResponse> responses = daysOff.stream()
-                .map(d -> AgentDayOffResponse.withAgent(d.getId(), d.getDate(), d.getType().name(),
+                .map(d -> AgentDayOffResponse.withAgent(d.getId(), d.getDate(), d.getType().name(), d.getStatus().name(),
                         d.getAgent().getId(), d.getAgent().getName()))
                 .toList();
 
@@ -92,7 +92,7 @@ public class AgentDayOffService {
                 tenantId, deskId, fromDate, toDate);
 
         return daysOff.stream()
-                .map(d -> AgentDayOffResponse.withAgent(d.getId(), d.getDate(), d.getType().name(),
+                .map(d -> AgentDayOffResponse.withAgent(d.getId(), d.getDate(), d.getType().name(), d.getStatus().name(),
                         d.getAgent().getId(), d.getAgent().getName()))
                 .toList();
     }
