@@ -21,7 +21,7 @@
     <localSearch>
         <acceptor>
             <entityTabuSize>7</entityTabuSize>
-            <simulatedAnnealingStartingTemperature>0hard/500soft</simulatedAnnealingStartingTemperature>
+            <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
         </acceptor>
     </localSearch>
 
