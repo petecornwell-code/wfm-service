@@ -202,6 +202,7 @@ public class BambooRefreshService {
         for (UUID agentId : refreshedAgentIds) {
             agentDayOffRepository.deleteByAgent_IdAndDateBetween(agentId, from, to);
         }
+        agentDayOffRepository.flush();
 
         // Deduplicate by (agentId, date) — BambooHR can return overlapping time-off entries
         // for the same employee+date, which would violate the unique constraint.
