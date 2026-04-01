@@ -163,6 +163,7 @@ export default function ScheduleResults() {
               {schedule.status}
             </span>
           </span>
+          {schedule.deskName && <span><strong>Desk:</strong> {schedule.deskName}</span>}
           <span><strong>Period:</strong> {schedule.periodStartDate} — {schedule.periodEndDate}</span>
           {schedule.score && (
             <span><strong>Score:</strong> Hard: {schedule.score.hardScore}, Soft: {schedule.score.softScore}</span>

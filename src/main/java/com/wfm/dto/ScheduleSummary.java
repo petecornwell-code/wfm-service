@@ -8,6 +8,7 @@ import java.util.UUID;
 public record ScheduleSummary(
         UUID id,
         UUID deskId,
+        String deskName,
         String status,
         LocalDate periodStartDate,
         LocalDate periodEndDate,

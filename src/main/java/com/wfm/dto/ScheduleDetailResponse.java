@@ -10,6 +10,7 @@ import java.util.UUID;
 public class ScheduleDetailResponse {
     private UUID id;
     private UUID deskId;
+    private String deskName;
     private String status;
     private LocalDate periodStartDate;
     private LocalDate periodEndDate;
@@ -116,6 +117,8 @@ public class ScheduleDetailResponse {
     public void setId(UUID id) { this.id = id; }
     public UUID getDeskId() { return deskId; }
     public void setDeskId(UUID deskId) { this.deskId = deskId; }
+    public String getDeskName() { return deskName; }
+    public void setDeskName(String deskName) { this.deskName = deskName; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public LocalDate getPeriodStartDate() { return periodStartDate; }

@@ -1,10 +1,13 @@
 package com.wfm.controller;
 
+import com.wfm.config.TenantContext;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.SolveRequest;
+import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
+import com.wfm.repository.DeskRepository;
 import com.wfm.service.ScheduleExportService;
 import com.wfm.service.ScheduleService;
 import com.wfm.service.SolverService;
@@ -23,13 +26,16 @@ public class ScheduleController {
     private final ScheduleService scheduleService;
     private final SolverService solverService;
     private final ScheduleExportService scheduleExportService;
+    private final DeskRepository deskRepository;
 
     public ScheduleController(ScheduleService scheduleService,
                               SolverService solverService,
-                              ScheduleExportService scheduleExportService) {
+                              ScheduleExportService scheduleExportService,
+                              DeskRepository deskRepository) {
         this.scheduleService = scheduleService;
         this.solverService = solverService;
         this.scheduleExportService = scheduleExportService;
+        this.deskRepository = deskRepository;
     }
 
     @PostMapping("/solve")
@@ -98,8 +104,10 @@ public class ScheduleController {
             scoreDto = new ScheduleSummary.ScoreDto(s.getScore().hardScore(), s.getScore().softScore());
             feasible = s.getScore().hardScore() >= 0;
         }
+        String deskName = deskRepository.findByIdAndTenantId(s.getDeskId(), TenantContext.getTenantId())
+                .map(Desk::getName).orElse(null);
         return new ScheduleSummary(
-                s.getId(), s.getDeskId(), s.getStatus().name(),
+                s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
                 scoreDto, feasible, s.getCreatedAt(), s.getVersion());

@@ -23,6 +23,7 @@ public class ScheduleService {
 
     private final ScheduleRepository scheduleRepository;
     private final AcceptedScheduleDateRepository acceptedScheduleDateRepository;
+    private final DeskRepository deskRepository;
     private final InMemoryScheduleStore inMemoryStore;
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
@@ -32,6 +33,7 @@ public class ScheduleService {
 
     public ScheduleService(ScheduleRepository scheduleRepository,
                            AcceptedScheduleDateRepository acceptedScheduleDateRepository,
+                           DeskRepository deskRepository,
                            InMemoryScheduleStore inMemoryStore,
                            TimeslotRepository timeslotRepository,
                            StaffingRequirementRepository staffingRequirementRepository,
@@ -40,6 +42,7 @@ public class ScheduleService {
                            EntityManager entityManager) {
         this.scheduleRepository = scheduleRepository;
         this.acceptedScheduleDateRepository = acceptedScheduleDateRepository;
+        this.deskRepository = deskRepository;
         this.inMemoryStore = inMemoryStore;
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
@@ -53,6 +56,9 @@ public class ScheduleService {
     public PaginatedResponse<ScheduleSummary> listSchedules(UUID deskId, String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
         int clamped = CursorPagination.clampLimit(limit);
+
+        String deskName = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .map(Desk::getName).orElse(null);
 
         // Load accepted schedules from DB (ordered by createdAt desc)
         List<Schedule> dbSchedules = scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(
@@ -71,7 +77,8 @@ public class ScheduleService {
             }
         }
 
-        List<ScheduleSummary> summaries = new ArrayList<>(merged.stream().map(this::toSummary).toList());
+        final String dn = deskName;
+        List<ScheduleSummary> summaries = new ArrayList<>(merged.stream().map(s -> toSummary(s, dn)).toList());
 
         // Apply cursor: skip past the cursor position
         if (cursor != null && !cursor.isBlank()) {
@@ -122,6 +129,8 @@ public class ScheduleService {
 
         // Build the detail response
         ScheduleDetailResponse response = buildDetailResponse(schedule);
+        deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .ifPresent(desk -> response.setDeskName(desk.getName()));
 
         // Compute output views
         response.setStaffingSummary(scheduleOutputService.buildStaffingSummary(schedule));
@@ -377,7 +386,7 @@ public class ScheduleService {
         return r;
     }
 
-    private ScheduleSummary toSummary(Schedule s) {
+    private ScheduleSummary toSummary(Schedule s, String deskName) {
         ScheduleSummary.ScoreDto scoreDto = null;
         Boolean feasible = null;
         if (s.getScore() != null) {
@@ -385,7 +394,7 @@ public class ScheduleService {
             feasible = s.getScore().hardScore() >= 0;
         }
         return new ScheduleSummary(
-                s.getId(), s.getDeskId(), s.getStatus().name(),
+                s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
                 scoreDto, feasible, s.getCreatedAt(), s.getVersion());

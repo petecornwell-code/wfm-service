@@ -21,6 +21,7 @@ public class ScheduleExportService {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             CellStyle headerStyle = createHeaderStyle(workbook);
 
+            writeOverview(workbook, headerStyle, detail);
             writeStaffingSummary(workbook, headerStyle, detail.getStaffingSummary());
             writeAgentSchedule(workbook, headerStyle, detail.getAgentSchedule());
             writePreferenceReport(workbook, headerStyle, detail.getPreferenceReport());
@@ -33,7 +34,33 @@ public class ScheduleExportService {
         }
     }
 
-    // --- Tab 1: Staffing Summary ---
+    // --- Tab 1: Overview ---
+
+    private void writeOverview(XSSFWorkbook workbook, CellStyle headerStyle,
+                               ScheduleDetailResponse detail) {
+        Sheet sheet = workbook.createSheet("Overview");
+
+        String[][] rows = {
+                {"Desk", detail.getDeskName() != null ? detail.getDeskName() : ""},
+                {"Status", detail.getStatus() != null ? detail.getStatus() : ""},
+                {"Period", detail.getPeriodStartDate() + " to " + detail.getPeriodEndDate()},
+                {"Hours", detail.getStartTime() + " - " + detail.getEndTime()},
+                {"Increment (min)", String.valueOf(detail.getIncrementMinutes())},
+        };
+
+        int rowNum = 0;
+        for (String[] pair : rows) {
+            Row row = sheet.createRow(rowNum++);
+            Cell label = row.createCell(0);
+            label.setCellValue(pair[0]);
+            label.setCellStyle(headerStyle);
+            row.createCell(1).setCellValue(pair[1]);
+        }
+
+        autoSizeColumns(sheet, 2);
+    }
+
+    // --- Tab 2: Staffing Summary ---
 
     private void writeStaffingSummary(XSSFWorkbook workbook, CellStyle headerStyle,
                                       List<StaffingSummaryEntry> entries) {
