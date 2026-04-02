@@ -1,0 +1,14 @@
+.git
+.gradle
+build
+frontend/node_modules
+frontend/dist
+.idea
+*.iml
+.vscode
+.DS_Store
+.env
+*.md
+infra/.terraform
+infra/.terraform.lock.hcl
+infra/*.tfstate*

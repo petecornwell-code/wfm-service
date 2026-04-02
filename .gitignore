@@ -30,3 +30,11 @@ Thumbs.db
 
 # Environment
 .env
+
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/terraform.tfvars
+infra/*.auto.tfvars

@@ -1,0 +1,18 @@
+# Copy this file to terraform.tfvars and fill in your values
+# Do NOT commit terraform.tfvars to version control
+
+environment = "dev"
+aws_region  = "eu-west-2"
+
+# RDS
+db_instance_class = "db.t4g.medium"
+db_multi_az       = false
+
+# ECS
+ecs_cpu           = 2048   # 2 vCPU
+ecs_memory        = 4096   # 4 GB
+ecs_desired_count = 1
+
+# App
+cors_allowed_origins = "*"
+solver_time_limit    = "PT5M"
