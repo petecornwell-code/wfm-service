@@ -45,9 +45,13 @@ Plans:
   1. `src/main/java/utils/BambooCustomFields.java` and `BambooEmployeesByDepartment.java` are deleted or moved so they do not appear in `git diff main` as files containing secrets
   2. `infra/terraform.tfvars` is listed in `.gitignore`
   3. An OIDC identity provider for `token.actions.githubusercontent.com` exists in AWS IAM (visible in IAM console under Identity Providers)
-  4. IAM role `wfm-github-deploy` exists with a trust policy scoped to the correct GitHub repository and `main` branch
-  5. The role's permissions include: ECR push, ECS task definition registration, ECS service update, S3 sync, CloudFront invalidation, and Secrets Manager read
-**Plans**: TBD
+  4. IAM role `wfm-dev-github-actions` exists with a trust policy scoped to `repo:petecornwell-code/wfm-service:ref:refs/heads/main`
+  5. The role's permissions include: ECR push, ECS task definition registration, ECS service update, S3 sync, CloudFront list + invalidation, and iam:PassRole
+**Plans**: 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Delete BambooCustomFields.java and BambooEmployeesByDepartment.java; verify .gitignore covers terraform.tfvars
+- [ ] 02-02-PLAN.md — Fix iam.tf bugs (trust policy wildcard, missing cloudfront:ListDistributions); create terraform.tfvars; terraform apply -target IAM resources; capture role ARN
 
 **Background for planning:**
 - The two files in `src/main/java/utils/` are outside the main package (`com/wfm/`) and appear to be standalone utilities not imported by the main application — confirm with `git grep` before deleting
@@ -55,6 +59,7 @@ Plans:
 - The trust policy for the role should use condition `StringLike` on `token.actions.githubusercontent.com:sub` with value `repo:OWNER/REPO:ref:refs/heads/main`
 - Permissions can be attached as an inline policy or managed policy; the deploy workflow in `.github/workflows/deploy.yml` documents exactly which AWS calls it makes
 - The IAM role ARN will be needed in Phase 4 — note it down after creation
+- Role name is `wfm-dev-github-actions` (Terraform-generated: `${app_name}-${environment}-github-actions`)
 
 ### Phase 3: Infrastructure Provisioning
 **Goal**: All AWS infrastructure resources are provisioned and healthy — ECS cluster, RDS instance, ECR repository, ALB, S3 bucket, and CloudFront distribution all exist in `eu-west-2`
@@ -92,7 +97,7 @@ Plans:
 
 **Background for planning:**
 - Set the GitHub secret via: Repository → Settings → Secrets and variables → Actions → New repository secret
-- The `AWS_DEPLOY_ROLE_ARN` value is the full ARN of the `wfm-github-deploy` role, e.g. `arn:aws:iam::123456789012:role/wfm-github-deploy`
+- The `AWS_DEPLOY_ROLE_ARN` value is the full ARN of the `wfm-dev-github-actions` role, e.g. `arn:aws:iam::521757869980:role/wfm-dev-github-actions`
 - To trigger the pipeline: push a trivial commit to `main` (e.g., update a comment), or use GitHub Actions UI "Run workflow" if `workflow_dispatch` is configured
 - First deploy will be slow (~10 min) because Docker build cache is cold in CI; subsequent deploys are faster
 - ECS task health check: in the ECS console, click the service → Tasks tab → click the task → check health status and logs
@@ -105,6 +110,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Local Tooling & State Bootstrap | 0/2 | In progress | - |
-| 2. Security Cleanup & OIDC Setup | 0/TBD | Not started | - |
+| 2. Security Cleanup & OIDC Setup | 0/2 | Not started | - |
 | 3. Infrastructure Provisioning | 0/TBD | Not started | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Not started | - |
