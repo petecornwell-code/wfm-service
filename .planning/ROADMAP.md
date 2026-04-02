@@ -26,7 +26,7 @@ The codebase is working and the infrastructure code is already written. This roa
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Install AWS CLI, create IAM admin user, configure credentials, verify Terraform
+- [x] 01-01-PLAN.md — Install AWS CLI, create IAM admin user, configure credentials, verify Terraform
 - [ ] 01-02-PLAN.md — Create S3 bucket + DynamoDB table, update main.tf backend block, run terraform init
 
 **Background for planning:**

@@ -7,9 +7,9 @@
 
 ### Local Tooling
 
-- [ ] **TOOL-01**: AWS CLI v2 installed on developer machine
-- [ ] **TOOL-02**: AWS CLI configured with credentials for the target AWS account
-- [ ] **TOOL-03**: Terraform >= 1.5 installed on developer machine
+- [x] **TOOL-01**: AWS CLI v2 installed on developer machine
+- [x] **TOOL-02**: AWS CLI configured with credentials for the target AWS account
+- [x] **TOOL-03**: Terraform >= 1.5 installed on developer machine
 
 ### Terraform State Bootstrap
 
@@ -84,9 +84,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | Phase 1 | Pending |
-| TOOL-02 | Phase 1 | Pending |
-| TOOL-03 | Phase 1 | Pending |
+| TOOL-01 | Phase 1 | Complete |
+| TOOL-02 | Phase 1 | Complete |
+| TOOL-03 | Phase 1 | Complete |
 | BOOT-01 | Phase 1 | Pending |
 | BOOT-02 | Phase 1 | Pending |
 | BOOT-03 | Phase 1 | Pending |
