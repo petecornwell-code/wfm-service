@@ -13,10 +13,10 @@
 
 ### Terraform State Bootstrap
 
-- [ ] **BOOT-01**: S3 bucket `wfm-terraform-state` created in `eu-west-2` with versioning and encryption enabled
-- [ ] **BOOT-02**: DynamoDB table `wfm-terraform-locks` created for Terraform state locking
-- [ ] **BOOT-03**: `infra/main.tf` backend block uncommented and configured to use the bootstrap bucket/table
-- [ ] **BOOT-04**: `terraform init` completes successfully with remote state backend
+- [x] **BOOT-01**: S3 bucket `wfm-terraform-state` created in `eu-west-2` with versioning and encryption enabled
+- [x] **BOOT-02**: DynamoDB table `wfm-terraform-locks` created for Terraform state locking
+- [x] **BOOT-03**: `infra/main.tf` backend block uncommented and configured to use the bootstrap bucket/table
+- [x] **BOOT-04**: `terraform init` completes successfully with remote state backend
 
 ### AWS OIDC & IAM
 
@@ -87,10 +87,10 @@
 | TOOL-01 | Phase 1 | Complete |
 | TOOL-02 | Phase 1 | Complete |
 | TOOL-03 | Phase 1 | Complete |
-| BOOT-01 | Phase 1 | Pending |
-| BOOT-02 | Phase 1 | Pending |
-| BOOT-03 | Phase 1 | Pending |
-| BOOT-04 | Phase 1 | Pending |
+| BOOT-01 | Phase 1 | Complete |
+| BOOT-02 | Phase 1 | Complete |
+| BOOT-03 | Phase 1 | Complete |
+| BOOT-04 | Phase 1 | Complete |
 | IAM-01 | Phase 2 | Pending |
 | IAM-02 | Phase 2 | Pending |
 | IAM-03 | Phase 2 | Pending |

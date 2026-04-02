@@ -27,7 +27,7 @@ The codebase is working and the infrastructure code is already written. This roa
 
 Plans:
 - [x] 01-01-PLAN.md — Install AWS CLI, create IAM admin user, configure credentials, verify Terraform
-- [ ] 01-02-PLAN.md — Create S3 bucket + DynamoDB table, update main.tf backend block, run terraform init
+- [x] 01-02-PLAN.md — Create S3 bucket + DynamoDB table, update main.tf backend block, run terraform init
 
 **Background for planning:**
 - AWS CLI v2 install: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html (macOS: download `.pkg` or use Homebrew `brew install awscli`)
