@@ -182,6 +182,11 @@ export default function ScheduleResults() {
               {schedule.feasible ? 'Feasible' : 'NOT FEASIBLE'}
             </span>
           )}
+          {schedule.feasibleAt && schedule.createdAt && (
+            <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>
+              Feasible after {formatElapsed(Math.floor((new Date(schedule.feasibleAt).getTime() - new Date(schedule.createdAt).getTime()) / 1000))}
+            </span>
+          )}
           {elapsedSeconds !== null && (
             <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>
               {formatElapsed(elapsedSeconds)}

@@ -143,6 +143,9 @@ public class Schedule {
     @Transient
     private List<String> warnings = new ArrayList<>();
 
+    @Transient
+    private OffsetDateTime feasibleAt;
+
     public Schedule() {}
 
     // --- Getters and setters ---
@@ -245,6 +248,9 @@ public class Schedule {
 
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> warnings) { this.warnings = warnings; }
+
+    public OffsetDateTime getFeasibleAt() { return feasibleAt; }
+    public void setFeasibleAt(OffsetDateTime feasibleAt) { this.feasibleAt = feasibleAt; }
 
     @ProblemFactProperty
     @Transient

@@ -110,6 +110,6 @@ public class ScheduleController {
                 s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
-                scoreDto, feasible, s.getCreatedAt(), s.getVersion());
+                scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }

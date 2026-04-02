@@ -479,6 +479,7 @@ public class ScheduleService {
             r.setFeasible(s.getScore().hardScore() >= 0);
         }
 
+        r.setFeasibleAt(s.getFeasibleAt());
         r.setErrorMessage(s.getErrorMessage());
         r.setCreatedAt(s.getCreatedAt());
         r.setWarnings(s.getWarnings() != null ? s.getWarnings() : List.of());
@@ -497,6 +498,6 @@ public class ScheduleService {
                 s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
-                scoreDto, feasible, s.getCreatedAt(), s.getVersion());
+                scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }

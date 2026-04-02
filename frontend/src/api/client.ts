@@ -297,7 +297,7 @@ export interface AgentException { id?: string; date: string; contractedHoursOver
 export interface Score { hardScore: number; softScore: number }
 export interface ConstraintWeightsData { [key: string]: Score }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
-export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; createdAt: string; version: number }
+export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
 
 export interface StaffingSummaryEntry {
   date: string | null

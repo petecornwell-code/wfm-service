@@ -265,6 +265,14 @@ public class SolverService {
                         log.debug("Solver best solution update — schedule={}, score={}",
                                 bestSolution.getId(), bestSolution.getScore());
                         bestSolution.setStatus(ScheduleStatus.RUNNING);
+                        // Capture the first time the solution becomes feasible (hard score reaches 0)
+                        if (bestSolution.getFeasibleAt() == null
+                                && bestSolution.getScore() != null
+                                && bestSolution.getScore().hardScore() >= 0) {
+                            bestSolution.setFeasibleAt(OffsetDateTime.now());
+                            log.info("Solution first became feasible — schedule={}, score={}",
+                                    bestSolution.getId(), bestSolution.getScore());
+                        }
                         inMemoryStore.put(bestSolution);
                     } finally {
                         TenantContext.clear();

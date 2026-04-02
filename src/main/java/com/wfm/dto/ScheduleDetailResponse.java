@@ -27,6 +27,7 @@ public class ScheduleDetailResponse {
     private int underallocationHardLimitPct;
     private ScheduleSummary.ScoreDto score;
     private Boolean feasible;
+    private OffsetDateTime feasibleAt;
     private String errorMessage;
     private OffsetDateTime createdAt;
     private List<String> violatedHardConstraints;
@@ -151,6 +152,8 @@ public class ScheduleDetailResponse {
     public void setScore(ScheduleSummary.ScoreDto v) { this.score = v; }
     public Boolean getFeasible() { return feasible; }
     public void setFeasible(Boolean v) { this.feasible = v; }
+    public OffsetDateTime getFeasibleAt() { return feasibleAt; }
+    public void setFeasibleAt(OffsetDateTime v) { this.feasibleAt = v; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String v) { this.errorMessage = v; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
