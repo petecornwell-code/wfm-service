@@ -23,7 +23,11 @@ The codebase is working and the infrastructure code is already written. This roa
   3. S3 bucket `wfm-terraform-state` exists in `eu-west-2` with versioning and server-side encryption enabled
   4. DynamoDB table `wfm-terraform-locks` exists in `eu-west-2` with `LockID` as the partition key
   5. `terraform init` inside `infra/` completes with "Successfully configured the backend" and no errors (backend block uncommented)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Install AWS CLI, create IAM admin user, configure credentials, verify Terraform
+- [ ] 01-02-PLAN.md — Create S3 bucket + DynamoDB table, update main.tf backend block, run terraform init
 
 **Background for planning:**
 - AWS CLI v2 install: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html (macOS: download `.pkg` or use Homebrew `brew install awscli`)
@@ -100,7 +104,7 @@ The codebase is working and the infrastructure code is already written. This roa
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Local Tooling & State Bootstrap | 0/TBD | Not started | - |
+| 1. Local Tooling & State Bootstrap | 0/2 | In progress | - |
 | 2. Security Cleanup & OIDC Setup | 0/TBD | Not started | - |
 | 3. Infrastructure Provisioning | 0/TBD | Not started | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Not started | - |
