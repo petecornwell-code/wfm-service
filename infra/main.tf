@@ -13,12 +13,11 @@ terraform {
   }
 
   backend "s3" {
-    # Configure per environment:
-    #   bucket         = "wfm-terraform-state"
-    #   key            = "env/prod/terraform.tfstate"
-    #   region         = "eu-west-2"
-    #   dynamodb_table = "wfm-terraform-locks"
-    #   encrypt        = true
+    bucket         = "wfm-terraform-state-521757869980"
+    key            = "wfm/dev/terraform.tfstate"
+    region         = "eu-west-2"
+    dynamodb_table = "wfm-terraform-locks"
+    encrypt        = true
   }
 }
 
