@@ -71,7 +71,11 @@ Plans:
   3. RDS PostgreSQL instance is in `available` state; ECS tasks in the cluster can reach it on port 5432 (security group allows traffic from ECS security group to RDS security group)
   4. The database password is stored as a secret in AWS Secrets Manager and the ECS task definition references it (no plaintext password in task def)
   5. On first ECS task start, CloudWatch Logs for the task show Flyway migration output completing all 24 scripts without error
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Force-unlock stale state lock, verify terraform plan, run terraform apply to provision all 45 AWS resources
+- [ ] 03-02-PLAN.md — Verify RDS/ECS security groups, Secrets Manager injection, Flyway readiness; capture terraform outputs for Phase 4
 
 **Background for planning:**
 - Run `terraform plan` first and read the output carefully before applying — it will show every resource that will be created
@@ -111,5 +115,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Local Tooling & State Bootstrap | 0/2 | In progress | - |
 | 2. Security Cleanup & OIDC Setup | 0/2 | Not started | - |
-| 3. Infrastructure Provisioning | 0/TBD | Not started | - |
+| 3. Infrastructure Provisioning | 0/2 | Not started | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Not started | - |
