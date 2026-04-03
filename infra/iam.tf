@@ -74,7 +74,7 @@ resource "aws_iam_role" "github_actions" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:*:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "repo:petecornwell-code/wfm-service:ref:refs/heads/main"
         }
       }
     }]
@@ -134,9 +134,12 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = "cloudfront:CreateInvalidation"
-        Resource = aws_cloudfront_distribution.frontend.arn
+        Effect = "Allow"
+        Action = [
+          "cloudfront:ListDistributions",
+          "cloudfront:CreateInvalidation"
+        ]
+        Resource = "*"
       }
     ]
   })
