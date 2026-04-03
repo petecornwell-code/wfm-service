@@ -30,7 +30,7 @@ resource "aws_db_instance" "main" {
   identifier = "${var.app_name}-${var.environment}"
 
   engine         = "postgres"
-  engine_version = "16.4"
+  engine_version = "16.6"
   instance_class = var.db_instance_class
 
   db_name  = var.db_name
@@ -63,9 +63,11 @@ resource "aws_db_parameter_group" "main" {
   description = "Custom parameter group for ${var.app_name}"
 
   # pgvector is loaded as a shared library
+  # apply_method must be "pending-reboot" for static parameters like shared_preload_libraries
   parameter {
-    name  = "shared_preload_libraries"
-    value = "pg_stat_statements"
+    name         = "shared_preload_libraries"
+    value        = "pg_stat_statements"
+    apply_method = "pending-reboot"
   }
 
   lifecycle { create_before_destroy = true }
