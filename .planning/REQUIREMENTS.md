@@ -49,9 +49,9 @@
 
 ### Pre-deployment Security Cleanup
 
-- [ ] **SEC-01**: `src/main/java/utils/BambooCustomFields.java` removed or moved to test scope
-- [ ] **SEC-02**: `src/main/java/utils/BambooEmployeesByDepartment.java` removed or moved to test scope
-- [ ] **SEC-03**: Ensure `.gitignore` includes `infra/terraform.tfvars`
+- [x] **SEC-01**: `src/main/java/utils/BambooCustomFields.java` removed or moved to test scope
+- [x] **SEC-02**: `src/main/java/utils/BambooEmployeesByDepartment.java` removed or moved to test scope
+- [x] **SEC-03**: Ensure `.gitignore` includes `infra/terraform.tfvars`
 
 ## v2 Requirements
 
@@ -94,9 +94,9 @@
 | IAM-01 | Phase 2 | Pending |
 | IAM-02 | Phase 2 | Pending |
 | IAM-03 | Phase 2 | Pending |
-| SEC-01 | Phase 2 | Pending |
-| SEC-02 | Phase 2 | Pending |
-| SEC-03 | Phase 2 | Pending |
+| SEC-01 | Phase 2 | Complete |
+| SEC-02 | Phase 2 | Complete |
+| SEC-03 | Phase 2 | Complete |
 | INFRA-01 | Phase 3 | Pending |
 | INFRA-02 | Phase 3 | Pending |
 | INFRA-03 | Phase 3 | Pending |

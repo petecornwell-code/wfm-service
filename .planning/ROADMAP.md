@@ -50,7 +50,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Delete BambooCustomFields.java and BambooEmployeesByDepartment.java; verify .gitignore covers terraform.tfvars
+- [x] 02-01-PLAN.md — Delete BambooCustomFields.java and BambooEmployeesByDepartment.java; verify .gitignore covers terraform.tfvars
 - [ ] 02-02-PLAN.md — Fix iam.tf bugs (trust policy wildcard, missing cloudfront:ListDistributions); create terraform.tfvars; terraform apply -target IAM resources; capture role ARN
 
 **Background for planning:**

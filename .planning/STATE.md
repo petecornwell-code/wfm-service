@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 01-local-tooling-state-bootstrap plan 02 (01-02-PLAN.md)
-last_updated: "2026-04-02T22:04:44.551Z"
-last_activity: 2026-04-02
+status: executing
+stopped_at: Completed 02-security-cleanup-oidc-setup plan 01 (02-01-PLAN.md)
+last_updated: "2026-04-03T01:55:55.560Z"
+last_activity: 2026-04-03
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Internal users can access the WFM scheduling tool via a stable cloud URL without running it locally
-**Current focus:** Phase 01 — local-tooling-state-bootstrap
+**Current focus:** Phase 02 — security-cleanup-oidc-setup
 
 ## Current Position
 
-Phase: 01 (local-tooling-state-bootstrap) — EXECUTING
+Phase: 02 (security-cleanup-oidc-setup) — EXECUTING
 Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-04-02
+Status: Ready to execute
+Last activity: 2026-04-03
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-local-tooling-state-bootstrap P01 | multi-session | 4 tasks | 2 files |
 | Phase 01-local-tooling-state-bootstrap P02 | 2min | 4 tasks | 1 files |
+| Phase 02-security-cleanup-oidc-setup P01 | 1min | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - [Phase 01-local-tooling-state-bootstrap]: 01-01: AWS CLI region set to eu-west-2 for all subsequent CLI operations
 - [Phase 01-local-tooling-state-bootstrap]: 01-02: S3 bucket named wfm-terraform-state-521757869980 — original name taken by another AWS account; account-ID suffix is AWS best practice for global uniqueness
 - [Phase 01-local-tooling-state-bootstrap]: 01-02: Terraform state key is wfm/dev/terraform.tfstate (per ROADMAP, not the old placeholder env/prod/terraform.tfstate)
+- [Phase 02-security-cleanup-oidc-setup]: 02-01: Deleted untracked BambooHR credential files via plain rm — no git history, no commit required
+- [Phase 02-security-cleanup-oidc-setup]: 02-01: SEC-03 pre-satisfied — infra/terraform.tfvars already on .gitignore line 39, no file change needed
 
 ### Pending Todos
 
@@ -82,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T22:04:44.549Z
-Stopped at: Completed 01-local-tooling-state-bootstrap plan 02 (01-02-PLAN.md)
+Last session: 2026-04-03T01:55:55.557Z
+Stopped at: Completed 02-security-cleanup-oidc-setup plan 01 (02-01-PLAN.md)
 Resume file: None
