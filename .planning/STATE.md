@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: 03 (infrastructure-provisioning) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
+Phase: 03 (infrastructure-provisioning) — BLOCKED
+Plan: 1 of 2 (partial — 38/45 resources provisioned)
+Status: Awaiting IAM permissions (root/admin AWS access needed)
 Last activity: 2026-04-03
 
 Progress: [░░░░░░░░░░] 0%
@@ -83,9 +83,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- AWS CLI not yet installed — this is the first task in Phase 1
-- Terraform state backend commented out in `infra/main.tf` — must bootstrap S3+DynamoDB before uncommenting
-- `src/main/java/utils/` files contain hardcoded BambooHR API key — must be removed before first deploy (Phase 2)
+- **ACTIVE BLOCKER — Phase 03:** `pete.cornwell@helpware.com` has `PowerUserAccess` which excludes `iam:CreateRole`. 9 resources unprovisioned: ECS execution role, ECS task role, OIDC provider, GitHub Actions role + policy, ECS task definition, ECS service. **To unblock:** root/admin AWS account must grant inline policy `WFMTerraformIAMPermissions` (see `03-01-SUMMARY.md`). Then re-run `cd infra && terraform apply -auto-approve` (< 1 min, 9 to add). Phase 4 cannot start until this is resolved.
 
 ## Session Continuity
 
