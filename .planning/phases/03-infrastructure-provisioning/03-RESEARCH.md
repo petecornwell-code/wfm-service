@@ -1,0 +1,427 @@
+# Phase 3: Infrastructure Provisioning — Research
+
+**Researched:** 2026-04-02
+**Domain:** Terraform / AWS (ECS Fargate, RDS PostgreSQL 16, ECR, ALB, S3, CloudFront, Secrets Manager)
+**Confidence:** HIGH — Terraform code fully read; live AWS state probed; plan verified clean
+
+---
+
+<phase_requirements>
+## Phase Requirements
+
+| ID | Description | Research Support |
+|----|-------------|------------------|
+| INFRA-01 | `terraform plan` produces a valid plan with no errors | Plan verified: 45 resources to add, 0 errors (run with `-lock=false` due to stale lock) |
+| INFRA-02 | `terraform apply` provisions all resources: VPC, subnets, security groups, ECR, RDS PostgreSQL, ECS cluster + service, ALB, S3 bucket, CloudFront distribution | All 45 resources present in plan; S3 frontend bucket already exists in state |
+| INFRA-03 | RDS instance is reachable from ECS tasks (security group allows port 5432) | `security_groups.tf` has `aws_security_group.rds` with explicit ingress from `aws_security_group.ecs` on port 5432 |
+| INFRA-04 | Database password stored in AWS Secrets Manager and injected into ECS task definition | `rds.tf` creates `aws_secretsmanager_secret.db_password`; `ecs.tf` references it via `secrets[].valueFrom` — no plaintext in task def |
+| INFRA-05 | Flyway migrations run automatically on first ECS task start | Spring Boot 3.4.2 + `flyway-core` + `flyway-database-postgresql` auto-runs on startup; 24 migrations in `src/main/resources/db/migration/` |
+</phase_requirements>
+
+---
+
+## Summary
+
+Phase 3 runs `terraform apply` to provision the full AWS environment. The Terraform code is already written and validated — this phase is execution, not authoring. A clean plan has been verified: 45 resources to add, 0 to change, 0 to destroy. One resource (`aws_s3_bucket.frontend`) already exists in state from Phase 1's partial apply and will not be re-created.
+
+A stale Terraform state lock exists in DynamoDB (lock ID `c082e36d-65b7-8b40-8437-ea958ca6893b`, created 2026-04-03T02:08:41Z). This must be force-unlocked before `terraform plan` or `terraform apply` can run. Additionally, Phase 2 Plan 02 (OIDC IAM setup) has not been completed — the GitHub Actions IAM role and OIDC provider are not yet in AWS. These are included in the 45-resource plan, so Phase 3's `terraform apply` will provision them as part of the full apply.
+
+The apply will take 15–30 minutes. RDS creation (~10 min) and CloudFront distribution deployment (~5–10 min) are the slowest operations. Flyway's 24 migration scripts (V1 through V24, including `V24__enable_pgvector_extension.sql`) run automatically on first ECS task startup.
+
+**Primary recommendation:** Force-unlock the stale state lock, verify `terraform plan` is clean (45 to add), then run `terraform apply`. After apply, run `terraform output` to capture ALB DNS, CloudFront domain, and ECR URL for Phase 4.
+
+---
+
+## Standard Stack
+
+### Core
+| Component | Version | Purpose | Source |
+|-----------|---------|---------|--------|
+| Terraform | >= 1.5 (installed: 1.5.7) | IaC provisioning | `infra/main.tf` |
+| AWS provider | ~> 5.0 | All AWS resources | `infra/main.tf` |
+| random provider | ~> 3.0 | DB password generation | `infra/main.tf` |
+| AWS CLI | v2 (installed: 2.34.23) | Verification commands | Environment |
+
+### AWS Resources Being Provisioned (45 total)
+
+| Resource | Count | File |
+|----------|-------|------|
+| VPC + subnets (2 public, 2 private) + IGW + NAT + routes | 12 | `vpc.tf` |
+| Security groups (ALB, ECS, RDS) | 3 | `security_groups.tf` |
+| ECR repository + lifecycle policy | 2 | `ecr.tf` |
+| RDS: subnet group, parameter group, secret + version, random password, DB instance | 5 | `rds.tf` |
+| ECS cluster, task definition, service, CloudWatch log group | 4 | `ecs.tf` |
+| ALB, target group, listener | 3 | `alb.tf` |
+| S3 bucket public access block + bucket policy (bucket already exists) | 2 | `s3_cloudfront.tf` |
+| CloudFront OAC + distribution | 2 | `s3_cloudfront.tf` |
+| IAM: ECS execution role + attachment + secrets policy, ECS task role | 4 | `iam.tf` |
+| IAM: OIDC provider, GitHub Actions role + policy | 3 | `iam.tf` |
+| data.aws_caller_identity | 1 | `iam.tf` |
+
+**Note:** `aws_s3_bucket.frontend` is already in state (created in Phase 1). Terraform will manage the remaining sub-resources (public access block, bucket policy) without re-creating the bucket.
+
+---
+
+## Architecture Patterns
+
+### Terraform Apply Strategy
+
+The code uses no workspaces — the single `dev` environment is controlled by `terraform.tfvars`. The backend is already configured and initialised (`infra/.terraform/` exists). The tfvars file already exists locally (created in Phase 2 Plan 01 prep).
+
+**Pattern: Full apply (no `-target`).**
+Phase 2 used `-target` to provision only IAM resources. Phase 3 runs `terraform apply` without targets to provision everything. Terraform's dependency graph handles ordering automatically.
+
+### Security Pattern: Secrets Manager Injection
+
+```hcl
+# rds.tf — password generated by Terraform, stored in Secrets Manager
+resource "random_password" "db" {
+  length  = 32
+  special = false
+}
+resource "aws_secretsmanager_secret_version" "db_password" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = random_password.db.result
+}
+
+# ecs.tf — injected via ECS secrets (not environment)
+secrets = [
+  {
+    name      = "SPRING_DATASOURCE_PASSWORD"
+    valueFrom = aws_secretsmanager_secret.db_password.arn
+  }
+]
+```
+
+The ECS execution role (`ecs_execution_secrets` policy) grants `secretsmanager:GetSecretValue` for this specific secret ARN — least-privilege. The password never appears in plaintext in the task definition.
+
+### Network Pattern: Private ECS + Private RDS
+
+- ALB is public (internet-facing, subnets: `aws_subnet.public`)
+- ECS tasks are private (no public IP, subnets: `aws_subnet.private`, NAT Gateway for outbound)
+- RDS is private (`publicly_accessible = false`, `aws_subnet.private`)
+- Security groups enforce: ALB → ECS (container port) → RDS (5432 only)
+
+### CloudFront Pattern: Dual Origin
+
+- Default behavior: S3 (frontend SPA) — read-only, cached
+- `/api/*`: ALB — all methods, no cache, headers forwarded (`Authorization`, `X-Tenant-ID`, `Content-Type`)
+- `/actuator/*`: ALB — GET/HEAD, no cache
+- SPA routing: 403/404 → `index.html` (200)
+
+### pgvector Pattern
+
+`V24__enable_pgvector_extension.sql` runs `CREATE EXTENSION IF NOT EXISTS vector;`. This works because:
+1. RDS PostgreSQL 16 ships with the `pgvector` extension pre-installed (no `shared_preload_libraries` needed for pgvector itself)
+2. The custom parameter group sets `pg_stat_statements` only — pgvector does not require a parameter group entry on PG 16
+3. Flyway runs this as the last migration, so it executes on first ECS task startup
+
+### Anti-Patterns to Avoid
+
+- **Running `terraform destroy`**: The plan shows 0 to destroy. Never run destroy unless absolutely necessary — RDS has `skip_final_snapshot = true` for dev, meaning data is gone permanently.
+- **Targeting during full apply**: Do not use `-target` for Phase 3. The full graph needs to resolve (e.g., ECS task definition references the RDS endpoint, which must exist).
+- **Parallel applies**: The state lock is designed to prevent this. Do not run two applies concurrently.
+- **Force-unlocking an active lock**: Only force-unlock if the lock is genuinely stale (the `Who` field shows a process that is no longer running).
+
+---
+
+## Pre-Conditions (Must Be True Before Phase 3 Starts)
+
+| Pre-condition | Status | How to Verify |
+|--------------|--------|---------------|
+| Terraform initialised (`.terraform/` exists) | TRUE | `ls infra/.terraform/` — directory exists |
+| `infra/terraform.tfvars` exists locally | TRUE | Created in Phase 2 Plan 01 |
+| Remote state backend accessible | TRUE | `terraform plan` reaches DynamoDB |
+| Stale state lock present | **BLOCKING** | Must force-unlock before apply |
+| Phase 2 IAM resources (OIDC, role) created | NOT DONE | 3 IAM resources are included in the 45-resource plan — will be created by this apply |
+| AWS credentials active | TRUE | `aws sts get-caller-identity` returns account 521757869980 |
+| IAM user has PowerUserAccess | TRUE | User is in `PowerUserAccessGroup` |
+
+---
+
+## Known Issues
+
+### Issue 1: Stale Terraform State Lock (BLOCKING)
+
+**What:** DynamoDB lock table has an orphaned lock from a previous `terraform plan` run.
+**Lock details:**
+- ID: `c082e36d-65b7-8b40-8437-ea958ca6893b`
+- Created: 2026-04-03T02:08:41Z
+- Who: `pete@Petes-MacBook-Air-2.local`
+- Operation: `OperationTypePlan`
+
+**Resolution:**
+```bash
+cd /Users/pete/IdeaProjects/wfm-service/infra
+terraform force-unlock c082e36d-65b7-8b40-8437-ea958ca6893b
+```
+Type `yes` when prompted. This removes the DynamoDB lock entry.
+
+**Verify clean:**
+```bash
+terraform plan 2>&1 | head -5
+# Expected: "Terraform used the selected providers..." (no lock error)
+```
+
+### Issue 2: Phase 2 IAM Resources Not Yet Provisioned
+
+**What:** Phase 2 Plan 02 was written but not executed — `wfm-dev-github-actions` role and OIDC provider do not exist in AWS yet.
+**Impact on Phase 3:** Zero. The full `terraform apply` in Phase 3 will create these 3 IAM resources as part of its 45-resource plan. They are included in the plan and will be provisioned correctly.
+**Note:** Phase 3 therefore satisfies IAM-01, IAM-02, IAM-03 as a side effect.
+
+### Issue 3: ECR Repository Empty at First Apply
+
+**What:** ECR repository `wfm-service` will be created, but no Docker image will be pushed until Phase 4.
+**Impact:** The ECS service will be created with `image: <ecr_url>:latest` but the task will fail to start (image not found). This is expected and acceptable at end of Phase 3 — INFRA-05 (Flyway migrations) cannot be verified until Phase 4 pushes an image.
+**Success criteria adjustment:** The ECS service will exist and the security group rules will be correct (INFRA-03), but the ECS tasks will not be running until Phase 4.
+
+---
+
+## Don't Hand-Roll
+
+| Problem | Don't Build | Use Instead | Why |
+|---------|-------------|-------------|-----|
+| DB password generation | Custom password script | `random_password` resource (already in code) | Terraform manages rotation tracking; password stays in state |
+| Secrets injection | Env var with plaintext | `secrets[]` + Secrets Manager (already in code) | ECS resolves at task start; never in CloudWatch |
+| pgvector enablement | Manual `psql` session | Flyway V24 migration (already in code) | Runs automatically; idempotent (`IF NOT EXISTS`) |
+| State locking | Manual coordination | DynamoDB lock table (already bootstrapped) | Prevents concurrent corruption |
+
+---
+
+## Common Pitfalls
+
+### Pitfall 1: State Lock Not Cleared Before Apply
+
+**What goes wrong:** `terraform apply` immediately fails with `ConditionalCheckFailedException`.
+**Why it happens:** The lock from a prior plan is still in DynamoDB (this has already happened — see Issue 1 above).
+**How to avoid:** Run `terraform force-unlock <lock-id>` as the very first task.
+**Warning signs:** `Error: Error acquiring the state lock` in `terraform plan` output.
+
+### Pitfall 2: RDS Takes 10+ Minutes — Looks Hung
+
+**What goes wrong:** After about 30 lines of output, the terminal appears to stall. Engineers assume it crashed and Ctrl+C.
+**Why it happens:** RDS provisioning (parameter group creation, DB instance creation) legitimately takes 8–12 minutes.
+**How to avoid:** Do not interrupt the apply. If you must check progress, open a second terminal and run `aws rds describe-db-instances --region eu-west-2` to see the instance status transitioning through `creating → modifying → available`.
+**Warning signs:** Last printed line is something about `aws_db_instance.main` — normal; wait.
+
+### Pitfall 3: NAT Gateway Dependency Chain
+
+**What goes wrong:** `terraform apply` fails on `aws_nat_gateway.main` with "InvalidSubnet.NotFound".
+**Why it happens:** NAT Gateway requires the subnet to exist; EIP requires VPC to exist. Terraform handles this via `depends_on = [aws_internet_gateway.main]` (already in code). This should not happen with the current code.
+**How to avoid:** Do not edit `vpc.tf` dependency chains. If this occurs, it is a provider bug — re-run apply (idempotent).
+
+### Pitfall 4: CloudFront Distribution Takes 5–10 Minutes
+
+**What goes wrong:** Apply appears to hang after ECS resources complete.
+**Why it happens:** CloudFront deploys globally across all 450+ edge locations.
+**How to avoid:** Wait. Check progress: `aws cloudfront list-distributions --region us-east-1 --query 'DistributionList.Items[?Comment==\`wfm-service dev frontend\`].Status'` — will show `InProgress` then `Deployed`.
+
+### Pitfall 5: ECS Service Fails to Stabilise (Expected)
+
+**What goes wrong:** After apply, ECS service exists but tasks fail health checks.
+**Why it happens:** ECR has no image yet (Phase 4 pushes the first image). The ECS service will cycle through failed task starts.
+**How to avoid:** This is expected. Do not attempt to debug ECS task failures in Phase 3. The ECS service existing with correct configuration is sufficient for INFRA-01 and INFRA-02. INFRA-05 (Flyway) is verified in Phase 4.
+
+### Pitfall 6: pgvector `CREATE EXTENSION` Fails
+
+**What goes wrong:** Flyway V24 fails with `could not open extension control file`.
+**Why it happens:** RDS PostgreSQL 16 includes pgvector as a bundled extension — it does NOT need to be loaded via `shared_preload_libraries`. The current `aws_db_parameter_group` only loads `pg_stat_statements`, which is correct. However, if the parameter group is not applied to the instance, or if the RDS engine version changes, pgvector may not be available.
+**How to avoid:** Verify after apply that `aws_db_instance.main.parameter_group_name` matches `aws_db_parameter_group.main.name` in Terraform state. The current code already handles this correctly.
+
+---
+
+## Code Examples
+
+### Force-Unlock Stale Lock
+```bash
+# Source: Terraform CLI (official)
+cd /Users/pete/IdeaProjects/wfm-service/infra
+terraform force-unlock c082e36d-65b7-8b40-8437-ea958ca6893b
+# Type: yes
+```
+
+### Verify Plan is Clean (no lock error)
+```bash
+cd /Users/pete/IdeaProjects/wfm-service/infra
+terraform plan 2>&1 | tail -3
+# Expected: "Plan: 45 to add, 0 to change, 0 to destroy."
+```
+
+### Full Apply (no -target)
+```bash
+cd /Users/pete/IdeaProjects/wfm-service/infra
+terraform apply
+# Review plan output, type: yes
+# Expected duration: 15–30 minutes
+```
+
+### Monitor RDS During Apply (second terminal)
+```bash
+watch -n 30 'aws rds describe-db-instances \
+  --region eu-west-2 \
+  --query "DBInstances[?DBInstanceIdentifier==\`wfm-service-dev\`].DBInstanceStatus" \
+  --output text'
+# Progression: creating → modifying → available
+```
+
+### Capture Outputs After Apply
+```bash
+cd /Users/pete/IdeaProjects/wfm-service/infra
+terraform output
+# Expected outputs:
+#   alb_dns_name          = "<name>.eu-west-2.elb.amazonaws.com"
+#   cloudfront_domain     = "<hash>.cloudfront.net"
+#   ecr_repository_url    = "521757869980.dkr.ecr.eu-west-2.amazonaws.com/wfm-service"
+#   rds_endpoint          = "wfm-service-dev.<hash>.eu-west-2.rds.amazonaws.com:5432"
+#   s3_frontend_bucket    = "wfm-service-dev-frontend"
+```
+
+### Verify Security Group Rule (INFRA-03)
+```bash
+# Get ECS security group ID
+ECS_SG=$(aws ec2 describe-security-groups \
+  --region eu-west-2 \
+  --filters "Name=tag:Name,Values=wfm-service-ecs-sg" \
+  --query 'SecurityGroups[0].GroupId' --output text)
+
+# Get RDS security group — verify it allows port 5432 from ECS SG
+aws ec2 describe-security-groups \
+  --region eu-west-2 \
+  --filters "Name=tag:Name,Values=wfm-service-rds-sg" \
+  --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]"
+# Expected: entry with UserIdGroupPairs[0].GroupId == $ECS_SG
+```
+
+### Verify Secret in Secrets Manager (INFRA-04)
+```bash
+aws secretsmanager describe-secret \
+  --secret-id "wfm-service/dev/db-password" \
+  --region eu-west-2 \
+  --query '{Name:Name, ARN:ARN}' --output table
+# Expected: Name = wfm-service/dev/db-password
+```
+
+### Verify Flyway Migrations in CloudWatch (INFRA-05 — Phase 4 gate)
+```bash
+# After Phase 4 pushes an image and ECS task starts:
+aws logs filter-log-events \
+  --log-group-name "/ecs/wfm-service-dev" \
+  --filter-pattern "Flyway" \
+  --region eu-west-2 \
+  --query 'events[*].message' --output text | head -30
+# Expected: "Successfully applied 24 migration(s) to schema..."
+```
+
+---
+
+## Environment Availability
+
+| Dependency | Required By | Available | Version | Fallback |
+|------------|------------|-----------|---------|----------|
+| Terraform | All INFRA tasks | Yes | 1.5.7 | None required |
+| AWS CLI | Verification commands | Yes | 2.34.23 | None required |
+| `infra/terraform.tfvars` | `terraform apply` | Yes | n/a — created in Phase 2 | None required |
+| Remote state backend (S3 + DynamoDB) | State management | Yes | Bootstrapped Phase 1 | None required |
+| Stale state lock | **BLOCKING** | Must be cleared | Lock ID: c082e36d-65b7-8b40-8437-ea958ca6893b | `terraform force-unlock` |
+
+**Missing dependencies with no fallback:** None (all available once lock cleared).
+
+**Missing dependencies with fallback:** None.
+
+**Blocking issue:** Stale DynamoDB state lock must be force-unlocked before any Terraform command can acquire the lock.
+
+---
+
+## Validation Architecture
+
+### Test Framework
+
+| Property | Value |
+|----------|-------|
+| Framework | Terraform built-in + AWS CLI verification commands |
+| Config file | `infra/main.tf` (no separate test framework) |
+| Quick run command | `cd infra && terraform validate` |
+| Full suite command | `cd infra && terraform plan` |
+
+*Note: No automated test framework (e.g., Terratest) is in scope for this project. Validation is via AWS CLI probes and Terraform plan/validate.*
+
+### Phase Requirements → Test Map
+
+| Req ID | Behavior | Test Type | Automated Command | Exists? |
+|--------|----------|-----------|-------------------|---------|
+| INFRA-01 | `terraform plan` exits 0 with valid plan | smoke | `cd infra && terraform plan` | Yes |
+| INFRA-02 | All resources provisioned | integration | `aws ec2 describe-vpcs --filters Name=tag:Project,Values=wfm-service --region eu-west-2` + per-resource checks | Post-apply |
+| INFRA-03 | RDS reachable from ECS (SG rule) | integration | `aws ec2 describe-security-groups --filters Name=tag:Name,Values=wfm-service-rds-sg --region eu-west-2` | Post-apply |
+| INFRA-04 | Secret in Secrets Manager, referenced in task def | integration | `aws secretsmanager describe-secret --secret-id wfm-service/dev/db-password --region eu-west-2` | Post-apply |
+| INFRA-05 | Flyway migrations complete | integration (Phase 4 gate) | `aws logs filter-log-events --log-group-name /ecs/wfm-service-dev --filter-pattern Flyway --region eu-west-2` | Phase 4 |
+
+### Sampling Rate
+
+- **Per task:** `terraform validate` (instant, catches HCL syntax issues)
+- **Pre-apply:** `terraform plan` (confirms 45 to add, 0 errors)
+- **Post-apply:** AWS CLI verification commands per requirement
+- **Phase gate:** All INFRA-01 through INFRA-04 verified via AWS CLI; INFRA-05 deferred to Phase 4
+
+### Wave 0 Gaps
+
+None — no code to write. This phase is pure execution of existing Terraform code.
+
+---
+
+## State of the Art
+
+| Old Approach | Current Approach | Notes |
+|--------------|------------------|-------|
+| CloudFront OAI (Origin Access Identity) | CloudFront OAC (Origin Access Control) | OAI deprecated; current code already uses OAC (`aws_cloudfront_origin_access_control`) |
+| Long-lived AWS credentials in CI | OIDC federation | Current code provisions OIDC provider in `iam.tf` |
+| RDS `pgvector` via manual install | RDS PG 16 bundled pgvector | Available natively; no custom extension install needed |
+
+---
+
+## Open Questions
+
+1. **Will `terraform apply` succeed with PowerUserAccess?**
+   - What we know: User is in `PowerUserAccessGroup`. PowerUserAccess is a broad policy covering EC2, RDS, ECS, ECR, S3, CloudFront, Secrets Manager, and IAM role creation for service principals.
+   - What's unclear: PowerUserAccess explicitly excludes `iam:CreateUser` and some IAM management actions. However, `iam:CreateRole`, `iam:AttachRolePolicy`, and `iam:PutRolePolicy` are typically allowed. Phase 1 confirmed `iam:CreateUser` was blocked but service roles worked.
+   - Recommendation: Proceed with apply. If an IAM permission error occurs, it will be in the error output and can be addressed by granting the specific missing permission. The Phase 2 Plan 02 approach (creating IAM resources with `-target`) already anticipated this and worked for service roles.
+
+2. **ECS service desired_count = 1 with no image — will apply fail?**
+   - What we know: `ecs_desired_count = 1` means Terraform will create the ECS service requesting 1 running task. With no ECR image, tasks will fail to start.
+   - What's unclear: Terraform may mark the ECS service creation as failed if it waits for service stability. By default, `aws_ecs_service` does NOT wait for tasks to be healthy unless a `timeouts` block is set (none is in the code).
+   - Recommendation: The service will be created successfully (API call succeeds); ECS task failures are asynchronous and do not affect Terraform apply status. This is safe.
+
+---
+
+## Sources
+
+### Primary (HIGH confidence)
+
+- Verified by direct file read: `infra/main.tf`, `infra/rds.tf`, `infra/ecs.tf`, `infra/vpc.tf`, `infra/alb.tf`, `infra/s3_cloudfront.tf`, `infra/ecr.tf`, `infra/iam.tf`, `infra/security_groups.tf`, `infra/variables.tf`, `infra/outputs.tf`
+- Verified by `terraform plan -lock=false` execution: 45 resources to add, 0 errors
+- Verified by `aws sts get-caller-identity`: Account 521757869980, credentials active
+- Verified by DynamoDB query: Stale lock ID and metadata confirmed
+- Verified by `terraform state list`: `aws_s3_bucket.frontend` already in state
+- Verified by `aws rds describe-db-instances`: No existing RDS instances
+- Verified by `aws iam list-open-id-connect-providers`: No OIDC providers yet
+- Verified by `aws s3api get-bucket-location`: Frontend S3 bucket exists in eu-west-2
+- Migration files: 24 files V1–V24 confirmed in `src/main/resources/db/migration/`
+- Spring Boot version: 3.4.2 (from `build.gradle`)
+- Flyway: `flyway-core` + `flyway-database-postgresql` (from `build.gradle`)
+
+### Secondary (MEDIUM confidence)
+
+- RDS PostgreSQL 16 bundled pgvector: Based on AWS documentation pattern and the comment in `rds.tf` ("available natively on RDS PostgreSQL 16"); not re-verified against live AWS docs but consistent with known AWS behavior.
+
+---
+
+## Metadata
+
+**Confidence breakdown:**
+
+- Pre-conditions and current state: HIGH — verified by live AWS/Terraform probes
+- Resource plan (45 to add): HIGH — verified by `terraform plan -lock=false`
+- RDS/CloudFront timing estimates: MEDIUM — based on standard AWS provisioning patterns
+- PowerUserAccess IAM scope: MEDIUM — inferred from Phase 1 behavior; exact policy not inspected
+
+**Research date:** 2026-04-02
+**Valid until:** 2026-05-02 (stable infrastructure; Terraform provider ~> 5.0 is stable)
