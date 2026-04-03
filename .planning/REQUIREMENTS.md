@@ -26,8 +26,8 @@
 
 ### Infrastructure Provisioning
 
-- [ ] **INFRA-01**: `terraform plan` produces a valid plan with no errors
-- [ ] **INFRA-02**: `terraform apply` provisions all resources: VPC, subnets, security groups, ECR, RDS PostgreSQL, ECS cluster + service, ALB, S3 bucket, CloudFront distribution
+- [x] **INFRA-01**: `terraform plan` produces a valid plan with no errors
+- [x] **INFRA-02**: `terraform apply` provisions all resources: VPC, subnets, security groups, ECR, RDS PostgreSQL, ECS cluster + service, ALB, S3 bucket, CloudFront distribution
 - [ ] **INFRA-03**: RDS instance is reachable from ECS tasks (security group allows port 5432)
 - [ ] **INFRA-04**: Database password stored in AWS Secrets Manager and injected into ECS task definition
 - [ ] **INFRA-05**: Flyway migrations run automatically on first ECS task start
@@ -97,8 +97,8 @@
 | SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 2 | Complete |
 | SEC-03 | Phase 2 | Complete |
-| INFRA-01 | Phase 3 | Pending |
-| INFRA-02 | Phase 3 | Pending |
+| INFRA-01 | Phase 3 | Complete |
+| INFRA-02 | Phase 3 | Complete |
 | INFRA-03 | Phase 3 | Pending |
 | INFRA-04 | Phase 3 | Pending |
 | INFRA-05 | Phase 3 | Pending |

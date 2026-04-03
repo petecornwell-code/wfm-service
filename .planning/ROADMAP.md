@@ -74,7 +74,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Force-unlock stale state lock, verify terraform plan, run terraform apply to provision all 45 AWS resources
+- [x] 03-01-PLAN.md — Force-unlock stale state lock, verify terraform plan, run terraform apply to provision all 45 AWS resources
 - [ ] 03-02-PLAN.md — Verify RDS/ECS security groups, Secrets Manager injection, Flyway readiness; capture terraform outputs for Phase 4
 
 **Background for planning:**
