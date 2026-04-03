@@ -5,15 +5,15 @@ on:
     branches: [main]
 
 permissions:
-  id-token: write   # OIDC
   contents: read
 
 env:
   AWS_REGION: eu-west-2
   ECR_REPOSITORY: wfm-service
-  ECS_CLUSTER: wfm-service-prod
+  ECS_CLUSTER: wfm-service-dev
   ECS_SERVICE: wfm-service
-  FRONTEND_BUCKET: wfm-service-prod-frontend
+  ECS_TASK_FAMILY: wfm-service-dev
+  FRONTEND_BUCKET: wfm-service-dev-frontend
 
 jobs:
   deploy-backend:
@@ -27,7 +27,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
@@ -50,7 +51,7 @@ jobs:
         run: |
           # Get current task definition
           TASK_DEF=$(aws ecs describe-task-definition \
-            --task-definition $ECS_SERVICE-prod \
+            --task-definition $ECS_TASK_FAMILY \
             --query 'taskDefinition' \
             --output json)
 
@@ -106,7 +107,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Sync to S3
@@ -123,7 +125,7 @@ jobs:
       - name: Invalidate CloudFront
         run: |
           DISTRIBUTION_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Comment=='wfm-service prod frontend'].Id" \
+            --query "DistributionList.Items[?Comment=='wfm-service dev frontend'].Id" \
             --output text)
 
           aws cloudfront create-invalidation \
