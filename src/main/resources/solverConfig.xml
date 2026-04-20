@@ -19,9 +19,19 @@
     <!-- Local search: improve the CH-built solution.
          Termination is configured programmatically from the solver.time-limit property. -->
     <localSearch>
+        <unionMoveSelector>
+            <changeMoveSelector/>
+            <swapMoveSelector/>
+            <ruinRecreateMoveSelectorConfig>
+                <minimumRuinedEntityCount>3</minimumRuinedEntityCount>
+                <maximumRuinedEntityCount>10</maximumRuinedEntityCount>
+            </ruinRecreateMoveSelectorConfig>
+        </unionMoveSelector>
         <acceptor>
             <entityTabuSize>7</entityTabuSize>
-            <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
+            <valueTabuSize>5</valueTabuSize>
+            <simulatedAnnealingStartingTemperature>0hard/8000soft</simulatedAnnealingStartingTemperature>
+            <lateAcceptanceSize>500</lateAcceptanceSize>
         </acceptor>
     </localSearch>
 
