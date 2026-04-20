@@ -26,7 +26,6 @@
         </unionMoveSelector>
         <acceptor>
             <entityTabuSize>7</entityTabuSize>
-            <valueTabuSize>5</valueTabuSize>
             <simulatedAnnealingStartingTemperature>0hard/8000soft</simulatedAnnealingStartingTemperature>
             <lateAcceptanceSize>500</lateAcceptanceSize>
         </acceptor>
