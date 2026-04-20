@@ -22,10 +22,7 @@
         <unionMoveSelector>
             <changeMoveSelector/>
             <swapMoveSelector/>
-            <ruinRecreateMoveSelectorConfig>
-                <minimumRuinedEntityCount>3</minimumRuinedEntityCount>
-                <maximumRuinedEntityCount>10</maximumRuinedEntityCount>
-            </ruinRecreateMoveSelectorConfig>
+            <ruinRecreateMoveSelector/>
         </unionMoveSelector>
         <acceptor>
             <entityTabuSize>7</entityTabuSize>
