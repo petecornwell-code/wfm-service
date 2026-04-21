@@ -20,7 +20,7 @@
          Termination is configured programmatically from the solver.time-limit property. -->
     <localSearch>
         <acceptor>
-            <simulatedAnnealingStartingTemperature>0hard/8000soft</simulatedAnnealingStartingTemperature>
+            <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
         </acceptor>
     </localSearch>
 
