@@ -12,17 +12,16 @@ Internal users can access the WFM scheduling tool via a stable cloud URL without
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. -->
+- ✓ AWS CLI installed and configured locally — v1.0
+- ✓ Terraform installed locally — v1.0
+- ✓ Terraform remote state backend bootstrapped (S3 + DynamoDB) — v1.0
+- ✓ Hardcoded BambooHR credentials removed from codebase — v1.0
+- ✓ Core AWS infrastructure provisioned (VPC, ECR, RDS, ALB, CloudFront, S3) — v1.0 partial
 
-(None yet — ship to validate)
+### Active (Next Milestone)
 
-### Active
-
-- [ ] AWS CLI installed and configured locally
-- [ ] Terraform installed locally
-- [ ] Terraform remote state backend bootstrapped (S3 + DynamoDB)
-- [ ] AWS OIDC role provisioned for GitHub Actions deployment
-- [ ] Terraform infrastructure provisioned (VPC, ECS, RDS, ECR, ALB, S3, CloudFront)
+- [ ] AWS OIDC role provisioned for GitHub Actions deployment (blocked: iam:CreateRole needed)
+- [ ] Remaining 9 Terraform resources provisioned (ECS roles, task def, service)
 - [ ] GitHub secrets configured (AWS_DEPLOY_ROLE_ARN)
 - [ ] CI/CD pipeline triggers successfully on push to main
 - [ ] Application live on AWS with working frontend and API
@@ -63,10 +62,13 @@ Internal users can access the WFM scheduling tool via a stable cloud URL without
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Keep existing Terraform as-is | Infra code is complete and correct | — Pending |
-| Single environment ("dev") | Internal use, cost control | — Pending |
-| OIDC for GitHub Actions auth | No long-lived AWS credentials in CI | — Pending |
-| AWS default URLs, no custom domain | Simplest path to working deployment | — Pending |
+| Keep existing Terraform as-is | Infra code is complete and correct | ✓ Good |
+| Single environment ("dev") | Internal use, cost control | ✓ Good |
+| OIDC for GitHub Actions auth | No long-lived AWS credentials in CI | ⚠ Revisit — blocked by IAM permissions |
+| AWS default URLs, no custom domain | Simplest path to working deployment | ✓ Good |
+| S3 bucket suffix wfm-terraform-state-521757869980 | Original name taken; account-ID suffix is best practice | ✓ Good |
+| Use existing IAM user pete.cornwell@helpware.com | iam:CreateUser not available; root inaccessible | ⚠ Revisit — PowerUserAccess blocks iam:CreateRole |
+| Fixed RDS engine 16.4→16.6 | 16.4 not available in eu-west-2 | ✓ Good |
 
 ---
-*Last updated: 2026-04-02 — initial project definition*
+*Last updated: 2026-04-21 after v1.0 milestone archive (partially shipped — IAM blocker)*

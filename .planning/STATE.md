@@ -1,92 +1,66 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: executing
-stopped_at: Completed 03-01-PLAN.md (partial — IAM permissions blocker; 38/45 resources provisioned)
-last_updated: "2026-04-03T12:21:23.609Z"
-last_activity: 2026-04-03
+milestone_name: AWS Deployment
+status: archived
+last_updated: "2026-04-21T00:00:00.000Z"
+last_activity: 2026-04-21
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 6
   completed_plans: 4
-  percent: 0
+  percent: 67
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-02)
+See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Internal users can access the WFM scheduling tool via a stable cloud URL without running it locally
-**Current focus:** Phase 03 — infrastructure-provisioning
+**Current focus:** Planning next milestone — v1.0 AWS Deployment archived; IAM blocker work deferred to backlog
 
 ## Current Position
 
-Phase: 03 (infrastructure-provisioning) — BLOCKED
-Plan: 1 of 2 (partial — 38/45 resources provisioned)
-Status: Awaiting IAM permissions (root/admin AWS access needed)
-Last activity: 2026-04-03
+Milestone v1.0 archived on 2026-04-21.
+Status: Partially shipped — 38/45 AWS resources provisioned; IAM-blocked items deferred to backlog (999.1, 999.2, 999.3).
+Ready to start new milestone with `/gsd-new-milestone`.
 
-Progress: [░░░░░░░░░░] 0%
+## Deferred Items
 
-## Performance Metrics
+Items deferred at milestone close on 2026-04-21:
 
-**Velocity:**
+| Category | Item | Status |
+|----------|------|--------|
+| phase | 02-02: OIDC & IAM setup | Deferred → Backlog 999.1 |
+| phase | 03-02: Infrastructure verification | Deferred → Backlog 999.2 |
+| phase | 04: CI/CD Pipeline & Go-Live | Deferred → Backlog 999.3 |
 
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: 0 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: -
-- Trend: -
-
-*Updated after each plan completion*
-| Phase 01-local-tooling-state-bootstrap P01 | multi-session | 4 tasks | 2 files |
-| Phase 01-local-tooling-state-bootstrap P02 | 2min | 4 tasks | 1 files |
-| Phase 02-security-cleanup-oidc-setup P01 | 1min | 2 tasks | 0 files |
-| Phase 03 P01 | 19min | 2 tasks | 2 files |
+**Blocker for all deferred items:** `pete.cornwell@helpware.com` has PowerUserAccess which excludes `iam:CreateRole`. Root/admin must grant `WFMTerraformIAMPermissions`. See `.planning/milestones/v1.0-ROADMAP.md` for full resume steps.
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
 - Project init: Keep existing Terraform as-is — infra code is complete and correct
 - Project init: OIDC for GitHub Actions — no long-lived AWS credentials in CI
 - Project init: Single environment ("dev") — internal use, cost control
-- [Phase 01-local-tooling-state-bootstrap]: 01-01: Used existing IAM user pete.cornwell@helpware.com instead of creating pete-admin — iam:CreateUser permission not available and root credentials not accessible
-- [Phase 01-local-tooling-state-bootstrap]: 01-01: AWS CLI region set to eu-west-2 for all subsequent CLI operations
-- [Phase 01-local-tooling-state-bootstrap]: 01-02: S3 bucket named wfm-terraform-state-521757869980 — original name taken by another AWS account; account-ID suffix is AWS best practice for global uniqueness
-- [Phase 01-local-tooling-state-bootstrap]: 01-02: Terraform state key is wfm/dev/terraform.tfstate (per ROADMAP, not the old placeholder env/prod/terraform.tfstate)
-- [Phase 02-security-cleanup-oidc-setup]: 02-01: Deleted untracked BambooHR credential files via plain rm — no git history, no commit required
-- [Phase 02-security-cleanup-oidc-setup]: 02-01: SEC-03 pre-satisfied — infra/terraform.tfvars already on .gitignore line 39, no file change needed
-- [Phase 03]: 03-01: Fixed RDS engine_version 16.4→16.6 — 16.4 not available in eu-west-2 (minimum is 16.6)
-- [Phase 03]: 03-01: Fixed shared_preload_libraries apply_method to 'pending-reboot' — static parameters cannot use 'immediate' method
-- [Phase 03]: 03-01: IAM roles blocked by missing iam:CreateRole on pete.cornwell@helpware.com (PowerUserAccess excludes IAM role creation) — requires root/admin to grant permissions
-
-### Pending Todos
-
-None yet.
+- Phase 01: Used existing IAM user pete.cornwell@helpware.com — iam:CreateUser not available
+- Phase 01: AWS CLI region set to eu-west-2
+- Phase 01: S3 bucket named wfm-terraform-state-521757869980 (original name taken)
+- Phase 02: Deleted BambooHR credential files via plain rm — untracked, no commit needed
+- Phase 02: SEC-03 pre-satisfied — terraform.tfvars already gitignored
+- Phase 03: Fixed RDS engine_version 16.4→16.6 — 16.4 not available in eu-west-2
+- Phase 03: Fixed shared_preload_libraries apply_method to pending-reboot
 
 ### Blockers/Concerns
 
-- **ACTIVE BLOCKER — Phase 03:** `pete.cornwell@helpware.com` has `PowerUserAccess` which excludes `iam:CreateRole`. 9 resources unprovisioned: ECS execution role, ECS task role, OIDC provider, GitHub Actions role + policy, ECS task definition, ECS service. **To unblock:** root/admin AWS account must grant inline policy `WFMTerraformIAMPermissions` (see `03-01-SUMMARY.md`). Then re-run `cd infra && terraform apply -auto-approve` (< 1 min, 9 to add). Phase 4 cannot start until this is resolved.
+- **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. `pete.cornwell@helpware.com` PowerUserAccess excludes `iam:CreateRole`. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 
 ## Session Continuity
 
-Last session: 2026-04-03T12:21:23.606Z
-Stopped at: Completed 03-01-PLAN.md (partial — IAM permissions blocker; 38/45 resources provisioned)
+Last session: 2026-04-21
+Stopped at: v1.0 milestone archived; ready for new milestone
 Resume file: None
