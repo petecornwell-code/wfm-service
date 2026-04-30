@@ -31,6 +31,10 @@ Thumbs.db
 # Environment
 .env
 
+# Credentials / secrets
+*accessKeys*.csv
+*.csv
+
 # Terraform
 infra/.terraform/
 infra/.terraform.lock.hcl
