@@ -13,7 +13,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "wfm-terraform-state-521757869980"
+    bucket         = "wfm-terraform-state-982940000233"
     key            = "wfm/dev/terraform.tfstate"
     region         = "eu-west-2"
     dynamodb_table = "wfm-terraform-locks"
