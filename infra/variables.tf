@@ -91,12 +91,6 @@ variable "frontend_domain" {
 
 # ---------- App Config ----------
 
-variable "cors_allowed_origins" {
-  description = "CORS allowed origins for the API"
-  type        = string
-  default     = "*"
-}
-
 variable "solver_time_limit" {
   description = "Timefold solver time limit (ISO 8601 duration)"
   type        = string

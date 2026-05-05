@@ -41,7 +41,7 @@ resource "aws_ecs_task_definition" "app" {
     environment = [
       { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.main.endpoint}/${var.db_name}" },
       { name = "SPRING_DATASOURCE_USERNAME", value = var.db_username },
-      { name = "CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins },
+      { name = "CORS_ALLOWED_ORIGINS", value = "https://${aws_cloudfront_distribution.frontend.domain_name}" },
       { name = "SOLVER_TIME_LIMIT", value = var.solver_time_limit },
       { name = "SPRING_PROFILES_ACTIVE", value = var.environment },
       { name = "JAVA_OPTS", value = "-XX:MaxRAMPercentage=75.0" },
