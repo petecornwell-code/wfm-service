@@ -2,10 +2,12 @@ package com.wfm.repository;
 
 import com.wfm.model.Timeslot;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +26,10 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, UUID> {
 
     void deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetween(
             long tenantId, UUID deskId, LocalDate from, LocalDate to);
+
+    @Modifying
+    @Query("DELETE FROM Timeslot t WHERE t.tenantId = :tenantId AND t.deskId = :deskId AND t.scheduleId IS NULL AND t.id IN :ids")
+    void deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndIdIn(long tenantId, UUID deskId, Collection<UUID> ids);
 
     void deleteByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
 

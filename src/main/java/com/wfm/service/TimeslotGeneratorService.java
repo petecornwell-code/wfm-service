@@ -16,7 +16,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -81,32 +83,63 @@ public class TimeslotGeneratorService {
             return existing;
         }
 
-        // Parameters changed or no timeslots exist — delete and recreate
-        staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, periodStart, periodEnd);
-        timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetween(
-                tenantId, deskId, periodStart, periodEnd);
-
-        // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
-        // processes inserts before deletes in the same flush, which would hit the
-        // unique constraint on (tenant_id, desk_id, date, start_time, end_time).
-        entityManager.flush();
-        entityManager.clear();
-
-        // Generate one timeslot per increment per day
-        List<Timeslot> timeslots = new ArrayList<>();
-        for (LocalDate date = periodStart; !date.isAfter(periodEnd); date = date.plusDays(1)) {
-            for (LocalTime time = startTime; time.isBefore(endTime); time = time.plusMinutes(incrementMinutes)) {
-                Timeslot ts = new Timeslot();
-                ts.setTenantId(tenantId);
-                ts.setDeskId(deskId);
-                ts.setDate(date);
-                ts.setStartTime(time);
-                ts.setEndTime(time.plusMinutes(incrementMinutes));
-                timeslots.add(ts);
-            }
+        // Build lookup of existing timeslots keyed by "date|startTime|endTime"
+        Map<String, Timeslot> existingByKey = new HashMap<>();
+        for (Timeslot ts : existing) {
+            existingByKey.put(slotKey(ts.getDate(), ts.getStartTime(), ts.getEndTime()), ts);
         }
 
-        return timeslotRepository.saveAll(timeslots);
+        // Determine which existing timeslots are no longer needed and remove them
+        // (along with their staffing requirements) without touching valid ones.
+        List<UUID> obsoleteIds = new ArrayList<>();
+        for (Timeslot ts : existing) {
+            if (!isDesired(ts.getDate(), ts.getStartTime(), periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+                obsoleteIds.add(ts.getId());
+            }
+        }
+        if (!obsoleteIds.isEmpty()) {
+            staffingRequirementRepository.deleteLiveByDeskAndTimeslotIds(tenantId, deskId, obsoleteIds);
+            timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndIdIn(tenantId, deskId, obsoleteIds);
+            entityManager.flush();
+            entityManager.clear();
+        }
+
+        // Create timeslots for slots that don't already exist
+        List<Timeslot> toCreate = new ArrayList<>();
+        for (LocalDate date = periodStart; !date.isAfter(periodEnd); date = date.plusDays(1)) {
+            for (LocalTime time = startTime; time.isBefore(endTime); time = time.plusMinutes(incrementMinutes)) {
+                String key = slotKey(date, time, time.plusMinutes(incrementMinutes));
+                if (!existingByKey.containsKey(key)) {
+                    Timeslot ts = new Timeslot();
+                    ts.setTenantId(tenantId);
+                    ts.setDeskId(deskId);
+                    ts.setDate(date);
+                    ts.setStartTime(time);
+                    ts.setEndTime(time.plusMinutes(incrementMinutes));
+                    toCreate.add(ts);
+                }
+            }
+        }
+        if (!toCreate.isEmpty()) {
+            timeslotRepository.saveAll(toCreate);
+        }
+
+        return timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, periodStart, periodEnd);
+    }
+
+    private static String slotKey(LocalDate date, LocalTime start, LocalTime end) {
+        return date + "|" + start + "|" + end;
+    }
+
+    private static boolean isDesired(LocalDate date, LocalTime slotStart,
+                                     LocalDate periodStart, LocalDate periodEnd,
+                                     LocalTime startTime, LocalTime endTime, int incrementMinutes) {
+        if (date.isBefore(periodStart) || date.isAfter(periodEnd)) return false;
+        if (slotStart.isBefore(startTime) || !slotStart.isBefore(endTime)) return false;
+        long minutesFromStart = startTime.until(slotStart, ChronoUnit.MINUTES);
+        return minutesFromStart % incrementMinutes == 0;
     }
 
     /**

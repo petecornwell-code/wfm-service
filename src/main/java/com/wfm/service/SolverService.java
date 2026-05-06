@@ -631,19 +631,13 @@ public class SolverService {
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
 
-        // 4. Every active agent must have a primary specialization and at least one secondary
+        // 4. Every active agent must have a primary specialization
         for (Agent agent : allAgents) {
             if (!agent.isActive()) continue;
             if (agent.getPrimarySpecialization() == null) {
                 errors.add(new ErrorDetail("agent.specializations",
                         "Agent " + agent.getName()
                                 + " must have a primary specialization assigned",
-                        agent.getId().toString()));
-            }
-            if (agent.getSecondarySpecializations() == null || agent.getSecondarySpecializations().isEmpty()) {
-                errors.add(new ErrorDetail("agent.specializations",
-                        "Agent " + agent.getName()
-                                + " must have at least one secondary specialization assigned",
                         agent.getId().toString()));
             }
         }
