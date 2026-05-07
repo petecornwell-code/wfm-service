@@ -120,12 +120,10 @@ public class SolverService {
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        // Filter agents: only active agents with specializations assigned (spec §5.12)
+        // Filter agents: only active agents with a primary specialization assigned
         List<Agent> eligibleAgents = allAgents.stream()
                 .filter(Agent::isActive)
                 .filter(a -> a.getPrimarySpecialization() != null)
-                .filter(a -> a.getSecondarySpecializations() != null
-                        && !a.getSecondarySpecializations().isEmpty())
                 .toList();
 
         // Load agent IDs for eligible agents
