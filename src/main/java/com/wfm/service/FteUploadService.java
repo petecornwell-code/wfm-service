@@ -25,12 +25,15 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class FteUploadService {
 
     private static final Logger log = LoggerFactory.getLogger(FteUploadService.class);
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final Pattern DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     private final TimeslotRepository timeslotRepository;
     private final SpecializationRepository specializationRepository;
@@ -80,11 +83,9 @@ public class FteUploadService {
                 Sheet sheet = workbook.getSheetAt(s);
                 String sheetName = sheet.getSheetName().trim();
 
-                LocalDate sheetDate;
-                try {
-                    sheetDate = LocalDate.parse(sheetName);
-                } catch (DateTimeParseException e) {
-                    skipped.add("Sheet '" + sheetName + "': invalid date format, expected yyyy-MM-dd");
+                LocalDate sheetDate = parseSheetDate(sheetName);
+                if (sheetDate == null) {
+                    skipped.add("Sheet '" + sheetName + "': no date found (expected yyyy-MM-dd in sheet name)");
                     continue;
                 }
 
@@ -98,22 +99,20 @@ public class FteUploadService {
                     continue;
                 }
 
-                for (int col = 1; col < header.getLastCellNum(); col++) {
-                    Cell cell = header.getCell(col);
-                    if (cell == null) continue;
-                    String val = cell.getStringCellValue().trim();
-                    if (val.isEmpty()) continue;
-
-                    String[] parts = val.split("-");
-                    if (parts.length != 2) continue;
-
-                    LocalTime slotStart = LocalTime.parse(parts[0].trim(), TIME_FMT);
-                    LocalTime slotEnd = LocalTime.parse(parts[1].trim(), TIME_FMT);
-
+                List<LocalTime> headerTimes = parseHeaderTimes(header);
+                for (int i = 0; i < headerTimes.size(); i++) {
+                    LocalTime slotStart = headerTimes.get(i);
+                    if (slotStart == null) continue;
                     if (startTime == null || slotStart.isBefore(startTime)) startTime = slotStart;
-                    if (endTime == null || slotEnd.isAfter(endTime)) endTime = slotEnd;
-                    if (incrementMinutes == 0) {
-                        incrementMinutes = (int) slotStart.until(slotEnd, ChronoUnit.MINUTES);
+                    // Determine end of this slot
+                    LocalTime slotEnd = (i + 1 < headerTimes.size() && headerTimes.get(i + 1) != null)
+                            ? headerTimes.get(i + 1)
+                            : (incrementMinutes > 0 ? slotStart.plusMinutes(incrementMinutes) : null);
+                    if (slotEnd != null) {
+                        if (endTime == null || slotEnd.isAfter(endTime)) endTime = slotEnd;
+                        if (incrementMinutes == 0) {
+                            incrementMinutes = (int) slotStart.until(slotEnd, ChronoUnit.MINUTES);
+                        }
                     }
                 }
             }
@@ -144,36 +143,13 @@ public class FteUploadService {
                 Sheet sheet = workbook.getSheetAt(s);
                 String sheetName = sheet.getSheetName().trim();
 
-                LocalDate sheetDate;
-                try {
-                    sheetDate = LocalDate.parse(sheetName);
-                } catch (DateTimeParseException e) {
-                    continue; // already skipped in first pass
-                }
+                LocalDate sheetDate = parseSheetDate(sheetName);
+                if (sheetDate == null) continue; // already skipped in first pass
 
                 Row header = sheet.getRow(0);
                 if (header == null) continue;
 
-                // Parse column time slots
-                List<LocalTime> colStartTimes = new ArrayList<>();
-                for (int col = 1; col < header.getLastCellNum(); col++) {
-                    Cell cell = header.getCell(col);
-                    if (cell == null) {
-                        colStartTimes.add(null);
-                        continue;
-                    }
-                    String val = cell.getStringCellValue().trim();
-                    String[] parts = val.split("-");
-                    if (parts.length != 2) {
-                        colStartTimes.add(null);
-                        continue;
-                    }
-                    try {
-                        colStartTimes.add(LocalTime.parse(parts[0].trim(), TIME_FMT));
-                    } catch (DateTimeParseException e) {
-                        colStartTimes.add(null);
-                    }
-                }
+                List<LocalTime> colStartTimes = parseHeaderTimes(header);
 
                 Map<LocalTime, Timeslot> daySlots = timeslotLookup.getOrDefault(sheetDate, Map.of());
 
@@ -244,5 +220,39 @@ public class FteUploadService {
             return new FteUploadResult(totalSaved, skipped.size(), saved, skipped,
                     minDate, maxDate, startTime, endTime, incrementMinutes);
         }
+    }
+
+    /** Extracts a yyyy-MM-dd date from a sheet name. Accepts exact match or date embedded in a longer name. */
+    private static LocalDate parseSheetDate(String sheetName) {
+        Matcher m = DATE_PATTERN.matcher(sheetName);
+        if (!m.find()) return null;
+        try {
+            return LocalDate.parse(m.group());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parses start times from a header row. Supports two formats per cell:
+     *   "HH:mm-HH:mm" (range) — extracts the start time
+     *   "HH:mm"        (start time only)
+     * Returns one entry per data column (col 1 onwards); null for unparseable cells.
+     */
+    private static List<LocalTime> parseHeaderTimes(Row header) {
+        List<LocalTime> times = new ArrayList<>();
+        for (int col = 1; col < header.getLastCellNum(); col++) {
+            Cell cell = header.getCell(col);
+            if (cell == null) { times.add(null); continue; }
+            String val = cell.getStringCellValue().trim();
+            if (val.isEmpty()) { times.add(null); continue; }
+            String startPart = val.contains("-") ? val.split("-")[0].trim() : val;
+            try {
+                times.add(LocalTime.parse(startPart, TIME_FMT));
+            } catch (DateTimeParseException e) {
+                times.add(null);
+            }
+        }
+        return times;
     }
 }
