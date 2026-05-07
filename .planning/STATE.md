@@ -1,36 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: AWS Deployment
-status: archived
-last_updated: "2026-04-21T00:00:00.000Z"
-last_activity: 2026-04-21
+milestone: v1.1
+milestone_name: Schedule Quality & Reporting
+status: planning
+last_updated: "2026-05-07T00:00:00.000Z"
+last_activity: 2026-05-07
 progress:
-  total_phases: 4
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 4
-  percent: 67
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-21)
+See: .planning/PROJECT.md (updated 2026-05-07)
 
-**Core value:** Internal users can access the WFM scheduling tool via a stable cloud URL without running it locally
-**Current focus:** Planning next milestone — v1.0 AWS Deployment archived; IAM blocker work deferred to backlog
+**Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
+**Current focus:** Milestone v1.1 — Schedule Quality & Reporting
 
 ## Current Position
 
-Milestone v1.0 archived on 2026-04-21.
-Status: Partially shipped — 38/45 AWS resources provisioned; IAM-blocked items deferred to backlog (999.1, 999.2, 999.3).
-Ready to start new milestone with `/gsd-new-milestone`.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-07 — Milestone v1.1 started
 
 ## Deferred Items
 
-Items deferred at milestone close on 2026-04-21:
+Items deferred at v1.0 milestone close on 2026-04-21:
 
 | Category | Item | Status |
 |----------|------|--------|
@@ -61,6 +62,6 @@ Items deferred at milestone close on 2026-04-21:
 
 ## Session Continuity
 
-Last session: 2026-04-21
-Stopped at: v1.0 milestone archived; ready for new milestone
+Last session: 2026-05-07
+Stopped at: Milestone v1.1 started; defining requirements
 Resume file: None
