@@ -61,19 +61,19 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QUAL-01 | TBD | Pending |
-| QUAL-02 | TBD | Pending |
-| QUAL-03 | TBD | Pending |
-| QUAL-04 | TBD | Pending |
-| QUAL-05 | TBD | Pending |
-| RPT-01 | TBD | Pending |
-| RPT-02 | TBD | Pending |
-| RPT-03 | TBD | Pending |
-| RPT-04 | TBD | Pending |
-| RPT-05 | TBD | Pending |
-| RPT-06 | TBD | Pending |
-| DIAG-01 | TBD | Pending |
-| DIAG-02 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
+| DATA-01 | Phase 5 | Pending |
+| DATA-02 | Phase 5 | Pending |
+| DATA-03 | Phase 5 | Pending |
+| QUAL-01 | Phase 6 | Pending |
+| QUAL-02 | Phase 6 | Pending |
+| QUAL-03 | Phase 6 | Pending |
+| RPT-01 | Phase 7 | Pending |
+| RPT-02 | Phase 7 | Pending |
+| QUAL-04 | Phase 7 | Pending |
+| DIAG-01 | Phase 7 | Pending |
+| DIAG-02 | Phase 7 | Pending |
+| RPT-03 | Phase 8 | Pending |
+| RPT-04 | Phase 8 | Pending |
+| RPT-05 | Phase 8 | Pending |
+| RPT-06 | Phase 8 | Pending |
+| QUAL-05 | Phase 8 | Pending |

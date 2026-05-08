@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Schedule Quality & Reporting
-status: planning
+status: roadmapped
 last_updated: "2026-05-07T00:00:00.000Z"
 last_activity: 2026-05-07
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -24,10 +24,19 @@ See: .planning/PROJECT.md (updated 2026-05-07)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 5 (not started — roadmap complete, awaiting plan)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-07 — Milestone v1.1 started
+Status: Roadmap created; ready for phase planning
+Last activity: 2026-05-07 — Milestone v1.1 roadmap created (Phases 5–8)
+
+## Phase Summary (v1.1)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 5 | Agent Data Enrichment & Desk Upload | DATA-01, DATA-02, DATA-03 | Not started |
+| 6 | Solver Quality Constraints | QUAL-01, QUAL-02, QUAL-03 | Not started |
+| 7 | Coverage, Utilization & Diagnostics | RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02 | Not started |
+| 8 | Export, Score Breakdown & Tuning | RPT-03, RPT-04, RPT-05, RPT-06, QUAL-05 | Not started |
 
 ## Deferred Items
 
@@ -55,6 +64,11 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 - Phase 02: SEC-03 pre-satisfied — terraform.tfvars already gitignored
 - Phase 03: Fixed RDS engine_version 16.4→16.6 — 16.4 not available in eu-west-2
 - Phase 03: Fixed shared_preload_libraries apply_method to pending-reboot
+- v1.1 Roadmap: Timefold pinned at 1.33.0 — ScoreAnalysis moves to paid tier in 2.0
+- v1.1 Roadmap: PDF export uses OpenPDF 3.0.4 (LGPL/MPL) — iText rejected (AGPL)
+- v1.1 Roadmap: Fairness constraints must use soft score only — hard fairness makes schedules infeasible
+- v1.1 Roadmap: Quadratic penalties for hours consistency, not linear (avoids score traps)
+- v1.1 Roadmap: Score breakdown guarded to in-memory schedules only — loadSnapshotData() missing problem facts for accepted schedules must be fixed in Phase 7 before Phase 8 export
 
 ### Blockers/Concerns
 
@@ -63,5 +77,5 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 ## Session Continuity
 
 Last session: 2026-05-07
-Stopped at: Milestone v1.1 started; defining requirements
+Stopped at: v1.1 roadmap created — 4 phases (5–8), 16 requirements mapped, ready for `/gsd-plan-phase 5`
 Resume file: None
