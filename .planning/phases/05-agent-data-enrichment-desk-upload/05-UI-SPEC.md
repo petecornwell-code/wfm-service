@@ -44,10 +44,12 @@ Declared values (all multiples of 4, expressed in rem units consistent with code
 | 3xl | 64px | 4rem | Not used in this phase |
 
 **Exceptions:**
-- Touch targets for inline action buttons in table rows: minimum 28px height achieved via
-  `padding: 0.15rem 0.4rem` (matches existing `DeskAgents.tsx` danger/action buttons).
-- Modal inner padding: 1.5rem (24px) matching existing Assign Modal at `DeskAgents.tsx:384`.
-- Badge inline padding: 0.2rem 0.5rem (4px 8px) — matches existing `.desk-badge` in index.css.
+- Touch targets for inline action buttons in table rows: minimum 32px height achieved via
+  `padding: 0 0.5rem; min-height: 32px` (xs vertical + sm horizontal = tokens xs and sm).
+  32px = 8×4, grid-aligned.
+- Modal inner padding: lg (1.5rem / 24px) matching existing Assign Modal at `DeskAgents.tsx:384`.
+- Badge inline padding: xs top/bottom and sm left/right — `padding: 0.25rem 0.5rem` (4px 8px).
+  Use the xs and sm token names when referencing in code comments; avoid raw decimal fractions.
 
 ---
 
@@ -57,16 +59,16 @@ All sizes derived directly from `index.css` and existing page components. No new
 
 | Role | Size | Weight | Line Height | Source |
 |------|------|--------|-------------|--------|
-| Body / default | 16px (1rem) | 400 (regular) | 1.5 | index.css:3–6; base font-size from browser default |
-| Small / secondary | 13–14px (0.85rem) | 400 (regular) | 1.5 | Verified: table `th` at 0.85rem, pagination count at 0.85rem, labels at 0.85rem |
-| Label / heading within section | 14px (0.9rem) | 500 (medium) | 1.4 | Verified: sidebar nav links at 0.9rem, `button` font-size at 0.9rem, field labels at fontWeight 500 |
-| Page heading (h1) | browser default ~2rem | 400 (regular, no override in CSS) | 1.2 | index.css:58–61; inherits browser h1 styles |
+| Body / default | 1rem (16px) | 400 (regular) | 1.5 | index.css:3–6; base font-size from browser default |
+| Small / secondary | 0.85rem (13–14px) | 400 (regular) | 1.5 | Verified: table `th` at 0.85rem, pagination count at 0.85rem, labels at 0.85rem |
+| Label / heading within section | 0.9rem (14px) | 400 (regular) | 1.4 | Verified: sidebar nav links at 0.9rem, `button` font-size at 0.9rem |
+| Section h2 heading | 1.1rem | 600 (bold) | 1.2 | Matches ClientManagement.tsx h2 at line 429; used for "Non-Schedulable Job Titles" and "BambooHR Sync Status" headings |
 
-**Weight contract: exactly 2 declared weights in use:**
-- **400 (regular):** body text, td content, secondary copy, placeholder text
-- **500 (medium):** form labels (`fontWeight: 500`), table column headers via `font-weight: 600` in CSS
-  (the CSS sheet declares `font-weight: 600` for `th` — this is the only 600 in the sheet; treat as
-  the "bold" weight for headers only)
+**Weight contract: exactly 2 declared weights:**
+- **400 (regular):** body text, td content, secondary copy, placeholder text, field labels,
+  checkbox label text, badge text
+- **600 (bold):** table column headers (`th` — existing `font-weight: 600` in index.css),
+  section h2 headings
 
 **Line height:**
 - Body: 1.5 (set globally, index.css:3)
@@ -155,6 +157,8 @@ The following patterns are reused or extended:
 
 ### 1. DeskAgents.tsx — Employment Type Filter
 
+**Primary focal point:** The employment-type filter dropdown and the PTO badge column draw the operator's eye first.
+
 **Placement:** Add a `<select>` control to the existing controls bar (line 253–269), inline with
 existing `showActiveOnly` checkbox and button row.
 
@@ -209,10 +213,10 @@ on its own line above the action buttons — OR as a dedicated column. Recommend
     display: 'inline-block',
     background: '#fef9c3',
     color: '#92400e',
-    padding: '0.2rem 0.5rem',
+    padding: '0.25rem 0.5rem',  // xs (4px) top/bottom, sm (8px) left/right
     borderRadius: '4px',
-    fontSize: '0.75rem',
-    fontWeight: 500,
+    fontSize: '0.85rem',
+    fontWeight: 400,
     cursor: 'default',
     whiteSpace: 'nowrap',
   }}
@@ -231,6 +235,8 @@ custom tooltip component is introduced.
 
 ### 4. ClientManagement.tsx — Upload Result Modal
 
+**Primary focal point:** The "N assigned / M skipped" summary line is the first element the operator sees on modal open; skipped rows table appears immediately below when M > 0.
+
 **Trigger:** Replace the `showToast(...)` call at line 162 with `setUploadResult(result)`.
 Keep the existing `fileInputRef.current.value = ''` reset.
 
@@ -248,7 +254,7 @@ const [uploadResult, setUploadResult] = useState<DeskAssignmentUploadResult | nu
 ┌──────────────────────────────────────────────────────────────┐
 │  Upload Results                                              │
 │                                                              │
-│  ✓ N assigned   (bold, large — 1.1rem or larger)            │
+│  ✓ N assigned   (bold, 1.1rem)                              │
 │  ✗ M skipped    (shown only when skippedCount > 0)          │
 │                                                              │
 │  [Skipped rows — expandable section, shown when M > 0]       │
@@ -293,11 +299,13 @@ opens (not on close) to reflect the newly assigned agents immediately.
 
 ### 5. Configuration.tsx — Non-Schedulable Job Titles Section
 
+**Primary focal point:** The checkbox list is the primary interaction surface; the description text above orients the operator before they toggle any row.
+
 **Placement:** New `<section>` element appended after the closing `</div>` of the existing
 BambooHR config block (after line 84), inside the outer `<div className="main-content">`.
 
-**Section heading:** `<h2>Non-Schedulable Job Titles</h2>` at font-size 1.1rem (matches
-ClientManagement.tsx `h2` at line 429).
+**Section heading:** `<h2>Non-Schedulable Job Titles</h2>` at font-size 1.1rem, font-weight 600
+(matches ClientManagement.tsx `h2` at line 429).
 
 **Container:** `<div style={{ marginTop: '2rem', maxWidth: '500px' }}>` — same width cap as
 existing config form.
@@ -306,7 +314,7 @@ existing config form.
 ```
 Agents with these job titles are excluded from schedule solving and cannot be assigned to a desk.
 ```
-Font: 0.85rem, color: #6b7280, margin-bottom: 0.75rem.
+Font: 0.85rem, weight: 400, color: #6b7280, margin-bottom: 0.75rem.
 
 **Loading state:** `<p>Loading job titles...</p>` while fetching.
 
@@ -315,7 +323,7 @@ Font: 0.85rem, color: #6b7280, margin-bottom: 0.75rem.
 **Checkbox list row (one per JobTitleConfig):**
 ```tsx
 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem',
-                padding: '0.4rem 0.5rem', borderBottom: '1px solid #f3f4f6',
+                padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6',
                 cursor: 'pointer', fontWeight: 400 }}>
   <input
     type="checkbox"
@@ -324,12 +332,16 @@ Font: 0.85rem, color: #6b7280, margin-bottom: 0.75rem.
   />
   <span>{row.jobTitle}</span>
   {row.nonSchedulable && (
-    <span style={{ fontSize: '0.75rem', color: '#ef4444', marginLeft: 'auto' }}>
+    <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>
       Non-schedulable
     </span>
   )}
 </label>
 ```
+
+Note: row padding uses xs (0.25rem) top/bottom and sm (0.5rem) left/right, matching the spacing
+token scale. The non-schedulable indicator uses 0.85rem (small/secondary size from the typography
+table) at weight 400.
 
 **Interaction:** Each checkbox toggle fires a PATCH to the backend immediately (optimistic update
 in UI, revert on error). No "Save" button — individual toggles are instant.
@@ -341,9 +353,11 @@ and revert the checkbox to its previous state.
 
 ### 6. Configuration.tsx — BambooHR Sync Status Card
 
+**Primary focal point:** The status field ("Success" / "Failed") and the "Last sync" timestamp are the first values the operator scans; error details appear below when present.
+
 **Placement:** New `<section>` element appended after the Non-Schedulable Job Titles section.
 
-**Section heading:** `<h2>BambooHR Sync Status</h2>` at font-size 1.1rem.
+**Section heading:** `<h2>BambooHR Sync Status</h2>` at font-size 1.1rem, font-weight 600.
 
 **Container:**
 ```tsx
