@@ -1,10 +1,11 @@
 ---
 phase: 5
 slug: agent-data-enrichment-desk-upload
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-05-11
+reviewed_at: 2026-05-11
 ---
 
 # Phase 5 — UI Design Contract
