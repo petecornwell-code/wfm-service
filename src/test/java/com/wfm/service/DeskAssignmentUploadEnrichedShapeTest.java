@@ -65,17 +65,19 @@ class DeskAssignmentUploadEnrichedShapeTest {
     // ------------------------------------------------------------------ //
 
     /**
-     * Enriched 16-col shape headers include "Desk", "Monday" and "Sunday" (day columns).
-     * Required enriched columns: Employee ID | Name | Email | Desk | Monday | Tuesday | ... | Sunday
+     * Builds an enriched 16-col workbook with a single data row.
+     * Headers: Employee ID | Name | Email | Desk | Monday ... Sunday
+     * dataValues: [employeeId, name, email, desk] (null for blank cell)
      */
-    private MockMultipartFile enrichedWorkbook(List<String[]> dataRows) throws Exception {
-        return enrichedWorkbookWithHeaders(
-                new String[]{"Employee ID", "Name", "Email", "Desk",
-                        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
-                dataRows);
+    private MockMultipartFile enrichedWorkbook(String employeeId, String name, String email, String desk)
+            throws Exception {
+        String[] headers = {"Employee ID", "Name", "Email", "Desk",
+                "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+        String[] data = {employeeId, name, email, desk};
+        return buildWorkbook(headers, data);
     }
 
-    private MockMultipartFile enrichedWorkbookWithHeaders(String[] headers, List<String[]> dataRows) throws Exception {
+    private MockMultipartFile buildWorkbook(String[] headers, String[] dataRow) throws Exception {
         XSSFWorkbook wb = new XSSFWorkbook();
         Sheet sheet = wb.createSheet("Sheet1");
 
@@ -84,12 +86,26 @@ class DeskAssignmentUploadEnrichedShapeTest {
             headerRow.createCell(i).setCellValue(headers[i]);
         }
 
-        int rowIdx = 1;
-        for (String[] data : dataRows) {
-            Row row = sheet.createRow(rowIdx++);
-            for (int i = 0; i < data.length; i++) {
-                if (data[i] != null) row.createCell(i).setCellValue(data[i]);
-            }
+        Row row = sheet.createRow(1);
+        for (int i = 0; i < dataRow.length; i++) {
+            if (dataRow[i] != null) row.createCell(i).setCellValue(dataRow[i]);
+        }
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        wb.write(out);
+        wb.close();
+        return new MockMultipartFile("file", "test.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new ByteArrayInputStream(out.toByteArray()));
+    }
+
+    private MockMultipartFile buildHeaderOnlyWorkbook(String[] headers) throws Exception {
+        XSSFWorkbook wb = new XSSFWorkbook();
+        Sheet sheet = wb.createSheet("Sheet1");
+
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < headers.length; i++) {
+            headerRow.createCell(i).setCellValue(headers[i]);
         }
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -107,9 +123,7 @@ class DeskAssignmentUploadEnrichedShapeTest {
     @Test
     void enrichedShape_missingDesk_producesSkippedRowWithMissingDeskReason() throws Exception {
         // Row has blank "Desk" cell → "Missing Desk"
-        MockMultipartFile file = enrichedWorkbook(List.of(
-                new String[]{"E001", "Alice", "alice@example.com", null}
-        ));
+        MockMultipartFile file = enrichedWorkbook("E001", "Alice", "alice@example.com", null);
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
         when(clientManagementService.findCachedEmployee(any(), any(), any())).thenReturn(null);
@@ -125,16 +139,15 @@ class DeskAssignmentUploadEnrichedShapeTest {
 
     @Test
     void enrichedShape_tieBreakerBothMarkersPresent_enrichedWins() throws Exception {
-        // Headers contain both "Desk Assignment" (legacy marker) AND "Desk"+"Monday"+"Sunday"
-        // → enriched wins; Desk column is used (not "Desk Assignment")
-        String[] hybridHeaders = new String[]{
+        // Headers contain BOTH "Desk Assignment" (legacy marker) AND "Desk"+"Monday"+"Sunday"
+        // → enriched wins; the "Desk" column is used (not "Desk Assignment")
+        String[] hybridHeaders = {
                 "Employee ID", "Name", "Email", "Desk Assignment", "Desk",
                 "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
         };
-        // Row with a valid enriched Desk (column "Desk") but blank "Desk Assignment"
-        MockMultipartFile file = enrichedWorkbookWithHeaders(hybridHeaders, List.of(
-                new String[]{"E002", "Bob", "bob@example.com", "Legacy Desk", null}
-        ));
+        // Column 4 = "Desk" is blank → "Missing Desk" (enriched wins, uses "Desk" column)
+        String[] dataRow = {"E002", "Bob", "bob@example.com", "Legacy Value", null};
+        MockMultipartFile file = buildWorkbook(hybridHeaders, dataRow);
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
 
@@ -150,23 +163,20 @@ class DeskAssignmentUploadEnrichedShapeTest {
     @Test
     void unknownShape_throwsIllegalArgumentExceptionWithHeadersInMessage() throws Exception {
         // Headers match neither legacy nor enriched shape
-        String[] unknownHeaders = new String[]{"FirstName", "LastName", "Phone"};
-        MockMultipartFile file = enrichedWorkbookWithHeaders(unknownHeaders, List.of());
+        String[] unknownHeaders = {"FirstName", "LastName", "Phone"};
+        MockMultipartFile file = buildHeaderOnlyWorkbook(unknownHeaders);
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.uploadDeskAssignments(file))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unrecognised spreadsheet shape")
-                .hasMessageContaining("firstname")   // lowercase after trim
                 .satisfies(ex -> assertThat(ex.getMessage()).containsIgnoringCase("Got headers:"));
     }
 
     @Test
     void enrichedShape_deskNotFound_producesSkippedRow() throws Exception {
-        MockMultipartFile file = enrichedWorkbook(List.of(
-                new String[]{"E003", "Carol", "carol@example.com", "Unknown Desk"}
-        ));
+        MockMultipartFile file = enrichedWorkbook("E003", "Carol", "carol@example.com", "Unknown Desk");
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
 

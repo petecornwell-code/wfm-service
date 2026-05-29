@@ -1,5 +1,6 @@
 package com.wfm.service;
 
+import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.SkippedRow;
 import com.wfm.model.*;
 import com.wfm.repository.*;
@@ -15,9 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -67,10 +66,11 @@ class DeskAssignmentUploadLegacyShapeTest {
     // ------------------------------------------------------------------ //
 
     /**
-     * Builds a legacy workbook with the given data rows.
-     * Each row is: [bamboohrId, name, email, deskAssignment]
+     * Builds a legacy workbook with a single data row.
+     * Row values: [bamboohrId, name, email, deskAssignment] (nulls → empty cells)
      */
-    private MockMultipartFile legacyWorkbook(List<String[]> dataRows) throws Exception {
+    private MockMultipartFile legacyWorkbook(String bamboohrId, String name, String email, String desk)
+            throws Exception {
         XSSFWorkbook wb = new XSSFWorkbook();
         Sheet sheet = wb.createSheet("Sheet1");
 
@@ -83,13 +83,11 @@ class DeskAssignmentUploadLegacyShapeTest {
         header.createCell(4).setCellValue("Specialty 1");
         header.createCell(5).setCellValue("Specialty 2");
 
-        int rowIdx = 1;
-        for (String[] data : dataRows) {
-            Row row = sheet.createRow(rowIdx++);
-            for (int i = 0; i < data.length; i++) {
-                if (data[i] != null) row.createCell(i).setCellValue(data[i]);
-            }
-        }
+        Row row = sheet.createRow(1);
+        if (bamboohrId != null) row.createCell(0).setCellValue(bamboohrId);
+        if (name != null) row.createCell(1).setCellValue(name);
+        if (email != null) row.createCell(2).setCellValue(email);
+        if (desk != null) row.createCell(3).setCellValue(desk);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         wb.write(out);
@@ -106,9 +104,7 @@ class DeskAssignmentUploadLegacyShapeTest {
     @Test
     void legacyShape_missingDeskAssignment_producesSkippedRow() throws Exception {
         // Row has no desk → should be skipped with "Missing Desk Assignment"
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B001", "Alice", "alice@example.com", null}
-        ));
+        MockMultipartFile file = legacyWorkbook("B001", "Alice", "alice@example.com", null);
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
         when(clientManagementService.findCachedEmployee(any(), any(), any())).thenReturn(null);
@@ -125,9 +121,7 @@ class DeskAssignmentUploadLegacyShapeTest {
 
     @Test
     void legacyShape_deskNotFound_producesSkippedRow() throws Exception {
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B002", "Bob", "bob@example.com", "Nonexistent Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbook("B002", "Bob", "bob@example.com", "Nonexistent Desk");
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
         when(clientManagementService.findCachedEmployee(any(), any(), any())).thenReturn(null);
@@ -165,14 +159,12 @@ class DeskAssignmentUploadLegacyShapeTest {
         when(agentRepository.save(any(Agent.class))).thenAnswer(i -> i.getArgument(0));
         when(agentRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
 
-        com.wfm.dto.BambooEmployeeResponse cached = new com.wfm.dto.BambooEmployeeResponse(
+        BambooEmployeeResponse cached = new BambooEmployeeResponse(
                 "B003", "Carol", "carol@example.com", "Support", "Agent", "Active");
         when(clientManagementService.findCachedEmployee(anyString(), anyString(), anyString()))
                 .thenReturn(cached);
 
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B003", "Carol", "carol@example.com", "Support Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbook("B003", "Carol", "carol@example.com", "Support Desk");
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
@@ -185,9 +177,7 @@ class DeskAssignmentUploadLegacyShapeTest {
     @Test
     void legacyShape_skippedRowContainsBamboohrIdAndName() throws Exception {
         // Even when desk is not found, skipped row should carry bamboohrId + name from the row
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B999", "Dave", "dave@example.com", "Missing Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbook("B999", "Dave", "dave@example.com", "Missing Desk");
 
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
 

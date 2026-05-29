@@ -59,10 +59,16 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         // Configure non-schedulable title
         when(agentEligibilityService.isNonSchedulable(TENANT_ID, NON_SCHEDULABLE_TITLE)).thenReturn(true);
         when(agentEligibilityService.isNonSchedulable(TENANT_ID, "Agent")).thenReturn(false);
+        // Handle null jobTitle gracefully
         when(agentEligibilityService.isNonSchedulable(anyLong(), isNull())).thenReturn(false);
     }
 
-    private MockMultipartFile legacyWorkbook(List<String[]> dataRows) throws Exception {
+    // ------------------------------------------------------------------ //
+    //  Helpers                                                             //
+    // ------------------------------------------------------------------ //
+
+    private MockMultipartFile legacyWorkbook(String bamboohrId, String name, String email, String desk)
+            throws Exception {
         XSSFWorkbook wb = new XSSFWorkbook();
         Sheet sheet = wb.createSheet("Sheet1");
 
@@ -72,11 +78,38 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         header.createCell(2).setCellValue("Email");
         header.createCell(3).setCellValue("Desk Assignment");
 
-        int rowIdx = 1;
-        for (String[] data : dataRows) {
-            Row row = sheet.createRow(rowIdx++);
-            for (int i = 0; i < data.length; i++) {
-                if (data[i] != null) row.createCell(i).setCellValue(data[i]);
+        Row row = sheet.createRow(1);
+        if (bamboohrId != null) row.createCell(0).setCellValue(bamboohrId);
+        if (name != null) row.createCell(1).setCellValue(name);
+        if (email != null) row.createCell(2).setCellValue(email);
+        if (desk != null) row.createCell(3).setCellValue(desk);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        wb.write(out);
+        wb.close();
+        return new MockMultipartFile("file", "test.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new ByteArrayInputStream(out.toByteArray()));
+    }
+
+    /** Builds a legacy workbook with two data rows. */
+    private MockMultipartFile legacyWorkbookTwoRows(
+            String b1, String n1, String e1, String d1,
+            String b2, String n2, String e2, String d2) throws Exception {
+        XSSFWorkbook wb = new XSSFWorkbook();
+        Sheet sheet = wb.createSheet("Sheet1");
+
+        Row header = sheet.createRow(0);
+        header.createCell(0).setCellValue("BambooHR ID");
+        header.createCell(1).setCellValue("Name");
+        header.createCell(2).setCellValue("Email");
+        header.createCell(3).setCellValue("Desk Assignment");
+
+        String[][] rows = {{b1, n1, e1, d1}, {b2, n2, e2, d2}};
+        for (int r = 0; r < rows.length; r++) {
+            Row row = sheet.createRow(r + 1);
+            for (int c = 0; c < rows[r].length; c++) {
+                if (rows[r][c] != null) row.createCell(c).setCellValue(rows[r][c]);
             }
         }
 
@@ -87,6 +120,10 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 new ByteArrayInputStream(out.toByteArray()));
     }
+
+    // ------------------------------------------------------------------ //
+    //  Tests                                                               //
+    // ------------------------------------------------------------------ //
 
     @Test
     void nonSchedulableAgent_isSkippedWithStructuredReason() throws Exception {
@@ -116,9 +153,7 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         when(clientManagementService.findCachedEmployee(anyString(), anyString(), anyString()))
                 .thenReturn(cached);
 
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B100", "Eve", "eve@example.com", "Support Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbook("B100", "Eve", "eve@example.com", "Support Desk");
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
@@ -164,9 +199,7 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         when(clientManagementService.findCachedEmployee(anyString(), anyString(), anyString()))
                 .thenReturn(cached);
 
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B200", "Frank", "frank@example.com", "Sales Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbook("B200", "Frank", "frank@example.com", "Sales Desk");
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
@@ -221,10 +254,10 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         when(clientManagementService.findCachedEmployee(eq("B301"), anyString(), anyString()))
                 .thenReturn(cachedReg);
 
-        MockMultipartFile file = legacyWorkbook(List.of(
-                new String[]{"B300", "Grace", "grace@example.com", "Mixed Desk"},
-                new String[]{"B301", "Henry", "henry@example.com", "Mixed Desk"}
-        ));
+        MockMultipartFile file = legacyWorkbookTwoRows(
+                "B300", "Grace", "grace@example.com", "Mixed Desk",
+                "B301", "Henry", "henry@example.com", "Mixed Desk"
+        );
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
