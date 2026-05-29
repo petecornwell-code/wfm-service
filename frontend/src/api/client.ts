@@ -279,7 +279,7 @@ export const exceptions = {
 export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number }
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
-export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number }
+export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[] }
 export interface Specialization { id: string; name: string; color?: string }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
@@ -427,4 +427,31 @@ export const clientManagement = {
   },
 }
 
-export interface DeskAssignmentUploadResult { assignedCount: number; skippedCount: number; assignedDetails: string[]; skippedDetails: string[] }
+export interface SkippedRow { rowNumber: number; bamboohrId: string | null; name: string | null; reason: string }
+
+export interface JobTitleConfigResponse { id: string; jobTitle: string; nonSchedulable: boolean; createdAt: string; updatedAt: string }
+
+export interface BambooSyncEventResponse {
+  startedAt: string | null
+  finishedAt: string | null
+  success: boolean
+  errorMessage: string | null
+  agentsSynced: number | null
+  timeOffPulled: number | null
+  retryAfterSeconds: number | null
+}
+
+export interface DeskAssignmentUploadResult { assignedCount: number; skippedCount: number; assignedDetails: string[]; skippedDetails: SkippedRow[] }
+
+// --- Job Title Config ---
+export const jobTitleConfig = {
+  list: () => request<JobTitleConfigResponse[]>('/job-titles'),
+  setNonSchedulable: (id: string, nonSchedulable: boolean) =>
+    request<JobTitleConfigResponse>(`/job-titles/${id}`,
+      { method: 'PATCH', body: JSON.stringify({ nonSchedulable }) }),
+}
+
+// --- BambooHR Sync Status ---
+export const bambooSyncStatus = {
+  get: () => request<BambooSyncEventResponse>('/configuration/bamboohr/sync-status'),
+}
