@@ -32,6 +32,7 @@ public class ClientManagementService {
     private final AppConfigurationService configurationService;
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
+    private final AgentEligibilityService agentEligibilityService;
 
     /** Cache keyed by "tenantId::department" (lowercased). */
     private final Map<String, List<BambooEmployeeResponse>> cache = new ConcurrentHashMap<>();
@@ -39,11 +40,13 @@ public class ClientManagementService {
     public ClientManagementService(BambooHRClient bambooHRClient,
                                    AppConfigurationService configurationService,
                                    AgentRepository agentRepository,
-                                   DeskRepository deskRepository) {
+                                   DeskRepository deskRepository,
+                                   AgentEligibilityService agentEligibilityService) {
         this.bambooHRClient = bambooHRClient;
         this.configurationService = configurationService;
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
+        this.agentEligibilityService = agentEligibilityService;
     }
 
     public List<BambooEmployeeResponse> listEmployeesByDepartment(String tenantId, String department, boolean refresh) {
@@ -283,6 +286,11 @@ public class ClientManagementService {
 
             if (agent.getDeskId() != null && !agent.getDeskId().equals(deskId)) {
                 throw new ConflictException("Agent '" + agent.getName() + "' is already assigned to another desk");
+            }
+
+            if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
+                throw new ConflictException("Agent '" + agent.getName()
+                        + "' has a non-schedulable job title: " + agent.getJobTitle());
             }
 
             agent.setDeskId(deskId);
