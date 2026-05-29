@@ -87,7 +87,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   5. Only "approved" PTO creates hard day-off blocks; "requested" PTO is visible in the diagnostic view but does not block scheduling
 **Plans**: 5 plans
 Plans:
-- [ ] 05-01-PLAN.md — Schema + model foundation: V25/V26/V27 migrations, EmploymentType enum, JobTitleConfig + BambooSyncEvent entities & repositories, Agent.employmentType, AgentEligibilityService, BambooHRRateLimitedException + 503 handler
+- [x] 05-01-PLAN.md — Schema + model foundation: V25/V26/V27 migrations, EmploymentType enum, JobTitleConfig + BambooSyncEvent entities & repositories, Agent.employmentType, AgentEligibilityService, BambooHRRateLimitedException + 503 handler
 - [ ] 05-02-PLAN.md — BambooHR integration: employmentHistoryStatus pull, 503/429 onStatus translation, mapping rule, JobTitleConfig auto-populate, BambooSyncEvent recording, /api/v1/job-titles and /api/v1/configuration/bamboohr/sync-status endpoints
 - [ ] 05-03-PLAN.md — Solver fixes: PTO filter (APPROVED-only, MANDATORY-always) + non-schedulable agent eligibility filter in SolverService
 - [ ] 05-04-PLAN.md — Upload service + DTO enrichment: header-based shape detection (6-col legacy + 16-col enriched), structured SkippedRow, non-schedulable rejection on both upload and manual assign paths, DeskAgentResponse adds employmentType + pendingPto (bulk-fetched)
