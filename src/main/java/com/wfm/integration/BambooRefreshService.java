@@ -1,10 +1,13 @@
 package com.wfm.integration;
 
 import com.wfm.config.TenantContext;
+import com.wfm.exception.BambooHRRateLimitedException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.RefreshInProgressException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
+import com.wfm.service.BambooSyncEventService;
+import com.wfm.service.JobTitleConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,12 +28,17 @@ public class BambooRefreshService {
 
     private static final Logger log = LoggerFactory.getLogger(BambooRefreshService.class);
 
+    // D-03/D-05: Only "Part-Time" (exact BambooHR string) maps to PART_TIME; everything else is FULL_TIME.
+    private static final String BAMBOO_PART_TIME = "Part-Time";
+
     private final BambooHRClient bambooHRClient;
     private final AgentRepository agentRepository;
     private final DeskRepository deskRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final SpecializationRepository specializationRepository;
     private final TransactionTemplate transactionTemplate;
+    private final JobTitleConfigService jobTitleConfigService;
+    private final BambooSyncEventService bambooSyncEventService;
 
     private final ConcurrentHashMap<UUID, Boolean> refreshInProgress = new ConcurrentHashMap<>();
 
@@ -50,13 +58,26 @@ public class BambooRefreshService {
                                 DeskRepository deskRepository,
                                 AgentDayOffRepository agentDayOffRepository,
                                 SpecializationRepository specializationRepository,
-                                TransactionTemplate transactionTemplate) {
+                                TransactionTemplate transactionTemplate,
+                                JobTitleConfigService jobTitleConfigService,
+                                BambooSyncEventService bambooSyncEventService) {
         this.bambooHRClient = bambooHRClient;
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.specializationRepository = specializationRepository;
         this.transactionTemplate = transactionTemplate;
+        this.jobTitleConfigService = jobTitleConfigService;
+        this.bambooSyncEventService = bambooSyncEventService;
+    }
+
+    /**
+     * Maps a BambooHR employmentHistoryStatus string to our EmploymentType enum.
+     * Only the exact string "Part-Time" maps to PART_TIME; all other values (including
+     * null, blank, "Full-time", "Probation Period") map to FULL_TIME (D-03, D-05).
+     */
+    private static EmploymentType mapEmploymentType(String status) {
+        return BAMBOO_PART_TIME.equals(status) ? EmploymentType.PART_TIME : EmploymentType.FULL_TIME;
     }
 
     /**
@@ -68,9 +89,17 @@ public class BambooRefreshService {
         if (refreshInProgress.putIfAbsent(deskId, true) != null) {
             throw new RefreshInProgressException("A BambooHR refresh is already in progress for this desk.");
         }
-        try {
-            long tenantId = TenantContext.getTenantId();
 
+        long tenantId = TenantContext.getTenantId();
+
+        // Build sync event at entry — will be persisted in finally block regardless of outcome
+        BambooSyncEvent syncEvent = new BambooSyncEvent();
+        syncEvent.setTenantId(tenantId);
+        syncEvent.setDeskId(deskId);
+        syncEvent.setStartedAt(OffsetDateTime.now());
+        syncEvent.setSuccess(false);
+
+        try {
             // 1. Look up desk name (short read-only query, not in the main transaction)
             Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
                     .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
@@ -92,8 +121,24 @@ public class BambooRefreshService {
             // which Spring proxies cannot intercept.
             transactionTemplate.executeWithoutResult(status ->
                     persistRefreshData(deskId, tenantId, desk, employees, timeOffs, from, to));
+
+            syncEvent.setSuccess(true);
+            syncEvent.setAgentsSynced(employees.size());
+            syncEvent.setTimeOffPulled(timeOffs.size());
+
+        } catch (BambooHRRateLimitedException e) {
+            // T-05-02-01: use ex.getMessage() — safe message, no secrets
+            syncEvent.setErrorMessage(e.getMessage());
+            syncEvent.setRetryAfterSeconds(e.getRetryAfterSeconds());
+            throw e;
+        } catch (Exception e) {
+            syncEvent.setErrorMessage(e.getMessage());
+            throw e;
         } finally {
             refreshInProgress.remove(deskId);
+            syncEvent.setFinishedAt(OffsetDateTime.now());
+            // REQUIRES_NEW ensures this write survives a rollback of any caller TX
+            bambooSyncEventService.record(syncEvent);
         }
     }
 
@@ -168,6 +213,8 @@ public class BambooRefreshService {
             agent.setJobTitle(emp.jobTitle());
             agent.setActive("Active".equalsIgnoreCase(emp.status()));
             agent.setLastRefreshedAt(OffsetDateTime.now());
+            // Map BambooHR employmentHistoryStatus → EmploymentType enum (D-03, D-04)
+            agent.setEmploymentType(mapEmploymentType(emp.employmentHistoryStatus()));
 
             // Preserve existing specializations and contracted hours — only set defaults if missing
             if (agent.getPrimarySpecialization() == null) {
@@ -237,5 +284,14 @@ public class BambooRefreshService {
         for (AgentDayOff dayOff : dedupedDaysOff.values()) {
             agentDayOffRepository.save(dayOff);
         }
+
+        // 6. Auto-populate JobTitleConfig rows for distinct non-blank job titles in this refresh.
+        // Iterate the freshly-synced employees list (NOT the DB) per RESEARCH anti-pattern (D-09).
+        // ensureExists is idempotent — safe to call repeatedly; does NOT modify nonSchedulable.
+        employees.stream()
+                .map(BambooEmployee::jobTitle)
+                .filter(t -> t != null && !t.isBlank())
+                .distinct()
+                .forEach(title -> jobTitleConfigService.ensureExists(tenantId, title));
     }
 }
