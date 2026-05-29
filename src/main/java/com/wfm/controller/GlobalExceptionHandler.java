@@ -3,6 +3,7 @@ package com.wfm.controller;
 import com.wfm.dto.ErrorResponse;
 import com.wfm.dto.ErrorResponse.Error;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
+import com.wfm.exception.BambooHRRateLimitedException;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
@@ -61,6 +62,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RefreshInProgressException.class)
     public ResponseEntity<ErrorResponse> handleRefreshInProgress(RefreshInProgressException ex) {
         return buildResponse(HttpStatus.CONFLICT, "REFRESH_IN_PROGRESS", ex.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(BambooHRRateLimitedException.class)
+    public ResponseEntity<ErrorResponse> handleBambooHRRateLimited(BambooHRRateLimitedException ex) {
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "BAMBOOHR_RATE_LIMITED", ex.getMessage(), List.of());
     }
 
     @ExceptionHandler(UnprocessableException.class)
