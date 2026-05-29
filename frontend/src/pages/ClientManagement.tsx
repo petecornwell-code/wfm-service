@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitle' | 'status'
@@ -34,6 +34,9 @@ export default function ClientManagement() {
   // Desk assignment upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Upload result modal
+  const [uploadResult, setUploadResult] = useState<DeskAssignmentUploadResult | null>(null)
 
   // Employees table sorting & search
   const [empSortField, setEmpSortField] = useState<EmpSortField | null>(null)
@@ -159,11 +162,8 @@ export default function ClientManagement() {
     setUploading(true)
     try {
       const result: DeskAssignmentUploadResult = await clientManagement.uploadDeskAssignments(file)
-      showToast('success', `Desk assignments: ${result.assignedCount} assigned, ${result.skippedCount} skipped`)
-      if (result.skippedDetails.length > 0) {
-        console.warn('Skipped rows:', result.skippedDetails)
-      }
-      // Refresh desk agents view if a desk is selected
+      setUploadResult(result)
+      // Refresh desk agents view in parallel if a desk is selected
       if (viewDeskId) {
         loadDeskAgents(viewDeskId)
       }
@@ -196,6 +196,32 @@ export default function ClientManagement() {
     } finally {
       setExporting(false)
     }
+  }
+
+  const handleDownloadSkippedCsv = () => {
+    if (!uploadResult) return
+    const sanitize = (val: string | null | undefined): string => {
+      if (val == null) return ''
+      // CSV-injection mitigation (T-05-05-02): prefix dangerous leading chars with single quote
+      const s = String(val)
+      const sanitized = /^[=+\-@]/.test(s) ? "'" + s : s
+      // Escape inner double-quotes by doubling them
+      return sanitized.replace(/"/g, '""')
+    }
+    const csvRows: string[] = [
+      'Row,BambooHR ID,Name,Reason',
+      ...uploadResult.skippedDetails.map((r: SkippedRow) =>
+        `${r.rowNumber},"${sanitize(r.bamboohrId)}","${sanitize(r.name)}","${sanitize(r.reason)}"`
+      ),
+    ]
+    const csv = csvRows.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `skipped-assignments-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Employee sort helpers
@@ -422,6 +448,58 @@ export default function ClientManagement() {
             <button disabled={!hasMore || loading} onClick={() => fetchEmployees(currentPage + 1)} style={{ padding: '0.25rem 0.5rem' }}>Next &rsaquo;</button>
           </div>
         </>
+      )}
+
+      {/* Upload Result Modal */}
+      {uploadResult !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: '8px', padding: '1.5rem', width: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <h3>Upload Results</h3>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '1.1rem' }}>
+                {uploadResult.assignedCount} assigned
+              </span>
+              {uploadResult.skippedCount > 0 && (
+                <>
+                  {' '}
+                  <span style={{ color: '#dc2626', fontWeight: 600, fontSize: '1.1rem' }}>
+                    {uploadResult.skippedCount} skipped
+                  </span>
+                </>
+              )}
+            </div>
+            {uploadResult.skippedCount > 0 && (
+              <div style={{ overflowY: 'auto', maxHeight: '300px', marginTop: '1rem', border: '1px solid #e5e7eb', borderRadius: '4px' }}>
+                <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Row</th>
+                      <th>BambooHR ID</th>
+                      <th>Name</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploadResult.skippedDetails.map((row: SkippedRow, idx: number) => (
+                      <tr key={idx}>
+                        <td>{row.rowNumber}</td>
+                        <td>{row.bamboohrId ?? '—'}</td>
+                        <td>{row.name ?? '—'}</td>
+                        <td>{row.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', justifyContent: 'flex-end' }}>
+              {uploadResult.skippedCount > 0 && (
+                <button onClick={handleDownloadSkippedCsv}>Download skipped as CSV</button>
+              )}
+              <button onClick={() => setUploadResult(null)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Desk Agents - View & Remove */}
