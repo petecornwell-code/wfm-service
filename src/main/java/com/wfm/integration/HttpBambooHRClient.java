@@ -2,6 +2,7 @@ package com.wfm.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wfm.exception.BambooHRRateLimitedException;
 import com.wfm.service.AppConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,13 +39,35 @@ public class HttpBambooHRClient implements BambooHRClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
+    // Package-private — used by test constructor to bypass configurationService
+    private final String overrideSubdomain;
+    private final String overrideApiKey;
+
     public HttpBambooHRClient(AppConfigurationService configurationService, ObjectMapper objectMapper) {
         this.configurationService = configurationService;
         this.restClient = RestClient.create();
         this.objectMapper = objectMapper;
+        this.overrideSubdomain = null;
+        this.overrideApiKey = null;
+    }
+
+    /**
+     * Test constructor: accepts a pre-configured RestClient.Builder (e.g. bound to MockRestServiceServer).
+     * Uses fixed subdomain "test-stub" and API key "test-key" so that
+     * getSubdomain() / basicAuth() work without a running Spring context.
+     */
+    HttpBambooHRClient(RestClient.Builder builder, ObjectMapper objectMapper) {
+        this.configurationService = null;
+        this.overrideSubdomain = "test-stub";
+        this.overrideApiKey = "test-key";
+        this.restClient = builder.build();
+        this.objectMapper = objectMapper;
     }
 
     private String getSubdomain() {
+        if (overrideSubdomain != null) {
+            return overrideSubdomain;
+        }
         String server = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_SERVER);
         if (server == null || server.isBlank()) {
             throw new IllegalStateException("BambooHR server is not configured. Please set it in Configuration.");
@@ -54,6 +77,9 @@ public class HttpBambooHRClient implements BambooHRClient {
     }
 
     private String getApiKey() {
+        if (overrideApiKey != null) {
+            return overrideApiKey;
+        }
         String key = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_API_KEY);
         if (key == null || key.isBlank()) {
             throw new IllegalStateException("BambooHR API key is not configured. Please set it in Configuration.");
@@ -69,6 +95,37 @@ public class HttpBambooHRClient implements BambooHRClient {
         return "https://api.bamboohr.com/api/gateway.php/" + getSubdomain() + "/v1";
     }
 
+    /**
+     * Parses the Retry-After header value as an integer seconds count.
+     * Returns defaultSeconds when the header is null, blank, or non-numeric.
+     */
+    private int parseRetryAfterSeconds(String header, int defaultSeconds) {
+        if (header == null || header.isBlank()) {
+            return defaultSeconds;
+        }
+        try {
+            return Integer.parseInt(header.trim());
+        } catch (NumberFormatException e) {
+            return defaultSeconds;
+        }
+    }
+
+    /**
+     * Applies the 503/429 → BambooHRRateLimitedException translation to a ResponseSpec.
+     * Must be called between .retrieve() and .body().
+     */
+    private RestClient.ResponseSpec applyRateLimitHandler(RestClient.ResponseSpec spec) {
+        return spec.onStatus(
+                status -> status.value() == 503 || status.value() == 429,
+                (req, resp) -> {
+                    String retryHeader = resp.getHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+                    int seconds = parseRetryAfterSeconds(retryHeader, 60);
+                    throw new BambooHRRateLimitedException(
+                            "BambooHR is rate-limiting requests. Retry in " + seconds + " seconds.", seconds);
+                }
+        );
+    }
+
     @Override
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
         log.info("Fetching employees from BambooHR custom report for tenant={}, project={}", wfmTenantId, project);
@@ -76,18 +133,19 @@ public class HttpBambooHRClient implements BambooHRClient {
         String requestBody = """
                 {
                   "title": "WFM Employee Report",
-                  "fields": ["id", "displayName", "workEmail", "department", "jobTitle", "status"]
+                  "fields": ["id", "displayName", "workEmail", "department", "jobTitle", "status", "employmentHistoryStatus"]
                 }
                 """;
 
-        String json = restClient.post()
-                .uri(baseUrl() + "/reports/custom?format=JSON")
-                .header(HttpHeaders.AUTHORIZATION, basicAuth())
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(requestBody)
-                .retrieve()
-                .body(String.class);
+        String json = applyRateLimitHandler(
+                restClient.post()
+                        .uri(baseUrl() + "/reports/custom?format=JSON")
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .header(HttpHeaders.ACCEPT, "application/json")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(requestBody)
+                        .retrieve()
+        ).body(String.class);
 
         List<BambooEmployee> employees = new ArrayList<>();
         try {
@@ -107,11 +165,13 @@ public class HttpBambooHRClient implements BambooHRClient {
                 String department = emp.path("department").asText("");
                 String jobTitle = emp.path("jobTitle").asText("");
                 String status = emp.path("status").asText("Active");
+                String employmentHistoryStatus = emp.path("employmentHistoryStatus").asText("");
 
                 if (id.isEmpty()) continue;
 
                 employees.add(new BambooEmployee(
                         id, displayName, workEmail, department, jobTitle, status,
+                        employmentHistoryStatus,
                         wfmTenantId, project
                 ));
             }
@@ -128,12 +188,13 @@ public class HttpBambooHRClient implements BambooHRClient {
         log.info("Fetching employee {} from BambooHR", bamboohrId);
 
         String fields = "displayName,workEmail,department,jobTitle,status";
-        String json = restClient.get()
-                .uri(baseUrl() + "/employees/" + bamboohrId + "?fields=" + fields)
-                .header(HttpHeaders.AUTHORIZATION, basicAuth())
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
+        String json = applyRateLimitHandler(
+                restClient.get()
+                        .uri(baseUrl() + "/employees/" + bamboohrId + "?fields=" + fields)
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .header(HttpHeaders.ACCEPT, "application/json")
+                        .retrieve()
+        ).body(String.class);
 
         try {
             JsonNode emp = objectMapper.readTree(json);
@@ -144,6 +205,7 @@ public class HttpBambooHRClient implements BambooHRClient {
                     emp.path("department").asText(""),
                     emp.path("jobTitle").asText(""),
                     emp.path("status").asText("Active"),
+                    "",
                     "", ""
             );
         } catch (Exception e) {
@@ -175,12 +237,13 @@ public class HttpBambooHRClient implements BambooHRClient {
                 .build()
                 .toUri();
 
-        String json = restClient.get()
-                .uri(uri)
-                .header(HttpHeaders.AUTHORIZATION, basicAuth())
-                .header(HttpHeaders.ACCEPT, "application/json")
-                .retrieve()
-                .body(String.class);
+        String json = applyRateLimitHandler(
+                restClient.get()
+                        .uri(uri)
+                        .header(HttpHeaders.AUTHORIZATION, basicAuth())
+                        .header(HttpHeaders.ACCEPT, "application/json")
+                        .retrieve()
+        ).body(String.class);
 
         List<BambooTimeOff> timeOffs = new ArrayList<>();
         try {

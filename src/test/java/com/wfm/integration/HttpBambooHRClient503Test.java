@@ -19,6 +19,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 /**
  * Verifies that HttpBambooHRClient translates 503/429 responses into
  * BambooHRRateLimitedException with the correct retryAfterSeconds value.
+ *
+ * Uses MockRestServiceServer (Spring's test support) bound to a RestClient.Builder.
+ * The test constructor on HttpBambooHRClient accepts the builder and sets a
+ * configurationService stub that returns a fixed subdomain + API key.
  */
 class HttpBambooHRClient503Test {
 
@@ -27,16 +31,16 @@ class HttpBambooHRClient503Test {
 
     @BeforeEach
     void setUp() {
-        // Build a RestClient.Builder we can bind MockRestServiceServer to
         RestClient.Builder builder = RestClient.builder();
         mockServer = MockRestServiceServer.bindTo(builder).build();
-
-        // Create client using the test constructor
         client = new HttpBambooHRClient(builder, new ObjectMapper());
     }
 
     @Test
     void listEmployees_503WithRetryAfterHeader_throwsWithParsedSeconds() {
+        // MockRestServiceServer intercepts ALL outbound requests from the bound builder.
+        // The URI matcher uses containsString because the exact base URL is built from
+        // the stub subdomain injected by the test constructor.
         mockServer.expect(requestTo(org.hamcrest.Matchers.containsString("/reports/custom")))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(

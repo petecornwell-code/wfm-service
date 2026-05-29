@@ -7,6 +7,7 @@ public record BambooEmployee(
     String department,
     String jobTitle,
     String status,
+    String employmentHistoryStatus,
     String wfmTenantId,
     String project
 ) {}

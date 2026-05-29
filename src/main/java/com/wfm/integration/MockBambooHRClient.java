@@ -65,6 +65,7 @@ public class MockBambooHRClient implements BambooHRClient {
                 "Vinted",
                 "Agent",
                 "Active",
+                i % 5 == 0 ? "Part-Time" : "Full-time",
                 wfmTenantId,
                 "Vinted"
             ));
@@ -95,6 +96,7 @@ public class MockBambooHRClient implements BambooHRClient {
                 department,
                 "Agent",
                 "Active",
+                i % 5 == 0 ? "Part-Time" : "Full-time",
                 wfmTenantId,
                 project
             ));
@@ -104,7 +106,7 @@ public class MockBambooHRClient implements BambooHRClient {
 
     @Override
     public BambooEmployee getEmployee(String bamboohrId) {
-        return new BambooEmployee(bamboohrId, "Mock Employee", "mock@example.com", "Support", "Agent", "Active", "1", "Default");
+        return new BambooEmployee(bamboohrId, "Mock Employee", "mock@example.com", "Support", "Agent", "Active", "Full-time", "1", "Default");
     }
 
     @Override
