@@ -53,6 +53,7 @@ public class SolverService {
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentExceptionRepository agentExceptionRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
+    private final AgentEligibilityService agentEligibilityService;
 
     public SolverService(@Value("${solver.time-limit:PT5M}") Duration defaultTimeLimit,
                          InMemoryScheduleStore inMemoryStore,
@@ -65,7 +66,8 @@ public class SolverService {
                          AgentPreferenceRepository agentPreferenceRepository,
                          AgentDayOffRepository agentDayOffRepository,
                          AgentExceptionRepository agentExceptionRepository,
-                         ConstraintWeightsRepository constraintWeightsRepository) {
+                         ConstraintWeightsRepository constraintWeightsRepository,
+                         AgentEligibilityService agentEligibilityService) {
         this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
@@ -78,6 +80,7 @@ public class SolverService {
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentExceptionRepository = agentExceptionRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
+        this.agentEligibilityService = agentEligibilityService;
     }
 
     /**
@@ -120,11 +123,8 @@ public class SolverService {
                 .findLiveByDeskAndDateRange(tenantId, deskId,
                         schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
-        // Filter agents: only active agents with a primary specialization assigned
-        List<Agent> eligibleAgents = allAgents.stream()
-                .filter(Agent::isActive)
-                .filter(a -> a.getPrimarySpecialization() != null)
-                .toList();
+        // Filter agents: active, non-schedulable jobTitle excluded, primary specialization required
+        List<Agent> eligibleAgents = filterEligible(allAgents, tenantId, agentEligibilityService);
 
         // Load agent IDs for eligible agents
         Set<UUID> eligibleAgentIds = eligibleAgents.stream()
@@ -154,11 +154,9 @@ public class SolverService {
                     return cw;
                 });
 
-        // 5. Build lookup map for days off (needed for preference resolution and later)
-        Map<UUID, Set<LocalDate>> agentDaysOffMap = new HashMap<>();
-        for (AgentDayOff d : allDaysOff) {
-            agentDaysOffMap.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
-        }
+        // 5. Build lookup map for days off (needed for preference resolution and later).
+        // Only APPROVED PTO rows block scheduling; MANDATORY rows always block regardless of status.
+        Map<UUID, Set<LocalDate>> agentDaysOffMap = buildAgentDaysOffMap(allDaysOff);
 
         // 6. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
         // Done before validation so break alignment check uses effective preferences.
@@ -943,5 +941,42 @@ public class SolverService {
         } catch (Exception e) {
             log.warn("Pre-solve diagnostic failed (non-fatal): {}", e.getMessage());
         }
+    }
+
+    // --- Package-private static helpers (extracted for testability) ---
+
+    /**
+     * Builds the agentDaysOffMap used by the solver and preference resolver.
+     * Rules (D-22):
+     *   - PTO row with status=APPROVED → blocks the date
+     *   - PTO row with status=REQUESTED → does NOT block the date
+     *   - MANDATORY row → always blocks, regardless of status
+     */
+    static Map<UUID, Set<LocalDate>> buildAgentDaysOffMap(List<AgentDayOff> daysOff) {
+        Map<UUID, Set<LocalDate>> map = new HashMap<>();
+        for (AgentDayOff d : daysOff) {
+            boolean blocks = d.getType() == DayOffType.MANDATORY
+                    || d.getStatus() == DayOffStatus.APPROVED;
+            if (blocks) {
+                map.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Filters agents for solver eligibility (D-11):
+     *   1. Agent::isActive
+     *   2. !agentEligibilityService.isNonSchedulable(tenantId, jobTitle)
+     *   3. primarySpecialization != null
+     * Order of surviving agents is preserved.
+     */
+    static List<Agent> filterEligible(List<Agent> agents, long tenantId,
+                                       AgentEligibilityService agentEligibilityService) {
+        return agents.stream()
+                .filter(Agent::isActive)
+                .filter(a -> !agentEligibilityService.isNonSchedulable(tenantId, a.getJobTitle()))
+                .filter(a -> a.getPrimarySpecialization() != null)
+                .toList();
     }
 }
