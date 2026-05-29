@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { appConfiguration, getErrorMessage } from '../api/client'
+import { appConfiguration, jobTitleConfig, bambooSyncStatus, getErrorMessage, type JobTitleConfigResponse, type BambooSyncEventResponse } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function Configuration() {
@@ -9,6 +9,40 @@ export default function Configuration() {
   const [bambooCacheMaxSize, setBambooCacheMaxSize] = useState('5000')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
+  // Non-Schedulable Job Titles
+  const [jobTitles, setJobTitles] = useState<JobTitleConfigResponse[] | null>(null)
+
+  // BambooHR Sync Status
+  const [syncStatus, setSyncStatus] = useState<BambooSyncEventResponse | null>(null)
+  const [loadingSyncStatus, setLoadingSyncStatus] = useState(true)
+
+  useEffect(() => {
+    jobTitleConfig.list()
+      .then(setJobTitles)
+      .catch(err => showToast('error', getErrorMessage(err)))
+  }, [])
+
+  useEffect(() => {
+    bambooSyncStatus.get()
+      .then(setSyncStatus)
+      .catch(err => showToast('error', getErrorMessage(err)))
+      .finally(() => setLoadingSyncStatus(false))
+  }, [])
+
+  const handleToggle = async (id: string, value: boolean) => {
+    if (!jobTitles) return
+    // Optimistic update
+    setJobTitles(jobTitles.map(row => row.id === id ? { ...row, nonSchedulable: value } : row))
+    try {
+      const updated = await jobTitleConfig.setNonSchedulable(id, value)
+      setJobTitles(prev => prev ? prev.map(row => row.id === id ? updated : row) : prev)
+    } catch (err) {
+      // Revert on error
+      setJobTitles(prev => prev ? prev.map(row => row.id === id ? { ...row, nonSchedulable: !value } : row) : prev)
+      showToast('error', 'Failed to update job title — please try again')
+    }
+  }
 
   useEffect(() => {
     appConfiguration.get()
@@ -82,6 +116,94 @@ export default function Configuration() {
           {saving ? 'Saving...' : 'Save Configuration'}
         </button>
       </div>
+
+      {/* Non-Schedulable Job Titles */}
+      <section>
+        <div style={{ marginTop: '2rem', maxWidth: '500px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Non-Schedulable Job Titles</h2>
+          <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+            Agents with these job titles are excluded from schedule solving and cannot be assigned to a desk.
+          </p>
+          {jobTitles === null ? (
+            <p>Loading job titles...</p>
+          ) : jobTitles.length === 0 ? (
+            <p style={{ color: '#6b7280' }}>No job titles synced yet. Run a BambooHR refresh to populate this list.</p>
+          ) : (
+            <div>
+              {jobTitles.map(row => (
+                <label
+                  key={row.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontWeight: 400 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={row.nonSchedulable}
+                    onChange={() => handleToggle(row.id, !row.nonSchedulable)}
+                  />
+                  <span>{row.jobTitle}</span>
+                  {row.nonSchedulable && (
+                    <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>Non-schedulable</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* BambooHR Sync Status */}
+      <section>
+        <div style={{ marginTop: '2rem', maxWidth: '600px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>BambooHR Sync Status</h2>
+          <div style={{ marginTop: '0.5rem', padding: '1rem', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb', maxWidth: '600px' }}>
+            {loadingSyncStatus ? (
+              <p style={{ color: '#6b7280' }}>Loading sync status...</p>
+            ) : (
+              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', margin: 0 }}>
+                <div>
+                  <dt style={{ fontWeight: 600 }}>Last sync</dt>
+                  <dd style={{ margin: 0 }}>{syncStatus?.startedAt ? new Date(syncStatus.startedAt).toLocaleString() : 'Never'}</dd>
+                </div>
+                <div>
+                  <dt style={{ fontWeight: 600 }}>Status</dt>
+                  <dd style={{ margin: 0 }}>
+                    {syncStatus?.startedAt == null
+                      ? <span style={{ color: '#6b7280' }}>—</span>
+                      : syncStatus.success
+                        ? <span style={{ color: '#16a34a' }}>Success</span>
+                        : <span style={{ color: '#dc2626' }}>Failed</span>
+                    }
+                  </dd>
+                </div>
+                {syncStatus && !syncStatus.success && syncStatus.errorMessage && (
+                  <div>
+                    <dt style={{ fontWeight: 600 }}>Error</dt>
+                    <dd style={{ margin: 0 }}>{syncStatus.errorMessage.length > 200 ? syncStatus.errorMessage.slice(0, 200) : syncStatus.errorMessage}</dd>
+                  </div>
+                )}
+                {syncStatus?.retryAfterSeconds != null && (
+                  <div>
+                    <dt style={{ fontWeight: 600 }}>Retry in</dt>
+                    <dd style={{ margin: 0 }}>{syncStatus.retryAfterSeconds} seconds</dd>
+                  </div>
+                )}
+                {syncStatus?.success && syncStatus.agentsSynced != null && (
+                  <div>
+                    <dt style={{ fontWeight: 600 }}>Agents synced</dt>
+                    <dd style={{ margin: 0 }}>{syncStatus.agentsSynced}</dd>
+                  </div>
+                )}
+                {syncStatus?.success && syncStatus.timeOffPulled != null && (
+                  <div>
+                    <dt style={{ fontWeight: 600 }}>PTO records pulled</dt>
+                    <dd style={{ margin: 0 }}>{syncStatus.timeOffPulled}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
