@@ -44,3 +44,7 @@ infra/*.tfstate.backup
 infra/terraform.tfvars
 infra/*.auto.tfvars
 infra/tfplan
+
+# Excel owner-lock / temp files
+~$*.xlsx
+~$*.xls

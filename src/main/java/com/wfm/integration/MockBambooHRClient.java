@@ -77,32 +77,19 @@ public class MockBambooHRClient implements BambooHRClient {
 
     @Override
     public List<BambooEmployee> listEmployees(String wfmTenantId, String project) {
-        // Use a stable seed derived from the desk name so the same employees are
-        // always returned for a given desk — prevents spurious soft-deletes on refresh.
-        int seed = (project != null ? project.toLowerCase() : "").hashCode();
-
-        // Case-insensitive desk name matching
-        if ("Vinted".equalsIgnoreCase(project)) {
-            return buildVintedAgents(wfmTenantId, seed);
-        }
-
-        // For non-Vinted desks, generate a stable roster from the name pools
-        Random rng = new Random(seed);
-        int count = 3 + rng.nextInt(6); // 3-8 employees
-        List<Integer> indices = new ArrayList<>();
-        for (int i = 0; i < FIRST_NAMES.length; i++) indices.add(i);
-        Collections.shuffle(indices, rng);
-
+        // Mirror the real BambooHR client: return ALL employees regardless of project.
+        // Department is set to the project value so ClientManagementService's department
+        // filter still works, and BambooRefreshService gets a stable full roster that
+        // matches bamboohrIds set during upload (which also calls with project=null).
         List<BambooEmployee> employees = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            int idx = indices.get(i);
-            String firstName = FIRST_NAMES[idx];
-            String lastName = LAST_NAMES[idx % LAST_NAMES.length];
+        for (int i = 0; i < FIRST_NAMES.length; i++) {
+            String firstName = FIRST_NAMES[i];
+            String lastName = LAST_NAMES[i % LAST_NAMES.length];
             String displayName = firstName + " " + lastName;
-            String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + "@example.com";
-            String department = project != null ? project : (rng.nextBoolean() ? "Support" : "Sales");
+            String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + (i + 1) + "@example.com";
+            String department = project != null ? project : "Support";
             employees.add(new BambooEmployee(
-                String.valueOf(idx + 1),
+                String.valueOf(i + 1),
                 displayName,
                 email,
                 department,
