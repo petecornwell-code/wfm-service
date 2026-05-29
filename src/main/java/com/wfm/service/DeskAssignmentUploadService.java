@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.SkippedRow;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
@@ -33,19 +34,31 @@ public class DeskAssignmentUploadService {
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
     private final SpecializationRepository specializationRepository;
+    private final AgentEligibilityService agentEligibilityService;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
                                         ClientManagementService clientManagementService,
                                         AgentPreferenceRepository agentPreferenceRepository,
                                         AgentExceptionRepository agentExceptionRepository,
-                                        SpecializationRepository specializationRepository) {
+                                        SpecializationRepository specializationRepository,
+                                        AgentEligibilityService agentEligibilityService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
         this.specializationRepository = specializationRepository;
+        this.agentEligibilityService = agentEligibilityService;
+    }
+
+    /**
+     * Detects whether an uploaded spreadsheet uses the 6-col legacy shape or the
+     * 16-col enriched shape based on its header row.
+     */
+    enum UploadShape {
+        LEGACY_6COL,
+        ENRICHED_16COL
     }
 
     @Transactional
@@ -57,7 +70,7 @@ public class DeskAssignmentUploadService {
         clientManagementService.ensureCachePopulatedForUpload(tenantId);
 
         List<String> assigned = new ArrayList<>();
-        List<String> skipped = new ArrayList<>();
+        List<SkippedRow> skipped = new ArrayList<>();
 
         // Pre-load all desks for this tenant keyed by name (case-insensitive)
         List<Desk> allDesks = deskRepository.findByTenantId(tenantId);
@@ -83,12 +96,65 @@ public class DeskAssignmentUploadService {
                 throw new IllegalArgumentException("Spreadsheet has no sheets");
             }
 
+            // --- Header-based shape detection ---
+            Row headerRow = sheet.getRow(0);
+            if (headerRow == null) {
+                throw new IllegalArgumentException("Spreadsheet has no header row");
+            }
+
+            // Build map: lowercase-trimmed header → column index
+            Map<String, Integer> col = new LinkedHashMap<>();
+            for (int c = 0; c <= headerRow.getLastCellNum(); c++) {
+                Cell cell = headerRow.getCell(c);
+                String hdr = getCellString(cell);
+                if (hdr != null && !hdr.isBlank()) {
+                    col.put(hdr.trim().toLowerCase(), c);
+                }
+            }
+
+            Set<String> headers = col.keySet();
+
+            boolean hasEnrichedMarkers = headers.contains("desk")
+                    && headers.contains("monday")
+                    && headers.contains("sunday");
+            boolean hasLegacyMarkers = headers.contains("desk assignment");
+
+            UploadShape shape;
+            if (hasEnrichedMarkers) {
+                // Enriched wins any tie (both markers present)
+                shape = UploadShape.ENRICHED_16COL;
+            } else if (hasLegacyMarkers) {
+                shape = UploadShape.LEGACY_6COL;
+            } else {
+                throw new IllegalArgumentException(
+                        "Unrecognised spreadsheet shape. Expected either 'Desk Assignment' (legacy) "
+                        + "or 'Desk' + day columns (enriched). Got headers: " + headers);
+            }
+
+            // Determine column-name constants by shape
+            final String bamboohrIdCol;
+            final String deskCol;
+            final String spec1Col;
+            final String spec2Col;
+            if (shape == UploadShape.LEGACY_6COL) {
+                bamboohrIdCol = "bamboohr id";
+                deskCol = "desk assignment";
+                spec1Col = "specialty 1";
+                spec2Col = "specialty 2";
+            } else {
+                bamboohrIdCol = "employee id";
+                deskCol = "desk";
+                spec1Col = "specialty 1";
+                spec2Col = "specialty 2";
+            }
+
             // Clear all desks referenced in the spreadsheet before re-assigning
             Set<UUID> clearedDeskIds = new HashSet<>();
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
-                String dn = getCellString(row.getCell(3));
+                int deskColIdx = col.getOrDefault(deskCol, -1);
+                String dn = deskColIdx >= 0 ? getCellString(row.getCell(deskColIdx)) : null;
                 if (dn == null || dn.isBlank()) continue;
                 Desk d = deskByName.get(dn.trim().toLowerCase());
                 if (d != null && clearedDeskIds.add(d.getId())) {
@@ -100,28 +166,39 @@ public class DeskAssignmentUploadService {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
 
-                String bamboohrId = getCellString(row.getCell(0));
-                String name = getCellString(row.getCell(1));
-                String email = getCellString(row.getCell(2));
-                String deskName = getCellString(row.getCell(3));
+                // Read cells via header-based column index
+                String bamboohrId = getCellString(row.getCell(col.getOrDefault(bamboohrIdCol, -1)));
+                String name = getCellString(row.getCell(col.getOrDefault("name", -1)));
+                String email = getCellString(row.getCell(col.getOrDefault("email", -1)));
+                String deskName = getCellString(row.getCell(col.getOrDefault(deskCol, -1)));
 
-                // Parse specialty columns (4..N) — dynamic number of columns
+                // Parse specialty columns
                 List<String> specialtyNames = new ArrayList<>();
-                for (int col = 4; ; col++) {
-                    String val = getCellString(row.getCell(col));
-                    if (val == null || val.isBlank()) break;
-                    specialtyNames.add(val.trim());
+                int spec1Idx = col.getOrDefault(spec1Col, -1);
+                int spec2Idx = col.getOrDefault(spec2Col, -1);
+                if (spec1Idx >= 0) {
+                    String val = getCellString(row.getCell(spec1Idx));
+                    if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
+                }
+                if (spec2Idx >= 0) {
+                    String val = getCellString(row.getCell(spec2Idx));
+                    if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
                 }
 
+                String missingDeskReason = shape == UploadShape.LEGACY_6COL
+                        ? "Missing Desk Assignment"
+                        : "Missing Desk";
+
                 if (deskName == null || deskName.isBlank()) {
-                    skipped.add("Row " + (i + 1) + ": missing Desk Assignment");
+                    skipped.add(new SkippedRow(i + 1, bamboohrId, name, missingDeskReason));
                     continue;
                 }
 
                 // Find the desk by name
                 Desk desk = deskByName.get(deskName.trim().toLowerCase());
                 if (desk == null) {
-                    skipped.add("Row " + (i + 1) + ": desk '" + deskName.trim() + "' not found");
+                    skipped.add(new SkippedRow(i + 1, bamboohrId, name,
+                            "Desk '" + deskName.trim() + "' not found"));
                     continue;
                 }
 
@@ -132,7 +209,8 @@ public class DeskAssignmentUploadService {
                 for (String specName : specialtyNames) {
                     Specialization spec = deskSpecs.get(specName.toLowerCase());
                     if (spec == null) {
-                        skipped.add("Row " + (i + 1) + ": specialty '" + specName + "' not found on desk '" + desk.getName() + "'");
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, name,
+                                "Specialty '" + specName + "' not found on desk '" + desk.getName() + "'"));
                         specialtyError = true;
                         break;
                     }
@@ -154,7 +232,8 @@ public class DeskAssignmentUploadService {
                     // Agent not found in BambooHR cache — log and skip
                     String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
                     log.warn("Row {}: agent '{}' from spreadsheet not found in BambooHR cache — skipping desk assignment", i + 1, identifier);
-                    skipped.add("Row " + (i + 1) + ": agent '" + identifier + "' not found in BambooHR cache");
+                    skipped.add(new SkippedRow(i + 1, bamboohrId, name,
+                            "BambooHR ID " + identifier + " not found"));
                     continue;
                 }
 
@@ -231,8 +310,15 @@ public class DeskAssignmentUploadService {
 
                 // Check if already assigned to a different desk
                 if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
-                    skipped.add("Row " + (i + 1) + ": agent '" + agent.getName()
-                            + "' already assigned to another desk");
+                    skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                            "Agent already assigned to desk " + agent.getDeskId()));
+                    continue;
+                }
+
+                // Non-schedulable check — BEFORE desk assignment
+                if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
+                    skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                            "Agent has non-schedulable job title: " + agent.getJobTitle()));
                     continue;
                 }
 
@@ -295,6 +381,6 @@ public class DeskAssignmentUploadService {
             int assignedCount,
             int skippedCount,
             List<String> assignedDetails,
-            List<String> skippedDetails
+            List<SkippedRow> skippedDetails
     ) {}
 }

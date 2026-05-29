@@ -4,18 +4,16 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
-import com.wfm.model.Agent;
-import com.wfm.model.Desk;
-import com.wfm.model.Specialization;
+import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.time.LocalDate;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class DeskAgentService {
@@ -25,17 +23,20 @@ public class DeskAgentService {
     private final SpecializationRepository specializationRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final AgentDayOffRepository agentDayOffRepository;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
                             SpecializationRepository specializationRepository,
                             AgentPreferenceRepository agentPreferenceRepository,
-                            AgentExceptionRepository agentExceptionRepository) {
+                            AgentExceptionRepository agentExceptionRepository,
+                            AgentDayOffRepository agentDayOffRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.agentDayOffRepository = agentDayOffRepository;
     }
 
     @Transactional(readOnly = true)
@@ -46,10 +47,24 @@ public class DeskAgentService {
                 .orElse(new BigDecimal("8.00"));
 
         List<Agent> agents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        return agents.stream().map(a -> toResponse(a, deskDefault)).toList();
+
+        // Bulk fetch pending PTO for all agents on this desk — single query (no N+1)
+        List<AgentDayOff> pendingPtoRows = agentDayOffRepository
+                .findByAgentDeskIdAndTypeAndStatusAndDateGreaterThanEqual(
+                        deskId, DayOffType.PTO, DayOffStatus.REQUESTED, LocalDate.now());
+
+        Map<UUID, List<LocalDate>> pendingByAgent = pendingPtoRows.stream()
+                .collect(Collectors.groupingBy(
+                        d -> d.getAgent().getId(),
+                        Collectors.mapping(AgentDayOff::getDate, Collectors.toList())));
+
+        return agents.stream()
+                .map(a -> toResponse(a, deskDefault,
+                        pendingByAgent.getOrDefault(a.getId(), List.of())))
+                .toList();
     }
 
-    private DeskAgentResponse toResponse(Agent a, BigDecimal deskDefault) {
+    private DeskAgentResponse toResponse(Agent a, BigDecimal deskDefault, List<LocalDate> pendingPtoDates) {
         Specialization ps = a.getPrimarySpecialization();
         BigDecimal effective = a.getContractedHoursPerDay() != null
                 ? a.getContractedHoursPerDay() : deskDefault;
@@ -66,7 +81,10 @@ public class DeskAgentService {
                         .map(s -> new DeskAgentResponse.SpecSummary(s.getId(), s.getName()))
                         .toList(),
                 a.getContractedHoursPerDay(),
-                effective
+                effective,
+                a.getEmploymentType(),
+                pendingPtoDates.size(),
+                pendingPtoDates
         );
     }
 
@@ -100,7 +118,7 @@ public class DeskAgentService {
         }
 
         BigDecimal deskDefault = desk.getDefaultContractedHoursPerDay();
-        return assigned.stream().map(a -> toResponse(a, deskDefault)).toList();
+        return assigned.stream().map(a -> toResponse(a, deskDefault, List.of())).toList();
     }
 
     @Transactional
@@ -155,7 +173,7 @@ public class DeskAgentService {
         }
 
         Agent saved = agentRepository.save(agent);
-        return toResponse(saved, deskDefault);
+        return toResponse(saved, deskDefault, List.of());
     }
 
     @Transactional
@@ -171,6 +189,6 @@ public class DeskAgentService {
 
         agent.setContractedHoursPerDay(BigDecimals.normalize(hours));
         Agent saved = agentRepository.save(agent);
-        return toResponse(saved, deskDefault);
+        return toResponse(saved, deskDefault, List.of());
     }
 }
