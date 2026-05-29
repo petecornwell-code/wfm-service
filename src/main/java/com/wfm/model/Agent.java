@@ -35,6 +35,10 @@ public class Agent {
     @Column(name = "job_title")
     private String jobTitle;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "employment_type", nullable = false, length = 20)
+    private EmploymentType employmentType = EmploymentType.FULL_TIME;
+
     @Column(nullable = false)
     private boolean active = true;
 
@@ -83,6 +87,9 @@ public class Agent {
 
     public String getJobTitle() { return jobTitle; }
     public void setJobTitle(String jobTitle) { this.jobTitle = jobTitle; }
+
+    public EmploymentType getEmploymentType() { return employmentType; }
+    public void setEmploymentType(EmploymentType employmentType) { this.employmentType = employmentType; }
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
