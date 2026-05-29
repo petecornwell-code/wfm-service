@@ -44,6 +44,9 @@ export default function DeskAgents() {
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
 
+  // Employment type filter
+  const [empTypeFilter, setEmpTypeFilter] = useState('')
+
   // Export
   const [exporting, setExporting] = useState(false)
 
@@ -224,7 +227,8 @@ export default function DeskAgents() {
     return sortDir === 'asc' ? ' \u2191' : ' \u2193'
   }
 
-  const filteredAgents = showActiveOnly ? agentList.filter(da => da.active) : agentList
+  const filteredAgents = (showActiveOnly ? agentList.filter(da => da.active) : agentList)
+    .filter(da => empTypeFilter === '' || da.employmentType === empTypeFilter)
 
   const sortedAgents = useMemo(() => {
     if (!sortField) return filteredAgents
@@ -266,6 +270,11 @@ export default function DeskAgents() {
           <input type="checkbox" checked={showActiveOnly} onChange={e => setShowActiveOnly(e.target.checked)} />
           Active only
         </label>
+        <select value={empTypeFilter} onChange={e => setEmpTypeFilter(e.target.value)} style={{ fontSize: '0.85rem' }}>
+          <option value="">All</option>
+          <option value="FULL_TIME">Full-time</option>
+          <option value="PART_TIME">Part-time</option>
+        </select>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
@@ -289,9 +298,9 @@ export default function DeskAgents() {
             <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('lastName')}>
               Last Name{sortIndicator('lastName')}
             </th>
-            <th>ID</th><th>Email</th><th>Department</th><th>Job Title</th>
+            <th>ID</th><th>Email</th><th>Department</th><th>Job Title</th><th>Emp Type</th>
             <th>Primary Spec</th><th>Secondary Specs</th><th>Hours/Day</th>
-            <th>Active</th><th>Last Refreshed</th><th>Actions</th>
+            <th>Active</th><th>Last Refreshed</th><th>PTO</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -303,6 +312,7 @@ export default function DeskAgents() {
               <td>{da.email}</td>
               <td>{da.department}</td>
               <td>{da.jobTitle}</td>
+              <td>{da.employmentType === 'FULL_TIME' ? 'Full-time' : da.employmentType === 'PART_TIME' ? 'Part-time' : '—'}</td>
               <td>
                 {editSpecAgentId === da.id ? (
                   <select value={editPrimary} onChange={e => setEditPrimary(e.target.value)}>
@@ -355,6 +365,26 @@ export default function DeskAgents() {
               </td>
               <td>{da.active ? 'Yes' : 'No'}</td>
               <td style={{ fontSize: '0.8rem' }}>{da.lastRefreshedAt ? new Date(da.lastRefreshedAt).toLocaleDateString() : '—'}</td>
+              <td>
+                {da.pendingPtoCount > 0 ? (
+                  <span
+                    title={da.pendingPtoDates.join(', ')}
+                    style={{
+                      display: 'inline-block',
+                      background: '#fef9c3',
+                      color: '#92400e',
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: '4px',
+                      fontSize: '0.85rem',
+                      fontWeight: 400,
+                      cursor: 'default',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {da.pendingPtoCount} pending PTO
+                  </span>
+                ) : '—'}
+              </td>
               <td>
                 <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
                   <Link to={`/desks/${deskId}/agents/${da.id}/preferences`} style={{ fontSize: '0.8rem' }}>Prefs</Link>
