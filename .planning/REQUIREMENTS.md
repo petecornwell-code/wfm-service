@@ -10,7 +10,7 @@
 
 ### Schedule Quality
 
-- [ ] **QUAL-01**: Solver ensures every agent receives exactly 2 contiguous days off per week (their "weekend")
+- [x] **QUAL-01**: Solver ensures every agent receives exactly 2 contiguous days off per week (their "weekend")
 - [ ] **QUAL-02**: Solver distributes desirable weekend positions (e.g. Sat/Sun, Fri/Sat) fairly across agents — no agent consistently gets the same popular or unpopular slots
 - [ ] **QUAL-03**: Solver applies day-to-day consistency so each agent's scheduled daily hours match their standard contracted daily pattern (no erratic variation within a week)
 - [ ] **QUAL-04**: After each solve, operator sees preference satisfaction rate (% of agent shift preferences honoured) on the schedule results page
@@ -64,7 +64,7 @@
 | DATA-01 | Phase 5 | Pending |
 | DATA-02 | Phase 5 | Pending |
 | DATA-03 | Phase 5 | Pending |
-| QUAL-01 | Phase 6 | Pending |
+| QUAL-01 | Phase 6 | Complete |
 | QUAL-02 | Phase 6 | Pending |
 | QUAL-03 | Phase 6 | Pending |
 | RPT-01 | Phase 7 | Pending |
