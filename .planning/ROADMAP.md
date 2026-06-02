@@ -22,7 +22,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 <details open>
 <summary>v1.1 Schedule Quality & Reporting (Phases 5–8)</summary>
 
-- [ ] **Phase 5: Agent Data Enrichment & Desk Upload** - BambooHR employment type + job title sync, non-schedulable exclusion, desk bulk upload frontend, PTO sync bug fixes
+- [x] **Phase 5: Agent Data Enrichment & Desk Upload** - BambooHR employment type + job title sync, non-schedulable exclusion, desk bulk upload frontend, PTO sync bug fixes
 - [ ] **Phase 6: Solver Quality Constraints** - Contiguous days-off, fairness distribution, day-to-day hours consistency constraints
 - [ ] **Phase 7: Coverage, Utilization & Diagnostics** - Coverage report, agent utilization report, preference satisfaction metric, PTO diagnostic, week-over-week hours variance
 - [ ] **Phase 8: Export, Score Breakdown & Tuning** - Excel/PDF export improvements, solver score breakdown UI, constraint weight tuning UI
@@ -37,7 +37,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 2. Security Cleanup & OIDC Setup | 1/2 | Deferred | - |
 | 3. Infrastructure Provisioning | 1/2 | Deferred | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Deferred | - |
-| 5. Agent Data Enrichment & Desk Upload | 0/5 | Planned | - |
+| 5. Agent Data Enrichment & Desk Upload | 5/5 | Complete | 2026-06-02 |
 | 6. Solver Quality Constraints | 0/TBD | Not started | - |
 | 7. Coverage, Utilization & Diagnostics | 0/TBD | Not started | - |
 | 8. Export, Score Breakdown & Tuning | 0/TBD | Not started | - |
@@ -96,7 +96,7 @@ Plans:
 - [x] 05-02-PLAN.md — BambooHR integration: employmentHistoryStatus pull, 503/429 onStatus translation, mapping rule, JobTitleConfig auto-populate, BambooSyncEvent recording, /api/v1/job-titles and /api/v1/configuration/bamboohr/sync-status endpoints
 - [x] 05-03-PLAN.md — Solver fixes: PTO filter (APPROVED-only, MANDATORY-always) + non-schedulable agent eligibility filter in SolverService
 - [x] 05-04-PLAN.md — Upload service + DTO enrichment: header-based shape detection (6-col legacy + 16-col enriched), structured SkippedRow, non-schedulable rejection on both upload and manual assign paths, DeskAgentResponse adds employmentType + pendingPto (bulk-fetched)
-- [ ] 05-05-PLAN.md — Frontend UI: api/client.ts types + endpoints, DeskAgents Emp Type column + filter + PTO badge, Configuration Non-Schedulable Job Titles section + Sync Status card, ClientManagement Upload Results modal
+- [x] 05-05-PLAN.md — Frontend UI: api/client.ts types + endpoints, DeskAgents Emp Type column + filter + PTO badge, Configuration Non-Schedulable Job Titles section + Sync Status card, ClientManagement Upload Results modal
 
 ### Phase 6: Solver Quality Constraints
 **Goal**: Solver enforces fair, predictable shift patterns — every agent gets contiguous days off, desirable positions rotate fairly, and daily hours stay consistent
