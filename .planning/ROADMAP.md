@@ -73,7 +73,12 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 ---
 
-## Phase Details
+## v1.1 Schedule Quality & Reporting — Phase Details
+
+<!-- Keep the version token in the heading above. The SDK resolves the active milestone
+     by matching the milestone version against a markdown heading; if it is absent here,
+     roadmap.analyze and gsd-stats under-report zero phases because the phase detail
+     sections fall outside the current-milestone slice. -->
 
 ### Phase 5: Agent Data Enrichment & Desk Upload
 **Goal**: Operators have richer agent data from BambooHR and can bulk-assign agents to desks via spreadsheet; PTO sync is reliable
