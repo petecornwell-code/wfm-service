@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
@@ -251,17 +252,68 @@ public class BambooRefreshService {
         }
         agentDayOffRepository.flush();
 
+        // 5a. Generate MANDATORY AgentDayOff rows from each agent's BambooHR working-days pattern (D-03).
+        // MANDATORY rows are generated BEFORE the PTO loop so putIfAbsent gives them priority (Pitfall 5).
+        // employeesByBambooId is already built above (step 3) — reuse it here.
+        Map<String, AgentDayOff> dedupedDaysOff = new LinkedHashMap<>();
+        int dataGapCount = 0;
+        for (Agent agent : currentDeskAgentsList) {
+            if (agent.getBamboohrId() == null || !refreshedAgentIds.contains(agent.getId())) continue;
+            BambooEmployee emp = employeesByBambooId.get(agent.getBamboohrId());
+            if (emp == null) continue;
+
+            Optional<Set<DayOfWeek>> workingDaysOpt =
+                    WorkingDaysParser.parseWorkingDays(emp.customWorkingdays());
+
+            if (workingDaysOpt.isEmpty()) {
+                // Data gap: blank or Variable customWorkingdays — exclude from solver (D-07)
+                dataGapCount++;
+                agent.setWorkingDaysKnown(false);
+                agentRepository.save(agent);
+                continue;
+            }
+
+            agent.setWorkingDaysKnown(true);
+            agentRepository.save(agent);
+
+            Set<DayOfWeek> offDays = WorkingDaysParser.offDaysFrom(workingDaysOpt.get());
+
+            // Outlier flag (D-05): patterns with != 2 contiguous off-days are unusual; log agent id only (T-6-ID)
+            if (!WorkingDaysParser.isStandardTwoContiguousDaysOff(offDays)) {
+                log.warn("Agent {} (id={}) has non-standard off-day pattern: {} off-day(s). " +
+                         "Schedule will honour pattern literally (D-04).",
+                         agent.getName(), agent.getId(), offDays.size());
+            }
+
+            // Generate a MANDATORY AgentDayOff for every off-day within the refresh window
+            LocalDate cursor = from;
+            while (!cursor.isAfter(to)) {
+                if (offDays.contains(cursor.getDayOfWeek())) {
+                    AgentDayOff dayOff = new AgentDayOff();
+                    dayOff.setTenantId(tenantId);
+                    dayOff.setAgent(agent);
+                    dayOff.setDate(cursor);
+                    dayOff.setType(DayOffType.MANDATORY);
+                    dayOff.setStatus(DayOffStatus.APPROVED);  // A3: MANDATORY rows are facts, not requests
+                    String key = agent.getId() + "|" + cursor;
+                    dedupedDaysOff.putIfAbsent(key, dayOff);
+                }
+                cursor = cursor.plusDays(1);
+            }
+        }
+
         // Deduplicate by (agentId, date) — BambooHR can return overlapping time-off entries
         // for the same employee+date, which would violate the unique constraint.
-        // When duplicates exist, prefer MANDATORY over PTO.
-        Map<String, AgentDayOff> dedupedDaysOff = new LinkedHashMap<>();
+        // Priority: MANDATORY > PTO; within same type, APPROVED > REQUESTED.
+        // MANDATORY rows already in dedupedDaysOff win conflicts with PTO (putIfAbsent above).
         for (BambooTimeOff timeOff : timeOffs) {
             agentRepository.findByTenantIdAndBamboohrId(tenantId, timeOff.employeeId())
                     .ifPresent(agent -> {
                         if (!refreshedAgentIds.contains(agent.getId())) return;
                         String type = timeOff.type();
-                        DayOffType dayOffType = "MANDATORY".equalsIgnoreCase(type)
-                                || "holiday".equalsIgnoreCase(type)
+                        // D-03: "MANDATORY" string match removed — MANDATORY rows come from field 4517 only.
+                        // Keep "holiday" -> MANDATORY for BambooHR holiday entries.
+                        DayOffType dayOffType = "holiday".equalsIgnoreCase(type)
                                 ? DayOffType.MANDATORY : DayOffType.PTO;
                         DayOffStatus dayOffStatus = "approved".equalsIgnoreCase(timeOff.status())
                                 ? DayOffStatus.APPROVED : DayOffStatus.REQUESTED;
@@ -281,6 +333,14 @@ public class BambooRefreshService {
                         }
                     });
         }
+
+        // Data-gap summary (D-05/D-07): single warn after PTO loop so it covers the full refresh (T-6-RP)
+        if (dataGapCount > 0) {
+            log.warn("{} agent(s) on desk {} have blank/Variable customWorkingdays and will be " +
+                     "excluded from scheduling (D-07). Populate BambooHR field 4517 to include them.",
+                     dataGapCount, deskId);
+        }
+
         for (AgentDayOff dayOff : dedupedDaysOff.values()) {
             agentDayOffRepository.save(dayOff);
         }
