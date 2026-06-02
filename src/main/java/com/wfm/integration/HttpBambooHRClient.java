@@ -133,7 +133,7 @@ public class HttpBambooHRClient implements BambooHRClient {
         String requestBody = """
                 {
                   "title": "WFM Employee Report",
-                  "fields": ["id", "displayName", "workEmail", "department", "jobTitle", "status", "employmentHistoryStatus"]
+                  "fields": ["id", "displayName", "workEmail", "department", "jobTitle", "status", "employmentHistoryStatus", "4517"]
                 }
                 """;
 
@@ -166,12 +166,13 @@ public class HttpBambooHRClient implements BambooHRClient {
                 String jobTitle = emp.path("jobTitle").asText("");
                 String status = emp.path("status").asText("Active");
                 String employmentHistoryStatus = emp.path("employmentHistoryStatus").asText("");
+                String customWorkingdays = emp.path("customWorkingdays").asText(null);
 
                 if (id.isEmpty()) continue;
 
                 employees.add(new BambooEmployee(
                         id, displayName, workEmail, department, jobTitle, status,
-                        employmentHistoryStatus,
+                        employmentHistoryStatus, customWorkingdays,
                         wfmTenantId, project
                 ));
             }
