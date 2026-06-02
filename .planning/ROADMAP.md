@@ -38,7 +38,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 3. Infrastructure Provisioning | 1/2 | Deferred | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Deferred | - |
 | 5. Agent Data Enrichment & Desk Upload | 5/5 | Complete | 2026-06-02 |
-| 6. Solver Quality Constraints | 1/3 | In Progress|  |
+| 6. Solver Quality Constraints | 2/3 | In Progress|  |
 | 7. Coverage, Utilization & Diagnostics | 0/TBD | Not started | - |
 | 8. Export, Score Breakdown & Tuning | 0/TBD | Not started | - |
 
@@ -111,7 +111,7 @@ Plans:
   5. PTO behaviour is unchanged (APPROVED blocks, REQUESTED visible-only); the solver engine is unchanged — this phase feeds it correct data; the dead "MANDATORY".equalsIgnoreCase(type) match is removed
 **Plans**: 3 plans
   - [x] 06-01-PLAN.md — BambooHR API key rotation (blocking security gate) + tolerant WorkingDaysParser (TDD) [wave 1]
-  - [ ] 06-02-PLAN.md — Plumb field 4517 through BambooEmployee / HttpBambooHRClient / MockBambooHRClient [wave 2]
+  - [x] 06-02-PLAN.md — Plumb field 4517 through BambooEmployee / HttpBambooHRClient / MockBambooHRClient [wave 2]
   - [ ] 06-03-PLAN.md — Generate MANDATORY rows, data-gap exclusion (V28 migration), outlier flags, retire dead match, verify PTO tab [wave 3]
 
 ### Phase 7: Coverage, Utilization & Diagnostics
