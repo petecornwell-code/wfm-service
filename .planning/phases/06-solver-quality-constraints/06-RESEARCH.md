@@ -586,22 +586,25 @@ static List<Agent> filterEligible(List<Agent> agents, long tenantId,
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **BambooHR API key rotation**
    - What we know: Key `ad2bb…2be` was pasted in chat 2026-06-02.
    - What's unclear: Whether it has already been rotated since.
    - Recommendation: Make key rotation a Wave 0 / pre-deploy task in the plan.
+   - **RESOLVED:** Implemented as plan 06-01 Task 0 — a `[BLOCKING]`, non-autonomous Wave 0 human checkpoint (T-6-SC) with a clean-tree `git grep` acceptance check, gating deploy.
 
 2. **Exact surfacing mechanism for data-gap / outlier flags**
    - What we know: `BambooSyncEvent` already carries `agentsSynced` and `timeOffPulled` counts; the sync status card in `Configuration.tsx` displays these. The full record and DTO are defined.
    - What's unclear: Whether to add `dataGapCount` and `outlierCount` to `BambooSyncEvent` (requires DB migration + DTO change) or just log.warn for this phase and defer to Phase 7 DIAG.
    - Recommendation: For Phase 6, add two nullable Integer fields (`mandatoryDataGapAgents`, `mandatoryOutlierAgents`) to `BambooSyncEvent` + matching DTO and UI display. This is a small DB migration (one ALTER TABLE) and avoids DIAG phase doing a breaking change to a table that could be clean from the start. However, if the planner decides this is premature, log.warn MVP is acceptable — flag as Claude's Discretion.
+   - **RESOLVED:** CONTEXT.md marks this Claude's Discretion. Plan 06-03 implements the `log.warn` MVP for data-gap + outlier surfacing and defers the `BambooSyncEvent` schema change to Phase 7 DIAG (stated in 06-03 `<interfaces>`).
 
 3. **DB migration: `workingDaysKnown` flag on Agent**
    - What we know: The Agent entity currently has no working-days field. D-07 exclusion needs a signal.
    - What's unclear: Whether to store the flag on Agent (one column, explicit) or derive it from the absence of MANDATORY rows.
    - Recommendation: Store as `working_days_known BOOLEAN NOT NULL DEFAULT TRUE`. Default TRUE means existing agents (before first refresh) are not incorrectly excluded. After refresh, the flag is set based on `WorkingDaysParser` result.
+   - **RESOLVED:** Adopted as-recommended — plan 06-03 Task 1 adds `working_days_known BOOLEAN NOT NULL DEFAULT TRUE` via Flyway `V28` (analog `V25`, DEFAULT TRUE kept permanently) and appends `.filter(Agent::isWorkingDaysKnown)` to `SolverService.filterEligible`.
 
 ---
 
