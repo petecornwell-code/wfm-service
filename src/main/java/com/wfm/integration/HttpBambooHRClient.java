@@ -207,6 +207,7 @@ public class HttpBambooHRClient implements BambooHRClient {
                     emp.path("jobTitle").asText(""),
                     emp.path("status").asText("Active"),
                     "",
+                    null,  // customWorkingdays: not fetched by getEmployee (bulk report only)
                     "", ""
             );
         } catch (Exception e) {
