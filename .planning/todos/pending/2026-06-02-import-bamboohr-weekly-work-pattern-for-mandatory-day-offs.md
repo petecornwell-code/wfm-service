@@ -35,22 +35,29 @@ already treats `MANDATORY` as "always blocks, any status" — fully built but de
 Only `MockBambooHRClient.java:165` ever produces MANDATORY, so this passed UAT
 under the mock but does nothing in prod.
 
-## Solution
+## Solution (REVISED 2026-06-02 — much smaller than first thought)
 
-1. **Discover** the real BambooHR weekday field name(s)/alias via `GET /meta/fields`
-   (BambooHR API is public; creds live in prod RDS `app_configuration`:
-   `BAMBOOHR_SERVER` + `BAMBOOHR_API_KEY`). Pending — needs the live lookup
-   (ECS Exec disabled + RDS private, so run from a machine with the subdomain+key,
-   or Pete supplies them).
-2. **Pull** the field(s) by adding their IDs/aliases to the custom-report `fields`
-   array (`HttpBambooHRClient.java:133-137`).
-3. **Model** the weekly pattern on `BambooEmployee` (e.g. a 7-bit working-day mask
-   or Set<DayOfWeek> off-days).
-4. **Generate** recurring `DayOffType.MANDATORY` `AgentDayOff` rows for each
-   employee's non-working weekdays across the schedule horizon (in
-   `BambooRefreshService.persistRefreshData`).
-5. **Retire** the dead time-off-type string match for MANDATORY at
-   `BambooRefreshService.java:263`.
+Per Pete: the signal is the time-off **`amount`** under Category=PTO, which we
+ALREADY FETCH from `/time_off/requests` but DISCARD:
+- amount **0** → mandatory day off (scheduled weekend)
+- amount **1** → actual PTO (real leave)
+
+`HttpBambooHRClient.fetchTimeOffByStatus` (HttpBambooHRClient.java:259-272) reads
+`dates.fieldNames()` (the date keys) and never reads `dates.get(date)` (the amount)
+— the code comment at :258 literally says the map is "keyed by date string →
+amount". No new field pull, no work-schedule endpoint, no /meta/fields needed.
+
+1. **Capture the amount**: in `HttpBambooHRClient` read the value at each date key
+   (`dates.path(dateStr).asDouble()` / asText) in BOTH the object branch (:260) and
+   the array/start-end fallbacks (:273, :285).
+2. **Carry it**: add `double amount` (or a derived `boolean mandatory`) to
+   `BambooTimeOff` (BambooTimeOff.java).
+3. **Map by amount** in `BambooRefreshService` (replacing the dead
+   `"MANDATORY".equalsIgnoreCase(type)` match at :263):
+   amount==0 → `DayOffType.MANDATORY`; amount>=1 → `DayOffType.PTO`.
+4. Solver unchanged: MANDATORY always blocks; PTO blocks only when APPROVED
+   (SolverService.java:951-957).
+5. Update `MockBambooHRClient` to emit amount-coded entries so the mock matches.
 
 **Phase 6 design implication (reconcile before planning Phase 6):** Phase 6 SC-1
 says "every agent gets exactly 2 contiguous days off per week." If each agent's 2
@@ -61,8 +68,12 @@ solver-constraint design.
 
 ## Open questions
 
-- Exact BambooHR field representation: 7 per-day custom fields (Mon–Sun = 1/0)? a
-  single "Work Schedule"/"Days Off" field? or BambooHR's built-in work-schedule
-  endpoint (`/employees/{id}/tables/...`)? — resolve via `/meta/fields`.
-- Does 1 mean "working" or "day off"? Confirm polarity during discovery.
-- Are patterns guaranteed to be exactly 2 consecutive days, or can they vary?
+- **COMPLETENESS (blocking):** amount-0 rows only exist INSIDE a time-off request's
+  date range. Does BambooHR record amount-0 weekend rows for an employee EVERY week,
+  or only for weekends that fall within/next to a PTO request? If only near PTO, we'd
+  miss most mandatory days off for employees with no upcoming leave — and would then
+  need a work-schedule field after all (back to /meta/fields). Verify against the
+  spreadsheet before implementing.
+- Polarity confirmed (Pete 2026-06-02): amount 0 = mandatory day off, amount 1 = PTO.
+- Confirm amount granularity: is it always 0/1, or can it be fractional/hours
+  (e.g. 0.5, 8)? Affects the `>=1 → PTO` rule.
