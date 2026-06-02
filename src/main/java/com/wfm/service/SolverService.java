@@ -969,6 +969,7 @@ public class SolverService {
      *   1. Agent::isActive
      *   2. !agentEligibilityService.isNonSchedulable(tenantId, jobTitle)
      *   3. primarySpecialization != null
+     *   4. Agent::isWorkingDaysKnown — excludes data-gap agents (blank/Variable customWorkingdays, D-07)
      * Order of surviving agents is preserved.
      */
     static List<Agent> filterEligible(List<Agent> agents, long tenantId,
@@ -977,6 +978,7 @@ public class SolverService {
                 .filter(Agent::isActive)
                 .filter(a -> !agentEligibilityService.isNonSchedulable(tenantId, a.getJobTitle()))
                 .filter(a -> a.getPrimarySpecialization() != null)
+                .filter(Agent::isWorkingDaysKnown)
                 .toList();
     }
 }

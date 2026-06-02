@@ -128,7 +128,12 @@ class BambooRefreshServiceTest {
 
     private BambooEmployee emp(String id, String jobTitle) {
         return new BambooEmployee(id, "Name " + id, id + "@example.com", "Dept",
-                jobTitle, "Active", "Full-time", String.valueOf(TENANT), "Project");
+                jobTitle, "Active", "Full-time", "Mon-Fri", String.valueOf(TENANT), "Project");
+    }
+
+    private BambooEmployee emp(String id, String jobTitle, String customWorkingdays) {
+        return new BambooEmployee(id, "Name " + id, id + "@example.com", "Dept",
+                jobTitle, "Active", "Full-time", customWorkingdays, String.valueOf(TENANT), "Project");
     }
 
     // -----------------------------------------------------------------------

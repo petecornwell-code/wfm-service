@@ -42,6 +42,9 @@ public class Agent {
     @Column(nullable = false)
     private boolean active = true;
 
+    @Column(name = "working_days_known", nullable = false)
+    private boolean workingDaysKnown = true;
+
     @Column(name = "last_refreshed_at")
     private OffsetDateTime lastRefreshedAt;
 
@@ -93,6 +96,9 @@ public class Agent {
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+
+    public boolean isWorkingDaysKnown() { return workingDaysKnown; }
+    public void setWorkingDaysKnown(boolean workingDaysKnown) { this.workingDaysKnown = workingDaysKnown; }
 
     public OffsetDateTime getLastRefreshedAt() { return lastRefreshedAt; }
     public void setLastRefreshedAt(OffsetDateTime lastRefreshedAt) { this.lastRefreshedAt = lastRefreshedAt; }

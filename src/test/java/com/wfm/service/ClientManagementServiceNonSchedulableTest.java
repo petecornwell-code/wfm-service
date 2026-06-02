@@ -89,7 +89,7 @@ class ClientManagementServiceNonSchedulableTest {
     private void seedCache(String bambooId, String name, String jobTitle) {
         com.wfm.integration.BambooEmployee emp = new com.wfm.integration.BambooEmployee(
                 bambooId, name, name.toLowerCase() + "@example.com", "Dept", jobTitle, "Active",
-                "Active", String.valueOf(TENANT_ID), null);
+                "Active", "Mon-Fri", String.valueOf(TENANT_ID), null);
         when(bambooHRClient.listEmployees(anyString(), anyString())).thenReturn(List.of(emp));
         service.listEmployeesByDepartment(String.valueOf(TENANT_ID), "Dept", true);
     }
@@ -161,10 +161,10 @@ class ClientManagementServiceNonSchedulableTest {
 
         com.wfm.integration.BambooEmployee empNs = new com.wfm.integration.BambooEmployee(
                 nsId, "Xavier", "xavier@example.com", "Dept", NON_SCHEDULABLE_TITLE, "Active",
-                "Active", String.valueOf(TENANT_ID), null);
+                "Active", "Mon-Fri", String.valueOf(TENANT_ID), null);
         com.wfm.integration.BambooEmployee empReg = new com.wfm.integration.BambooEmployee(
                 regularId, "Yara", "yara@example.com", "Dept", REGULAR_TITLE, "Active",
-                "Active", String.valueOf(TENANT_ID), null);
+                "Active", "Mon-Fri", String.valueOf(TENANT_ID), null);
         when(bambooHRClient.listEmployees(anyString(), anyString())).thenReturn(List.of(empNs, empReg));
         service.listEmployeesByDepartment(String.valueOf(TENANT_ID), "Dept", true);
 

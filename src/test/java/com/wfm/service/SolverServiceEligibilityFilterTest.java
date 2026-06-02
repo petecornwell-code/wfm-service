@@ -90,6 +90,36 @@ class SolverServiceEligibilityFilterTest {
     // Order preservation
     // -----------------------------------------------------------------
 
+    // -----------------------------------------------------------------
+    // workingDaysKnown criterion (D-07)
+    // -----------------------------------------------------------------
+
+    @Test
+    void activeAgentWithPrimarySpec_workingDaysUnknown_isExcluded() {
+        AgentEligibilityService elig = eligServiceFor("Support Rep", false);
+        Agent agent = agent(true, "Support Rep", primarySpec());
+        agent.setWorkingDaysKnown(false);  // data-gap agent (blank/Variable customWorkingdays)
+
+        List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void activeAgentWithPrimarySpec_workingDaysKnown_isIncluded() {
+        AgentEligibilityService elig = eligServiceFor("Support Rep", false);
+        Agent agent = agent(true, "Support Rep", primarySpec());
+        agent.setWorkingDaysKnown(true);  // explicitly set (default is also true)
+
+        List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
+
+        assertThat(result).containsExactly(agent);
+    }
+
+    // -----------------------------------------------------------------
+    // Order preservation
+    // -----------------------------------------------------------------
+
     @Test
     void filterPreservesOrderOfSurvivingAgents() {
         JobTitleConfigRepository repo = mock(JobTitleConfigRepository.class);
