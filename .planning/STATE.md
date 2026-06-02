@@ -2,10 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Schedule Quality & Reporting
-status: executing
-stopped_at: Phase 6 context gathered (PTO & Weekends focus)
+status: checkpoint:human-verify
+stopped_at: "06-03 Tasks 1-2 committed; awaiting Task 3 human-verify (MANDATORY PTO tab + desk coverage)"
 last_updated: "2026-06-02T22:24:41.864Z"
 last_activity: 2026-06-02
+last_checkpoint: "06-03 Task 3 — human-verify MANDATORY weekends in PTO tab"
 progress:
   total_phases: 4
   completed_phases: 1
