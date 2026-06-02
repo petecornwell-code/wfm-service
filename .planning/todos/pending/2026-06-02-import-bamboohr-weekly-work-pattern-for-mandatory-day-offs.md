@@ -35,29 +35,49 @@ already treats `MANDATORY` as "always blocks, any status" — fully built but de
 Only `MockBambooHRClient.java:165` ever produces MANDATORY, so this passed UAT
 under the mock but does nothing in prod.
 
-## Solution (REVISED 2026-06-02 — much smaller than first thought)
+## Solution (REVISED-2 2026-06-02 — real source found: the desk-upload spreadsheet)
 
-Per Pete: the signal is the time-off **`amount`** under Category=PTO, which we
-ALREADY FETCH from `/time_off/requests` but DISCARD:
-- amount **0** → mandatory day off (scheduled weekend)
-- amount **1** → actual PTO (real leave)
+The weekly pattern is ALREADY in the enriched desk-assignment upload (a BambooHR
+export operators upload), in the **Monday…Sunday columns** — and the parser
+discards them. Confirmed against `src/main/resources/sample-data/production_agents.xlsx`:
+each weekday cell is empty (= working) or contains a marker string `Weekend`
+(= that employee's mandatory day off). Varies per employee (any two days).
 
-`HttpBambooHRClient.fetchTimeOffByStatus` (HttpBambooHRClient.java:259-272) reads
-`dates.fieldNames()` (the date keys) and never reads `dates.get(date)` (the amount)
-— the code comment at :258 literally says the map is "keyed by date string →
-amount". No new field pull, no work-schedule endpoint, no /meta/fields needed.
+`DeskAssignmentUploadService` REQUIRES monday+sunday headers for ENRICHED_16COL
+shape detection (DeskAssignmentUploadService.java:117-119) but the row loop
+(:165+) only reads bamboohrId/name/email/desk/specialty — the day columns are
+never read. No BambooHR API change, no /meta/fields, no prod creds.
 
-1. **Capture the amount**: in `HttpBambooHRClient` read the value at each date key
-   (`dates.path(dateStr).asDouble()` / asText) in BOTH the object branch (:260) and
-   the array/start-end fallbacks (:273, :285).
-2. **Carry it**: add `double amount` (or a derived `boolean mandatory`) to
-   `BambooTimeOff` (BambooTimeOff.java).
-3. **Map by amount** in `BambooRefreshService` (replacing the dead
-   `"MANDATORY".equalsIgnoreCase(type)` match at :263):
-   amount==0 → `DayOffType.MANDATORY`; amount>=1 → `DayOffType.PTO`.
-4. Solver unchanged: MANDATORY always blocks; PTO blocks only when APPROVED
+**DIRECTION (Pete 2026-06-02): pull from BambooHR API directly — not the upload.**
+The Monday…Sunday "Weekend" columns in production_agents.xlsx are a BambooHR
+*export*, which proves BambooHR holds the per-employee weekly schedule. Preferred
+source of truth is the API (automated sync, no manual upload dependency).
+
+Rejected:
+- time-off `amount==0` (Pete confirmed): only appears INSIDE a PTO date range →
+  employees with no upcoming leave get no mandatory blocks. Incomplete.
+
+Open investigation — HOW is the schedule exposed by the BambooHR API?
+- Likely 7 custom fields (Monday…Sunday, value "Weekend"/empty) → discover via
+  `GET /meta/fields/` and pull by adding their IDs to the existing
+  `POST /reports/custom` fields array (HttpBambooHRClient.java:133-137).
+- OR a BambooHR work-schedule **table** → discover via `GET /meta/tables/`, pull
+  via `/employees/{id}/tables/{table}`.
+- BLOCKER: discovery needs subdomain+API key (prod RDS app_configuration;
+  RDS private + ECS Exec disabled). Pete to run /meta lookup or supply creds.
+
+Plan once fields known:
+1. Add the weekday field(s)/table to the BambooHR pull (HttpBambooHRClient +
+   BambooEmployee weekly-pattern field).
+2. In `BambooRefreshService`, generate recurring `DayOffType.MANDATORY` AgentDayOff
+   rows for each employee's off weekdays across the schedule horizon (replacing the
+   dead `"MANDATORY".equalsIgnoreCase(type)` match at :263).
+3. Solver unchanged: MANDATORY always blocks; PTO blocks only when APPROVED
    (SolverService.java:951-957).
-5. Update `MockBambooHRClient` to emit amount-coded entries so the mock matches.
+
+FALLBACK (proven, no creds needed): parse the discarded Monday…Sunday columns the
+enriched desk-upload already requires (DeskAssignmentUploadService.java:117-119 vs
+:165+ which never reads them). Use only if the API can't expose the schedule.
 
 **Phase 6 design implication (reconcile before planning Phase 6):** Phase 6 SC-1
 says "every agent gets exactly 2 contiguous days off per week." If each agent's 2
