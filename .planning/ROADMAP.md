@@ -98,16 +98,21 @@ Plans:
 - [x] 05-04-PLAN.md — Upload service + DTO enrichment: header-based shape detection (6-col legacy + 16-col enriched), structured SkippedRow, non-schedulable rejection on both upload and manual assign paths, DeskAgentResponse adds employmentType + pendingPto (bulk-fetched)
 - [x] 05-05-PLAN.md — Frontend UI: api/client.ts types + endpoints, DeskAgents Emp Type column + filter + PTO badge, Configuration Non-Schedulable Job Titles section + Sync Status card, ClientManagement Upload Results modal
 
-### Phase 6: Solver Quality Constraints
-**Goal**: Solver enforces fair, predictable shift patterns — every agent gets contiguous days off, desirable positions rotate fairly, and daily hours stay consistent
-**Depends on**: Phase 5 (DATA-03 non-schedulable exclusion must be in place before solving)
-**Requirements**: QUAL-01, QUAL-02, QUAL-03
+### Phase 6: Solver Quality Constraints — PTO & Weekends (QUAL-01)
+**Goal**: Every scheduled agent's BambooHR-sourced fixed weekly days off are imported as recurring MANDATORY blocks and honoured as hard constraints by the solver, with data-gap agents excluded and outliers surfaced
+**Re-scope note**: Re-scoped to QUAL-01 only (the mandatory day-off data foundation). QUAL-02 (weekend-position fairness) and QUAL-03 (day-to-day hours consistency) are DEFERRED to a follow-on phase (6b/7) per 06-CONTEXT.md.
+**Depends on**: Phase 5 (DATA-03 non-schedulable exclusion + BambooHR refresh pipeline must be in place before solving)
+**Requirements**: QUAL-01
 **Success Criteria** (what must be TRUE):
-  1. Every agent in a generated schedule has exactly 2 contiguous days off per week; no agent has split or isolated off-days
-  2. Weekend-position distribution (e.g. Sat/Sun off, Fri/Sat off) visibly rotates across agents over successive solves — no single agent always receives the most desirable or least desirable pattern
-  3. Each agent's daily scheduled hours match their contracted daily pattern within the week; erratic day-to-day variation is penalised and no longer appears in typical schedules
-  4. New fairness constraints use soft score only; accepted schedules remain feasible (0 hard violations) after the constraints are deployed
-**Plans**: TBD
+  1. Each scheduled agent with a parseable BambooHR "Working days" (field 4517) pattern receives recurring MANDATORY day-off rows for their off-days across the schedule horizon, honoured as hard solver blocks
+  2. The free-text BambooHR value parser handles every live format (ranges incl. week-wrap, "to" form, comma lists, trailing annotations, spelling variants) and never throws
+  3. Agents with Variable/blank working days are treated as a data gap — excluded from scheduling and surfaced to the operator
+  4. Outlier patterns (≠2 contiguous off-days, or 0 off-days) are flagged to the operator; MANDATORY weekends render in the ScheduleResults PTO tab within the schedule window
+  5. PTO behaviour is unchanged (APPROVED blocks, REQUESTED visible-only); the solver engine is unchanged — this phase feeds it correct data; the dead "MANDATORY".equalsIgnoreCase(type) match is removed
+**Plans**: 3 plans
+  - [ ] 06-01-PLAN.md — BambooHR API key rotation (blocking security gate) + tolerant WorkingDaysParser (TDD) [wave 1]
+  - [ ] 06-02-PLAN.md — Plumb field 4517 through BambooEmployee / HttpBambooHRClient / MockBambooHRClient [wave 2]
+  - [ ] 06-03-PLAN.md — Generate MANDATORY rows, data-gap exclusion (V28 migration), outlier flags, retire dead match, verify PTO tab [wave 3]
 
 ### Phase 7: Coverage, Utilization & Diagnostics
 **Goal**: Operators can see exactly where the schedule is thin, which agents are over- or under-utilised, whether preferences were honoured, and why PTO may not have synced
