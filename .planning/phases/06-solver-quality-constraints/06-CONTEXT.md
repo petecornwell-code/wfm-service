@@ -59,6 +59,15 @@ These belong to a follow-on phase (Phase 6b / 7). The roadmap should be split wh
 - **D-08:** Keep current PTO behaviour (shipped in plan 05-03): `DayOffStatus.APPROVED` PTO hard-blocks
   the day; `REQUESTED` PTO is visible in diagnostics but does NOT block scheduling. No change.
 
+### Weekend visibility in the UI
+- **D-10:** Weekends MUST be visible in the **Schedule Results → PTO tab**, labelled as **MANDATORY**.
+  The UI for this ALREADY EXISTS: `ScheduleResults.tsx` `PtoTab` renders an agent×date matrix that
+  already color-codes `type === 'MANDATORY'` cells red with a "MANDATORY" label + legend entry, fed by
+  `GET /desks/{deskId}/days-off?from&to` (`DayOffWithAgent`). So this is **verify-not-build**: the phase
+  must guarantee the generated `MANDATORY` `AgentDayOff` rows fall within the schedule window so they
+  appear, and confirm the existing label/legend/colour reads clearly as "mandatory". Only touch the UI
+  if the label needs clarifying (e.g. "Mandatory (Weekend)").
+
 ### Solver
 - **D-09:** No solver-engine change for mandatory blocks — `SolverService.buildAgentDaysOffMap()`
   (`SolverService.java:951-957`) already treats MANDATORY as "always blocks". This phase feeds it
@@ -95,6 +104,10 @@ These belong to a follow-on phase (Phase 6b / 7). The roadmap should be split wh
 - `src/main/java/com/wfm/service/SolverService.java:951-957` — `buildAgentDaysOffMap` (consumer, unchanged).
 - `src/main/java/com/wfm/model/DayOffType.java`, `DayOffStatus.java` — MANDATORY/PTO, APPROVED/REQUESTED.
 - `src/main/java/com/wfm/integration/MockBambooHRClient.java` — update mock to emit a `customWorkingdays`-style value.
+
+### UI surface (already built — verify only, per D-10)
+- `frontend/src/pages/ScheduleResults.tsx` — `PtoTab` already renders `type === 'MANDATORY'` cells (red, "MANDATORY" label + legend); fed by `daysOff.byDesk` → `GET /desks/{deskId}/days-off`.
+- `frontend/src/api/client.ts` — `DayOffWithAgent { type, status, agent }` and `daysOff.byDesk(deskId, from, to)`.
 
 ### External
 - BambooHR API — custom report fields by id: https://documentation.bamboohr.com/reference (field 4517 returns under alias `customWorkingdays`; built-in Work Schedule is NOT exposed, custom fields are).
