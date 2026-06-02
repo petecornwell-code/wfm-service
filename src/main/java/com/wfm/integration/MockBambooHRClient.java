@@ -58,6 +58,13 @@ public class MockBambooHRClient implements BambooHRClient {
             String lastName = LAST_NAMES[i % LAST_NAMES.length];
             String displayName = firstName + " " + lastName;
             String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + (i + 1) + "@vinted.example.com";
+            String customWorkingdays = switch (i % 5) {
+                case 0 -> "Mon-Fri";
+                case 1 -> "Sun-Thu";
+                case 2 -> "Tue-Sat";
+                case 3 -> "Variable";          // data gap — exercises D-07 exclusion
+                default -> "Mon. to Thurs.";   // 4-day week — exercises D-05 outlier flag
+            };
             pool.add(new BambooEmployee(
                 String.valueOf(i + 1),
                 displayName,
@@ -66,6 +73,7 @@ public class MockBambooHRClient implements BambooHRClient {
                 "Agent",
                 "Active",
                 i % 5 == 0 ? "Part-Time" : "Full-time",
+                customWorkingdays,
                 wfmTenantId,
                 "Vinted"
             ));
@@ -89,6 +97,13 @@ public class MockBambooHRClient implements BambooHRClient {
             String displayName = firstName + " " + lastName;
             String email = firstName.toLowerCase() + "." + lastName.toLowerCase() + (i + 1) + "@example.com";
             String department = project != null ? project : "Support";
+            String customWorkingdays = switch (i % 5) {
+                case 0 -> "Mon-Fri";
+                case 1 -> "Sun-Thu";
+                case 2 -> "Tue-Sat";
+                case 3 -> "Variable";          // data gap — exercises D-07 exclusion
+                default -> "Mon. to Thurs.";   // 4-day week — exercises D-05 outlier flag
+            };
             employees.add(new BambooEmployee(
                 String.valueOf(i + 1),
                 displayName,
@@ -97,6 +112,7 @@ public class MockBambooHRClient implements BambooHRClient {
                 "Agent",
                 "Active",
                 i % 5 == 0 ? "Part-Time" : "Full-time",
+                customWorkingdays,
                 wfmTenantId,
                 project
             ));
@@ -106,7 +122,7 @@ public class MockBambooHRClient implements BambooHRClient {
 
     @Override
     public BambooEmployee getEmployee(String bamboohrId) {
-        return new BambooEmployee(bamboohrId, "Mock Employee", "mock@example.com", "Support", "Agent", "Active", "Full-time", "1", "Default");
+        return new BambooEmployee(bamboohrId, "Mock Employee", "mock@example.com", "Support", "Agent", "Active", "Full-time", "Mon-Fri", "1", "Default");
     }
 
     @Override
