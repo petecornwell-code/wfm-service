@@ -71,27 +71,48 @@ Dept, Job Title, Status, Part-Time) with non-BambooHR/WFM columns (Desk,
 Monday…Sunday) — suggesting the schedule may be operator-maintained in the upload
 template, not a BambooHR API field.
 
-Open investigation — HOW is the schedule exposed by the BambooHR API?
-- Likely 7 custom fields (Monday…Sunday, value "Weekend"/empty) → discover via
-  `GET /meta/fields/` and pull by adding their IDs to the existing
-  `POST /reports/custom` fields array (HttpBambooHRClient.java:133-137).
-- OR a BambooHR work-schedule **table** → discover via `GET /meta/tables/`, pull
-  via `/employees/{id}/tables/{table}`.
-- BLOCKER: discovery needs subdomain+API key (prod RDS app_configuration;
-  RDS private + ECS Exec disabled). Pete to run /meta lookup or supply creds.
+RESOLVED — SOURCE CONFIRMED (live /meta/fields + /reports/custom on helpware tenant, 2026-06-02):
+The 7 weekday custom fields (ids 5553-5563, "Monday".."Sunday") EXIST but are
+EMPTY for all employees — red herring. The real source is custom field
+**"Working days" = field id 4517, report alias `customWorkingdays`** (under
+BambooHR Personal → Schedule). Sibling "Shift" = id 4516 / `customShift1` =
+work HOURS (e.g. "2 pm - 11 pm"), not relevant to days off.
+- Pullable via the EXISTING bulk `POST /reports/custom` — add `"4517"` to the
+  fields array; it returns under key `customWorkingdays`. NO per-employee fetch.
+  (Direct `GET /employees/{id}?fields=4517` also works.)
+- Coverage (company-wide, 11,707 employees): 5,241 populated (45%), 6,466 empty,
+  2,432 "Variable". So ~24% have a parseable fixed pattern; Variable/empty → no
+  fixed weekend (no MANDATORY; leave to solver/Phase 6).
+- VALUE FORMATS ARE FREE-TEXT AND MESSY — parser must handle all:
+  - range: "Mon-Fri", "Wed-Sun", "Sun-Thu", "Tue-Sat", "Mon - Sun" (spaces vary;
+    ranges WRAP the week, e.g. "Fri-Tue")
+  - "to" form: "Mon. to Thurs." (periods, "to", "Thurs.")
+  - comma list: "Mon, Tue, Wed, Thu, Sat" (explicit working days)
+  - annotations/suffixes: "Mon - Sun HOOP"
+  - "Variable" → no fixed schedule (skip)
+  - day tokens vary: Mon/Mon./Thu/Thur/Thurs. → normalize.
+- NOT always 2 consecutive days off: 4-day weeks ("Mon. to Thurs." → 3 off),
+  7-day weeks ("Mon - Sun" → 0 off), and non-consecutive ("Mon,Tue,Wed,Thu,Sat"
+  → off Fri+Sun) all occur. Rule = days off = {Mon..Sun} MINUS parsed working days.
 
-Plan once fields known:
-1. Add the weekday field(s)/table to the BambooHR pull (HttpBambooHRClient +
-   BambooEmployee weekly-pattern field).
-2. In `BambooRefreshService`, generate recurring `DayOffType.MANDATORY` AgentDayOff
-   rows for each employee's off weekdays across the schedule horizon (replacing the
+Plan:
+1. Add `4517` to the `/reports/custom` fields in `HttpBambooHRClient.listEmployees`
+   (:133-137); read `customWorkingdays` per row.
+2. Add a tolerant working-days parser → Set<DayOfWeek> off-days (handle range/wrap/
+   "to"/comma/annotation/Variable/empty per formats above).
+3. Carry off-days on `BambooEmployee`; persist per agent.
+4. In `BambooRefreshService`, generate recurring `DayOffType.MANDATORY` AgentDayOff
+   rows for each agent's off weekdays across the schedule horizon (replacing the
    dead `"MANDATORY".equalsIgnoreCase(type)` match at :263).
-3. Solver unchanged: MANDATORY always blocks; PTO blocks only when APPROVED
-   (SolverService.java:951-957).
+5. Solver unchanged: MANDATORY always blocks; PTO blocks only when APPROVED
+   (SolverService.java:951-957). Update MockBambooHRClient to emit a customWorkingdays-style value.
 
-FALLBACK (proven, no creds needed): parse the discarded Monday…Sunday columns the
-enriched desk-upload already requires (DeskAssignmentUploadService.java:117-119 vs
-:165+ which never reads them). Use only if the API can't expose the schedule.
+FALLBACK (no longer needed but proven): the enriched desk-upload Monday…Sunday
+columns also carry this ("Weekend"/empty) and are discarded
+(DeskAssignmentUploadService.java:117-119 vs :165+).
+
+SECURITY: BambooHR API key for helpware was pasted into chat 2026-06-02
+(ad2bb…2be) — ROTATE IT.
 
 **Phase 6 design implication (reconcile before planning Phase 6):** Phase 6 SC-1
 says "every agent gets exactly 2 contiguous days off per week." If each agent's 2
