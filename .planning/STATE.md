@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Schedule Quality & Reporting
 status: executing
-stopped_at: Phase 5 UI-SPEC approved
-last_updated: "2026-05-29T13:28:57.138Z"
-last_activity: 2026-05-29 -- Phase 05 execution started
+stopped_at: Phase 05 plan 05-05 paused at human-verify checkpoint (Task 5)
+last_updated: "2026-06-02"
+last_activity: 2026-06-02 -- Phase 05-05 tasks 1-4 committed; paused at blocking UAT gate
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 11
-  completed_plans: 4
-  percent: 36
+  completed_plans: 8
+  percent: 73
 ---
 
 # Project State
@@ -26,9 +26,29 @@ See: .planning/PROJECT.md (updated 2026-05-07)
 ## Current Position
 
 Phase: 05 (agent-data-enrichment-desk-upload) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 05
-Last activity: 2026-05-29 -- Phase 05 execution started
+Plan: 5 of 5 (05-05) — PAUSED at human-verify checkpoint (Task 5)
+Status: Awaiting operator UAT walk-through
+Last activity: 2026-06-02 -- Phase 05-05 tasks 1-4 complete; paused at blocking human-verify gate
+
+### 05-05 checkpoint detail
+
+Tasks 1-4 (auto) are complete and committed — no SUMMARY.md yet because Task 5 is a
+blocking `human-verify` checkpoint (plan is `autonomous: false`). This is an intentional
+pause, not a crash.
+
+| Task | File | Commit | On-disk check |
+|------|------|--------|---------------|
+| 1 | frontend/src/api/client.ts | 3d801cd | `jobTitleConfig` present |
+| 2 | frontend/src/pages/DeskAgents.tsx | 0762a08 | `empTypeFilter` present |
+| 3 | frontend/src/pages/Configuration.tsx | 3478db5 | `Non-Schedulable Job Titles` present |
+| 4 | frontend/src/pages/ClientManagement.tsx | c18059a | `uploadResult` present |
+| 5 | — (UAT walk-through) | — | BLOCKING — awaiting operator "approved" |
+
+**To resume:** re-run `/gsd-execute-phase 05`. The orchestrator must boot both servers
+(backend `./gradlew bootRun --args='--spring.profiles.active=mock'`, frontend
+`cd frontend && npm run dev`), then drive the 6-case checklist in 05-05-PLAN.md Task 5
+(also 05-VALIDATION.md "Manual-Only Verifications"). On "approved", write 05-05-SUMMARY.md
+and update STATE/ROADMAP progress to mark Phase 05 complete (then Phase 6 is next).
 
 ## Phase Summary (v1.1)
 
@@ -77,6 +97,6 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 
 ## Session Continuity
 
-Last session: 2026-05-11T16:35:42.438Z
-Stopped at: Phase 5 UI-SPEC approved
-Resume file: .planning/phases/05-agent-data-enrichment-desk-upload/05-UI-SPEC.md
+Last session: 2026-06-02
+Stopped at: Phase 05 plan 05-05 — paused at Task 5 human-verify checkpoint (tasks 1-4 committed, no SUMMARY pending operator UAT)
+Resume file: None (resume via /gsd-execute-phase 05)
