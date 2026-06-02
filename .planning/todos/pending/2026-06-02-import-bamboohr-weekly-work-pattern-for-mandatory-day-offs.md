@@ -57,6 +57,20 @@ Rejected:
 - time-off `amount==0` (Pete confirmed): only appears INSIDE a PTO date range →
   employees with no upcoming leave get no mandatory blocks. Incomplete.
 
+API-FEASIBILITY FINDING (2026-06-02, BambooHR docs):
+BambooHR's standard API does NOT expose work schedules. The field reference
+(documentation.bamboohr.com/docs/list-of-field-names) has no work-schedule /
+per-weekday / days-off field or table — only `standardHoursPerWeek` (count, not
+which days) and `paySchedule` (pay frequency). So if the weekday data is in
+BambooHR's built-in "Work Schedule" section (Pete's read), the API can't reach it.
+The ONLY API path that could work: the customer created CUSTOM fields
+(Monday…Sunday) — those WOULD appear in /meta/fields and be pullable via
+/reports/custom. Decisive test = run /meta/fields and look for weekday custom
+fields. Also note: production_agents.xlsx mixes BambooHR fields (Employee ID, Name,
+Dept, Job Title, Status, Part-Time) with non-BambooHR/WFM columns (Desk,
+Monday…Sunday) — suggesting the schedule may be operator-maintained in the upload
+template, not a BambooHR API field.
+
 Open investigation — HOW is the schedule exposed by the BambooHR API?
 - Likely 7 custom fields (Monday…Sunday, value "Weekend"/empty) → discover via
   `GET /meta/fields/` and pull by adding their IDs to the existing
