@@ -1,6 +1,6 @@
 # Milestones
 
-## v1.1 Schedule Quality & Reporting (Closed: 2026-07-29)
+## v1.1 Schedule Quality & Reporting (Shipped: 2026-07-29)
 
 **Status:** ⚠ Closed early — re-scoped. 2 of 4 planned phases delivered.
 
@@ -49,7 +49,7 @@
 
 ---
 
-## v1.0 AWS Deployment (Partially shipped: 2026-04-21)
+## v1.0 AWS Deployment (Shipped: 2026-04-21)
 
 **Status:** ⚠ Partially shipped — IAM blocker.
 
