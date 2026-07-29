@@ -112,7 +112,7 @@ Plans:
 **Plans**: 3 plans
   - [x] 06-01-PLAN.md — BambooHR API key rotation (blocking security gate) + tolerant WorkingDaysParser (TDD) [wave 1]
   - [x] 06-02-PLAN.md — Plumb field 4517 through BambooEmployee / HttpBambooHRClient / MockBambooHRClient [wave 2]
-  - [ ] 06-03-PLAN.md — Generate MANDATORY rows, data-gap exclusion (V28 migration), outlier flags, retire dead match, verify PTO tab [wave 3]
+  - [x] 06-03-PLAN.md — Generate MANDATORY rows, data-gap exclusion (V28 migration), outlier flags, retire dead match, verify PTO tab [wave 3]
 
 ### Phase 7: Coverage, Utilization & Diagnostics
 **Goal**: Operators can see exactly where the schedule is thin, which agents are over- or under-utilised, whether preferences were honoured, and why PTO may not have synced
