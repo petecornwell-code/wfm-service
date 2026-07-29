@@ -106,6 +106,25 @@ aws logs tail /ecs/wfm-service-dev --follow --region eu-west-2 --filter-pattern 
 
 (Trigger a BambooHR refresh for a live desk, then tail for the `{N} agent(s) on desk {deskId} have blank/Variable customWorkingdays...` `log.warn` line and compare `N` against the desk's total scheduled agent count.)
 
+**1a. OPERATOR FINDING (post-approval): BambooHR field 4517 is incomplete.** After approving the
+checkpoint, the operator reported that the BambooHR data does not contain all mandatory days off,
+and that new functionality will be needed in a **new milestone** to close the gap.
+
+This does not invalidate the Phase 6 implementation — the pipeline correctly generates MANDATORY
+rows from whatever field 4517 supplies, and correctly flags agents where it is absent. But it
+converts the open item above from "proportion unknown" into a **known-nonzero data gap**, which
+escalates the D-07 risk from theoretical to expected:
+
+- Agents whose mandatory days off are missing from field 4517 will be marked
+  `workingDaysKnown=false` and **silently dropped from the solver** by the fourth `filterEligible`
+  criterion.
+- The only current surface for this is the `log.warn` summary at `BambooRefreshService.java:339`
+  — there is no operator-visible UI indication that agents were excluded.
+
+**Recommended before any production desk relies on this:** either capture the per-desk proportion
+(command below) to confirm the exclusion is tolerable, or reconsider whether D-07 should exclude
+agents versus defaulting them to a standard pattern. The exact proportion remains uncaptured.
+
 **2. Task 3 UI observation was operator-approved, not executor-verified.** The executor did not run the frontend, trigger a refresh, or view the ScheduleResults PTO tab. The "MANDATORY" red cell rendering and label/legend clarity (criteria 1 and 2) rely entirely on the operator's "Yes approved" response and the pre-existing (out-of-scope, D-10) frontend code, not on independent executor observation.
 
 ## Known Stubs
