@@ -23,7 +23,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 <summary>v1.1 Schedule Quality & Reporting (Phases 5–8)</summary>
 
 - [x] **Phase 5: Agent Data Enrichment & Desk Upload** - BambooHR employment type + job title sync, non-schedulable exclusion, desk bulk upload frontend, PTO sync bug fixes
-- [ ] **Phase 6: Solver Quality Constraints** - Contiguous days-off, fairness distribution, day-to-day hours consistency constraints
+- [x] **Phase 6: Solver Quality Constraints** - Completed 2026-07-29 as QUAL-01 only (BambooHR mandatory day-off import + solver exclusion). QUAL-02 weekend-position fairness and QUAL-03 day-to-day hours consistency DEFERRED to a follow-on phase
 - [ ] **Phase 7: Coverage, Utilization & Diagnostics** - Coverage report, agent utilization report, preference satisfaction metric, PTO diagnostic, week-over-week hours variance
 - [ ] **Phase 8: Export, Score Breakdown & Tuning** - Excel/PDF export improvements, solver score breakdown UI, constraint weight tuning UI
 
@@ -38,7 +38,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 3. Infrastructure Provisioning | 1/2 | Deferred | - |
 | 4. CI/CD Pipeline & Go-Live | 0/TBD | Deferred | - |
 | 5. Agent Data Enrichment & Desk Upload | 5/5 | Complete | 2026-06-02 |
-| 6. Solver Quality Constraints | 2/3 | In Progress|  |
+| 6. Solver Quality Constraints | 3/3 | Complete | 2026-07-29 |
 | 7. Coverage, Utilization & Diagnostics | 0/TBD | Not started | - |
 | 8. Export, Score Breakdown & Tuning | 0/TBD | Not started | - |
 
