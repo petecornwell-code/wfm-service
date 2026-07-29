@@ -1,9 +1,19 @@
 ---
 phase: 06-solver-quality-constraints
 verified: 2026-07-29T00:00:00Z
-status: gaps_found
-score: 6/7 must-haves verified
-overrides_applied: 0
+status: passed
+score: 6/7 must-haves verified (1 accepted via override)
+overrides_applied: 1
+overrides:
+  - must_have: "BambooHR API key exposed in chat (2026-06-02) is rotated and stored in a secret manager before any deploy"
+    reason: >
+      Operator explicitly directed that the key rotation gate be bypassed for Phase 6 and
+      elected to handle the exposed credential outside this workflow ("Nothing — I'll handle
+      it", 2026-07-29). Accepted risk. NOTE: the key string remains present in 7 tracked
+      planning docs in a PUBLIC repository (petecornwell-code/wfm-service) as of acceptance;
+      remediation is owned by the operator, not by this phase.
+    accepted_by: "pete"
+    accepted_at: "2026-07-29T00:00:00Z"
 gaps:
   - truth: "BambooHR API key exposed in chat (2026-06-02) is rotated and stored in a secret manager before any deploy"
     status: failed
