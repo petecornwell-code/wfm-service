@@ -16,7 +16,29 @@ Scheduling managers can produce optimised, constraint-aware agent schedules in m
 
 v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment type, job title, and — the significant one — each agent's fixed weekly working-days pattern (field 4517), which the solver honours as hard MANDATORY day-off blocks. It did **not** deliver the reporting, diagnostics, export, or solver-tuning surfaces that were the milestone's other half.
 
-**Next milestone:** not yet defined.
+## Current Milestone: v1.2 Unified Agent Provisioning
+
+**Goal:** One spreadsheet upload fully provisions an agent roster — identity, desk, specializations, working pattern, days off, and PTO — merged field-by-field with BambooHR as source of truth and the spreadsheet filling every gap.
+
+**Target features:**
+- Extended enriched upload format carrying: BambooHR ID, first name, last name, job title, email, department, desk, active, unbounded specialization columns, Mon–Sun contracted hours, Mon–Sun mandatory days off, Mon–Sun recurring PTO
+- Per-field merge engine — BambooHR authoritative where it has data, spreadsheet fills gaps
+- Merge report surfaced in the upload result — which fields BambooHR overrode, which the spreadsheet supplied
+- Per-day contracted hours model, replacing the single `contractedHoursPerDay` scalar (0 hours = day off)
+- Agent name split into first name / last name
+- Unbounded specialization column parsing (the `@ManyToMany` model already supports it; only the parser is hard-coded to `specialty 1`/`specialty 2`)
+- Retire the 6-col legacy upload shape
+
+**Design decisions taken at milestone start:**
+- BambooHR ID is always populated in the spreadsheet → every row matches by ID; no fuzzy name/email matching required
+- Spreadsheet PTO columns express a **recurring weekly pattern** (Mon–Sun), applied across the horizon like mandatory days off — not dated absences
+- BambooHR's dated PTO wins for dates it covers; the spreadsheet's recurring PTO pattern applies only to dates BambooHR has no record for (the two are not directly comparable values, so "BambooHR wins" needed this refinement)
+- Mon–Sun contracted hours are the single authority on which days are worked: 0 or blank = day off. Mandatory-days-off columns act as a cross-check rather than a competing source
+- New columns extend the existing 16-col enriched shape rather than adding a third format
+
+**Why this matters beyond data entry:** field 4517 is only ~24% parseable, and agents whose pattern cannot be parsed are excluded from solving via `workingDaysKnown`. Spreadsheet-supplied Mon–Sun days off fills that gap directly. The eligible agent pool could grow several-fold, which is a plausible root cause of the solver failing to find solutions on live desks.
+
+**Next milestone:** v1.1 backlog (999.4–999.7) remains deferred and untouched.
 
 <details>
 <summary>v1.1 target features (original scope, for reference)</summary>

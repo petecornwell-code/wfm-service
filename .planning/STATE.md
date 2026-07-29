@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Schedule Quality & Reporting
-status: Awaiting next milestone
-stopped_at: Milestone v1.1 closed and archived
-last_updated: "2026-07-29T14:47:58.235Z"
-last_activity: 2026-07-29 — Milestone v1.1 completed and archived
+milestone: v1.2
+milestone_name: Unified Agent Provisioning
+status: planning
+last_updated: "2026-07-29T17:28:36.907Z"
+last_activity: 2026-07-29
 progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 
 ## Current Position
 
-Phase: Milestone v1.1 closed
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-29 — Milestone v1.1 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-29 — Milestone v1.2 started
 
 ## Milestone v1.1 Outcome
 
