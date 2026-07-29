@@ -1,9 +1,9 @@
-# Roadmap: WFM Service — AWS Deployment
+# Roadmap: WFM Service
 
 ## Milestones
 
-- ⚠ **v1.0 AWS Deployment** — Phases 1–4 (partially shipped 2026-04-21; IAM blocker — see Backlog)
-- [ ] **v1.1 Schedule Quality & Reporting** — Phases 5–8
+- ⚠ **v1.0 AWS Deployment** — Phases 1–4 (partially shipped 2026-04-21; IAM blocker — see Backlog 999.1–999.3)
+- ⚠ **v1.1 Schedule Quality & Reporting** — Phases 5–8 (closed early 2026-07-29; 5–6 shipped, 7–8 deferred — see Backlog 999.4–999.6)
 
 ## Phases
 
@@ -19,28 +19,32 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-<details open>
-<summary>v1.1 Schedule Quality & Reporting (Phases 5–8)</summary>
+<details>
+<summary>⚠ v1.1 Schedule Quality & Reporting (Phases 5–8) — CLOSED 2026-07-29 (4/16 requirements)</summary>
 
-- [x] **Phase 5: Agent Data Enrichment & Desk Upload** - BambooHR employment type + job title sync, non-schedulable exclusion, desk bulk upload frontend, PTO sync bug fixes
-- [x] **Phase 6: Solver Quality Constraints** - Completed 2026-07-29 as QUAL-01 only (BambooHR mandatory day-off import + solver exclusion). QUAL-02 weekend-position fairness and QUAL-03 day-to-day hours consistency DEFERRED to a follow-on phase
-- [ ] **Phase 7: Coverage, Utilization & Diagnostics** - Coverage report, agent utilization report, preference satisfaction metric, PTO diagnostic, week-over-week hours variance
-- [ ] **Phase 8: Export, Score Breakdown & Tuning** - Excel/PDF export improvements, solver score breakdown UI, constraint weight tuning UI
+- [x] Phase 5: Agent Data Enrichment & Desk Upload (5/5 plans) — completed 2026-06-02 — DATA-01, DATA-02, DATA-03
+- [x] Phase 6: Solver Quality Constraints — PTO & Weekends (3/3 plans) — completed 2026-07-29 — QUAL-01 only
+- [ ] Phase 7: Coverage, Utilization & Diagnostics (0/TBD) — never planned → 999.5
+- [ ] Phase 8: Export, Score Breakdown & Tuning (0/TBD) — never planned → 999.6
+
+Also deferred: QUAL-02 and QUAL-03 were dropped from Phase 6 during discussion and never re-homed → 999.4
+
+Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
 ## Progress
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Local Tooling & State Bootstrap | 2/2 | Complete | 2026-04-03 |
-| 2. Security Cleanup & OIDC Setup | 1/2 | Deferred | - |
-| 3. Infrastructure Provisioning | 1/2 | Deferred | - |
-| 4. CI/CD Pipeline & Go-Live | 0/TBD | Deferred | - |
-| 5. Agent Data Enrichment & Desk Upload | 5/5 | Complete | 2026-06-02 |
-| 6. Solver Quality Constraints | 3/3 | Complete | 2026-07-29 |
-| 7. Coverage, Utilization & Diagnostics | 0/TBD | Not started | - |
-| 8. Export, Score Breakdown & Tuning | 0/TBD | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Local Tooling & State Bootstrap | v1.0 | 2/2 | Complete | 2026-04-03 |
+| 2. Security Cleanup & OIDC Setup | v1.0 | 1/2 | Deferred | - |
+| 3. Infrastructure Provisioning | v1.0 | 1/2 | Deferred | - |
+| 4. CI/CD Pipeline & Go-Live | v1.0 | 0/TBD | Deferred | - |
+| 5. Agent Data Enrichment & Desk Upload | v1.1 | 5/5 | Complete | 2026-06-02 |
+| 6. Solver Quality Constraints | v1.1 | 3/3 | Complete | 2026-07-29 |
+| 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
+| 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
 
 ## Backlog
 
@@ -71,72 +75,65 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans:**
 - [ ] TBD — plan this phase once infrastructure is fully provisioned
 
----
+### Phase 999.4: Solver Fairness & Hours Consistency (BACKLOG)
 
-## v1.1 Schedule Quality & Reporting — Phase Details
+**Goal:** Solver distributes desirable weekend positions fairly and keeps each agent's daily hours consistent with their contracted pattern
+**Source phase:** 06 (Solver Quality Constraints) — dropped during phase discussion, never re-homed
+**Deferred at:** 2026-07-29 during v1.1 milestone close
+**Requirements:** QUAL-02 (weekend-position fairness), QUAL-03 (day-to-day hours consistency)
+**Design constraints carried forward:**
+- Fairness constraints must be **soft score only** — hard fairness makes schedules infeasible
+- Use **quadratic** penalties for hours consistency, not linear (avoids score traps)
+- Interacts with QUAL-01: agents with a fixed BambooHR pattern have their weekend *determined*, so fairness may only apply to agents without a parseable field-4517 value
+**Plans:**
+- [ ] TBD
 
-<!-- Keep the version token in the heading above. The SDK resolves the active milestone
-     by matching the milestone version against a markdown heading; if it is absent here,
-     roadmap.analyze and gsd-stats under-report zero phases because the phase detail
-     sections fall outside the current-milestone slice. -->
+### Phase 999.5: Coverage, Utilization & Diagnostics (BACKLOG)
 
-### Phase 5: Agent Data Enrichment & Desk Upload
-**Goal**: Operators have richer agent data from BambooHR and can bulk-assign agents to desks via spreadsheet; PTO sync is reliable
-**Depends on**: Nothing (first v1.1 phase — all v1.0 infrastructure in place)
-**Requirements**: DATA-01, DATA-02, DATA-03
-**Success Criteria** (what must be TRUE):
-  1. After a BambooHR sync, each agent displays their employment type (full-time / part-time) and operators can filter the agent list by employment type
-  2. After a BambooHR sync, each agent displays their job title; an operator can mark specific job titles as non-schedulable and those agents are excluded from subsequent solve runs and desk allocation
-  3. Operator can upload an Excel spreadsheet to bulk-assign agents to desks; the UI shows which rows succeeded and which failed (with reasons), and existing manual per-agent assignment still works
-  4. BambooHR 503 rate-limit responses surface a human-readable "retry in 60 seconds" message instead of a generic server error
-  5. Only "approved" PTO creates hard day-off blocks; "requested" PTO is visible in the diagnostic view but does not block scheduling
-**Plans**: 5 plans
-Plans:
-- [x] 05-01-PLAN.md — Schema + model foundation: V25/V26/V27 migrations, EmploymentType enum, JobTitleConfig + BambooSyncEvent entities & repositories, Agent.employmentType, AgentEligibilityService, BambooHRRateLimitedException + 503 handler
-- [x] 05-02-PLAN.md — BambooHR integration: employmentHistoryStatus pull, 503/429 onStatus translation, mapping rule, JobTitleConfig auto-populate, BambooSyncEvent recording, /api/v1/job-titles and /api/v1/configuration/bamboohr/sync-status endpoints
-- [x] 05-03-PLAN.md — Solver fixes: PTO filter (APPROVED-only, MANDATORY-always) + non-schedulable agent eligibility filter in SolverService
-- [x] 05-04-PLAN.md — Upload service + DTO enrichment: header-based shape detection (6-col legacy + 16-col enriched), structured SkippedRow, non-schedulable rejection on both upload and manual assign paths, DeskAgentResponse adds employmentType + pendingPto (bulk-fetched)
-- [x] 05-05-PLAN.md — Frontend UI: api/client.ts types + endpoints, DeskAgents Emp Type column + filter + PTO badge, Configuration Non-Schedulable Job Titles section + Sync Status card, ClientManagement Upload Results modal
+**Goal:** Operators can see where the schedule is thin, which agents are over- or under-utilised, whether preferences were honoured, and why PTO may not have synced
+**Source phase:** 07 — planned in the v1.1 roadmap but never planned in detail or executed
+**Deferred at:** 2026-07-29 during v1.1 milestone close
+**Requirements:** RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02
+**Success criteria carried forward:**
+1. Per-timeslot coverage table (demand FTEs, assigned count, gap, coverage %) colour-coded red/amber/green; missing demand data marked "No data", not "0% gap"
+2. Agent utilization table (weekly hours, contracted hours, delta, overtime-risk flag); agents at/above contracted +5% highlighted
+3. Preference satisfaction rate (% honoured) shown after a solve without requiring an export
+4. PTO sync status panel showing which agents imported (date counts, approved/requested) and which failed, with reason
+5. Week-over-week hours variance table per agent across accepted schedule history
+**Also required here (carried from Phase 6 debt):**
+- Operator-facing UI for data-gap and outlier agents — currently CloudWatch `log.warn` only
+- Fix `loadSnapshotData()` missing problem facts for accepted schedules — **blocks 999.6 score breakdown**
+**UI hint:** yes
+**Plans:**
+- [ ] TBD
 
-### Phase 6: Solver Quality Constraints — PTO & Weekends (QUAL-01)
-**Goal**: Every scheduled agent's BambooHR-sourced fixed weekly days off are imported as recurring MANDATORY blocks and honoured as hard constraints by the solver, with data-gap agents excluded and outliers surfaced
-**Re-scope note**: Re-scoped to QUAL-01 only (the mandatory day-off data foundation). QUAL-02 (weekend-position fairness) and QUAL-03 (day-to-day hours consistency) are DEFERRED to a follow-on phase (6b/7) per 06-CONTEXT.md.
-**Depends on**: Phase 5 (DATA-03 non-schedulable exclusion + BambooHR refresh pipeline must be in place before solving)
-**Requirements**: QUAL-01
-**Success Criteria** (what must be TRUE):
-  1. Each scheduled agent with a parseable BambooHR "Working days" (field 4517) pattern receives recurring MANDATORY day-off rows for their off-days across the schedule horizon, honoured as hard solver blocks
-  2. The free-text BambooHR value parser handles every live format (ranges incl. week-wrap, "to" form, comma lists, trailing annotations, spelling variants) and never throws
-  3. Agents with Variable/blank working days are treated as a data gap — excluded from scheduling and surfaced to the operator
-  4. Outlier patterns (≠2 contiguous off-days, or 0 off-days) are flagged to the operator; MANDATORY weekends render in the ScheduleResults PTO tab within the schedule window
-  5. PTO behaviour is unchanged (APPROVED blocks, REQUESTED visible-only); the solver engine is unchanged — this phase feeds it correct data; the dead "MANDATORY".equalsIgnoreCase(type) match is removed
-**Plans**: 3 plans
-  - [x] 06-01-PLAN.md — BambooHR API key rotation (blocking security gate) + tolerant WorkingDaysParser (TDD) [wave 1]
-  - [x] 06-02-PLAN.md — Plumb field 4517 through BambooEmployee / HttpBambooHRClient / MockBambooHRClient [wave 2]
-  - [x] 06-03-PLAN.md — Generate MANDATORY rows, data-gap exclusion (V28 migration), outlier flags, retire dead match, verify PTO tab [wave 3]
+### Phase 999.6: Export, Score Breakdown & Tuning (BACKLOG)
 
-### Phase 7: Coverage, Utilization & Diagnostics
-**Goal**: Operators can see exactly where the schedule is thin, which agents are over- or under-utilised, whether preferences were honoured, and why PTO may not have synced
-**Depends on**: Phase 5 (agent data), Phase 6 (solver constraints stabilised before reporting on them)
-**Requirements**: RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02
-**Success Criteria** (what must be TRUE):
-  1. Operator can view a per-timeslot coverage table on the schedule results page showing demand FTEs, assigned agent count, gap, and coverage percentage — colour-coded red/amber/green; timeslots with missing demand data are marked "No data" not "0% gap"
-  2. Operator can view an agent utilization table showing weekly hours per agent, contracted hours, delta, and an overtime-risk flag; agents at or above contracted + 5% are highlighted
-  3. After a solve completes, the schedule results page shows a preference satisfaction rate (% of shift preferences honoured) without requiring any export
-  4. Operator can view a PTO sync status panel showing which agents had PTO imported (with date counts and approved/requested status) and which failed to sync with the specific reason (e.g. bamboohrId not matched in WFM)
-  5. Operator can view a week-over-week hours variance table per agent to identify inconsistent scheduling patterns across accepted schedule history
-**Plans**: TBD
-**UI hint**: yes
+**Goal:** Operators can export publication-ready schedules, understand solver decisions, and adjust solver behaviour from the UI
+**Source phase:** 08 — planned in the v1.1 roadmap but never planned in detail or executed
+**Deferred at:** 2026-07-29 during v1.1 milestone close
+**Requirements:** RPT-03, RPT-04, RPT-05, RPT-06, QUAL-05
+**Blocker:** Depends on 999.5 (`loadSnapshotData()` fix required before score breakdown; coverage/utilization data methods required before export tabs)
+**Success criteria carried forward:**
+1. Excel (.xlsx) export with Coverage and Utilization tabs, colour-coded cells, correctly sorting date/time cells
+2. PDF export in readable tabular layout (OpenPDF 3.0.4 — LGPL/MPL; iText rejected as AGPL)
+3. Score breakdown panel: every constraint that fired, violation count, score impact; stub constraints (`breakClustering`, `bulkUnderallocationSoft`) labelled "Inactive"
+4. Score breakdown guarded to in-memory solves; DB-loaded accepted schedules show a clear message, not empty data or a 500
+5. Score breakdown exportable to Excel
+6. Constraint weights and time limit adjustable from the UI without redeploy; time limit labelled "Local Search time limit" with a tooltip
+**Constraint:** Timefold pinned at 1.33.0 — `ScoreAnalysis` moves to paid tier in 2.0
+**UI hint:** yes
+**Plans:**
+- [ ] TBD
 
-### Phase 8: Export, Score Breakdown & Tuning
-**Goal**: Operators can export rich, publication-ready schedules, understand why the solver made its decisions, and adjust solver behaviour from the UI
-**Depends on**: Phase 7 (coverage and utilization data methods must exist before export tabs can use them; score breakdown requires loadSnapshotData() fix from Phase 7)
-**Requirements**: RPT-03, RPT-04, RPT-05, RPT-06, QUAL-05
-**Success Criteria** (what must be TRUE):
-  1. Operator can export the published schedule to Excel (.xlsx); the file includes Coverage and Utilization tabs with colour-coded cells; date/time cells sort correctly in Excel
-  2. Operator can export the published schedule to PDF; the file contains the schedule in a readable tabular layout
-  3. After a solve, operator can view a solver score breakdown panel showing every constraint that fired, its violation count, and its score impact; stub/inactive constraints (breakClustering, bulkUnderallocationSoft) are labelled "Inactive" not shown as active violations
-  4. Score breakdown is only available for in-memory (just-solved) schedules; accessing it for an accepted DB-loaded schedule shows a clear "Score breakdown only available for recent solves" message rather than empty data or a 500 error
-  5. Operator can export the solver score breakdown to Excel (.xlsx)
-  6. Operator can adjust solver constraint weights and time limit from the UI; changes take effect on the next solve without a code deployment; the UI labels the time limit as "Local Search time limit" with a tooltip explaining construction happens before it
-**Plans**: TBD
-**UI hint**: yes
+### Phase 999.7: BambooHR Credential Rotation & Scrub (BACKLOG — SECURITY)
+
+**Goal:** The BambooHR API key exposed on 2026-06-02 is rotated, stored only in a secret manager, and scrubbed from the public repository
+**Source:** 06-01-PLAN.md Task 0 — a `blocking-human` gate that was bypassed by operator directive; recorded as a FAILED must-have in `06-VERIFICATION.md` with an accepted override
+**Deferred at:** 2026-07-29 during v1.1 milestone close
+**Severity:** The old key (prefix `ad2bb…2be`) is still valid and still present in tracked planning docs in a **public** repo (`petecornwell-code/wfm-service`); BambooHR-integration code has already deployed to the sole live environment
+**Work:**
+- [ ] Rotate the BambooHR API key for the helpware tenant in the BambooHR admin console
+- [ ] Store the new key only in AWS Secrets Manager / deploy env config — never in chat or committed files
+- [ ] Scrub the value from tracked planning docs (`.planning/codebase/CONCERNS.md`, `02-01-PLAN.md`, `02-RESEARCH.md`, 06-01 planning docs) and confirm `git grep -i ad2bb` is clean
+- [ ] Decide whether git history rewrite is warranted given the repo is public

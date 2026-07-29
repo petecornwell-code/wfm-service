@@ -2,65 +2,61 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Schedule Quality & Reporting
-status: ready_to_plan
-stopped_at: "Phase 06 complete (3/3 plans, verification passed with 1 accepted override) — Phase 07 not yet planned"
-last_updated: "2026-07-29T14:26:10.604Z"
-last_activity: 2026-07-29
+status: Awaiting next milestone
+stopped_at: Milestone v1.1 closed and archived
+last_updated: "2026-07-29T14:47:58.235Z"
+last_activity: 2026-07-29 — Milestone v1.1 completed and archived
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 2
   total_plans: 8
   completed_plans: 8
-  percent: 75
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-07)
+See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 06 — solver-quality-constraints
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Next: Phase 07 (Coverage, Utilization & Diagnostics) — not yet planned
-Status: Ready to plan
-Last activity: 2026-07-29
+Phase: Milestone v1.1 closed
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-29 — Milestone v1.1 completed and archived
 
-### 05-05 checkpoint detail
+## Milestone v1.1 Outcome
 
-Tasks 1-4 (auto) are complete and committed — no SUMMARY.md yet because Task 5 is a
-blocking `human-verify` checkpoint (plan is `autonomous: false`). This is an intentional
-pause, not a crash.
-
-| Task | File | Commit | On-disk check |
-|------|------|--------|---------------|
-| 1 | frontend/src/api/client.ts | 3d801cd | `jobTitleConfig` present |
-| 2 | frontend/src/pages/DeskAgents.tsx | 0762a08 | `empTypeFilter` present |
-| 3 | frontend/src/pages/Configuration.tsx | 3478db5 | `Non-Schedulable Job Titles` present |
-| 4 | frontend/src/pages/ClientManagement.tsx | c18059a | `uploadResult` present |
-| 5 | — (UAT walk-through) | — | BLOCKING — awaiting operator "approved" |
-
-**To resume:** re-run `/gsd-execute-phase 05`. The orchestrator must boot both servers
-(backend `./gradlew bootRun --args='--spring.profiles.active=mock'`, frontend
-`cd frontend && npm run dev`), then drive the 6-case checklist in 05-05-PLAN.md Task 5
-(also 05-VALIDATION.md "Manual-Only Verifications"). On "approved", write 05-05-SUMMARY.md
-and update STATE/ROADMAP progress to mark Phase 05 complete (then Phase 6 is next).
-
-## Phase Summary (v1.1)
+Closed early on 2026-07-29 with **4 of 16 requirements shipped**. Phases 5–6 delivered the BambooHR agent-data foundation; Phases 7–8 (reporting, diagnostics, export, solver tuning) were never planned.
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 5 | Agent Data Enrichment & Desk Upload | DATA-01, DATA-02, DATA-03 | Not started |
-| 6 | Solver Quality Constraints | QUAL-01, QUAL-02, QUAL-03 | Complete (3/3 plans) |
-| 7 | Coverage, Utilization & Diagnostics | RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02 | Not started |
-| 8 | Export, Score Breakdown & Tuning | RPT-03, RPT-04, RPT-05, RPT-06, QUAL-05 | Not started |
+| 5 | Agent Data Enrichment & Desk Upload | DATA-01, DATA-02, DATA-03 | Complete (5/5 plans) |
+| 6 | Solver Quality Constraints — PTO & Weekends | QUAL-01 | Complete (3/3 plans) |
+| 7 | Coverage, Utilization & Diagnostics | RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02 | Deferred → Backlog 999.5 |
+| 8 | Export, Score Breakdown & Tuning | RPT-03–RPT-06, QUAL-05 | Deferred → Backlog 999.6 |
+
+Archives: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQUIREMENTS.md`, `.planning/milestones/v1.1-phases/`
 
 ## Deferred Items
+
+Items deferred at v1.1 milestone close on 2026-07-29:
+
+| Category | Item | Status |
+|----------|------|--------|
+| requirement | QUAL-02 weekend-position fairness | Deferred → Backlog 999.4 |
+| requirement | QUAL-03 day-to-day hours consistency | Deferred → Backlog 999.4 |
+| phase | 07: Coverage, Utilization & Diagnostics (RPT-01, RPT-02, QUAL-04, DIAG-01, DIAG-02) | Deferred → Backlog 999.5 |
+| phase | 08: Export, Score Breakdown & Tuning (RPT-03–06, QUAL-05) | Deferred → Backlog 999.6 |
+| security | BambooHR API key rotation and public-repo scrub | Deferred → Backlog 999.7 |
+| debt | Operator-facing UI for data-gap / outlier agents (currently log.warn only) | Deferred → Backlog 999.5 |
+| debt | `loadSnapshotData()` missing problem facts for accepted schedules | Deferred → Backlog 999.5 (blocks 999.6) |
+| verification | Desk-scale data-gap exclusion proportion on live desks never measured | Open — see 06-VERIFICATION.md human_verification |
 
 Items deferred at v1.0 milestone close on 2026-04-21:
 
@@ -70,35 +66,33 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 | phase | 03-02: Infrastructure verification | Deferred → Backlog 999.2 |
 | phase | 04: CI/CD Pipeline & Go-Live | Deferred → Backlog 999.3 |
 
-**Blocker for all deferred items:** `pete.cornwell@helpware.com` has PowerUserAccess which excludes `iam:CreateRole`. Root/admin must grant `WFMTerraformIAMPermissions`. See `.planning/milestones/v1.0-ROADMAP.md` for full resume steps.
+**Blocker for 999.1–999.3:** `pete.cornwell@helpware.com` has PowerUserAccess which excludes `iam:CreateRole`. Root/admin must grant `WFMTerraformIAMPermissions`. See `.planning/milestones/v1.0-ROADMAP.md` for full resume steps.
 
 ## Accumulated Context
 
 ### Decisions
 
-- Project init: Keep existing Terraform as-is — infra code is complete and correct
-- Project init: OIDC for GitHub Actions — no long-lived AWS credentials in CI
-- Project init: Single environment ("dev") — internal use, cost control
-- Phase 01: Used existing IAM user pete.cornwell@helpware.com — iam:CreateUser not available
-- Phase 01: AWS CLI region set to eu-west-2
-- Phase 01: S3 bucket named wfm-terraform-state-521757869980 (original name taken)
-- Phase 02: Deleted BambooHR credential files via plain rm — untracked, no commit needed
-- Phase 02: SEC-03 pre-satisfied — terraform.tfvars already gitignored
-- Phase 03: Fixed RDS engine_version 16.4→16.6 — 16.4 not available in eu-west-2
-- Phase 03: Fixed shared_preload_libraries apply_method to pending-reboot
-- v1.1 Roadmap: Timefold pinned at 1.33.0 — ScoreAnalysis moves to paid tier in 2.0
-- v1.1 Roadmap: PDF export uses OpenPDF 3.0.4 (LGPL/MPL) — iText rejected (AGPL)
-- v1.1 Roadmap: Fairness constraints must use soft score only — hard fairness makes schedules infeasible
-- v1.1 Roadmap: Quadratic penalties for hours consistency, not linear (avoids score traps)
-- v1.1 Roadmap: Score breakdown guarded to in-memory schedules only — loadSnapshotData() missing problem facts for accepted schedules must be fixed in Phase 7 before Phase 8 export
-- [Phase ?]: asText(null) for customWorkingdays preserves data-gap signal for WorkingDaysParser
+Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carried forward as active design constraints:
+
+- Timefold pinned at 1.33.0 — `ScoreAnalysis` moves to paid tier in 2.0
+- PDF export must use OpenPDF 3.0.4 (LGPL/MPL) — iText rejected (AGPL)
+- Fairness constraints soft score only — hard fairness makes schedules infeasible
+- Quadratic penalties for hours consistency, not linear (avoids score traps)
+- Score breakdown guarded to in-memory schedules — `loadSnapshotData()` must be fixed before export work
+- Solver respects BambooHR fixed weekends rather than choosing them; fairness constraints may therefore only apply to agents without a parseable field-4517 pattern
 
 ### Blockers/Concerns
 
-- **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. `pete.cornwell@helpware.com` PowerUserAccess excludes `iam:CreateRole`. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
+- **⚠ SECURITY — Backlog 999.7:** BambooHR API key (prefix `ad2bb…2be`) exposed 2026-06-02 was never rotated. Still present in tracked planning docs in a **public** repo; integration code has deployed to the live environment. Accepted as risk by operator on 2026-07-29 but unresolved.
+- **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. The live-desk exclusion proportion is unmeasured and may explain why the solver struggles to find solutions on real desks.
+- **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 
 ## Session Continuity
 
-Last session: 2026-07-29T14:26:10.600Z
-Stopped at: Phase 6 context gathered (PTO & Weekends focus)
+Last session: 2026-07-29
+Stopped at: Milestone v1.1 closed and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
