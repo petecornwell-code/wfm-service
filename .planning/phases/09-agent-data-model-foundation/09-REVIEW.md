@@ -31,7 +31,9 @@ findings:
   warning: 4
   info: 3
   total: 9
-status: issues_found
+status: resolved
+resolved_commit: 68ace87
+resolution: "CR-01, CR-02, WR-01, WR-02, IN-01 fixed in 68ace87 (full test suite green). WR-03 (whitespace split — locked D-06 rule, Java/SQL agree), WR-04 (upload-agent schedulable default — would risk the phase's no-solve-regression invariant), IN-02, IN-03 left as documented judgment calls."
 ---
 
 # Phase 9: Code Review Report
