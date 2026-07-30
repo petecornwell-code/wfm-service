@@ -2,11 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-status: roadmapped
-last_updated: "2026-07-29T18:05:00.000Z"
-last_activity: 2026-07-29
+status: planning
+stopped_at: Phase 9 context gathered
+last_updated: "2026-07-30T12:24:58.582Z"
+last_activity: 2026-07-29 — ROADMAP.md and REQUIREMENTS.md traceability written for v1.2
 progress:
-  total_phases: 3
+  total_phases: 10
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -102,9 +103,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-29
-Stopped at: v1.2 ROADMAP.md and REQUIREMENTS.md traceability written; roadmap awaiting user approval
-Resume file: None
+Last session: 2026-07-30T12:24:58.578Z
+Stopped at: Phase 9 context gathered
+Resume file: .planning/phases/09-agent-data-model-foundation/09-CONTEXT.md
 
 ## Operator Next Steps
 
