@@ -53,7 +53,14 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. Agent stores contracted hours per day of the week (Mon–Sun); `AgentDayConfig` resolves effective hours per date from these per-day values rather than a single scalar
   3. Migrating an existing agent produces no data loss: the prior scalar `contractedHoursPerDay` becomes that agent's per-day value on every day they previously worked, and the single `name` splits cleanly into first/last
   4. The solver produces the same schedule for agents whose contracted hours are uniform across worked days as it did before the migration — no behaviour regression for the common case
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+- [ ] 09-01-PLAN.md — Name-split utility + Agent first/last name columns (MDL-01)
+- [ ] 09-02-PLAN.md — agent_day_hours child entity + tenant-scoped repository (MDL-02)
+- [ ] 09-03-PLAN.md — SolverService per-day effective-hours resolution, all 3 call sites (MDL-02, MDL-03)
+- [ ] 09-04-PLAN.md — BambooHR refresh + upload name-split, per-day clear-on-reimport (MDL-01, MDL-02)
+- [ ] 09-05-PLAN.md — DTO/export first/last exposure + setContractedHours 7-row fan-out (MDL-01, MDL-02)
+- [ ] 09-06-PLAN.md — V29 Flyway migration + manual data-integrity checkpoint (MDL-03)
 
 ### Phase 10: Enriched Upload Parsing
 **Goal**: Operators upload one extended spreadsheet — building on the existing 16-column enriched shape — that captures full agent identity, an unbounded number of specializations, and Mon–Sun contracted-hours/mandatory-days-off/recurring-PTO patterns, with per-row validation and the 6-column legacy shape retired.
@@ -97,7 +104,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 6. Solver Quality Constraints | v1.1 | 3/3 | Complete | 2026-07-29 |
 | 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
-| 9. Agent Data Model Foundation | v1.2 | 0/TBD | Not started | - |
+| 9. Agent Data Model Foundation | v1.2 | 0/6 | Not started | - |
 | 10. Enriched Upload Parsing | v1.2 | 0/TBD | Not started | - |
 | 11. BambooHR Merge Engine & Report | v1.2 | 0/TBD | Not started | - |
 
