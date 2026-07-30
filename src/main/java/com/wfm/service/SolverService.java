@@ -809,6 +809,32 @@ public class SolverService {
                 : schedule.getDefaultContractedHoursPerDay();
     }
 
+    /**
+     * Resolves effective contracted hours for an agent+date (D-03/D-04 precedence):
+     *   1. AgentException override for the exact date (highest precedence)
+     *   2. per-day value for that weekday from the agent_day_hours map (including 0.00 —
+     *      a present 0.00 row means that weekday is not scheduled)
+     *   3. schedule default (fallback when the weekday is absent from the per-day map)
+     *
+     * The agent's scalar contractedHoursPerDay is NOT consulted here — per-day rows are
+     * the sole per-agent authority (MDL-02). Precedence checks use containsKey, never a
+     * null-check: a present AgentException row is always a real value (nullable=false),
+     * and a present per-day map entry is always a real value for the same reason.
+     */
+    static BigDecimal resolveEffectiveHours(Map<LocalDate, BigDecimal> exceptionMap,
+                                             Map<DayOfWeek, BigDecimal> dayHoursMap,
+                                             LocalDate date,
+                                             BigDecimal scheduleDefaultHours) {
+        if (exceptionMap.containsKey(date)) {
+            return exceptionMap.get(date);
+        }
+        DayOfWeek dow = date.getDayOfWeek();
+        if (dayHoursMap.containsKey(dow)) {
+            return dayHoursMap.get(dow);
+        }
+        return scheduleDefaultHours;
+    }
+
     private boolean isAligned(LocalTime time, BreakAlignment alignment) {
         int minute = time.getMinute();
         return switch (alignment) {
