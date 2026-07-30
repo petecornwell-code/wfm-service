@@ -56,8 +56,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans**: 6 plans
 Plans:
 **Wave 1**
-- [ ] 09-01-PLAN.md — Name-split utility + Agent first/last name columns (MDL-01)
-- [ ] 09-02-PLAN.md — agent_day_hours child entity + tenant-scoped repository (MDL-02)
+- [x] 09-01-PLAN.md — Name-split utility + Agent first/last name columns (MDL-01)
+- [x] 09-02-PLAN.md — agent_day_hours child entity + tenant-scoped repository (MDL-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 09-03-PLAN.md — SolverService per-day effective-hours resolution, all 3 call sites (MDL-02, MDL-03)

@@ -4,8 +4,8 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-07-30T13:53:12.849Z"
-last_activity: 2026-07-30 -- Phase 9 planning complete
+last_updated: "2026-07-30T14:32:56.629Z"
+last_activity: 2026-07-30 -- Phase 09 execution started
 progress:
   total_phases: 10
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Planning Phase 9 (Agent Data Model Foundation)
+**Current focus:** Phase 09 — agent-data-model-foundation
 
 ## Current Position
 
-Phase: 9 of 11 (Agent Data Model Foundation) — 1st of 3 phases in v1.2
-Plan: — (not yet planned)
-Status: Ready to execute
-Last activity: 2026-07-30 -- Phase 9 planning complete
+Phase: 09 (agent-data-model-foundation) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 09
+Last activity: 2026-07-30 -- Phase 09 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
