@@ -11,15 +11,26 @@ ALTER TABLE agent
     ADD COLUMN last_name VARCHAR(255);
 
 -- 2. Backfill name split (D-06: first whitespace token -> first_name, remainder -> last_name).
---    Must reproduce AgentNameSplitter.split(...) exactly: single-token names get an
---    empty (never null) last_name; multi-token names put the trimmed remainder in last_name.
-UPDATE agent
-SET first_name = split_part(name, ' ', 1),
+--    Must reproduce AgentNameSplitter.split(...) EXACTLY. That utility trims the input
+--    first (String.trim) and yields empty (never null) strings for a null/blank name, so
+--    the SQL must do the same before splitting:
+--      * coalesce(name,'') -> a NULL name becomes '' (first_name '', not NULL) like Java.
+--      * trim(...) leading/trailing whitespace BEFORE split -> a leading space would
+--        otherwise put an empty first_name and dump the whole name into last_name
+--        (verified divergence against AgentNameSplitter on ' Leading Space').
+--    Normalise once in a subquery so the trimmed value is computed a single time per row.
+UPDATE agent AS a
+SET first_name = split_part(t.norm, ' ', 1),
     last_name = CASE
-        WHEN position(' ' IN name) > 0
-        THEN trim(substring(name FROM position(' ' IN name) + 1))
+        WHEN position(' ' IN t.norm) > 0
+        THEN trim(substring(t.norm FROM position(' ' IN t.norm) + 1))
         ELSE ''
-    END;
+    END
+FROM (
+    SELECT id, trim(both E' \t\n\r' FROM coalesce(name, '')) AS norm
+    FROM agent
+) AS t
+WHERE a.id = t.id;
 
 -- 3. New child table (D-09) -- mirrors agent_day_off / agent_exception FK+unique style.
 --    Row absence = "no data" (schedule default applies); a present row with 0.00
