@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -24,19 +25,22 @@ public class DeskAgentService {
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
     private final AgentDayOffRepository agentDayOffRepository;
+    private final AgentDayHoursRepository agentDayHoursRepository;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
                             SpecializationRepository specializationRepository,
                             AgentPreferenceRepository agentPreferenceRepository,
                             AgentExceptionRepository agentExceptionRepository,
-                            AgentDayOffRepository agentDayOffRepository) {
+                            AgentDayOffRepository agentDayOffRepository,
+                            AgentDayHoursRepository agentDayHoursRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
         this.agentDayOffRepository = agentDayOffRepository;
+        this.agentDayHoursRepository = agentDayHoursRepository;
     }
 
     @Transactional(readOnly = true)
@@ -187,8 +191,23 @@ public class DeskAgentService {
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
-        agent.setContractedHoursPerDay(BigDecimals.normalize(hours));
+        BigDecimal normalized = BigDecimals.normalize(hours);
+        agent.setContractedHoursPerDay(normalized);
         Agent saved = agentRepository.save(agent);
+
+        // D-10: fan the new value out to all 7 agent_day_hours rows (replace, not append) so
+        // the solver — which no longer reads the scalar — keeps honouring operator edits.
+        agentDayHoursRepository.deleteByAgent_Id(agentId);
+        agentDayHoursRepository.flush();
+        for (DayOfWeek dayOfWeek : DayOfWeek.values()) {
+            AgentDayHours dayHours = new AgentDayHours();
+            dayHours.setTenantId(saved.getTenantId());
+            dayHours.setAgent(saved);
+            dayHours.setDayOfWeek(dayOfWeek);
+            dayHours.setHours(normalized);
+            agentDayHoursRepository.save(dayHours);
+        }
+
         return toResponse(saved, deskDefault, List.of());
     }
 }
