@@ -1,8 +1,8 @@
 ---
 phase: 9
 slug: agent-data-model-foundation
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-30
 ---
@@ -75,11 +75,11 @@ created: 2026-07-30
 
 ## Validation Sign-Off
 
-- [ ] All tasks have automated verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Migration data-integrity gated behind manual `checkpoint:human-verify` before verify-work
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have automated verify or Wave 0 dependencies (Wave-0 test scaffolds embedded as tdd tasks in the plans that create the production code)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Migration data-integrity gated behind manual `checkpoint:human-verify` before verify-work (09-06 Task 2, `autonomous: false`)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-30 (gsd-plan-checker Dimension 8 pass; blockers 0)

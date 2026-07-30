@@ -55,8 +55,11 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   4. The solver produces the same schedule for agents whose contracted hours are uniform across worked days as it did before the migration — no behaviour regression for the common case
 **Plans**: 6 plans
 Plans:
+**Wave 1**
 - [ ] 09-01-PLAN.md — Name-split utility + Agent first/last name columns (MDL-01)
 - [ ] 09-02-PLAN.md — agent_day_hours child entity + tenant-scoped repository (MDL-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 09-03-PLAN.md — SolverService per-day effective-hours resolution, all 3 call sites (MDL-02, MDL-03)
 - [ ] 09-04-PLAN.md — BambooHR refresh + upload name-split, per-day clear-on-reimport (MDL-01, MDL-02)
 - [ ] 09-05-PLAN.md — DTO/export first/last exposure + setContractedHours 7-row fan-out (MDL-01, MDL-02)

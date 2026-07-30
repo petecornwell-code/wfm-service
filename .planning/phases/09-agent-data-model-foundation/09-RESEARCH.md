@@ -413,19 +413,21 @@ Not applicable in the traditional sense (no external framework/library upgrade i
 
 **Everything else in this research is `[VERIFIED]`** — confirmed by direct reads of the live repository files listed in canonical_refs, not training-data recall. No package/library claims were made that needed slopcheck-style verification (no new packages).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `DeskAgentService.setContractedHours` and the still-live upload flow (`DeskAssignmentUploadService`) also fan out to `agent_day_hours` on write, to keep the "no solve-behaviour regression" property durable rather than true only at the migration instant?**
+> All three resolved during planning (2026-07-30) and recorded as LOCKED decisions in CONTEXT.md: OQ1 → **D-10** (fan out + clear-on-reimport delete), OQ2 → **D-11** (split at both upload sites), OQ3 → **D-12** (DTOs name-only). Implemented in plans 09-04 / 09-05.
+
+1. **RESOLVED (→ D-10, plans 09-05 Task 3 + 09-04 Task 2):** Should `DeskAgentService.setContractedHours` and the still-live upload flow (`DeskAssignmentUploadService`) also fan out to `agent_day_hours` on write, to keep the "no solve-behaviour regression" property durable rather than true only at the migration instant?
    - What we know: D-03's resolution precedence bypasses the scalar entirely once per-day rows exist for an agent; these two write-paths only touch the scalar.
    - What's unclear: CONTEXT.md's locked decisions don't address this — it wasn't in scope for the discuss-phase conversation.
    - Recommendation: Make `setContractedHours` fan out to all 7 `agent_day_hours` rows using the same value (mirrors D-01's own migration rule, ~10 lines), and treat `DeskAssignmentUploadService`'s hours-clearing (`setContractedHoursPerDay(null)`) as needing a corresponding `agent_day_hours` row deletion for that agent, so re-assignment doesn't inherit stale per-day rows from a prior desk assignment. If the planner decides this is explicitly out of scope for Phase 9 (a legitimate call, given the upload flow retires in Phase 10 anyway), the plan should say so explicitly rather than leave it as an unnoticed gap.
 
-2. **Should `DeskAssignmentUploadService`'s two `setName(...)` call sites (lines 276, 301) also be updated to split into first/last, or is `BambooRefreshService:211` the only mandated site (per D-07's literal text)?**
+2. **RESOLVED (→ D-11, plan 09-04 Task 2):** Should `DeskAssignmentUploadService`'s two `setName(...)` call sites (lines 276, 301) also be updated to split into first/last, or is `BambooRefreshService:211` the only mandated site (per D-07's literal text)?
    - What we know: D-07 names `BambooRefreshService:211` explicitly. `DeskAssignmentUploadService` independently sets `name` from BambooHR's cached displayName and from a raw spreadsheet name column, with no mention in CONTEXT.md.
    - What's unclear: Whether leaving these two sites unsplit means agents created via that upload path have stale/empty `firstName`/`lastName` until their next BambooHR refresh.
    - Recommendation: Update both sites using the same `AgentNameSplitter` utility recommended in Don't Hand-Roll — it's the same one-line change repeated, low cost, and avoids a visible data gap for freshly-uploaded agents. If descoped, document explicitly.
 
-3. **Should Phase 9's DTO changes stop at name (firstName/lastName), or also surface `agent_day_hours` read-only in `DeskAgentResponse`?**
+3. **RESOLVED (→ D-12, plan 09-05):** Should Phase 9's DTO changes stop at name (firstName/lastName), or also surface `agent_day_hours` read-only in `DeskAgentResponse`? — Resolved to **name-only** (research recommendation); per-day hours DTO exposure deferred to Phase 10/11 when a consumer exists.
    - What we know: CONTEXT.md's canonical_refs list only names `AgentResponse`/`DeskAgentResponse`/`DeskAgentExportService` as "consumers of `name` needing firstName/lastName + derived name" — hours exposure isn't mentioned, and the phase has no UI.
    - What's unclear: Whether any Phase 10/11 planning assumption expects the per-day hours to already be readable via this API.
    - Recommendation: Keep Phase 9's DTO scope to name fields only, consistent with the explicit file-level guidance — exposing per-day hours read-only is cheap to add later once Phase 10/11 actually need it, and adding it now without a consumer risks locking in an API shape prematurely.
