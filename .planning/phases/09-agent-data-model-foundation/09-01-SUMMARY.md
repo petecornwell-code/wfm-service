@@ -98,6 +98,22 @@ None - no external service configuration required.
 - Plan 09-06 (Flyway V29 migration + DTO/export exposure) can now rely on the entity shape being final for the name-split portion of MDL-01
 - No blockers or concerns for downstream plans
 
+## Self-Check: PASSED
+
+All created files verified present on disk:
+- FOUND: src/main/java/com/wfm/util/AgentNameSplitter.java
+- FOUND: src/test/java/com/wfm/util/AgentNameSplitterTest.java
+- FOUND: src/main/java/com/wfm/model/Agent.java
+- FOUND: src/test/java/com/wfm/model/AgentNamePersistenceTest.java
+- FOUND: .planning/phases/09-agent-data-model-foundation/09-01-SUMMARY.md
+
+All commit hashes verified present in `git log`:
+- FOUND: 67917fe (test RED, Task 1)
+- FOUND: 0f27f45 (feat GREEN, Task 1)
+- FOUND: e93b416 (test RED, Task 2)
+- FOUND: 82cf1e9 (feat GREEN, Task 2)
+- FOUND: b718ea7 (docs, SUMMARY)
+
 ---
 *Phase: 09-agent-data-model-foundation*
 *Completed: 2026-07-30*
