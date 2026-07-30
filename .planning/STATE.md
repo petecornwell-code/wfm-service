@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-status: planning
-last_updated: "2026-07-29T17:28:36.907Z"
+status: roadmapped
+last_updated: "2026-07-29T18:05:00.000Z"
 last_activity: 2026-07-29
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +20,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Planning next milestone
+**Current focus:** Planning Phase 9 (Agent Data Model Foundation)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-29 — Milestone v1.2 started
+Phase: 9 of 11 (Agent Data Model Foundation) — 1st of 3 phases in v1.2
+Plan: — (not yet planned)
+Status: Roadmap approved, ready to plan Phase 9
+Last activity: 2026-07-29 — ROADMAP.md and REQUIREMENTS.md traceability written for v1.2
+
+Progress: [░░░░░░░░░░] 0%
+
+## Milestone v1.2 Roadmap
+
+18/18 requirements mapped across 3 phases. See `.planning/ROADMAP.md` for full detail.
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | Not started |
+| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | Not started |
+| 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | Not started |
 
 ## Milestone v1.1 Outcome
 
@@ -79,19 +91,21 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - Quadratic penalties for hours consistency, not linear (avoids score traps)
 - Score breakdown guarded to in-memory schedules — `loadSnapshotData()` must be fixed before export work
 - Solver respects BambooHR fixed weekends rather than choosing them; fairness constraints may therefore only apply to agents without a parseable field-4517 pattern
+- v1.2: BambooHR ID always populated → match by ID only, no fuzzy matching; spreadsheet PTO/day-off columns are a recurring weekly pattern, not dated absences; Mon–Sun contracted hours are the authority on which days are worked; 6-col legacy upload shape retired
 
 ### Blockers/Concerns
 
 - **⚠ SECURITY — Backlog 999.7:** BambooHR API key (prefix `ad2bb…2be`) exposed 2026-06-02 was never rotated. Still present in tracked planning docs in a **public** repo; integration code has deployed to the live environment. Accepted as risk by operator on 2026-07-29 but unresolved.
-- **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. The live-desk exclusion proportion is unmeasured and may explain why the solver struggles to find solutions on real desks.
+- **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. v1.2 Phase 11 (MRG-06) directly targets this by letting spreadsheet-supplied patterns fill the gap.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
+- **MDL-02 is the highest-risk item in v1.2** — per-day contracted hours must compose with existing `AgentException` per-date overrides without changing solve behaviour for uniform-hours agents. Sequenced first (Phase 9) to gate parser and merge work.
 
 ## Session Continuity
 
 Last session: 2026-07-29
-Stopped at: Milestone v1.1 closed and archived
+Stopped at: v1.2 ROADMAP.md and REQUIREMENTS.md traceability written; roadmap awaiting user approval
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review and approve the v1.2 roadmap, then run `/gsd-plan-phase 9`

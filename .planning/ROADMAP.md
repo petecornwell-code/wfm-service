@@ -4,6 +4,7 @@
 
 - ⚠ **v1.0 AWS Deployment** — Phases 1–4 (partially shipped 2026-04-21; IAM blocker — see Backlog 999.1–999.3)
 - ⚠ **v1.1 Schedule Quality & Reporting** — Phases 5–8 (closed early 2026-07-29; 5–6 shipped, 7–8 deferred — see Backlog 999.4–999.6)
+- 🚧 **v1.2 Unified Agent Provisioning** — Phases 9–11 (in progress)
 
 ## Phases
 
@@ -33,7 +34,58 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.2 Unified Agent Provisioning (Phases 9–11, in progress)
+
+**Milestone Goal:** One spreadsheet upload fully provisions an agent roster — identity, desk, specializations, working pattern, days off, and PTO — merged field-by-field with BambooHR as source of truth and the spreadsheet filling every gap.
+
+- [ ] **Phase 9: Agent Data Model Foundation** - Per-day contracted hours and first/last name split, migrated without solve-behaviour regression
+- [ ] **Phase 10: Enriched Upload Parsing** - Extended spreadsheet format with unbounded specializations and Mon–Sun hours/days-off/PTO columns, with per-row validation
+- [ ] **Phase 11: BambooHR Merge Engine & Report** - Fresh-sync merge with per-field precedence and an operator-facing merge report
+
+## Phase Details
+
+### Phase 9: Agent Data Model Foundation
+**Goal**: Agent stores first/last name separately and per-day contracted hours, so the solver's `AgentDayConfig.effectiveHours` resolution composes with existing `AgentException` per-date overrides without changing solve behaviour for agents whose hours are uniform across worked days.
+**Depends on**: Nothing (first phase of v1.2; builds on v1.1 Phase 6 agent-data foundation)
+**Requirements**: MDL-01, MDL-02, MDL-03
+**Success Criteria** (what must be TRUE):
+  1. Every agent record (existing and new) shows first name and last name as separate fields, not a single combined `name`
+  2. Agent stores contracted hours per day of the week (Mon–Sun); `AgentDayConfig` resolves effective hours per date from these per-day values rather than a single scalar
+  3. Migrating an existing agent produces no data loss: the prior scalar `contractedHoursPerDay` becomes that agent's per-day value on every day they previously worked, and the single `name` splits cleanly into first/last
+  4. The solver produces the same schedule for agents whose contracted hours are uniform across worked days as it did before the migration — no behaviour regression for the common case
+**Plans**: TBD
+
+### Phase 10: Enriched Upload Parsing
+**Goal**: Operators upload one extended spreadsheet — building on the existing 16-column enriched shape — that captures full agent identity, an unbounded number of specializations, and Mon–Sun contracted-hours/mandatory-days-off/recurring-PTO patterns, with per-row validation and the 6-column legacy shape retired.
+**Depends on**: Phase 9 (the model must support first/last name and per-day hours before the parser can populate them)
+**Requirements**: UPL-01, UPL-02, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08
+**Success Criteria** (what must be TRUE):
+  1. Operator can upload a spreadsheet carrying BambooHR ID, first name, last name, job title, email, department, desk, and active status, and every field is parsed and stored
+  2. Operator can list any number of specialization columns (not just two) and all are parsed and matched against desk specializations
+  3. Operator can fill Mon–Sun contracted-hours, mandatory-day-off, and recurring-PTO columns; each is parsed per agent, with `0` or blank on a contracted-hours column correctly read as a day the agent does not work
+  4. A row that fails validation on any new column is skipped with a specific reason shown in the existing Upload Results view, while other valid rows in the same file still import
+  5. A row whose BambooHR ID is not found is rejected with reason "BambooHR ID not found" rather than creating an agent, and uploading a 6-column legacy sheet is no longer accepted while existing enriched sheets (without the new columns) still import successfully
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: BambooHR Merge Engine & Report
+**Goal**: Every upload runs a fresh BambooHR sync and merges spreadsheet data against it using documented per-field precedence — BambooHR authoritative where populated, spreadsheet filling gaps — and the operator can see exactly which value came from which source.
+**Depends on**: Phase 10 (parsed spreadsheet fields are the merge engine's input)
+**Requirements**: MRG-01, MRG-02, MRG-03, MRG-04, MRG-05, MRG-06, MRG-07
+**Success Criteria** (what must be TRUE):
+  1. Uploading a spreadsheet triggers a fresh BambooHR sync before any merge decision is made, so the merge always runs against current BambooHR data
+  2. For every field carried by both sources, BambooHR's value is used wherever BambooHR has data; the spreadsheet's value is used only where BambooHR's is absent
+  3. BambooHR's dated PTO blocks the dates it covers; the spreadsheet's recurring weekly PTO pattern applies only to dates BambooHR has no record for
+  4. Operator sees a merge report after upload, in the Upload Results modal, showing per field whether the value came from BambooHR or the spreadsheet, and which spreadsheet values were overridden by BambooHR
+  5. An agent whose working pattern BambooHR doesn't know but the spreadsheet supplies becomes solver-eligible — `workingDaysKnown` resolves true and the agent is no longer filtered out
+  6. If the BambooHR sync fails during upload (e.g. 503 rate limit), the operator sees a clear message and no partial merge is written
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 9 → 10 → 11
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -45,6 +97,9 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 6. Solver Quality Constraints | v1.1 | 3/3 | Complete | 2026-07-29 |
 | 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
+| 9. Agent Data Model Foundation | v1.2 | 0/TBD | Not started | - |
+| 10. Enriched Upload Parsing | v1.2 | 0/TBD | Not started | - |
+| 11. BambooHR Merge Engine & Report | v1.2 | 0/TBD | Not started | - |
 
 ## Backlog
 

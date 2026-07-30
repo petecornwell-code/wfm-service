@@ -72,21 +72,21 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UPL-01 | TBD | Pending |
-| UPL-02 | TBD | Pending |
-| UPL-03 | TBD | Pending |
-| UPL-04 | TBD | Pending |
-| UPL-05 | TBD | Pending |
-| UPL-06 | TBD | Pending |
-| UPL-07 | TBD | Pending |
-| UPL-08 | TBD | Pending |
-| MRG-01 | TBD | Pending |
-| MRG-02 | TBD | Pending |
-| MRG-03 | TBD | Pending |
-| MRG-04 | TBD | Pending |
-| MRG-05 | TBD | Pending |
-| MRG-06 | TBD | Pending |
-| MRG-07 | TBD | Pending |
-| MDL-01 | TBD | Pending |
-| MDL-02 | TBD | Pending |
-| MDL-03 | TBD | Pending |
+| UPL-01 | Phase 10 | Pending |
+| UPL-02 | Phase 10 | Pending |
+| UPL-03 | Phase 10 | Pending |
+| UPL-04 | Phase 10 | Pending |
+| UPL-05 | Phase 10 | Pending |
+| UPL-06 | Phase 10 | Pending |
+| UPL-07 | Phase 10 | Pending |
+| UPL-08 | Phase 10 | Pending |
+| MRG-01 | Phase 11 | Pending |
+| MRG-02 | Phase 11 | Pending |
+| MRG-03 | Phase 11 | Pending |
+| MRG-04 | Phase 11 | Pending |
+| MRG-05 | Phase 11 | Pending |
+| MRG-06 | Phase 11 | Pending |
+| MRG-07 | Phase 11 | Pending |
+| MDL-01 | Phase 9 | Pending |
+| MDL-02 | Phase 9 | Pending |
+| MDL-03 | Phase 9 | Pending |
