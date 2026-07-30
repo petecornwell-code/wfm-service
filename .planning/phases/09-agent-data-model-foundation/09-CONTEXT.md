@@ -36,9 +36,14 @@ Agent stores **first/last name separately** and **per-day-of-week contracted hou
 ### Storage shape (MDL-02)
 - **D-09:** Store per-day hours in a **new child table `agent_day_hours`** (`agent_id`, `day_of_week`, `hours`) with `@ManyToOne` back to `Agent`, consistent with the existing `AgentException` / `AgentDayOff` / `AgentPreference` conventions. **Absent = no row** for that weekday; **not-worked = a row with `0.00`.** This is the locked contract that Phase 10's parser and Phase 11's merge engine both write into. (Chosen over 7 nullable columns on the agent table, which would widen the row and fit the unbounded per-agent-day writes less naturally.)
 
+### Resolved open questions (post-research, 2026-07-30 — LOCKED)
+- **D-10:** `DeskAgentService.setContractedHours` must **fan out** the new value to all 7 `agent_day_hours` rows for the agent (same value to each weekday, mirroring D-01's migration rule) so operator hours edits keep affecting the solver post-migration. Correspondingly, where the upload flow clears hours (`DeskAssignmentUploadService` `setContractedHoursPerDay(null)`), delete that agent's per-day rows so a re-assigned agent does not inherit stale per-day hours. Rationale: keeps the "no solve-behaviour regression" invariant durable, not merely true at the migration instant. (Resolves RESEARCH Open Question 1 / Pitfall 2.)
+- **D-11:** Apply the D-06 name-split at **`DeskAssignmentUploadService`'s two `setName(...)` sites (~lines 276, 301)** in addition to `BambooRefreshService:211`, using the same shared `AgentNameSplitter` utility. Rationale: agents created via the upload path otherwise have empty `firstName`/`lastName` until their next BambooHR refresh. (Resolves RESEARCH Open Question 2.)
+- **D-12:** Phase 9 DTO/export changes are **scoped to name fields only** (`firstName`/`lastName` + derived combined `name`). Do **not** surface per-day `agent_day_hours` in `DeskAgentResponse` yet — no consumer needs it until Phase 10/11, and adding it now risks locking an API shape prematurely. (Resolves RESEARCH Open Question 3 — takes the research recommendation, consistent with the file-level guidance in canonical_refs.)
+
 ### Claude's Discretion
-- Exact `day_of_week` representation in `agent_day_hours` (e.g. `java.time.DayOfWeek` enum vs smallint 1–7), FK/unique-constraint layout, and precision/scale on `hours` — planner/researcher decide, mirroring the existing `contracted_hours_per_day` column (`precision = 5, scale = 2`).
-- Flyway version number and whether the migration is one script or split — planner decides.
+- Exact `day_of_week` representation in `agent_day_hours` (e.g. `java.time.DayOfWeek` enum vs smallint 1–7), FK/unique-constraint layout, and precision/scale on `hours` — planner/researcher decide, mirroring the existing `contracted_hours_per_day` column (`precision = 5, scale = 2`). Research recommends `@Enumerated(EnumType.STRING) DayOfWeek` mirroring `AgentPreference.dayOfWeek`.
+- Flyway version number and whether the migration is one script or split — planner decides (research recommends single `V29`).
 
 </decisions>
 
