@@ -54,7 +54,7 @@ public class AgentService {
     }
 
     private AgentResponse toResponse(Agent a) {
-        return new AgentResponse(a.getId(), a.getName(), a.getEmail(),
+        return new AgentResponse(a.getId(), a.getName(), a.getFirstName(), a.getLastName(), a.getEmail(),
                 a.getDepartment(), a.getJobTitle(), a.isActive(), a.getLastRefreshedAt());
     }
 }
