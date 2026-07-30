@@ -13,6 +13,7 @@ import com.wfm.model.*;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentExceptionRepository;
+import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.ConstraintWeightsRepository;
 import com.wfm.repository.DeskRepository;
@@ -52,6 +53,7 @@ public class SolverService {
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final AgentDayHoursRepository agentDayHoursRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final AgentEligibilityService agentEligibilityService;
 
@@ -66,6 +68,7 @@ public class SolverService {
                          AgentPreferenceRepository agentPreferenceRepository,
                          AgentDayOffRepository agentDayOffRepository,
                          AgentExceptionRepository agentExceptionRepository,
+                         AgentDayHoursRepository agentDayHoursRepository,
                          ConstraintWeightsRepository constraintWeightsRepository,
                          AgentEligibilityService agentEligibilityService) {
         this.defaultTimeLimit = defaultTimeLimit;
@@ -79,6 +82,7 @@ public class SolverService {
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.agentDayHoursRepository = agentDayHoursRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.agentEligibilityService = agentEligibilityService;
     }
@@ -142,6 +146,9 @@ public class SolverService {
         List<AgentException> exceptions = agentExceptionRepository.findByTenantIdAndDeskIdAndDateBetween(
                 tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
+        // Load per-day contracted hours for this desk (D-09; MDL-02 resolution authority)
+        List<AgentDayHours> agentDayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
+
         // Load preferences for this desk
         List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
@@ -165,7 +172,7 @@ public class SolverService {
 
         // 7. Run pre-solve validation (12 checks from spec §7.11)
         runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
-                eligibleAgents, allDaysOff, exceptions, resolvedPreferences);
+                eligibleAgents, allDaysOff, exceptions, agentDayHours, resolvedPreferences);
 
         // 8. Build lookup map for exceptions
         Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap = new HashMap<>();
@@ -174,9 +181,16 @@ public class SolverService {
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
 
+        // 8b. Build lookup map for per-day contracted hours (D-09; mirrors agentExceptionMap build)
+        Map<UUID, Map<DayOfWeek, BigDecimal>> agentDayHoursMap = new HashMap<>();
+        for (AgentDayHours h : agentDayHours) {
+            agentDayHoursMap.computeIfAbsent(h.getAgent().getId(), k -> new HashMap<>())
+                    .put(h.getDayOfWeek(), h.getHours());
+        }
+
         // 9. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
         List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
-                eligibleAgents, schedule, agentDaysOffMap, agentExceptionMap);
+                eligibleAgents, schedule, agentDaysOffMap, agentExceptionMap, agentDayHoursMap);
 
         // 9b. Compute capacity warnings (demand vs supply)
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
@@ -470,7 +484,8 @@ public class SolverService {
             List<Agent> eligibleAgents,
             Schedule schedule,
             Map<UUID, Set<LocalDate>> agentDaysOffMap,
-            Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap) {
+            Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap,
+            Map<UUID, Map<DayOfWeek, BigDecimal>> agentDayHoursMap) {
 
         List<AgentDayConfig> configs = new ArrayList<>();
 
@@ -478,13 +493,14 @@ public class SolverService {
             UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
+            Map<DayOfWeek, BigDecimal> dayHoursMap = agentDayHoursMap.getOrDefault(agentId, Map.of());
 
             for (LocalDate d = schedule.getPeriodStartDate();
                  !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
 
                 if (dayOffSet.contains(d)) continue;
 
-                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
+                BigDecimal effectiveHours = resolveEffectiveHours(exMap, dayHoursMap, d, schedule.getDefaultContractedHoursPerDay());
                 if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) continue;
 
                 configs.add(new AgentDayConfig(
@@ -569,6 +585,7 @@ public class SolverService {
                                        List<Agent> eligibleAgents,
                                        List<AgentDayOff> daysOff,
                                        List<AgentException> exceptions,
+                                       List<AgentDayHours> agentDayHours,
                                        List<AgentPreference> preferences) {
         List<ErrorDetail> errors = new ArrayList<>();
 
@@ -626,6 +643,11 @@ public class SolverService {
             agentExceptionMap.computeIfAbsent(ex.getAgent().getId(), k -> new HashMap<>())
                     .put(ex.getDate(), ex.getContractedHoursOverride());
         }
+        Map<UUID, Map<DayOfWeek, BigDecimal>> agentDayHoursMap = new HashMap<>();
+        for (AgentDayHours h : agentDayHours) {
+            agentDayHoursMap.computeIfAbsent(h.getAgent().getId(), k -> new HashMap<>())
+                    .put(h.getDayOfWeek(), h.getHours());
+        }
 
         // 4. Every active agent must have a primary specialization
         for (Agent agent : allAgents) {
@@ -645,10 +667,11 @@ public class SolverService {
             UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
+            Map<DayOfWeek, BigDecimal> dayHoursMap = agentDayHoursMap.getOrDefault(agentId, Map.of());
 
             for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                 if (dayOffSet.contains(d)) continue;
-                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
+                BigDecimal effectiveHours = resolveEffectiveHours(exMap, dayHoursMap, d, schedule.getDefaultContractedHoursPerDay());
                 if (effectiveHours != null && effectiveHours.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal remainder = effectiveHours.remainder(incrementHours);
                     if (remainder.compareTo(BigDecimal.ZERO) != 0) {
@@ -727,10 +750,11 @@ public class SolverService {
             UUID agentId = agent.getId();
             Map<LocalDate, BigDecimal> exMap = agentExceptionMap.getOrDefault(agentId, Map.of());
             Set<LocalDate> dayOffSet = agentDaysOffMap.getOrDefault(agentId, Set.of());
+            Map<DayOfWeek, BigDecimal> dayHoursMap = agentDayHoursMap.getOrDefault(agentId, Map.of());
 
             for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
                 if (dayOffSet.contains(d)) continue;
-                BigDecimal effectiveHours = getEffectiveHours(agent, d, exMap, schedule);
+                BigDecimal effectiveHours = resolveEffectiveHours(exMap, dayHoursMap, d, schedule.getDefaultContractedHoursPerDay());
                 if (effectiveHours == null || effectiveHours.compareTo(BigDecimal.ZERO) <= 0) continue;
 
                 boolean needsBreak = effectiveHours.compareTo(schedule.getBreakMinShiftHours()) > 0;
@@ -798,15 +822,30 @@ public class SolverService {
         }
     }
 
-    private BigDecimal getEffectiveHours(Agent agent, LocalDate date,
-                                         Map<LocalDate, BigDecimal> exceptionMap,
-                                         Schedule schedule) {
+    /**
+     * Resolves effective contracted hours for an agent+date (D-03/D-04 precedence):
+     *   1. AgentException override for the exact date (highest precedence)
+     *   2. per-day value for that weekday from the agent_day_hours map (including 0.00 —
+     *      a present 0.00 row means that weekday is not scheduled)
+     *   3. schedule default (fallback when the weekday is absent from the per-day map)
+     *
+     * The agent's scalar contractedHoursPerDay is NOT consulted here — per-day rows are
+     * the sole per-agent authority (MDL-02). Precedence checks use containsKey, never a
+     * null-check: a present AgentException row is always a real value (nullable=false),
+     * and a present per-day map entry is always a real value for the same reason.
+     */
+    static BigDecimal resolveEffectiveHours(Map<LocalDate, BigDecimal> exceptionMap,
+                                             Map<DayOfWeek, BigDecimal> dayHoursMap,
+                                             LocalDate date,
+                                             BigDecimal scheduleDefaultHours) {
         if (exceptionMap.containsKey(date)) {
             return exceptionMap.get(date);
         }
-        return agent.getContractedHoursPerDay() != null
-                ? agent.getContractedHoursPerDay()
-                : schedule.getDefaultContractedHoursPerDay();
+        DayOfWeek dow = date.getDayOfWeek();
+        if (dayHoursMap.containsKey(dow)) {
+            return dayHoursMap.get(dow);
+        }
+        return scheduleDefaultHours;
     }
 
     private boolean isAligned(LocalTime time, BreakAlignment alignment) {
