@@ -8,6 +8,7 @@ import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.service.BambooSyncEventService;
 import com.wfm.service.JobTitleConfigService;
+import com.wfm.util.AgentNameSplitter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -209,6 +210,9 @@ public class BambooRefreshService {
             if (emp == null) continue; // not in BambooHR response — handled by soft-delete below
 
             agent.setName(emp.displayName());
+            AgentNameSplitter.Split split = AgentNameSplitter.split(emp.displayName());
+            agent.setFirstName(split.firstName());
+            agent.setLastName(split.lastName());
             agent.setEmail(emp.workEmail());
             agent.setDepartment(emp.department());
             agent.setJobTitle(emp.jobTitle());
