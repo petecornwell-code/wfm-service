@@ -73,7 +73,7 @@ public class DeskAgentService {
                 a.getId(),
                 a.getDeskId(),
                 a.getBamboohrId(),
-                a.getName(), a.getEmail(),
+                a.getName(), a.getFirstName(), a.getLastName(), a.getEmail(),
                 a.getDepartment(), a.getJobTitle(),
                 a.isActive(), a.getLastRefreshedAt(),
                 ps != null ? new DeskAgentResponse.SpecSummary(ps.getId(), ps.getName()) : null,
