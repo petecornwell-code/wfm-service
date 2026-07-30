@@ -98,3 +98,12 @@ None - no external service configuration required.
 ---
 *Phase: 09-agent-data-model-foundation*
 *Completed: 2026-07-30*
+
+## Self-Check: PASSED
+
+- FOUND: src/main/java/com/wfm/service/SolverService.java
+- FOUND: src/test/java/com/wfm/service/SolverServiceEffectiveHoursResolutionTest.java
+- FOUND: .planning/phases/09-agent-data-model-foundation/09-03-SUMMARY.md
+- FOUND commit: a96bdc2 (test RED)
+- FOUND commit: 09b14b4 (feat GREEN)
+- FOUND commit: d44e941 (feat Task 2)
