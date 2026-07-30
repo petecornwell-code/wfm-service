@@ -60,10 +60,10 @@ Plans:
 - [x] 09-02-PLAN.md — agent_day_hours child entity + tenant-scoped repository (MDL-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 09-03-PLAN.md — SolverService per-day effective-hours resolution, all 3 call sites (MDL-02, MDL-03)
-- [ ] 09-04-PLAN.md — BambooHR refresh + upload name-split, per-day clear-on-reimport (MDL-01, MDL-02)
-- [ ] 09-05-PLAN.md — DTO/export first/last exposure + setContractedHours 7-row fan-out (MDL-01, MDL-02)
-- [ ] 09-06-PLAN.md — V29 Flyway migration + manual data-integrity checkpoint (MDL-03)
+- [x] 09-03-PLAN.md — SolverService per-day effective-hours resolution, all 3 call sites (MDL-02, MDL-03)
+- [x] 09-04-PLAN.md — BambooHR refresh + upload name-split, per-day clear-on-reimport (MDL-01, MDL-02)
+- [x] 09-05-PLAN.md — DTO/export first/last exposure + setContractedHours 7-row fan-out (MDL-01, MDL-02)
+- [x] 09-06-PLAN.md — V29 Flyway migration + manual data-integrity checkpoint (MDL-03)
 
 ### Phase 10: Enriched Upload Parsing
 **Goal**: Operators upload one extended spreadsheet — building on the existing 16-column enriched shape — that captures full agent identity, an unbounded number of specializations, and Mon–Sun contracted-hours/mandatory-days-off/recurring-PTO patterns, with per-row validation and the 6-column legacy shape retired.
