@@ -109,7 +109,7 @@ public class DeskAssignmentUploadService {
 
             // Build map: lowercase-trimmed header → column index
             Map<String, Integer> col = new LinkedHashMap<>();
-            for (int c = 0; c <= headerRow.getLastCellNum(); c++) {
+            for (int c = 0; c < headerRow.getLastCellNum(); c++) {
                 Cell cell = headerRow.getCell(c);
                 String hdr = getCellString(cell);
                 if (hdr != null && !hdr.isBlank()) {
@@ -171,11 +171,14 @@ public class DeskAssignmentUploadService {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
 
-                // Read cells via header-based column index
-                String bamboohrId = getCellString(row.getCell(col.getOrDefault(bamboohrIdCol, -1)));
-                String name = getCellString(row.getCell(col.getOrDefault("name", -1)));
-                String email = getCellString(row.getCell(col.getOrDefault("email", -1)));
-                String deskName = getCellString(row.getCell(col.getOrDefault(deskCol, -1)));
+                // Read cells via header-based column index. Shape detection does not require
+                // the ID/Name/Email columns, so a detected-but-incomplete sheet can yield index
+                // -1; cellAt() tolerates that instead of letting row.getCell(-1) throw and abort
+                // the whole upload with a 500.
+                String bamboohrId = cellAt(row, col, bamboohrIdCol);
+                String name = cellAt(row, col, "name");
+                String email = cellAt(row, col, "email");
+                String deskName = cellAt(row, col, deskCol);
 
                 // Parse specialty columns
                 List<String> specialtyNames = new ArrayList<>();
@@ -372,6 +375,16 @@ public class DeskAssignmentUploadService {
             agentDayHoursRepository.deleteByAgent_Id(agent.getId());
             agentRepository.save(agent);
         }
+    }
+
+    /**
+     * Null-safe header-indexed cell read. Returns null when the header is absent
+     * (col index -1) instead of calling row.getCell(-1), which throws
+     * IllegalArgumentException and would abort the entire upload.
+     */
+    private String cellAt(Row row, Map<String, Integer> col, String header) {
+        int idx = col.getOrDefault(header, -1);
+        return idx >= 0 ? getCellString(row.getCell(idx)) : null;
     }
 
     private String getCellString(Cell cell) {

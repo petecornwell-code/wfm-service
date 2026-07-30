@@ -12,6 +12,7 @@ import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.util.AgentNameSplitter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -278,6 +279,12 @@ public class ClientManagementService {
 
             // Update fields from BambooHR data
             agent.setName(emp.displayName());
+            // Populate first/last via the shared splitter (D-07) — this is the fourth
+            // agent write-site and must stay consistent with BambooRefreshService /
+            // DeskAssignmentUploadService, else agents assigned here persist null names.
+            AgentNameSplitter.Split split = AgentNameSplitter.split(emp.displayName());
+            agent.setFirstName(split.firstName());
+            agent.setLastName(split.lastName());
             agent.setEmail(emp.workEmail());
             agent.setDepartment(emp.department());
             agent.setJobTitle(emp.jobTitle());

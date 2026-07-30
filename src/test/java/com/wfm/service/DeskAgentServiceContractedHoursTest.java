@@ -21,6 +21,8 @@ import java.time.DayOfWeek;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Verifies DeskAgentService.setContractedHours fans the new value out to all 7
@@ -96,6 +98,30 @@ class DeskAgentServiceContractedHoursTest {
         assertThat(rows).hasSize(7);
         assertThat(rows).allSatisfy(row ->
                 assertThat(row.getHours()).isEqualByComparingTo(new BigDecimal("7.50")));
+    }
+
+    @Test
+    void setContractedHours_null_revertsToDefault_leavesZeroRows_withoutError() {
+        // Seed 7 rows first, then a null "revert to desk default" must clear them and
+        // NOT crash on the NOT NULL agent_day_hours.hours column (regression: CR-01).
+        deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("6"));
+        assertThat(agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).hasSize(7);
+
+        assertThatCode(() ->
+                deskAgentService.setContractedHours(desk.getId(), agent.getId(), null))
+                .doesNotThrowAnyException();
+
+        assertThat(agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
+        assertThat(agentRepository.findById(agent.getId()).orElseThrow().getContractedHoursPerDay()).isNull();
+    }
+
+    @Test
+    void setContractedHours_negative_isRejected() {
+        assertThatThrownBy(() ->
+                deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("-5")))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
     }
 
     @Test

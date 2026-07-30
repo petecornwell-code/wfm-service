@@ -192,20 +192,28 @@ public class DeskAgentService {
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         BigDecimal normalized = BigDecimals.normalize(hours);
+        if (normalized != null && normalized.signum() < 0) {
+            throw new IllegalArgumentException("Contracted hours per day must not be negative");
+        }
         agent.setContractedHoursPerDay(normalized);
         Agent saved = agentRepository.save(agent);
 
         // D-10: fan the new value out to all 7 agent_day_hours rows (replace, not append) so
         // the solver — which no longer reads the scalar — keeps honouring operator edits.
+        // A null value is a legitimate "revert to desk default" operation: clear the rows and
+        // leave zero rows so the solver falls back to the schedule default. Writing null into
+        // agent_day_hours.hours (NOT NULL) would raise a DataIntegrityViolationException/500.
         agentDayHoursRepository.deleteByAgent_Id(agentId);
         agentDayHoursRepository.flush();
-        for (DayOfWeek dayOfWeek : DayOfWeek.values()) {
-            AgentDayHours dayHours = new AgentDayHours();
-            dayHours.setTenantId(saved.getTenantId());
-            dayHours.setAgent(saved);
-            dayHours.setDayOfWeek(dayOfWeek);
-            dayHours.setHours(normalized);
-            agentDayHoursRepository.save(dayHours);
+        if (normalized != null) {
+            for (DayOfWeek dayOfWeek : DayOfWeek.values()) {
+                AgentDayHours dayHours = new AgentDayHours();
+                dayHours.setTenantId(saved.getTenantId());
+                dayHours.setAgent(saved);
+                dayHours.setDayOfWeek(dayOfWeek);
+                dayHours.setHours(normalized);
+                agentDayHoursRepository.save(dayHours);
+            }
         }
 
         return toResponse(saved, deskDefault, List.of());
