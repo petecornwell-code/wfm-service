@@ -22,7 +22,8 @@ public class DeskAgentExportService {
                 "ID", "Desk ID", "BambooHR ID", "Name", "Email",
                 "Department", "Job Title", "Active", "Last Refreshed At",
                 "Primary Specialization", "Secondary Specializations",
-                "Contracted Hours Per Day", "Effective Contracted Hours Per Day"
+                "Contracted Hours Per Day", "Effective Contracted Hours Per Day",
+                "First Name", "Last Name"
             };
 
             Row header = sheet.createRow(0);
@@ -48,6 +49,8 @@ public class DeskAgentExportService {
                 row.createCell(10).setCellValue(formatSecondarySpecializations(agent.secondarySpecializations()));
                 row.createCell(11).setCellValue(agent.contractedHoursPerDay() != null ? agent.contractedHoursPerDay().doubleValue() : 0);
                 row.createCell(12).setCellValue(agent.effectiveContractedHoursPerDay() != null ? agent.effectiveContractedHoursPerDay().doubleValue() : 0);
+                row.createCell(13).setCellValue(agent.firstName() != null ? agent.firstName() : "");
+                row.createCell(14).setCellValue(agent.lastName() != null ? agent.lastName() : "");
             }
 
             for (int i = 0; i < columns.length; i++) {

@@ -297,7 +297,7 @@ public class ClientManagementService {
             agent = agentRepository.save(agent);
 
             results.add(new AgentResponse(
-                    agent.getId(), agent.getName(), agent.getEmail(),
+                    agent.getId(), agent.getName(), agent.getFirstName(), agent.getLastName(), agent.getEmail(),
                     agent.getDepartment(), agent.getJobTitle(),
                     agent.isActive(), agent.getLastRefreshedAt()));
         }

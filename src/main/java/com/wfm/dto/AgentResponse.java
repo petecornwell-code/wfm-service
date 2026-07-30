@@ -6,6 +6,8 @@ import java.util.UUID;
 public record AgentResponse(
         UUID id,
         String name,
+        String firstName,
+        String lastName,
         String email,
         String department,
         String jobTitle,
