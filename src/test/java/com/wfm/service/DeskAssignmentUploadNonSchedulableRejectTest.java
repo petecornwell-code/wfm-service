@@ -31,6 +31,7 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
     private ClientManagementService clientManagementService;
     private AgentPreferenceRepository agentPreferenceRepository;
     private AgentExceptionRepository agentExceptionRepository;
+    private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
 
@@ -46,12 +47,13 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         clientManagementService = mock(ClientManagementService.class);
         agentPreferenceRepository = mock(AgentPreferenceRepository.class);
         agentExceptionRepository = mock(AgentExceptionRepository.class);
+        agentDayHoursRepository = mock(AgentDayHoursRepository.class);
         specializationRepository = mock(SpecializationRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
 
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
-                agentPreferenceRepository, agentExceptionRepository,
+                agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
                 specializationRepository, agentEligibilityService);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);

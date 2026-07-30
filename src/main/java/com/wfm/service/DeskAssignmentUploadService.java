@@ -6,11 +6,13 @@ import com.wfm.dto.SkippedRow;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
+import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.SpecializationRepository;
+import com.wfm.util.AgentNameSplitter;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
@@ -33,6 +35,7 @@ public class DeskAssignmentUploadService {
     private final ClientManagementService clientManagementService;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final AgentDayHoursRepository agentDayHoursRepository;
     private final SpecializationRepository specializationRepository;
     private final AgentEligibilityService agentEligibilityService;
 
@@ -41,6 +44,7 @@ public class DeskAssignmentUploadService {
                                         ClientManagementService clientManagementService,
                                         AgentPreferenceRepository agentPreferenceRepository,
                                         AgentExceptionRepository agentExceptionRepository,
+                                        AgentDayHoursRepository agentDayHoursRepository,
                                         SpecializationRepository specializationRepository,
                                         AgentEligibilityService agentEligibilityService) {
         this.agentRepository = agentRepository;
@@ -48,6 +52,7 @@ public class DeskAssignmentUploadService {
         this.clientManagementService = clientManagementService;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.agentDayHoursRepository = agentDayHoursRepository;
         this.specializationRepository = specializationRepository;
         this.agentEligibilityService = agentEligibilityService;
     }
@@ -274,6 +279,9 @@ public class DeskAssignmentUploadService {
                     agent.setTenantId(tenantId);
                     agent.setBamboohrId(cached.id());
                     agent.setName(cached.displayName());
+                    AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(cached.displayName());
+                    agent.setFirstName(cachedSplit.firstName());
+                    agent.setLastName(cachedSplit.lastName());
                     agent.setEmail(cached.workEmail());
                     agent.setDepartment(cached.department());
                     agent.setJobTitle(cached.jobTitle());
@@ -299,6 +307,9 @@ public class DeskAssignmentUploadService {
                 // Update fields from spreadsheet if provided
                 if (hasName) {
                     agent.setName(name.trim());
+                    AgentNameSplitter.Split nameSplit = AgentNameSplitter.split(name.trim());
+                    agent.setFirstName(nameSplit.firstName());
+                    agent.setLastName(nameSplit.lastName());
                 }
                 if (hasEmail) {
                     agent.setEmail(email.trim());
@@ -358,6 +369,7 @@ public class DeskAssignmentUploadService {
             agent.setPrimarySpecialization(null);
             agent.getSecondarySpecializations().clear();
             agent.setContractedHoursPerDay(null);
+            agentDayHoursRepository.deleteByAgent_Id(agent.getId());
             agentRepository.save(agent);
         }
     }
