@@ -11,7 +11,7 @@ requires:
   - phase: 09-agent-data-model-foundation (plan 02)
     provides: AgentDayHours JPA entity + AgentDayHoursRepository (agent_day_hours table shape)
 provides:
-  - "V29__agent_first_last_name_and_day_hours.sql: additive DDL + name-split backfill + scalar fan-out (NOT YET verified against real Postgres)"
+  - "V29__agent_first_last_name_and_day_hours.sql: additive DDL + name-split backfill + scalar fan-out (VERIFIED against seeded postgres:16 on 2026-07-30; name-split hardened to match AgentNameSplitter)"
 affects: [09-07-onward (any plan reading agent_day_hours/first_name/last_name from a real DB), /gsd-verify-work]
 
 # Tech tracking
@@ -32,7 +32,7 @@ key-decisions:
 
 patterns-established: []
 
-requirements-completed: []  # MDL-03 is NOT complete — Task 2 (manual migration dry-run) is a blocking checkpoint, not yet approved. Do not mark MDL-03 done until a human runs and approves Task 2.
+requirements-completed: [MDL-03]  # Task 2 manual dry-run run against seeded postgres:16 on 2026-07-30; passed after hardening the name-split backfill (see Checkpoint Resolution).
 
 # Metrics
 duration: 12min
@@ -97,6 +97,34 @@ The worktree's initial branch (`worktree-agent-af590a347729c4ea4`) was based on 
 - V29 migration SQL is written, structurally verified, and committed — ready for the manual dry-run
 - This plan (and MDL-03) cannot be marked complete, and `/gsd-verify-work` should not run for phase 9, until Task 2 is approved
 - No other phase 9 plan is blocked by this pause — 09-01 through 09-05 are already complete per their own SUMMARYs
+
+## Checkpoint Resolution (2026-07-30) — VERIFIED + HARDENED
+
+Task 2's mandatory manual dry-run was executed against a throwaway `postgres:16`
+(16.14) Docker container (matches prod RDS 16.6). A minimal pre-V29 `agent` table
+(id/tenant_id/name/contracted_hours_per_day, real types) was seeded with 9
+representative rows and V29 was run end-to-end (`ON_ERROR_STOP=1`, exit 0 — no
+`gen_random_uuid` extension error).
+
+**Fan-out (D-01/D-02): PASS, no changes needed.**
+- `agent_day_hours` rows = 49 = 7 × 7 non-null-scalar agents (exact).
+- Each non-null-scalar agent has exactly 7 rows across 7 distinct weekdays, all
+  equal to its original scalar (0 mismatches). Grace (scalar `0.00`, non-null)
+  correctly gets 7 rows of `0.00`.
+- NULL-scalar agents (Bob Smith, Cher) get 0 rows.
+
+**Name split (D-06): FAILED as written, FIXED.** Cross-checking the SQL output
+against the real `AgentNameSplitter.split()` (run on the same 9 inputs) revealed
+two divergences, both because the original SQL split the raw `name` while the Java
+utility trims first and coalesces null/blank to empty:
+- `' Leading Space'` → SQL gave `('', 'Leading Space')`; Java gives `('Leading','Space')`.
+- `NULL` name → SQL gave `(NULL, '')`; Java gives `('','')`.
+
+Fixed in commit `6af92bd` by normalising once via
+`trim(both E' \t\n\r' from coalesce(name,''))` in a subquery before
+`split_part`/`position`/`substring`. Re-ran the full dry-run: SQL name split now
+matches `AgentNameSplitter` on **all 9** inputs, and the fan-out re-verified
+identical (49=49, 0 mismatches). Container torn down after verification.
 
 ## Self-Check: PASSED
 
