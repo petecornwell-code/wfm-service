@@ -194,6 +194,27 @@ public class DeskAssignmentUploadService {
                     }
                 }
 
+                // Validate the sheet's OWN header set before clearing the desk (CR-01). The
+                // file-wide shape classification above only inspects sheet 0's headers; an
+                // individual sheet can still have a typo'd/renamed/missing required header.
+                // If so, skip the sheet with a specific notice and do NOT clearDesk — CR-01
+                // demonstrated that clearing first and then having every row fail to
+                // re-import silently empties the desk's roster with zero replacements.
+                List<String> missingHeaders = new ArrayList<>();
+                if (!col.containsKey(normBamboohrId)) {
+                    missingHeaders.add(EnrichedColumnLayout.COL_BAMBOOHR_ID);
+                }
+                for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) {
+                    if (!col.containsKey(EnrichedColumnLayout.normalize(EnrichedColumnLayout.dayHeader(d)))) {
+                        missingHeaders.add(EnrichedColumnLayout.dayHeader(d));
+                    }
+                }
+                if (!missingHeaders.isEmpty()) {
+                    skippedSheets.add(new SkippedSheet(sheetName,
+                            "missing required column(s): " + String.join(", ", missingHeaders) + " — skipped"));
+                    continue; // desk is left untouched — no clearDesk
+                }
+
                 // Unbounded "Specialty N" header scan (D-06) — ordered by N, first
                 // non-blank value becomes primary, the rest secondary.
                 List<Integer> specialtyColIndices = col.entrySet().stream()
