@@ -7,6 +7,7 @@ import com.wfm.model.EmploymentType;
 import com.wfm.service.JobTitleConfigService;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -249,6 +250,34 @@ class BambooRefreshServiceTest {
 
         AgentDayOff winner = dedupedDaysOff.get("agentA5|" + saturday);
         assertThat(winner.getType()).isEqualTo(DayOffType.MANDATORY);
+    }
+
+    // -----------------------------------------------------------------------
+    //  D-12 structural regression: BambooRefreshService must have no
+    //  AgentDayHoursRepository dependency, so refreshDeskAgents structurally
+    //  cannot delete/mutate agent_day_hours rows (spreadsheet-sourced hours +
+    //  MANDATORY/PTO labels). The only day-off mutation refresh performs is the
+    //  dated-window delete/regenerate on AgentDayOffRepository -- a different
+    //  table from agent_day_hours (Pitfall 2 / T-10-01).
+    // -----------------------------------------------------------------------
+
+    @Test
+    void refreshService_declaresNoAgentDayHoursRepositoryDependency() {
+        Field[] fields = BambooRefreshService.class.getDeclaredFields();
+
+        boolean hasAgentDayHoursRepositoryField = Arrays.stream(fields)
+                .anyMatch(f -> f.getType().getSimpleName().equals("AgentDayHoursRepository"));
+        assertThat(hasAgentDayHoursRepositoryField)
+                .as("BambooRefreshService must not declare an AgentDayHoursRepository field -- "
+                        + "if it does, refreshDeskAgents could mutate agent_day_hours and silently "
+                        + "wipe spreadsheet-sourced MANDATORY/PTO/hours labels (D-12)")
+                .isFalse();
+
+        boolean hasAgentDayHoursTypedField = Arrays.stream(fields)
+                .anyMatch(f -> f.getType().getSimpleName().equals("AgentDayHours"));
+        assertThat(hasAgentDayHoursTypedField)
+                .as("BambooRefreshService must not declare a field of type AgentDayHours")
+                .isFalse();
     }
 
     // -----------------------------------------------------------------------
