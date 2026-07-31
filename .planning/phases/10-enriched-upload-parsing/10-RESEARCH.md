@@ -523,16 +523,19 @@ ALTER TABLE agent_day_hours
    - What we know: That endpoint (`AgentDayOffController`) reads only dated `AgentDayOff` rows. The recommended `agent_day_hours.day_off_type` storage does not populate it (by design, to avoid the window-wipe hazard).
    - What's unclear: Whether any current or near-term UI consumes that endpoint for a "days off calendar" view that operators would expect to reflect spreadsheet-sourced recurring PTO/MANDATORY.
    - Recommendation: Confirm with the user/PROJECT.md whether this calendar view is an active UI surface before deciding whether to invest in a *safe* dated-materialization companion (i.e., extending `BambooRefreshService`'s window-expansion step to read `agent_day_hours.day_off_type` and re-expand it into dated rows on every sync, rather than having the parser write dated rows directly). If no UI currently reads that endpoint for this purpose, skip it — the solver-blocking and Upload Results reporting needs are already fully met without it.
+   - **RESOLUTION (DEFERRED → Phase 11):** Out of scope for Phase 10. Phase 10's solver-blocking + Upload Results reporting needs are fully met by `agent_day_hours.day_off_type` without dated materialization. Whether spreadsheet-sourced recurring MANDATORY/PTO should surface in the `/agents/{id}/days-off` dated calendar API is a Phase 11 merge-engine concern (it depends on the same BambooHR↔spreadsheet precedence work MRG-01/02 owns). No Phase 10 plan writes dated `AgentDayOff` rows from the spreadsheet.
 
 2. **Exact Spring Boot version / current multipart default in this project.**
    - What we know: No `spring.servlet.multipart.*` override exists in `application.yml`.
    - What's unclear: The project's exact Spring Boot version (not independently confirmed this session) and therefore its exact default file-size limit.
    - Recommendation: Add an explicit, generous multipart size override as a low-cost defensive measure regardless of the exact default (Common Pitfall #5).
+   - **RESOLUTION (RESOLVED):** Plan 10-03 Task 2 adds explicit `spring.servlet.multipart.max-file-size: 10MB` / `max-request-size: 10MB` to `application.yml` (T-10-04 mitigation), independent of the exact Spring Boot default — closing the question defensively either way.
 
 3. **Desk sheet ordering / duplicate sheet-name handling.**
    - What we know: Excel technically permits sheet names that differ only by trailing whitespace or invisible characters; `deskByName` and sheet-name normalization should handle the common case (Pitfall 4).
    - What's unclear: Whether two sheets could resolve to the same desk after normalization (e.g., "Billing" and "billing" as two separate sheets in one workbook) and what should happen (last-wins clear-then-reimport? or reject as ambiguous?).
    - Recommendation: Planner should pick one explicit behavior (recommend: process in sheet order, second match re-clears and re-populates the same desk, effectively "last sheet wins" — consistent with D-17's clear-then-reimport philosophy) and add a test for it.
+   - **RESOLUTION (RESOLVED — last-sheet-wins):** Decided in Plan 10-03 Task 1 (c): two sheets normalizing to the same desk process in sheet order; the second match re-clears (`clearDesk`) and re-populates the desk, so the last sheet wins — consistent with D-17. A colliding-sheet-name regression test is added in Plan 10-05 Task 1.
 
 ## Validation Architecture
 
