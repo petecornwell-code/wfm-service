@@ -19,7 +19,6 @@ import com.wfm.util.AgentNameSplitter;
 import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.WorkbookUtil;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -116,7 +115,21 @@ public class DeskAssignmentUploadService {
             specsByDesk.put(d.getId(), specMap);
         }
 
-        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+        Workbook workbook;
+        try {
+            // WorkbookFactory auto-detects OLE2 (.xls) vs OOXML (.xlsx) from the stream's
+            // magic bytes, so both formats the frontend advertises (accept=".xlsx,.xls")
+            // actually parse (WR-03) — new XSSFWorkbook(...) only ever supported .xlsx.
+            workbook = WorkbookFactory.create(file.getInputStream());
+        } catch (IOException | RuntimeException e) {
+            // A stream that isn't a recognized OLE2/OOXML container, or a POI-specific
+            // format issue (e.g. EncryptedDocumentException), previously propagated
+            // uncaught to GlobalExceptionHandler's generic 500. Surface a clean 400
+            // instead (WR-03).
+            throw new IllegalArgumentException(
+                    "Unable to read the uploaded file. Please upload a valid .xlsx or .xls spreadsheet.", e);
+        }
+        try (workbook) {
             if (workbook.getNumberOfSheets() == 0) {
                 throw new IllegalArgumentException("Spreadsheet has no sheets");
             }
