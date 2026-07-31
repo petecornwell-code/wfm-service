@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, type SheetSummary, type SkippedSheet, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitle' | 'status'
@@ -33,6 +33,7 @@ export default function ClientManagement() {
 
   // Desk assignment upload
   const [uploading, setUploading] = useState(false)
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Upload result modal
@@ -172,6 +173,28 @@ export default function ClientManagement() {
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleDownloadTemplate = async () => {
+    setDownloadingTemplate(true)
+    try {
+      const res = await clientManagement.downloadDeskAssignmentTemplate()
+      if (!res.ok) {
+        showToast('error', 'Template download failed')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'desk-assignment-template.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setDownloadingTemplate(false)
     }
   }
 
@@ -323,8 +346,15 @@ export default function ClientManagement() {
             {uploading ? 'Uploading...' : 'Upload Desk Assignments'}
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadDeskAssignments} />
+          <button onClick={handleDownloadTemplate} disabled={downloadingTemplate}>
+            {downloadingTemplate ? 'Downloading...' : 'Download template'}
+          </button>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-            Upload an .xlsx file with columns: BambooHR ID, Name, Email, Desk Assignment. Only Desk Assignment is required — agents are matched by ID, then email, then name.
+            Upload an .xlsx workbook with one worksheet per desk (sheet name = desk name). Each sheet needs a BambooHR ID
+            column and one column per day (Monday…Sunday) — each day cell holds a number of hours (0–24), MANDATORY, or PTO.
+            Specialty columns (Specialty 1, Specialty 2, …) are optional. Download the template above to get a workbook
+            pre-seeded with your current roster's identity columns. The old 6-column and flat enriched shapes are no longer
+            accepted — re-download the template if your file uses either.
           </span>
         </div>
       </div>
@@ -468,6 +498,31 @@ export default function ClientManagement() {
                 </>
               )}
             </div>
+            {uploadResult.sheetSummaries.length > 0 && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>Per-desk rollup</div>
+                <ul style={{ fontSize: '0.85rem', margin: 0, paddingLeft: '1.25rem' }}>
+                  {uploadResult.sheetSummaries.map((sheet: SheetSummary, idx: number) => (
+                    <li key={idx}>
+                      {sheet.deskName}: {sheet.importedCount} imported, {sheet.skippedCount} skipped
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(uploadResult.warnings.length > 0 || uploadResult.skippedSheets.length > 0) && (
+              <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#92400e', marginBottom: '0.25rem' }}>Warnings</div>
+                <ul style={{ fontSize: '0.85rem', color: '#92400e', margin: 0, paddingLeft: '1.25rem' }}>
+                  {uploadResult.warnings.map((warning: string, idx: number) => (
+                    <li key={`warning-${idx}`}>{warning}</li>
+                  ))}
+                  {uploadResult.skippedSheets.map((sheet: SkippedSheet, idx: number) => (
+                    <li key={`skipped-sheet-${idx}`}>Sheet "{sheet.sheetName}": {sheet.reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {uploadResult.skippedCount > 0 && (
               <div style={{ overflowY: 'auto', maxHeight: '300px', marginTop: '1rem', border: '1px solid #e5e7eb', borderRadius: '4px' }}>
                 <table style={{ width: '100%', fontSize: '0.85rem' }}>
