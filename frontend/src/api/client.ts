@@ -410,6 +410,10 @@ export const clientManagement = {
     fetch(`${API_BASE}/client-management/employees/export?department=${encodeURIComponent(department)}`, {
       headers: { 'X-Tenant-ID': currentTenantId },
     }),
+  downloadDeskAssignmentTemplate: () =>
+    fetch(`${API_BASE}/client-management/desk-assignments/template`, {
+      headers: { 'X-Tenant-ID': currentTenantId },
+    }),
   uploadDeskAssignments: async (file: File): Promise<DeskAssignmentUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -429,6 +433,10 @@ export const clientManagement = {
 
 export interface SkippedRow { rowNumber: number; bamboohrId: string | null; name: string | null; reason: string }
 
+export interface SkippedSheet { sheetName: string; reason: string }
+
+export interface SheetSummary { deskName: string; importedCount: number; skippedCount: number }
+
 export interface JobTitleConfigResponse { id: string; jobTitle: string; nonSchedulable: boolean; createdAt: string; updatedAt: string }
 
 export interface BambooSyncEventResponse {
@@ -441,7 +449,15 @@ export interface BambooSyncEventResponse {
   retryAfterSeconds: number | null
 }
 
-export interface DeskAssignmentUploadResult { assignedCount: number; skippedCount: number; assignedDetails: string[]; skippedDetails: SkippedRow[] }
+export interface DeskAssignmentUploadResult {
+  assignedCount: number
+  skippedCount: number
+  assignedDetails: string[]
+  skippedDetails: SkippedRow[]
+  sheetSummaries: SheetSummary[]
+  warnings: string[]
+  skippedSheets: SkippedSheet[]
+}
 
 // --- Job Title Config ---
 export const jobTitleConfig = {
