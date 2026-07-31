@@ -66,15 +66,16 @@ Plans:
 - [x] 09-06-PLAN.md — V29 Flyway migration + manual data-integrity checkpoint (MDL-03)
 
 ### Phase 10: Enriched Upload Parsing
-**Goal**: Operators upload one extended spreadsheet — building on the existing 16-column enriched shape — that captures full agent identity, an unbounded number of specializations, and Mon–Sun contracted-hours/mandatory-days-off/recurring-PTO patterns, with per-row validation and the 6-column legacy shape retired.
+**Goal**: Operators upload one workbook — **one worksheet per desk** (sheet name = desk) — that captures full agent identity, an unbounded number of specializations, and a **single Mon–Sun day-cell group** whose per-cell value encodes status (a number `>= 0` = contracted hours, `MANDATORY` = mandatory day off, `PTO` = recurring PTO; `0`/`MANDATORY`/`PTO` all mean not-worked), with per-row/per-sheet validation, a downloadable pre-seeded template, and both the 6-column legacy shape and the old flat enriched shape retired.
 **Depends on**: Phase 9 (the model must support first/last name and per-day hours before the parser can populate them)
-**Requirements**: UPL-01, UPL-02, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08
+**Requirements**: UPL-01, UPL-02, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08, UPL-09
+**Design revision (2026-07-31, see `10-CONTEXT.md`)**: the three Mon–Sun column groups collapse into one polymorphic 7-column day group; the day cell (not a separate contracted-hours group) is the authority on which days are worked; old flat enriched sheets are retired too. Phase 10 writes days-off using a coexist/union rule with BambooHR field-4517 blocks — true per-field precedence is Phase 11.
 **Success Criteria** (what must be TRUE):
-  1. Operator can upload a spreadsheet carrying BambooHR ID, first name, last name, job title, email, department, desk, and active status, and every field is parsed and stored
-  2. Operator can list any number of specialization columns (not just two) and all are parsed and matched against desk specializations
-  3. Operator can fill Mon–Sun contracted-hours, mandatory-day-off, and recurring-PTO columns; each is parsed per agent, with `0` or blank on a contracted-hours column correctly read as a day the agent does not work
-  4. A row that fails validation on any new column is skipped with a specific reason shown in the existing Upload Results view, while other valid rows in the same file still import
-  5. A row whose BambooHR ID is not found is rejected with reason "BambooHR ID not found" rather than creating an agent, and uploading a 6-column legacy sheet is no longer accepted while existing enriched sheets (without the new columns) still import successfully
+  1. Operator can upload a workbook with one sheet per desk carrying BambooHR ID, first name, last name, job title, email, department, and active status, and every field is parsed and stored (desk comes from the sheet name)
+  2. Operator can list any number of specialization columns (`Specialty 1…N`, not just two) and all are parsed and matched against desk specializations
+  3. Operator can fill the Mon–Sun day cells; each cell is parsed per agent as hours (`>= 0`, where `0` = day not worked), `MANDATORY` (mandatory day off), or `PTO` (recurring weekly PTO), and a blank cell is invalid
+  4. A row that fails validation (blank/invalid day cell, negative hours, unknown BambooHR ID) is skipped with a specific reason; the Upload Results view shows a per-sheet rollup, skip reasons, unmatched-sheet notices, and clamp warnings (>24 → 24); other valid rows in the same file still import
+  5. A row whose BambooHR ID is not found is rejected with reason "BambooHR ID not found" rather than creating an agent; uploading a 6-column legacy sheet or an old flat enriched sheet is no longer accepted, and operators use the downloadable pre-seeded per-desk template instead
 **Plans**: TBD
 **UI hint**: yes
 

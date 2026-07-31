@@ -10,14 +10,23 @@
 
 ### Upload Format & Parsing
 
-- [ ] **UPL-01**: Operator can upload a single spreadsheet that provisions agents with BambooHR ID, first name, last name, job title, email, department, desk, and active status
-- [ ] **UPL-02**: The upload parses an unbounded (but finite) number of specialization columns per agent, rather than a fixed `Specialty 1` / `Specialty 2` pair
-- [ ] **UPL-03**: The upload parses Monday–Sunday contracted-hours columns per agent, where `0` or blank marks a day the agent does not work
-- [ ] **UPL-04**: The upload parses Monday–Sunday mandatory day-off columns per agent
-- [ ] **UPL-05**: The upload parses Monday–Sunday recurring PTO columns per agent, applied across the schedule horizon as a repeating weekly pattern
-- [ ] **UPL-06**: Rows failing validation on any new column are skipped with a specific per-row reason shown in the existing Upload Results view, and valid rows in the same file still import
-- [ ] **UPL-07**: Rows whose BambooHR ID is not found in BambooHR are rejected with reason "BambooHR ID not found" rather than creating an agent
-- [ ] **UPL-08**: The 6-column legacy upload shape is retired; the enriched shape is extended in place and existing enriched sheets continue to import
+> **Revised 2026-07-31 (Phase 10 discussion — see `10-CONTEXT.md`).** The three separate Mon–Sun
+> column groups (contracted-hours / mandatory-day-off / recurring-PTO, ~21 columns) are consolidated
+> into **one Mon–Sun day-cell group (7 columns)** where each cell's *value* encodes status:
+> a number `>= 0` = contracted hours (`0` = day not worked), the keyword `MANDATORY` = mandatory day
+> off, `PTO` = recurring weekly PTO. All of `0` / `MANDATORY` / `PTO` mean "not schedulable that day".
+> Every day cell is required — **blank is invalid**. The workbook has **one worksheet per desk** (sheet
+> name = desk; no per-row Desk column). Keywords are case-insensitive (`MANDATORY`, `PTO`).
+
+- [ ] **UPL-01**: Operator can upload a single workbook — **one worksheet per desk, sheet name = desk** — that provisions agents with BambooHR ID, first name, last name, job title, email, department, and active status. Minimum valid row = BambooHR ID + all 7 day cells populated; identity fields are optional and sourced from BambooHR where blank
+- [ ] **UPL-02**: The upload parses an unbounded (but finite) number of specialization columns per agent (`Specialty 1`, `Specialty 2`, … `Specialty N`), rather than a fixed `Specialty 1` / `Specialty 2` pair; first non-blank = primary, rest = secondary
+- [ ] **UPL-03**: The upload parses the Monday–Sunday day cells per agent; a numeric cell `>= 0` is contracted hours for that day, where `0` marks a day the agent does not work (never blank)
+- [ ] **UPL-04**: A Monday–Sunday day cell equal to `MANDATORY` marks a mandatory day off for that weekday
+- [ ] **UPL-05**: A Monday–Sunday day cell equal to `PTO` marks recurring weekly PTO, applied across the schedule horizon as a repeating weekly pattern
+- [ ] **UPL-06**: Rows failing validation (blank day cell, or a value that is not a number 0–24 / `MANDATORY` / `PTO`; negatives rejected) are skipped with a specific per-row reason; the Upload Results view shows a per-sheet rollup, per-row skip reasons, unmatched-sheet notices, and clamp warnings (values > 24 clamped to 24, surfaced non-silently); valid rows in the same file still import
+- [ ] **UPL-07**: Rows whose BambooHR ID is not found in BambooHR are rejected with reason "BambooHR ID not found" rather than creating an agent (matching is by BambooHR ID only)
+- [ ] **UPL-08**: The 6-column legacy shape **and** the previous flat enriched shape (single sheet + Desk column) are both retired; one per-desk enriched shape replaces them, and operators re-download the pre-seeded template once (~~existing enriched sheets continue to import~~ — superseded 2026-07-31)
+- [ ] **UPL-09**: Operator can download a blank pre-seeded template — one worksheet per desk, current roster identity filled, schedule (day cells + specialties) left blank; template, upload parser, and export share one column-layout definition (folds the `2026-07-30-blank-upload-template-one-sheet-per-desk` todo)
 
 ### Merge & Precedence
 
@@ -63,7 +72,8 @@
 ## Open Risks
 
 - **Fresh-sync-on-upload (MRG-01) couples upload latency to BambooHR availability.** v1.1 shipped 503/429 handling with a human-readable retry message, which MRG-07 builds on, but a large roster sync inside a request may need async handling or a longer timeout.
-- **Retiring the 6-col legacy shape (UPL-08) is operator-visible.** Anyone still using a legacy sheet must re-export before their next upload.
+- **Retiring both the 6-col legacy shape and the old flat enriched shape (UPL-08) is operator-visible.** Every operator must re-download the new pre-seeded per-desk template (UPL-09) before their next upload — no old sheet imports.
+- **Phase 10 uses a coexist/union rule, not a merge (Phase 11 boundary).** In Phase 10 a spreadsheet MANDATORY/PTO day cell is *added* to the days-off BambooHR derives from field 4517 — a day is off if either source says so — so the spreadsheet cannot yet turn a BambooHR day off back into a worked day. True per-field precedence (MRG-02) and un-blocking arrive with the Phase 11 merge engine.
 - **MDL-02 is the highest-risk change** — `contractedHoursPerDay` feeds the solver through `AgentDayConfig.effectiveHours`, and `AgentException` rows already override it per date. Per-day hours must compose with exceptions without changing existing solve behaviour for agents whose days are uniform.
 
 ---
@@ -80,6 +90,7 @@
 | UPL-06 | Phase 10 | Pending |
 | UPL-07 | Phase 10 | Pending |
 | UPL-08 | Phase 10 | Pending |
+| UPL-09 | Phase 10 | Pending |
 | MRG-01 | Phase 11 | Pending |
 | MRG-02 | Phase 11 | Pending |
 | MRG-03 | Phase 11 | Pending |
