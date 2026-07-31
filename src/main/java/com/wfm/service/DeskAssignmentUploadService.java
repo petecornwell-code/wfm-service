@@ -18,6 +18,7 @@ import com.wfm.repository.SpecializationRepository;
 import com.wfm.util.AgentNameSplitter;
 import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.util.WorkbookUtil;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,11 +89,20 @@ public class DeskAssignmentUploadService {
         List<String> warnings = new ArrayList<>();
         List<SheetSummary> sheetSummaries = new ArrayList<>();
 
-        // Pre-load all desks for this tenant keyed by name (case-insensitive)
+        // Pre-load all desks for this tenant keyed by name (case-insensitive). Also keyed by
+        // the Excel-safe sheet name WorkbookUtil.createSafeSheetName(...) would produce for
+        // this desk (DeskAssignmentTemplateService uses the same transformation when it names
+        // the template sheet) so a desk whose name was sanitized/truncated in the template
+        // still resolves back to the same desk on re-upload (CR-03 — preserves D-14's
+        // round-trip guarantee for long or Excel-invalid-character desk names). Raw-name keys
+        // are populated first so they take priority over any safe-name collision.
         List<Desk> allDesks = deskRepository.findByTenantId(tenantId);
         Map<String, Desk> deskByName = new HashMap<>();
         for (Desk d : allDesks) {
             deskByName.put(d.getName().toLowerCase(), d);
+        }
+        for (Desk d : allDesks) {
+            deskByName.putIfAbsent(WorkbookUtil.createSafeSheetName(d.getName()).toLowerCase(), d);
         }
 
         // Pre-load specializations per desk: deskId -> (lowercased name -> Specialization)
