@@ -182,6 +182,20 @@ public class DeskAssignmentUploadService {
                         + normalizedHeaders);
             }
 
+            // Cheap pre-scan of sheet names -> desk IDs matched anywhere in this workbook
+            // (WR-04). Used below to give the "agent already assigned to a different desk"
+            // skip a specific message when the conflicting desk is ALSO being re-imported
+            // in this same upload — that outcome depends on which sheet happens to be
+            // processed first (an intra-workbook desk move), which is otherwise a silent,
+            // hard-to-diagnose gotcha for the operator.
+            Set<UUID> deskIdsInThisWorkbook = new HashSet<>();
+            for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
+                Desk matched = deskByName.get(workbook.getSheetAt(s).getSheetName().trim().toLowerCase());
+                if (matched != null) {
+                    deskIdsInThisWorkbook.add(matched.getId());
+                }
+            }
+
             // --- Iterate every sheet: sheet name = desk, no per-row Desk column (D-01) ---
             for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
                 Sheet sheet = workbook.getSheetAt(s);
@@ -363,10 +377,20 @@ public class DeskAssignmentUploadService {
                     }
                     agent.setLastRefreshedAt(OffsetDateTime.now());
 
-                    // Check if already assigned to a different desk
+                    // Check if already assigned to a different desk. If that other desk is
+                    // ALSO matched by a sheet in this same workbook, the outcome of this
+                    // "move" depends on sheet processing order (WR-04) — surface a specific,
+                    // actionable message instead of the generic conflict reason so the
+                    // operator understands why and can fix it (e.g. reorder sheets, or
+                    // re-run the upload once the source desk's sheet has cleared the agent).
                     if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
-                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
-                                "Agent already assigned to desk " + agent.getDeskId()));
+                        String reason = deskIdsInThisWorkbook.contains(agent.getDeskId())
+                                ? "Agent " + agent.getName() + " is being moved between desks in this "
+                                        + "workbook (currently on desk " + agent.getDeskId() + "); this "
+                                        + "row's outcome depends on sheet order — if the agent ends up "
+                                        + "unassigned, re-run the upload"
+                                : "Agent already assigned to desk " + agent.getDeskId();
+                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(), reason));
                         sheetSkippedCount++;
                         continue;
                     }
