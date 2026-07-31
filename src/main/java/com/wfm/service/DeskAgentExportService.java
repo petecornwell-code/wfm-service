@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.dto.DeskAgentResponse;
+import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
@@ -18,12 +19,16 @@ public class DeskAgentExportService {
             CellStyle headerStyle = createHeaderStyle(workbook);
             Sheet sheet = workbook.createSheet("Desk Agents");
 
+            // Shared identity columns (BambooHR ID, Email, Department, Job Title, Active) pull
+            // their header text from EnrichedColumnLayout for round-trip symmetry with the
+            // upload/template shape (D-13). Export-only metadata columns stay hardcoded.
             String[] columns = {
-                "ID", "Desk ID", "BambooHR ID", "Name", "Email",
-                "Department", "Job Title", "Active", "Last Refreshed At",
+                "ID", "Desk ID", EnrichedColumnLayout.COL_BAMBOOHR_ID, "Name", EnrichedColumnLayout.COL_EMAIL,
+                EnrichedColumnLayout.COL_DEPARTMENT, EnrichedColumnLayout.COL_JOB_TITLE,
+                EnrichedColumnLayout.COL_ACTIVE, "Last Refreshed At",
                 "Primary Specialization", "Secondary Specializations",
                 "Contracted Hours Per Day", "Effective Contracted Hours Per Day",
-                "First Name", "Last Name"
+                EnrichedColumnLayout.COL_FIRST_NAME, EnrichedColumnLayout.COL_LAST_NAME
             };
 
             Row header = sheet.createRow(0);

@@ -9,6 +9,7 @@ import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementExportService;
 import com.wfm.service.ClientManagementService;
 import com.wfm.service.DeskAgentService;
+import com.wfm.service.DeskAssignmentTemplateService;
 import com.wfm.service.DeskAssignmentUploadService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -30,15 +31,18 @@ public class ClientManagementController {
     private final ClientManagementExportService clientManagementExportService;
     private final DeskAgentService deskAgentService;
     private final DeskAssignmentUploadService deskAssignmentUploadService;
+    private final DeskAssignmentTemplateService deskAssignmentTemplateService;
 
     public ClientManagementController(ClientManagementService clientManagementService,
                                        ClientManagementExportService clientManagementExportService,
                                        DeskAgentService deskAgentService,
-                                       DeskAssignmentUploadService deskAssignmentUploadService) {
+                                       DeskAssignmentUploadService deskAssignmentUploadService,
+                                       DeskAssignmentTemplateService deskAssignmentTemplateService) {
         this.clientManagementService = clientManagementService;
         this.clientManagementExportService = clientManagementExportService;
         this.deskAgentService = deskAgentService;
         this.deskAssignmentUploadService = deskAssignmentUploadService;
+        this.deskAssignmentTemplateService = deskAssignmentTemplateService;
     }
 
     @GetMapping("/employees")
@@ -104,5 +108,14 @@ public class ClientManagementController {
     public DeskAssignmentUploadService.DeskAssignmentUploadResult uploadDeskAssignments(
             @RequestParam("file") MultipartFile file) throws IOException {
         return deskAssignmentUploadService.uploadDeskAssignments(file);
+    }
+
+    @GetMapping("/desk-assignments/template")
+    public ResponseEntity<byte[]> downloadDeskAssignmentTemplate() {
+        byte[] xlsx = deskAssignmentTemplateService.generateTemplate();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"desk-assignment-template.xlsx\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
     }
 }
