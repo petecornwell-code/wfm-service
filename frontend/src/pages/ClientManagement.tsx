@@ -225,9 +225,11 @@ export default function ClientManagement() {
     if (!uploadResult) return
     const sanitize = (val: string | null | undefined): string => {
       if (val == null) return ''
-      // CSV-injection mitigation (T-05-05-02): prefix dangerous leading chars with single quote
+      // CSV-injection mitigation (T-05-05-02/WR-05): prefix dangerous leading chars with
+      // single quote. Includes leading tab/CR per OWASP CSV-injection guidance, matching
+      // the backend's shared FormulaInjectionSanitizer.
       const s = String(val)
-      const sanitized = /^[=+\-@]/.test(s) ? "'" + s : s
+      const sanitized = /^[=+\-@\t\r]/.test(s) ? "'" + s : s
       // Escape inner double-quotes by doubling them
       return sanitized.replace(/"/g, '""')
     }
