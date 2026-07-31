@@ -4,14 +4,14 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-07-31T19:29:39.909Z"
-last_activity: 2026-07-31 -- Phase 10 planning complete
+last_updated: "2026-07-31T21:20:01.305Z"
+last_activity: 2026-07-31
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 12
-  completed_plans: 6
-  percent: 50
+  completed_plans: 7
+  percent: 58
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 09 — agent-data-model-foundation
+**Current focus:** Phase 10 — enriched-upload-parsing
 
 ## Current Position
 
-Phase: 09 (agent-data-model-foundation) — EXECUTING
-Plan: 1 of 6
+Phase: 10 (enriched-upload-parsing) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-07-31 -- Phase 10 planning complete
+Last activity: 2026-07-31
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████░░░░] 58%
 
 ## Milestone v1.2 Roadmap
 
@@ -93,6 +93,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - Score breakdown guarded to in-memory schedules — `loadSnapshotData()` must be fixed before export work
 - Solver respects BambooHR fixed weekends rather than choosing them; fairness constraints may therefore only apply to agents without a parseable field-4517 pattern
 - v1.2: BambooHR ID always populated → match by ID only, no fuzzy matching; spreadsheet PTO/day-off columns are a recurring weekly pattern, not dated absences; Mon–Sun contracted hours are the authority on which days are worked; 6-col legacy upload shape retired
+- [Phase 10]: D-12: recurring MANDATORY/PTO label stored on agent_day_hours.day_off_type (nullable), not dated AgentDayOff rows — BambooRefreshService deletes/regenerates the entire AgentDayOff rolling window on every sync; agent_day_hours is queried without a date range so it survives untouched
+- [Phase 10]: V30 confirmed as the correct next Flyway migration version — V29 verified as latest applied version before creating V30
 
 ### Blockers/Concerns
 
@@ -103,9 +105,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-31T15:42:33.021Z
+Last session: 2026-07-31T21:19:52.865Z
 Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-enriched-upload-parsing/10-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 

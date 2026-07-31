@@ -21,8 +21,8 @@
 - [ ] **UPL-01**: Operator can upload a single workbook — **one worksheet per desk, sheet name = desk** — that provisions agents with BambooHR ID, first name, last name, job title, email, department, and active status. Minimum valid row = BambooHR ID + all 7 day cells populated; identity fields are optional and sourced from BambooHR where blank
 - [ ] **UPL-02**: The upload parses an unbounded (but finite) number of specialization columns per agent (`Specialty 1`, `Specialty 2`, … `Specialty N`), rather than a fixed `Specialty 1` / `Specialty 2` pair; first non-blank = primary, rest = secondary
 - [ ] **UPL-03**: The upload parses the Monday–Sunday day cells per agent; a numeric cell `>= 0` is contracted hours for that day, where `0` marks a day the agent does not work (never blank)
-- [ ] **UPL-04**: A Monday–Sunday day cell equal to `MANDATORY` marks a mandatory day off for that weekday
-- [ ] **UPL-05**: A Monday–Sunday day cell equal to `PTO` marks recurring weekly PTO, applied across the schedule horizon as a repeating weekly pattern
+- [x] **UPL-04**: A Monday–Sunday day cell equal to `MANDATORY` marks a mandatory day off for that weekday
+- [x] **UPL-05**: A Monday–Sunday day cell equal to `PTO` marks recurring weekly PTO, applied across the schedule horizon as a repeating weekly pattern
 - [ ] **UPL-06**: Rows failing validation (blank day cell, or a value that is not a number 0–24 / `MANDATORY` / `PTO`; negatives rejected) are skipped with a specific per-row reason; the Upload Results view shows a per-sheet rollup, per-row skip reasons, unmatched-sheet notices, and clamp warnings (values > 24 clamped to 24, surfaced non-silently); valid rows in the same file still import
 - [ ] **UPL-07**: Rows whose BambooHR ID is not found in BambooHR are rejected with reason "BambooHR ID not found" rather than creating an agent (matching is by BambooHR ID only)
 - [ ] **UPL-08**: The 6-column legacy shape **and** the previous flat enriched shape (single sheet + Desk column) are both retired; one per-desk enriched shape replaces them, and operators re-download the pre-seeded template once (~~existing enriched sheets continue to import~~ — superseded 2026-07-31)
@@ -85,8 +85,8 @@
 | UPL-01 | Phase 10 | Pending |
 | UPL-02 | Phase 10 | Pending |
 | UPL-03 | Phase 10 | Pending |
-| UPL-04 | Phase 10 | Pending |
-| UPL-05 | Phase 10 | Pending |
+| UPL-04 | Phase 10 | Complete |
+| UPL-05 | Phase 10 | Complete |
 | UPL-06 | Phase 10 | Pending |
 | UPL-07 | Phase 10 | Pending |
 | UPL-08 | Phase 10 | Pending |
