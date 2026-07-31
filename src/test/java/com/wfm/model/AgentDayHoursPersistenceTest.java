@@ -80,4 +80,57 @@ class AgentDayHoursPersistenceTest {
         assertThat(saved.getTenantId()).isEqualTo(42L);
         assertThat(saved.getAgent().getId()).isEqualTo(agent.getId());
     }
+
+    // -----------------------------------------------------------------------
+    //  D-12: nullable dayOffType (day_off_type) -- recurring PTO/MANDATORY label,
+    //  refresh-safe storage on agent_day_hours (never touched by BambooRefreshService).
+    // -----------------------------------------------------------------------
+
+    @Test
+    void dayOffTypeLeftUnset_persistsAsNull() {
+        Agent agent = persistAgent();
+
+        AgentDayHours dayHours = new AgentDayHours();
+        dayHours.setTenantId(1L);
+        dayHours.setAgent(agent);
+        dayHours.setDayOfWeek(DayOfWeek.THURSDAY);
+        dayHours.setHours(new BigDecimal("8.00"));
+        // dayOffType intentionally left unset -- worked day / unlabelled 0
+
+        AgentDayHours saved = em.persistFlushFind(dayHours);
+
+        assertThat(saved.getDayOffType()).isNull();
+    }
+
+    @Test
+    void dayOffTypeMandatory_roundTripsAsMandatory() {
+        Agent agent = persistAgent();
+
+        AgentDayHours dayHours = new AgentDayHours();
+        dayHours.setTenantId(1L);
+        dayHours.setAgent(agent);
+        dayHours.setDayOfWeek(DayOfWeek.FRIDAY);
+        dayHours.setHours(BigDecimal.ZERO);
+        dayHours.setDayOffType(DayOffType.MANDATORY);
+
+        AgentDayHours saved = em.persistFlushFind(dayHours);
+
+        assertThat(saved.getDayOffType()).isEqualTo(DayOffType.MANDATORY);
+    }
+
+    @Test
+    void dayOffTypePto_roundTripsAsPto() {
+        Agent agent = persistAgent();
+
+        AgentDayHours dayHours = new AgentDayHours();
+        dayHours.setTenantId(1L);
+        dayHours.setAgent(agent);
+        dayHours.setDayOfWeek(DayOfWeek.SATURDAY);
+        dayHours.setHours(BigDecimal.ZERO);
+        dayHours.setDayOffType(DayOffType.PTO);
+
+        AgentDayHours saved = em.persistFlushFind(dayHours);
+
+        assertThat(saved.getDayOffType()).isEqualTo(DayOffType.PTO);
+    }
 }
