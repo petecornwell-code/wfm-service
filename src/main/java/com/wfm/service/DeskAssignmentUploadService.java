@@ -5,6 +5,8 @@ import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.SkippedRow;
 import com.wfm.dto.SkippedSheet;
 import com.wfm.model.Agent;
+import com.wfm.model.AgentDayHours;
+import com.wfm.model.DayOffType;
 import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
 import com.wfm.repository.AgentDayHoursRepository;
@@ -24,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.OffsetDateTime;
 import java.util.*;
@@ -81,6 +85,8 @@ public class DeskAssignmentUploadService {
         List<String> assigned = new ArrayList<>();
         List<SkippedRow> skipped = new ArrayList<>();
         List<SkippedSheet> skippedSheets = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        List<SheetSummary> sheetSummaries = new ArrayList<>();
 
         // Pre-load all desks for this tenant keyed by name (case-insensitive)
         List<Desk> allDesks = deskRepository.findByTenantId(tenantId);
@@ -178,11 +184,22 @@ public class DeskAssignmentUploadService {
                     }
                 }
 
+                // Unbounded "Specialty N" header scan (D-06) — ordered by N, first
+                // non-blank value becomes primary, the rest secondary.
+                List<Integer> specialtyColIndices = col.entrySet().stream()
+                        .filter(e -> EnrichedColumnLayout.specialtyIndex(e.getKey()).isPresent())
+                        .sorted(Comparator.comparingInt(e -> EnrichedColumnLayout.specialtyIndex(e.getKey()).get()))
+                        .map(Map.Entry::getValue)
+                        .toList();
+
                 // Clear-then-reimport (D-17): unassign agents, delete desk-scoped
                 // preferences/exceptions/per-day-hours before re-adding the rows present.
                 clearDesk(tenantId, desk.getId());
 
                 Map<String, Specialization> deskSpecs = specsByDesk.getOrDefault(desk.getId(), Map.of());
+
+                int sheetImportedCount = 0;
+                int sheetSkippedCount = 0;
 
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
@@ -203,23 +220,36 @@ public class DeskAssignmentUploadService {
                             EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_ACTIVE));
                     String rowName = joinName(firstName, lastName);
 
-                    // Parse specialty columns. Fixed 2-column lookup for now (matches the
-                    // pre-Phase-10 behavior); Task 2 replaces this with an unbounded
-                    // "Specialty N" header scan via EnrichedColumnLayout.specialtyIndex() (D-06).
+                    // Parse unbounded "Specialty N" columns (D-06) — first non-blank = primary,
+                    // rest = secondary.
                     List<String> specialtyNames = new ArrayList<>();
-                    int spec1Idx = col.getOrDefault("specialty 1", -1);
-                    int spec2Idx = col.getOrDefault("specialty 2", -1);
-                    if (spec1Idx >= 0) {
-                        String val = getCellString(row.getCell(spec1Idx));
-                        if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
-                    }
-                    if (spec2Idx >= 0) {
-                        String val = getCellString(row.getCell(spec2Idx));
+                    for (int specColIdx : specialtyColIndices) {
+                        String val = getCellString(row.getCell(specColIdx));
                         if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
                     }
 
                     if (bamboohrId == null || bamboohrId.isBlank()) {
                         skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID missing"));
+                        sheetSkippedCount++;
+                        continue;
+                    }
+
+                    // Parse all 7 Mon-Sun day cells (D-03/D-04/D-05/D-10). Every day cell is
+                    // required — blank, negative, or an unrecognized word skips the whole row.
+                    Map<DayOfWeek, DayCellResult> dayResults = new EnumMap<>(DayOfWeek.class);
+                    String daySkipReason = null;
+                    for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+                        Optional<DayCellResult> parsed = parseDayCell(row, col, day);
+                        if (parsed.isEmpty()) {
+                            daySkipReason = "Row " + (i + 1) + " (id " + bamboohrId.trim() + "): "
+                                    + EnrichedColumnLayout.dayHeader(day) + " cell blank or invalid";
+                            break;
+                        }
+                        dayResults.put(day, parsed.get());
+                    }
+                    if (daySkipReason != null) {
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, daySkipReason));
+                        sheetSkippedCount++;
                         continue;
                     }
 
@@ -236,7 +266,10 @@ public class DeskAssignmentUploadService {
                         }
                         resolvedSpecialties.add(spec);
                     }
-                    if (specialtyError) continue;
+                    if (specialtyError) {
+                        sheetSkippedCount++;
+                        continue;
+                    }
 
                     // Match by BambooHR ID only (D-08) — a row whose ID is not in the
                     // BambooHR cache is rejected; no agent is created (D-07/UPL-07).
@@ -244,6 +277,7 @@ public class DeskAssignmentUploadService {
                             clientManagementService.findCachedEmployee(bamboohrId.trim(), null, null);
                     if (cached == null) {
                         skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID not found"));
+                        sheetSkippedCount++;
                         continue;
                     }
 
@@ -288,6 +322,7 @@ public class DeskAssignmentUploadService {
                     if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
                         skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
                                 "Agent already assigned to desk " + agent.getDeskId()));
+                        sheetSkippedCount++;
                         continue;
                     }
 
@@ -295,6 +330,7 @@ public class DeskAssignmentUploadService {
                     if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
                         skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
                                 "Agent has non-schedulable job title: " + agent.getJobTitle()));
+                        sheetSkippedCount++;
                         continue;
                     }
 
@@ -315,12 +351,37 @@ public class DeskAssignmentUploadService {
                     }
 
                     agentRepository.save(agent);
+
+                    // Write one agent_day_hours row per weekday (D-05/D-12): hours + nullable
+                    // dayOffType label. This is a union with BambooHR field-4517 MANDATORY
+                    // blocks (D-16) — clamp warnings are surfaced, never silently logged only
+                    // (D-10/D-11 — Pitfall 3).
+                    for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+                        DayCellResult dayResult = dayResults.get(day);
+                        AgentDayHours agentDayHours = new AgentDayHours();
+                        agentDayHours.setTenantId(tenantId);
+                        agentDayHours.setAgent(agent);
+                        agentDayHours.setDayOfWeek(day);
+                        agentDayHours.setHours(dayResult.hours());
+                        agentDayHours.setDayOffType(dayResult.type());
+                        agentDayHoursRepository.save(agentDayHours);
+                        if (dayResult.clampWarning() != null) {
+                            warnings.add("Row " + (i + 1) + " (id " + bamboohrId.trim() + ") "
+                                    + dayResult.clampWarning());
+                        }
+                    }
+
                     assigned.add("Row " + (i + 1) + ": " + agent.getName() + " -> " + desk.getName());
+                    sheetImportedCount++;
                 }
+
+                sheetSummaries.add(new SheetSummary(desk.getName(), sheetImportedCount, sheetSkippedCount));
             }
         }
 
-        return new DeskAssignmentUploadResult(assigned.size(), skipped.size(), assigned, skipped);
+        return new DeskAssignmentUploadResult(
+                assigned.size(), skipped.size(), assigned, skipped,
+                sheetSummaries, warnings, skippedSheets);
     }
 
     private void clearDesk(long tenantId, UUID deskId) {
@@ -392,6 +453,57 @@ public class DeskAssignmentUploadService {
             int assignedCount,
             int skippedCount,
             List<String> assignedDetails,
-            List<SkippedRow> skippedDetails
+            List<SkippedRow> skippedDetails,
+            List<SheetSummary> sheetSummaries,
+            List<String> warnings,
+            List<SkippedSheet> skippedSheets
     ) {}
+
+    /** Per-sheet (per-desk) import rollup (D-11). */
+    public record SheetSummary(String deskName, int importedCount, int skippedCount) {}
+
+    /**
+     * Result of parsing a single Mon-Sun day cell (D-03/D-04/D-05/D-10).
+     * {@code type} is null for a plain numeric hours value (including 0); non-null
+     * ({@code MANDATORY}/{@code PTO}) for the two off-day keywords. {@code clampWarning}
+     * is non-null only when a value > 24 was clamped to 24.00 — surfaced (not just
+     * logged) per Pitfall 3.
+     */
+    private record DayCellResult(BigDecimal hours, DayOffType type, String clampWarning) {}
+
+    /**
+     * Parses one Mon-Sun day cell into hours/MANDATORY/PTO. Reads numeric cells via
+     * {@code cell.getNumericCellValue()} directly — NOT through {@link #getCellString},
+     * whose {@code (long)} cast truncates fractional hours (e.g. 7.5 -> "7").
+     * Returns {@link Optional#empty()} for blank, negative, or unrecognized-word cells;
+     * the caller skips the whole row in that case (D-04).
+     */
+    private Optional<DayCellResult> parseDayCell(Row row, Map<String, Integer> col, DayOfWeek day) {
+        int idx = col.getOrDefault(EnrichedColumnLayout.normalize(EnrichedColumnLayout.dayHeader(day)), -1);
+        Cell cell = idx >= 0 ? row.getCell(idx) : null;
+        if (cell == null) return Optional.empty(); // blank -> caller skips row (D-04)
+
+        if (cell.getCellType() == CellType.STRING) {
+            String raw = cell.getStringCellValue().trim();
+            if (raw.equalsIgnoreCase("MANDATORY")) {
+                return Optional.of(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                        DayOffType.MANDATORY, null));
+            }
+            if (raw.equalsIgnoreCase("PTO")) {
+                return Optional.of(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                        DayOffType.PTO, null));
+            }
+            return Optional.empty(); // unrecognized word -> caller skips row (D-04)
+        }
+        if (cell.getCellType() == CellType.NUMERIC) {
+            BigDecimal value = BigDecimal.valueOf(cell.getNumericCellValue()); // NOT (long) — preserves fractional hours
+            if (value.signum() < 0) return Optional.empty(); // negative -> caller skips row (D-10)
+            if (value.compareTo(new BigDecimal("24")) > 0) {
+                return Optional.of(new DayCellResult(new BigDecimal("24.00"), null,
+                        EnrichedColumnLayout.dayHeader(day) + ": " + value + " clamped to 24")); // D-10, non-silent
+            }
+            return Optional.of(new DayCellResult(value.setScale(2, RoundingMode.HALF_UP), null, null));
+        }
+        return Optional.empty(); // blank/boolean/other -> caller skips row (D-04)
+    }
 }

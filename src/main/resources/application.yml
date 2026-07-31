@@ -20,6 +20,14 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  servlet:
+    multipart:
+      # Defensive limit for multi-desk workbooks (one sheet per desk, T-10-04
+      # zip-bomb/oversized-upload mitigation) — enforced before Apache POI opens
+      # the stream.
+      max-file-size: 10MB
+      max-request-size: 10MB
+
 # CORS
 cors:
   allowed-origins: http://localhost:3000
