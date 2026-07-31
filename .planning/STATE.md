@@ -4,14 +4,14 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-07-31T21:20:01.305Z"
+last_updated: "2026-07-31T21:23:03.069Z"
 last_activity: 2026-07-31
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 12
-  completed_plans: 7
-  percent: 58
+  completed_plans: 8
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 ## Current Position
 
 Phase: 10 (enriched-upload-parsing) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-07-31
 
-Progress: [██████░░░░] 58%
+Progress: [███████░░░] 67%
 
 ## Milestone v1.2 Roadmap
 
@@ -95,6 +95,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - v1.2: BambooHR ID always populated → match by ID only, no fuzzy matching; spreadsheet PTO/day-off columns are a recurring weekly pattern, not dated absences; Mon–Sun contracted hours are the authority on which days are worked; 6-col legacy upload shape retired
 - [Phase 10]: D-12: recurring MANDATORY/PTO label stored on agent_day_hours.day_off_type (nullable), not dated AgentDayOff rows — BambooRefreshService deletes/regenerates the entire AgentDayOff rolling window on every sync; agent_day_hours is queried without a date range so it survives untouched
 - [Phase 10]: V30 confirmed as the correct next Flyway migration version — V29 verified as latest applied version before creating V30
+- [Phase 10]: [Phase 10 Plan 02] specialtyIndex() takes an already-normalized (trim+lowercase) header string per the RESEARCH.md/PATTERNS.md verbatim proposal
 
 ### Blockers/Concerns
 
@@ -105,7 +106,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-31T21:19:52.865Z
+Last session: 2026-07-31T21:22:13.668Z
 Stopped at: Phase 10 context gathered
 Resume file: None
 
