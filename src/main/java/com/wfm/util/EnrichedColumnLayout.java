@@ -33,8 +33,12 @@ public final class EnrichedColumnLayout {
             DayOfWeek.SUNDAY
     };
 
+    // Digit group bounded to 9 digits (max 999,999,999, well under Integer.MAX_VALUE)
+    // so Integer.parseInt below can never overflow (WR-02) — an unbounded \d+ let a
+    // header like "Specialty 99999999999999999999" match the regex and then throw an
+    // uncaught NumberFormatException, crashing the whole upload with a 500.
     private static final Pattern SPECIALTY_HEADER =
-            Pattern.compile("^specialty\\s*(\\d+)$", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("^specialty\\s*(\\d{1,9})$", Pattern.CASE_INSENSITIVE);
 
     private EnrichedColumnLayout() {}
 
@@ -59,7 +63,17 @@ public final class EnrichedColumnLayout {
             return Optional.empty();
         }
         var matcher = SPECIALTY_HEADER.matcher(headerLowerTrimmed);
-        return matcher.matches() ? Optional.of(Integer.parseInt(matcher.group(1))) : Optional.empty();
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Integer.parseInt(matcher.group(1)));
+        } catch (NumberFormatException e) {
+            // Defense-in-depth alongside the bounded regex above (WR-02): treat an
+            // unparseable/overflowing digit group as "not a Specialty N header" rather
+            // than propagating an uncaught exception that fails the whole upload.
+            return Optional.empty();
+        }
     }
 
     /** Trim + lowercase, matching the parser's existing header-key convention. Null -> "". */

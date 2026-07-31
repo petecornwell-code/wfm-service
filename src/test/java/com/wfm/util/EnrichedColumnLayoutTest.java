@@ -35,6 +35,13 @@ class EnrichedColumnLayoutTest {
     }
 
     @Test
+    void specialtyIndex_overflowingDigitGroup_returnsEmptyInsteadOfThrowing() {
+        // WR-02: a header with an absurd digit count must not throw an uncaught
+        // NumberFormatException and crash the whole upload with a 500.
+        assertThat(EnrichedColumnLayout.specialtyIndex("specialty 99999999999999999999")).isEmpty();
+    }
+
+    @Test
     void dayHeader_titleCasesBoundaryDays() {
         assertThat(EnrichedColumnLayout.dayHeader(DayOfWeek.MONDAY)).isEqualTo("Monday");
         assertThat(EnrichedColumnLayout.dayHeader(DayOfWeek.SUNDAY)).isEqualTo("Sunday");
