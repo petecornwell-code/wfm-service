@@ -21,20 +21,28 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 **Goal:** One spreadsheet upload fully provisions an agent roster — identity, desk, specializations, working pattern, days off, and PTO — merged field-by-field with BambooHR as source of truth and the spreadsheet filling every gap.
 
 **Target features:**
-- Extended enriched upload format carrying: BambooHR ID, first name, last name, job title, email, department, desk, active, unbounded specialization columns, Mon–Sun contracted hours, Mon–Sun mandatory days off, Mon–Sun recurring PTO
-- Per-field merge engine — BambooHR authoritative where it has data, spreadsheet fills gaps
-- Merge report surfaced in the upload result — which fields BambooHR overrode, which the spreadsheet supplied
+- Enriched upload workbook — **one worksheet per desk** (sheet name = desk) — carrying: BambooHR ID, first name, last name, job title, email, department, active, unbounded `Specialty 1…N` columns, and a **single Mon–Sun day-cell group** whose per-cell value encodes status (a number `>= 0` = contracted hours, `MANDATORY` = mandatory day off, `PTO` = recurring PTO)
+- Downloadable **pre-seeded template** — one sheet per desk, current roster identity filled, schedule cells blank; template + parser + export share one column-layout definition
+- Per-field merge engine — BambooHR authoritative where it has data, spreadsheet fills gaps (Phase 11)
+- Merge report surfaced in the upload result — which fields BambooHR overrode, which the spreadsheet supplied (Phase 11)
 - Per-day contracted hours model, replacing the single `contractedHoursPerDay` scalar (0 hours = day off)
 - Agent name split into first name / last name
 - Unbounded specialization column parsing (the `@ManyToMany` model already supports it; only the parser is hard-coded to `specialty 1`/`specialty 2`)
-- Retire the 6-col legacy upload shape
+- Retire **both** the 6-col legacy upload shape **and** the old flat enriched shape
 
 **Design decisions taken at milestone start:**
 - BambooHR ID is always populated in the spreadsheet → every row matches by ID; no fuzzy name/email matching required
-- Spreadsheet PTO columns express a **recurring weekly pattern** (Mon–Sun), applied across the horizon like mandatory days off — not dated absences
+- Spreadsheet PTO expresses a **recurring weekly pattern** (Mon–Sun), applied across the horizon like mandatory days off — not dated absences
 - BambooHR's dated PTO wins for dates it covers; the spreadsheet's recurring PTO pattern applies only to dates BambooHR has no record for (the two are not directly comparable values, so "BambooHR wins" needed this refinement)
-- Mon–Sun contracted hours are the single authority on which days are worked: 0 or blank = day off. Mandatory-days-off columns act as a cross-check rather than a competing source
-- New columns extend the existing 16-col enriched shape rather than adding a third format
+- ~~Mon–Sun contracted hours are the single authority on which days are worked: 0 or blank = day off. Mandatory-days-off columns act as a cross-check~~ — **superseded 2026-07-31 (see below)**
+- ~~New columns extend the existing 16-col enriched shape rather than adding a third format~~ — **superseded 2026-07-31 (see below)**
+
+**Design decisions revised at Phase 10 discussion (2026-07-31, see `10-CONTEXT.md`):**
+- The three Mon–Sun column groups (contracted-hours / mandatory-day-off / recurring-PTO, ~21 columns) collapse into **one polymorphic 7-column day group**. The **day cell is the authority** on which days are worked: a number `>= 0` = hours (`0` = day not worked), `MANDATORY` = mandatory day off, `PTO` = recurring PTO. All of `0`/`MANDATORY`/`PTO` mean "not schedulable that day"; every cell is required (**blank is invalid**). Keywords case-insensitive.
+- The workbook has **one worksheet per desk** (sheet name = desk); there is no per-row Desk column. Desk comes from the sheet name.
+- The upload shape is **redefined**, not extended — both the 6-col legacy and the old flat enriched shape are retired; operators re-download the pre-seeded template once.
+- **Phase 10 boundary:** the parser writes days-off using a **coexist/union** rule with BambooHR field-4517 blocks (a day is off if either source says so). True per-field precedence and un-blocking arrive with the Phase 11 merge engine.
+- Numeric hours accepted 0–24; values > 24 clamped to 24 with a non-silent warning; the Upload Results view gains a per-sheet rollup plus skip/clamp/unmatched-sheet notices.
 
 **Why this matters beyond data entry:** field 4517 is only ~24% parseable, and agents whose pattern cannot be parsed are excluded from solving via `workingDaysKnown`. Spreadsheet-supplied Mon–Sun days off fills that gap directly. The eligible agent pool could grow several-fold, which is a plausible root cause of the solver failing to find solutions on live desks.
 
