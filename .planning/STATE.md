@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
 status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-07-31T21:23:03.069Z"
+stopped_at: Completed 10-03-PLAN.md
+last_updated: "2026-07-31T21:51:45.960Z"
 last_activity: 2026-07-31
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 12
-  completed_plans: 8
-  percent: 67
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 ## Current Position
 
 Phase: 10 (enriched-upload-parsing) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-07-31
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Milestone v1.2 Roadmap
 
@@ -96,6 +96,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 10]: D-12: recurring MANDATORY/PTO label stored on agent_day_hours.day_off_type (nullable), not dated AgentDayOff rows — BambooRefreshService deletes/regenerates the entire AgentDayOff rolling window on every sync; agent_day_hours is queried without a date range so it survives untouched
 - [Phase 10]: V30 confirmed as the correct next Flyway migration version — V29 verified as latest applied version before creating V30
 - [Phase 10]: [Phase 10 Plan 02] specialtyIndex() takes an already-normalized (trim+lowercase) header string per the RESEARCH.md/PATTERNS.md verbatim proposal
+- [Phase 10]: [Phase 10 Plan 03] Row validation order settled: BambooHR ID presence -> all 7 day cells valid -> specialty resolution -> BambooHR cache lookup -> non-schedulable check (D-09 whole-row skip-and-continue)
+- [Phase 10]: [Phase 10 Plan 03] Identity fields read via EnrichedColumnLayout constants (no generic name/email fallback columns in the new per-desk-sheet shape)
 
 ### Blockers/Concerns
 
@@ -106,8 +108,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-31T21:22:13.668Z
-Stopped at: Phase 10 context gathered
+Last session: 2026-07-31T21:51:45.956Z
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

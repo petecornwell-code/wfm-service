@@ -84,7 +84,7 @@ Plans:
 - [x] 10-02-PLAN.md — EnrichedColumnLayout shared column definition + unit test (UPL-02, UPL-09)
 
 **Wave 2** *(parser + template — parallel, blocked on Wave 1)*
-- [ ] 10-03-PLAN.md — DeskAssignmentUploadService rewrite: multi-sheet, ID-only match, day-cell parse, retired-shape rejection, multipart limits (UPL-01, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08)
+- [x] 10-03-PLAN.md — DeskAssignmentUploadService rewrite: multi-sheet, ID-only match, day-cell parse, retired-shape rejection, multipart limits (UPL-01, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08)
 - [ ] 10-04-PLAN.md — Pre-seeded per-desk template service + download endpoint + export symmetry + sanitization (UPL-09)
 
 **Wave 3** *(tests + UI — parallel, blocked on Wave 2)*
@@ -122,7 +122,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
 | 9. Agent Data Model Foundation | v1.2 | 0/6 | Not started | - |
-| 10. Enriched Upload Parsing | v1.2 | 2/6 | In Progress|  |
+| 10. Enriched Upload Parsing | v1.2 | 3/6 | In Progress|  |
 | 11. BambooHR Merge Engine & Report | v1.2 | 0/TBD | Not started | - |
 
 ## Backlog
