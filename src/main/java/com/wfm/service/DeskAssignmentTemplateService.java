@@ -5,6 +5,7 @@ import com.wfm.dto.DeskAgentResponse;
 import com.wfm.model.Desk;
 import com.wfm.repository.DeskRepository;
 import com.wfm.util.EnrichedColumnLayout;
+import com.wfm.util.FormulaInjectionSanitizer;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.WorkbookUtil;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -97,28 +98,17 @@ public class DeskAssignmentTemplateService {
         return headers;
     }
 
+    /**
+     * Formula/CSV-injection guard (T-10-08/CR-02/WR-05): delegates to the shared
+     * {@link FormulaInjectionSanitizer} so this generator and {@code DeskAgentExportService}
+     * (and the frontend's mirrored {@code sanitize()} in ClientManagement.tsx) cannot drift on
+     * the exact character set being neutralized.
+     */
     private void writeSanitized(Row row, int columnIndex, String value) {
         if (value == null) {
             return; // leave the cell blank
         }
-        row.createCell(columnIndex).setCellValue(sanitize(value));
-    }
-
-    /**
-     * Formula/CSV-injection guard (T-10-08): mirrors the frontend {@code sanitize()} in
-     * ClientManagement.tsx (handleDownloadSkippedCsv). Any operator/BambooHR-supplied string
-     * whose first character is {@code = + - @} is prefixed with a single quote so spreadsheet
-     * applications render it as literal text rather than evaluating it as a formula.
-     */
-    private String sanitize(String value) {
-        if (value == null || value.isEmpty()) {
-            return value;
-        }
-        char first = value.charAt(0);
-        if (first == '=' || first == '+' || first == '-' || first == '@') {
-            return "'" + value;
-        }
-        return value;
+        row.createCell(columnIndex).setCellValue(FormulaInjectionSanitizer.sanitize(value));
     }
 
     private CellStyle createHeaderStyle(XSSFWorkbook workbook) {

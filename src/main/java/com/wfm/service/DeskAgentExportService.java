@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.util.EnrichedColumnLayout;
+import com.wfm.util.FormulaInjectionSanitizer;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
@@ -44,18 +45,19 @@ public class DeskAgentExportService {
                 row.createCell(0).setCellValue(agent.id() != null ? agent.id().toString() : "");
                 row.createCell(1).setCellValue(agent.deskId() != null ? agent.deskId().toString() : "");
                 row.createCell(2).setCellValue(agent.bamboohrId() != null ? agent.bamboohrId() : "");
-                row.createCell(3).setCellValue(agent.name() != null ? agent.name() : "");
-                row.createCell(4).setCellValue(agent.email() != null ? agent.email() : "");
-                row.createCell(5).setCellValue(agent.department() != null ? agent.department() : "");
-                row.createCell(6).setCellValue(agent.jobTitle() != null ? agent.jobTitle() : "");
+                row.createCell(3).setCellValue(sanitize(agent.name()));
+                row.createCell(4).setCellValue(sanitize(agent.email()));
+                row.createCell(5).setCellValue(sanitize(agent.department()));
+                row.createCell(6).setCellValue(sanitize(agent.jobTitle()));
                 row.createCell(7).setCellValue(agent.active() ? "Yes" : "No");
                 row.createCell(8).setCellValue(agent.lastRefreshedAt() != null ? agent.lastRefreshedAt().toString() : "");
-                row.createCell(9).setCellValue(agent.primarySpecialization() != null ? agent.primarySpecialization().name() : "");
-                row.createCell(10).setCellValue(formatSecondarySpecializations(agent.secondarySpecializations()));
+                row.createCell(9).setCellValue(agent.primarySpecialization() != null
+                        ? sanitize(agent.primarySpecialization().name()) : "");
+                row.createCell(10).setCellValue(sanitize(formatSecondarySpecializations(agent.secondarySpecializations())));
                 row.createCell(11).setCellValue(agent.contractedHoursPerDay() != null ? agent.contractedHoursPerDay().doubleValue() : 0);
                 row.createCell(12).setCellValue(agent.effectiveContractedHoursPerDay() != null ? agent.effectiveContractedHoursPerDay().doubleValue() : 0);
-                row.createCell(13).setCellValue(agent.firstName() != null ? agent.firstName() : "");
-                row.createCell(14).setCellValue(agent.lastName() != null ? agent.lastName() : "");
+                row.createCell(13).setCellValue(sanitize(agent.firstName()));
+                row.createCell(14).setCellValue(sanitize(agent.lastName()));
             }
 
             for (int i = 0; i < columns.length; i++) {
@@ -75,6 +77,18 @@ public class DeskAgentExportService {
         return specs.stream()
                 .map(DeskAgentResponse.SpecSummary::name)
                 .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Formula/CSV-injection guard (CR-02): every operator-controlled string field exported
+     * here (name/email/department/jobTitle/specializations/firstName/lastName) is settable
+     * verbatim from an uploaded spreadsheet via {@code DeskAssignmentUploadService}, so it must
+     * receive the same {@link FormulaInjectionSanitizer} treatment as
+     * {@code DeskAssignmentTemplateService} to avoid formula/DDE evaluation when this export is
+     * reopened in Excel.
+     */
+    private String sanitize(String value) {
+        return FormulaInjectionSanitizer.sanitize(value != null ? value : "");
     }
 
     private CellStyle createHeaderStyle(XSSFWorkbook workbook) {
