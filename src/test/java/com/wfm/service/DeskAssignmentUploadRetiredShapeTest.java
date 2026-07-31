@@ -19,15 +19,12 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * D-15 retires the 6-col legacy shape entirely — it is rejected file-wide with a
- * "download the new template" message rather than imported row-by-row as it was
- * pre-Phase-10. The row-level skip/import assertions this class previously carried
- * (missing desk, desk-not-found, successful assignment) no longer apply, since the
- * whole file is now rejected before any row is parsed.
- *
- * Legacy headers: BambooHR ID | Name | Email | Desk Assignment | Specialty 1 | ...
+ * D-15: both retired upload shapes — the 6-col legacy shape and the old flat
+ * single-sheet enriched shape (per-row "Desk" column) — are rejected file-wide
+ * with a "download the new template" message, not silently imported or lumped
+ * into the generic "unrecognised shape" fallback.
  */
-class DeskAssignmentUploadLegacyShapeTest {
+class DeskAssignmentUploadRetiredShapeTest {
 
     private AgentRepository agentRepository;
     private DeskRepository deskRepository;
@@ -37,9 +34,7 @@ class DeskAssignmentUploadLegacyShapeTest {
     private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
-
     private DeskAssignmentUploadService service;
-
     private static final long TENANT_ID = 1L;
 
     @BeforeEach
@@ -52,47 +47,32 @@ class DeskAssignmentUploadLegacyShapeTest {
         agentDayHoursRepository = mock(AgentDayHoursRepository.class);
         specializationRepository = mock(SpecializationRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
-
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
                 specializationRepository, agentEligibilityService);
-
-        // Set up TenantContext — service calls TenantContext.getTenantId()
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
-
-        // By default, agents are not non-schedulable
         when(agentEligibilityService.isNonSchedulable(anyLong(), anyString())).thenReturn(false);
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());
     }
 
     // ------------------------------------------------------------------ //
-    //  Helper: build a legacy 6-col workbook as MockMultipartFile          //
+    //  Helpers                                                             //
     // ------------------------------------------------------------------ //
 
-    /**
-     * Builds a legacy workbook with a single data row.
-     * Row values: [bamboohrId, name, email, deskAssignment] (nulls -> empty cells)
-     */
-    private MockMultipartFile legacyWorkbook(String bamboohrId, String name, String email, String desk)
-            throws Exception {
+    private MockMultipartFile buildWorkbook(String[] headers, String[] dataRow) throws Exception {
         XSSFWorkbook wb = new XSSFWorkbook();
         Sheet sheet = wb.createSheet("Sheet1");
 
-        // Header row (legacy 6-col)
-        Row header = sheet.createRow(0);
-        header.createCell(0).setCellValue("BambooHR ID");
-        header.createCell(1).setCellValue("Name");
-        header.createCell(2).setCellValue("Email");
-        header.createCell(3).setCellValue("Desk Assignment");
-        header.createCell(4).setCellValue("Specialty 1");
-        header.createCell(5).setCellValue("Specialty 2");
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < headers.length; i++) {
+            headerRow.createCell(i).setCellValue(headers[i]);
+        }
 
         Row row = sheet.createRow(1);
-        if (bamboohrId != null) row.createCell(0).setCellValue(bamboohrId);
-        if (name != null) row.createCell(1).setCellValue(name);
-        if (email != null) row.createCell(2).setCellValue(email);
-        if (desk != null) row.createCell(3).setCellValue(desk);
+        for (int i = 0; i < dataRow.length; i++) {
+            if (dataRow[i] != null) row.createCell(i).setCellValue(dataRow[i]);
+        }
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         wb.write(out);
@@ -107,10 +87,11 @@ class DeskAssignmentUploadLegacyShapeTest {
     // ------------------------------------------------------------------ //
 
     @Test
-    void legacyShape_isRejectedWithDownloadTemplateMessage_regardlessOfRowContent() throws Exception {
-        // Row content is irrelevant — shape classification happens against the header
-        // row before any row is parsed, so a valid-looking legacy row is still rejected.
-        MockMultipartFile file = legacyWorkbook("B003", "Carol", "carol@example.com", "Support Desk");
+    void legacy6ColShape_isRejectedWithDownloadTemplateMessage() throws Exception {
+        // Legacy headers: BambooHR ID | Name | Email | Desk Assignment | Specialty 1 | Specialty 2
+        String[] headers = {"BambooHR ID", "Name", "Email", "Desk Assignment", "Specialty 1", "Specialty 2"};
+        String[] dataRow = {"B001", "Alice", "alice@example.com", "Support Desk", null, null};
+        MockMultipartFile file = buildWorkbook(headers, dataRow);
 
         assertThatThrownBy(() -> service.uploadDeskAssignments(file))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -119,11 +100,16 @@ class DeskAssignmentUploadLegacyShapeTest {
     }
 
     @Test
-    void legacyShape_isRejectedEvenWithBlankDeskAssignmentCell() throws Exception {
-        MockMultipartFile file = legacyWorkbook("B001", "Alice", "alice@example.com", null);
+    void oldFlatEnrichedShape_isRejectedWithDownloadTemplateMessage() throws Exception {
+        // Old flat-enriched headers: single sheet + per-row "Desk" column + Monday..Sunday
+        String[] headers = {"Employee ID", "Name", "Email", "Desk",
+                "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+        String[] dataRow = {"E001", "Bob", "bob@example.com", "Billing", "8", "8", "8", "8", "8", "0", "0"};
+        MockMultipartFile file = buildWorkbook(headers, dataRow);
 
         assertThatThrownBy(() -> service.uploadDeskAssignments(file))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("template");
+                .hasMessageContaining("template")
+                .satisfies(ex -> assertThat(ex.getMessage()).containsIgnoringCase("retired"));
     }
 }

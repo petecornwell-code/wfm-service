@@ -23,6 +23,10 @@ import static org.mockito.Mockito.*;
  * Tests that desk-assignment upload rejects agents whose job titles are
  * configured as non-schedulable, producing a structured SkippedRow with
  * reason "Agent has non-schedulable job title: <title>".
+ *
+ * Updated for Phase 10 (D-01/D-08): the sheet name IS the desk (no per-row
+ * "Desk" column) and matching is by BambooHR ID only, via
+ * findCachedEmployee(bamboohrId, null, null).
  */
 class DeskAssignmentUploadNonSchedulableRejectTest {
 
@@ -39,6 +43,9 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
 
     private static final long TENANT_ID = 1L;
     private static final String NON_SCHEDULABLE_TITLE = "Quality Assurance";
+    private static final String[] DAY_HEADERS =
+            {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    private static final String[] FULL_WEEK = {"8", "8", "8", "8", "8", "0", "0"};
 
     @BeforeEach
     void setUp() {
@@ -69,49 +76,35 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
     //  Helpers                                                             //
     // ------------------------------------------------------------------ //
 
-    private MockMultipartFile legacyWorkbook(String bamboohrId, String name, String email, String desk)
-            throws Exception {
+    /**
+     * Builds a one-sheet-per-desk workbook (D-01): sheet name = desk name, headers =
+     * BambooHR ID + Monday..Sunday (no per-row Desk column), one row per agent.
+     */
+    private MockMultipartFile buildDeskWorkbook(String deskName, String[][] rows) throws Exception {
         XSSFWorkbook wb = new XSSFWorkbook();
-        Sheet sheet = wb.createSheet("Sheet1");
+        Sheet sheet = wb.createSheet(deskName);
+
+        List<String> headers = new ArrayList<>(List.of("BambooHR ID", "Name", "Email"));
+        headers.addAll(List.of(DAY_HEADERS));
 
         Row header = sheet.createRow(0);
-        header.createCell(0).setCellValue("BambooHR ID");
-        header.createCell(1).setCellValue("Name");
-        header.createCell(2).setCellValue("Email");
-        header.createCell(3).setCellValue("Desk Assignment");
+        for (int c = 0; c < headers.size(); c++) {
+            header.createCell(c).setCellValue(headers.get(c));
+        }
 
-        Row row = sheet.createRow(1);
-        if (bamboohrId != null) row.createCell(0).setCellValue(bamboohrId);
-        if (name != null) row.createCell(1).setCellValue(name);
-        if (email != null) row.createCell(2).setCellValue(email);
-        if (desk != null) row.createCell(3).setCellValue(desk);
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        wb.write(out);
-        wb.close();
-        return new MockMultipartFile("file", "test.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                new ByteArrayInputStream(out.toByteArray()));
-    }
-
-    /** Builds a legacy workbook with two data rows. */
-    private MockMultipartFile legacyWorkbookTwoRows(
-            String b1, String n1, String e1, String d1,
-            String b2, String n2, String e2, String d2) throws Exception {
-        XSSFWorkbook wb = new XSSFWorkbook();
-        Sheet sheet = wb.createSheet("Sheet1");
-
-        Row header = sheet.createRow(0);
-        header.createCell(0).setCellValue("BambooHR ID");
-        header.createCell(1).setCellValue("Name");
-        header.createCell(2).setCellValue("Email");
-        header.createCell(3).setCellValue("Desk Assignment");
-
-        String[][] rows = {{b1, n1, e1, d1}, {b2, n2, e2, d2}};
         for (int r = 0; r < rows.length; r++) {
             Row row = sheet.createRow(r + 1);
             for (int c = 0; c < rows[r].length; c++) {
-                if (rows[r][c] != null) row.createCell(c).setCellValue(rows[r][c]);
+                String value = rows[r][c];
+                if (value == null) continue;
+                // Day cells (D-03) hold a real number for hours, or the MANDATORY/PTO
+                // keyword as text — mirror that here instead of always writing a string,
+                // since the parser reads day cells via getNumericCellValue() (D-10).
+                if (value.matches("-?\\d+(\\.\\d+)?")) {
+                    row.createCell(c).setCellValue(Double.parseDouble(value));
+                } else {
+                    row.createCell(c).setCellValue(value);
+                }
             }
         }
 
@@ -121,6 +114,12 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         return new MockMultipartFile("file", "test.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 new ByteArrayInputStream(out.toByteArray()));
+    }
+
+    private String[] agentRow(String bamboohrId, String name, String email) {
+        List<String> row = new ArrayList<>(List.of(bamboohrId, name, email));
+        row.addAll(List.of(FULL_WEEK));
+        return row.toArray(new String[0]);
     }
 
     // ------------------------------------------------------------------ //
@@ -152,10 +151,11 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
 
         BambooEmployeeResponse cached = new BambooEmployeeResponse(
                 "B100", "Eve", "eve@example.com", "QA", NON_SCHEDULABLE_TITLE, "Active");
-        when(clientManagementService.findCachedEmployee(anyString(), anyString(), anyString()))
+        when(clientManagementService.findCachedEmployee(eq("B100"), isNull(), isNull()))
                 .thenReturn(cached);
 
-        MockMultipartFile file = legacyWorkbook("B100", "Eve", "eve@example.com", "Support Desk");
+        MockMultipartFile file = buildDeskWorkbook("Support Desk",
+                new String[][] { agentRow("B100", "Eve", "eve@example.com") });
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
@@ -167,7 +167,6 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         SkippedRow skipped = result.skippedDetails().get(0);
         assertThat(skipped.rowNumber()).isEqualTo(2);
         assertThat(skipped.bamboohrId()).isEqualTo("B100");
-        assertThat(skipped.name()).isEqualTo("Eve");
         assertThat(skipped.reason()).startsWith("Agent has non-schedulable job title:");
         assertThat(skipped.reason()).contains(NON_SCHEDULABLE_TITLE);
     }
@@ -198,10 +197,11 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
 
         BambooEmployeeResponse cached = new BambooEmployeeResponse(
                 "B200", "Frank", "frank@example.com", "Sales", "Agent", "Active");
-        when(clientManagementService.findCachedEmployee(anyString(), anyString(), anyString()))
+        when(clientManagementService.findCachedEmployee(eq("B200"), isNull(), isNull()))
                 .thenReturn(cached);
 
-        MockMultipartFile file = legacyWorkbook("B200", "Frank", "frank@example.com", "Sales Desk");
+        MockMultipartFile file = buildDeskWorkbook("Sales Desk",
+                new String[][] { agentRow("B200", "Frank", "frank@example.com") });
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
@@ -251,15 +251,15 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         BambooEmployeeResponse cachedReg = new BambooEmployeeResponse(
                 "B301", "Henry", "henry@example.com", "Sales", "Agent", "Active");
 
-        when(clientManagementService.findCachedEmployee(eq("B300"), anyString(), anyString()))
+        when(clientManagementService.findCachedEmployee(eq("B300"), isNull(), isNull()))
                 .thenReturn(cachedQa);
-        when(clientManagementService.findCachedEmployee(eq("B301"), anyString(), anyString()))
+        when(clientManagementService.findCachedEmployee(eq("B301"), isNull(), isNull()))
                 .thenReturn(cachedReg);
 
-        MockMultipartFile file = legacyWorkbookTwoRows(
-                "B300", "Grace", "grace@example.com", "Mixed Desk",
-                "B301", "Henry", "henry@example.com", "Mixed Desk"
-        );
+        MockMultipartFile file = buildDeskWorkbook("Mixed Desk", new String[][] {
+                agentRow("B300", "Grace", "grace@example.com"),
+                agentRow("B301", "Henry", "henry@example.com")
+        });
 
         DeskAssignmentUploadService.DeskAssignmentUploadResult result =
                 service.uploadDeskAssignments(file);
