@@ -162,14 +162,16 @@ class DeskAssignmentUploadValidationTest {
         assertThat(result.assignedCount()).isEqualTo(2);
         assertThat(result.skippedCount()).isEqualTo(3);
 
+        // WR-01: each rejection case gets a distinct, specific reason rather than one
+        // generic "blank or invalid" message.
         SkippedRow blank = skippedFor(result, "V2");
-        assertThat(blank.reason()).contains("Wednesday").contains("blank or invalid");
+        assertThat(blank.reason()).contains("Wednesday").contains("is blank");
 
         SkippedRow negative = skippedFor(result, "V3");
-        assertThat(negative.reason()).contains("Monday").contains("blank or invalid");
+        assertThat(negative.reason()).contains("Monday").contains("is negative").contains("-1");
 
         SkippedRow unknown = skippedFor(result, "V4");
-        assertThat(unknown.reason()).contains("Monday").contains("blank or invalid");
+        assertThat(unknown.reason()).contains("Monday").contains("unrecognized value").contains("FOO");
 
         // >24 row imports with a non-silent clamp warning (D-10) -- never just logged
         assertThat(result.warnings()).isNotEmpty();

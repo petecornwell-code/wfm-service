@@ -266,17 +266,18 @@ public class DeskAssignmentUploadService {
                     }
 
                     // Parse all 7 Mon-Sun day cells (D-03/D-04/D-05/D-10). Every day cell is
-                    // required — blank, negative, or an unrecognized word skips the whole row.
+                    // required — blank, negative, or an unrecognized word skips the whole row,
+                    // each with its own specific reason (WR-01), not one generic message.
                     Map<DayOfWeek, DayCellResult> dayResults = new EnumMap<>(DayOfWeek.class);
                     String daySkipReason = null;
                     for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
-                        Optional<DayCellResult> parsed = parseDayCell(row, col, day);
-                        if (parsed.isEmpty()) {
+                        DayCellOutcome outcome = parseDayCell(row, col, day);
+                        if (outcome.failed()) {
                             daySkipReason = "Row " + (i + 1) + " (id " + bamboohrId.trim() + "): "
-                                    + EnrichedColumnLayout.dayHeader(day) + " cell blank or invalid";
+                                    + EnrichedColumnLayout.dayHeader(day) + " cell " + outcome.failureReason();
                             break;
                         }
-                        dayResults.put(day, parsed.get());
+                        dayResults.put(day, outcome.result());
                     }
                     if (daySkipReason != null) {
                         skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, daySkipReason));
@@ -503,38 +504,65 @@ public class DeskAssignmentUploadService {
     private record DayCellResult(BigDecimal hours, DayOffType type, String clampWarning) {}
 
     /**
+     * Outcome of {@link #parseDayCell}. Exactly one of {@code result}/{@code failureReason}
+     * is non-null. {@code failureReason} is a specific, distinct phrase for blank / negative /
+     * unrecognized-word cells (WR-01/D-04/D-10 want a "specific reason", not one generic
+     * message for all three cases).
+     */
+    private record DayCellOutcome(DayCellResult result, String failureReason) {
+        static DayCellOutcome ok(DayCellResult result) {
+            return new DayCellOutcome(result, null);
+        }
+
+        static DayCellOutcome fail(String reason) {
+            return new DayCellOutcome(null, reason);
+        }
+
+        boolean failed() {
+            return result == null;
+        }
+    }
+
+    /**
      * Parses one Mon-Sun day cell into hours/MANDATORY/PTO. Reads numeric cells via
      * {@code cell.getNumericCellValue()} directly — NOT through {@link #getCellString},
      * whose {@code (long)} cast truncates fractional hours (e.g. 7.5 -> "7").
-     * Returns {@link Optional#empty()} for blank, negative, or unrecognized-word cells;
-     * the caller skips the whole row in that case (D-04).
+     * Returns a failed {@link DayCellOutcome} with a specific reason for blank, negative, or
+     * unrecognized-word cells; the caller skips the whole row in that case (D-04/WR-01).
      */
-    private Optional<DayCellResult> parseDayCell(Row row, Map<String, Integer> col, DayOfWeek day) {
+    private DayCellOutcome parseDayCell(Row row, Map<String, Integer> col, DayOfWeek day) {
         int idx = col.getOrDefault(EnrichedColumnLayout.normalize(EnrichedColumnLayout.dayHeader(day)), -1);
         Cell cell = idx >= 0 ? row.getCell(idx) : null;
-        if (cell == null) return Optional.empty(); // blank -> caller skips row (D-04)
+        if (cell == null) return DayCellOutcome.fail("is blank"); // caller skips row (D-04)
 
         if (cell.getCellType() == CellType.STRING) {
             String raw = cell.getStringCellValue().trim();
             if (raw.equalsIgnoreCase("MANDATORY")) {
-                return Optional.of(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                return DayCellOutcome.ok(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                         DayOffType.MANDATORY, null));
             }
             if (raw.equalsIgnoreCase("PTO")) {
-                return Optional.of(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                return DayCellOutcome.ok(new DayCellResult(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                         DayOffType.PTO, null));
             }
-            return Optional.empty(); // unrecognized word -> caller skips row (D-04)
+            if (raw.isEmpty()) {
+                return DayCellOutcome.fail("is blank"); // caller skips row (D-04)
+            }
+            // unrecognized word -> caller skips row (D-04)
+            return DayCellOutcome.fail("has an unrecognized value (\"" + raw + "\")");
         }
         if (cell.getCellType() == CellType.NUMERIC) {
             BigDecimal value = BigDecimal.valueOf(cell.getNumericCellValue()); // NOT (long) — preserves fractional hours
-            if (value.signum() < 0) return Optional.empty(); // negative -> caller skips row (D-10)
+            if (value.signum() < 0) {
+                // caller skips row (D-10)
+                return DayCellOutcome.fail("is negative (" + value.toPlainString() + ")");
+            }
             if (value.compareTo(new BigDecimal("24")) > 0) {
-                return Optional.of(new DayCellResult(new BigDecimal("24.00"), null,
+                return DayCellOutcome.ok(new DayCellResult(new BigDecimal("24.00"), null,
                         EnrichedColumnLayout.dayHeader(day) + ": " + value + " clamped to 24")); // D-10, non-silent
             }
-            return Optional.of(new DayCellResult(value.setScale(2, RoundingMode.HALF_UP), null, null));
+            return DayCellOutcome.ok(new DayCellResult(value.setScale(2, RoundingMode.HALF_UP), null, null));
         }
-        return Optional.empty(); // blank/boolean/other -> caller skips row (D-04)
+        return DayCellOutcome.fail("is blank"); // blank/boolean/other -> caller skips row (D-04)
     }
 }
