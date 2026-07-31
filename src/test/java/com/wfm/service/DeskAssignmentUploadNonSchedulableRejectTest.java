@@ -270,4 +270,40 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         assertThat(skipped.bamboohrId()).isEqualTo("B300");
         assertThat(skipped.reason()).startsWith("Agent has non-schedulable job title:");
     }
+
+    @Test
+    void unmatchedBambooHrId_isRejected_noAgentCreated() throws Exception {
+        // UPL-07 / D-08: a row whose BambooHR ID is not in the cache is rejected
+        // with a specific reason and no agent is created -- matching is by
+        // BambooHR ID only, no fuzzy/name fallback creation path.
+        UUID deskId = UUID.randomUUID();
+        Desk desk = new Desk();
+        desk.setId(deskId);
+        desk.setTenantId(TENANT_ID);
+        desk.setName("Orphan Desk");
+
+        when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(desk));
+        when(specializationRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
+        when(agentRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
+        // No BambooHR cache entry for this ID -- findCachedEmployee returns null
+        when(clientManagementService.findCachedEmployee(eq("B999"), isNull(), isNull()))
+                .thenReturn(null);
+
+        MockMultipartFile file = buildDeskWorkbook("Orphan Desk",
+                new String[][] { agentRow("B999", "Ghost", "ghost@example.com") });
+
+        DeskAssignmentUploadService.DeskAssignmentUploadResult result =
+                service.uploadDeskAssignments(file);
+
+        assertThat(result.assignedCount()).isEqualTo(0);
+        assertThat(result.skippedCount()).isEqualTo(1);
+        SkippedRow skipped = result.skippedDetails().get(0);
+        assertThat(skipped.bamboohrId()).isEqualTo("B999");
+        assertThat(skipped.reason()).isEqualTo("BambooHR ID not found");
+
+        // No agent lookup/creation/save happens for a row rejected before the
+        // ID-match stage (parser checks the cache before touching agentRepository).
+        verify(agentRepository, never()).findByTenantIdAndBamboohrId(anyLong(), anyString());
+        verify(agentRepository, never()).save(any(Agent.class));
+    }
 }
