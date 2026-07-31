@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.SkippedRow;
+import com.wfm.dto.SkippedSheet;
 import com.wfm.model.Agent;
 import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
@@ -13,6 +14,7 @@ import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.util.AgentNameSplitter;
+import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
@@ -22,9 +24,20 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.DayOfWeek;
 import java.time.OffsetDateTime;
 import java.util.*;
 
+/**
+ * Parses an operator-uploaded workbook where each worksheet is one desk (D-01) and
+ * every row is one agent's identity + unbounded specialties + 7-column Mon-Sun day
+ * cells. Header layout is driven entirely by {@link EnrichedColumnLayout} — no
+ * enriched-shape header string literal is hardcoded in this class (D-13).
+ *
+ * Both the 6-col legacy shape and the old flat single-sheet enriched shape (per-row
+ * "Desk" column) are retired and rejected with a "download the new template"
+ * message (D-15).
+ */
 @Service
 public class DeskAssignmentUploadService {
 
@@ -57,15 +70,6 @@ public class DeskAssignmentUploadService {
         this.agentEligibilityService = agentEligibilityService;
     }
 
-    /**
-     * Detects whether an uploaded spreadsheet uses the 6-col legacy shape or the
-     * 16-col enriched shape based on its header row.
-     */
-    enum UploadShape {
-        LEGACY_6COL,
-        ENRICHED_16COL
-    }
-
     @Transactional
     public DeskAssignmentUploadResult uploadDeskAssignments(MultipartFile file) throws IOException {
         long tenantId = TenantContext.getTenantId();
@@ -76,6 +80,7 @@ public class DeskAssignmentUploadService {
 
         List<String> assigned = new ArrayList<>();
         List<SkippedRow> skipped = new ArrayList<>();
+        List<SkippedSheet> skippedSheets = new ArrayList<>();
 
         // Pre-load all desks for this tenant keyed by name (case-insensitive)
         List<Desk> allDesks = deskRepository.findByTenantId(tenantId);
@@ -96,264 +101,222 @@ public class DeskAssignmentUploadService {
         }
 
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
-            Sheet sheet = workbook.getSheetAt(0);
-            if (sheet == null) {
+            if (workbook.getNumberOfSheets() == 0) {
                 throw new IllegalArgumentException("Spreadsheet has no sheets");
             }
 
-            // --- Header-based shape detection ---
-            Row headerRow = sheet.getRow(0);
-            if (headerRow == null) {
+            // --- Header-based shape classification, against the FIRST sheet only (D-15
+            //     rejects file-wide — a legacy/old-enriched file has no per-desk sheets to
+            //     iterate in the first place). Driven entirely by EnrichedColumnLayout
+            //     constants + normalize() — no header string literal hardcoded here (D-13).
+            Sheet classificationSheet = workbook.getSheetAt(0);
+            Row classificationHeaderRow = classificationSheet.getRow(0);
+            if (classificationHeaderRow == null) {
                 throw new IllegalArgumentException("Spreadsheet has no header row");
             }
 
-            // Build map: lowercase-trimmed header → column index
-            Map<String, Integer> col = new LinkedHashMap<>();
-            for (int c = 0; c < headerRow.getLastCellNum(); c++) {
-                Cell cell = headerRow.getCell(c);
-                String hdr = getCellString(cell);
+            Set<String> normalizedHeaders = new LinkedHashSet<>();
+            for (int c = 0; c < classificationHeaderRow.getLastCellNum(); c++) {
+                String hdr = getCellString(classificationHeaderRow.getCell(c));
                 if (hdr != null && !hdr.isBlank()) {
-                    col.put(hdr.trim().toLowerCase(), c);
+                    normalizedHeaders.add(EnrichedColumnLayout.normalize(hdr));
                 }
             }
 
-            Set<String> headers = col.keySet();
+            String normDesk = EnrichedColumnLayout.normalize(EnrichedColumnLayout.RETIRED_COL_DESK);
+            String normLegacyDeskAssignment =
+                    EnrichedColumnLayout.normalize(EnrichedColumnLayout.LEGACY_HEADER_DESK_ASSIGNMENT);
+            String normMonday = EnrichedColumnLayout.normalize(EnrichedColumnLayout.dayHeader(DayOfWeek.MONDAY));
+            String normSunday = EnrichedColumnLayout.normalize(EnrichedColumnLayout.dayHeader(DayOfWeek.SUNDAY));
+            String normBamboohrId = EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_BAMBOOHR_ID);
 
-            boolean hasEnrichedMarkers = headers.contains("desk")
-                    && headers.contains("monday")
-                    && headers.contains("sunday");
-            boolean hasLegacyMarkers = headers.contains("desk assignment");
+            boolean isLegacy6Col = normalizedHeaders.contains(normLegacyDeskAssignment);
+            boolean isOldFlatEnriched = normalizedHeaders.contains(normDesk)
+                    && normalizedHeaders.contains(normMonday)
+                    && normalizedHeaders.contains(normSunday);
 
-            UploadShape shape;
-            if (hasEnrichedMarkers) {
-                // Enriched wins any tie (both markers present)
-                shape = UploadShape.ENRICHED_16COL;
-            } else if (hasLegacyMarkers) {
-                shape = UploadShape.LEGACY_6COL;
-            } else {
+            if (isLegacy6Col || isOldFlatEnriched) {
                 throw new IllegalArgumentException(
-                        "Unrecognised spreadsheet shape. Expected either 'Desk Assignment' (legacy) "
-                        + "or 'Desk' + day columns (enriched). Got headers: " + headers);
+                        "This spreadsheet uses a retired format. Please download the new template "
+                        + "(one worksheet per desk) and re-enter your data.");
             }
 
-            // Determine column-name constants by shape
-            final String bamboohrIdCol;
-            final String deskCol;
-            final String spec1Col;
-            final String spec2Col;
-            if (shape == UploadShape.LEGACY_6COL) {
-                bamboohrIdCol = "bamboohr id";
-                deskCol = "desk assignment";
-                spec1Col = "specialty 1";
-                spec2Col = "specialty 2";
-            } else {
-                bamboohrIdCol = "employee id";
-                deskCol = "desk";
-                spec1Col = "specialty 1";
-                spec2Col = "specialty 2";
+            boolean isNewPerDeskShape = normalizedHeaders.contains(normBamboohrId)
+                    && normalizedHeaders.contains(normMonday)
+                    && normalizedHeaders.contains(normSunday)
+                    && !normalizedHeaders.contains(normDesk);
+
+            if (!isNewPerDeskShape) {
+                throw new IllegalArgumentException(
+                        "Unrecognised spreadsheet shape. Expected the per-desk enriched template "
+                        + "(BambooHR ID + Monday..Sunday columns, no Desk column). Got headers: "
+                        + normalizedHeaders);
             }
 
-            // Clear all desks referenced in the spreadsheet before re-assigning
-            Set<UUID> clearedDeskIds = new HashSet<>();
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
-                int deskColIdx = col.getOrDefault(deskCol, -1);
-                String dn = deskColIdx >= 0 ? getCellString(row.getCell(deskColIdx)) : null;
-                if (dn == null || dn.isBlank()) continue;
-                Desk d = deskByName.get(dn.trim().toLowerCase());
-                if (d != null && clearedDeskIds.add(d.getId())) {
-                    clearDesk(tenantId, d.getId());
-                }
-            }
-
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
-
-                // Read cells via header-based column index. Shape detection does not require
-                // the ID/Name/Email columns, so a detected-but-incomplete sheet can yield index
-                // -1; cellAt() tolerates that instead of letting row.getCell(-1) throw and abort
-                // the whole upload with a 500.
-                String bamboohrId = cellAt(row, col, bamboohrIdCol);
-                String name = cellAt(row, col, "name");
-                String email = cellAt(row, col, "email");
-                String deskName = cellAt(row, col, deskCol);
-
-                // Parse specialty columns
-                List<String> specialtyNames = new ArrayList<>();
-                int spec1Idx = col.getOrDefault(spec1Col, -1);
-                int spec2Idx = col.getOrDefault(spec2Col, -1);
-                if (spec1Idx >= 0) {
-                    String val = getCellString(row.getCell(spec1Idx));
-                    if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
-                }
-                if (spec2Idx >= 0) {
-                    String val = getCellString(row.getCell(spec2Idx));
-                    if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
-                }
-
-                String missingDeskReason = shape == UploadShape.LEGACY_6COL
-                        ? "Missing Desk Assignment"
-                        : "Missing Desk";
-
-                if (deskName == null || deskName.isBlank()) {
-                    skipped.add(new SkippedRow(i + 1, bamboohrId, name, missingDeskReason));
-                    continue;
-                }
-
-                // Find the desk by name
-                Desk desk = deskByName.get(deskName.trim().toLowerCase());
+            // --- Iterate every sheet: sheet name = desk, no per-row Desk column (D-01) ---
+            for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
+                Sheet sheet = workbook.getSheetAt(s);
+                String sheetName = sheet.getSheetName().trim();
+                Desk desk = deskByName.get(sheetName.toLowerCase());
                 if (desk == null) {
-                    skipped.add(new SkippedRow(i + 1, bamboohrId, name,
-                            "Desk '" + deskName.trim() + "' not found"));
+                    skippedSheets.add(new SkippedSheet(sheetName, "no matching desk — skipped"));
                     continue;
                 }
 
-                // Resolve specialty names against desk specializations
-                Map<String, Specialization> deskSpecs = specsByDesk.getOrDefault(desk.getId(), Map.of());
-                List<Specialization> resolvedSpecialties = new ArrayList<>();
-                boolean specialtyError = false;
-                for (String specName : specialtyNames) {
-                    Specialization spec = deskSpecs.get(specName.toLowerCase());
-                    if (spec == null) {
-                        skipped.add(new SkippedRow(i + 1, bamboohrId, name,
-                                "Specialty '" + specName + "' not found on desk '" + desk.getName() + "'"));
-                        specialtyError = true;
-                        break;
+                Row headerRow = sheet.getRow(0);
+                if (headerRow == null) {
+                    skippedSheets.add(new SkippedSheet(sheetName, "no header row — skipped"));
+                    continue;
+                }
+
+                // Build map: normalized (trim+lowercase) header -> column index
+                Map<String, Integer> col = new LinkedHashMap<>();
+                for (int c = 0; c < headerRow.getLastCellNum(); c++) {
+                    String hdr = getCellString(headerRow.getCell(c));
+                    if (hdr != null && !hdr.isBlank()) {
+                        col.put(EnrichedColumnLayout.normalize(hdr), c);
                     }
-                    resolvedSpecialties.add(spec);
-                }
-                if (specialtyError) continue;
-
-                boolean hasBambooId = bamboohrId != null && !bamboohrId.isBlank();
-                boolean hasEmail = email != null && !email.isBlank();
-                boolean hasName = name != null && !name.isBlank();
-
-                // Verify the agent exists in the BambooHR cache before proceeding
-                BambooEmployeeResponse cached = clientManagementService.findCachedEmployee(
-                        hasBambooId ? bamboohrId.trim() : null,
-                        hasEmail ? email.trim() : null,
-                        hasName ? name.trim() : null);
-
-                if (cached == null) {
-                    // Agent not found in BambooHR cache — log and skip
-                    String identifier = hasName ? name.trim() : (hasEmail ? email.trim() : bamboohrId);
-                    log.warn("Row {}: agent '{}' from spreadsheet not found in BambooHR cache — skipping desk assignment", i + 1, identifier);
-                    skipped.add(new SkippedRow(i + 1, bamboohrId, name,
-                            "BambooHR ID " + identifier + " not found"));
-                    continue;
                 }
 
-                // Find existing agent in DB, or create a new one from the cached BambooHR data
-                Agent agent = null;
+                // Clear-then-reimport (D-17): unassign agents, delete desk-scoped
+                // preferences/exceptions/per-day-hours before re-adding the rows present.
+                clearDesk(tenantId, desk.getId());
 
-                if (hasBambooId) {
-                    agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, bamboohrId.trim())
+                Map<String, Specialization> deskSpecs = specsByDesk.getOrDefault(desk.getId(), Map.of());
+
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+
+                    String bamboohrId = cellAt(row, col, normBamboohrId);
+                    String firstName = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_FIRST_NAME));
+                    String lastName = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_LAST_NAME));
+                    String jobTitle = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_JOB_TITLE));
+                    String email = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_EMAIL));
+                    String department = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_DEPARTMENT));
+                    String activeStr = cellAt(row, col,
+                            EnrichedColumnLayout.normalize(EnrichedColumnLayout.COL_ACTIVE));
+                    String rowName = joinName(firstName, lastName);
+
+                    // Parse specialty columns. Fixed 2-column lookup for now (matches the
+                    // pre-Phase-10 behavior); Task 2 replaces this with an unbounded
+                    // "Specialty N" header scan via EnrichedColumnLayout.specialtyIndex() (D-06).
+                    List<String> specialtyNames = new ArrayList<>();
+                    int spec1Idx = col.getOrDefault("specialty 1", -1);
+                    int spec2Idx = col.getOrDefault("specialty 2", -1);
+                    if (spec1Idx >= 0) {
+                        String val = getCellString(row.getCell(spec1Idx));
+                        if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
+                    }
+                    if (spec2Idx >= 0) {
+                        String val = getCellString(row.getCell(spec2Idx));
+                        if (val != null && !val.isBlank()) specialtyNames.add(val.trim());
+                    }
+
+                    if (bamboohrId == null || bamboohrId.isBlank()) {
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID missing"));
+                        continue;
+                    }
+
+                    // Resolve specialty names against desk specializations
+                    List<Specialization> resolvedSpecialties = new ArrayList<>();
+                    boolean specialtyError = false;
+                    for (String specName : specialtyNames) {
+                        Specialization spec = deskSpecs.get(specName.toLowerCase());
+                        if (spec == null) {
+                            skipped.add(new SkippedRow(i + 1, bamboohrId, rowName,
+                                    "Specialty '" + specName + "' not found on desk '" + desk.getName() + "'"));
+                            specialtyError = true;
+                            break;
+                        }
+                        resolvedSpecialties.add(spec);
+                    }
+                    if (specialtyError) continue;
+
+                    // Match by BambooHR ID only (D-08) — a row whose ID is not in the
+                    // BambooHR cache is rejected; no agent is created (D-07/UPL-07).
+                    BambooEmployeeResponse cached =
+                            clientManagementService.findCachedEmployee(bamboohrId.trim(), null, null);
+                    if (cached == null) {
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID not found"));
+                        continue;
+                    }
+
+                    Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, bamboohrId.trim())
                             .orElse(null);
-                }
-                if (agent == null && hasEmail) {
-                    agent = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, email.trim())
-                            .orElse(null);
-                }
-                if (agent == null && hasName) {
-                    agent = agentRepository.findByTenantIdAndNameIgnoreCase(tenantId, name.trim())
-                            .orElse(null);
-                }
+                    if (agent == null) {
+                        agent = new Agent();
+                        agent.setTenantId(tenantId);
+                        agent.setBamboohrId(bamboohrId.trim());
+                        agent.setLastRefreshedAt(OffsetDateTime.now());
+                    }
 
-                // Also try matching by the cached BambooHR data in case spreadsheet
-                // identifiers differ (e.g. fuzzy name like "Olena Yaremenko1")
-                if (agent == null) {
-                    agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, cached.id())
-                            .orElse(null);
-                }
-                if (agent == null && cached.workEmail() != null && !cached.workEmail().isBlank()) {
-                    agent = agentRepository.findByTenantIdAndEmailIgnoreCase(tenantId, cached.workEmail())
-                            .orElse(null);
-                }
-                if (agent == null && cached.displayName() != null && !cached.displayName().isBlank()) {
-                    agent = agentRepository.findByTenantIdAndNameIgnoreCase(tenantId, cached.displayName())
-                            .orElse(null);
-                }
-
-                if (agent == null) {
-                    // Create new agent from BambooHR cache data
-                    agent = new Agent();
-                    agent.setTenantId(tenantId);
-                    agent.setBamboohrId(cached.id());
-                    agent.setName(cached.displayName());
-                    AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(cached.displayName());
-                    agent.setFirstName(cachedSplit.firstName());
-                    agent.setLastName(cachedSplit.lastName());
-                    agent.setEmail(cached.workEmail());
-                    agent.setDepartment(cached.department());
-                    agent.setJobTitle(cached.jobTitle());
+                    // Re-activate: the agent is in the BambooHR cache (Active status),
+                    // so mark active even if a prior refresh soft-deleted them
                     agent.setActive("Active".equalsIgnoreCase(cached.status()));
+
+                    // Backfill missing identity fields from the BambooHR cache
+                    if (isBlank(agent.getEmail())) agent.setEmail(cached.workEmail());
+                    if (isBlank(agent.getDepartment())) agent.setDepartment(cached.department());
+                    if (isBlank(agent.getJobTitle())) agent.setJobTitle(cached.jobTitle());
+                    if (isBlank(agent.getFirstName()) || isBlank(agent.getLastName())) {
+                        AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(cached.displayName());
+                        if (isBlank(agent.getFirstName())) agent.setFirstName(cachedSplit.firstName());
+                        if (isBlank(agent.getLastName())) agent.setLastName(cachedSplit.lastName());
+                    }
+                    if (isBlank(agent.getName())) agent.setName(cached.displayName());
+
+                    // Spreadsheet-supplied identity fields are optional and override the
+                    // cache when present (D-07)
+                    if (!isBlank(firstName)) agent.setFirstName(firstName.trim());
+                    if (!isBlank(lastName)) agent.setLastName(lastName.trim());
+                    if (!isBlank(jobTitle)) agent.setJobTitle(jobTitle.trim());
+                    if (!isBlank(email)) agent.setEmail(email.trim());
+                    if (!isBlank(department)) agent.setDepartment(department.trim());
+                    if (!isBlank(activeStr)) agent.setActive(parseActive(activeStr));
+                    if (!isBlank(agent.getFirstName()) || !isBlank(agent.getLastName())) {
+                        agent.setName(joinName(agent.getFirstName(), agent.getLastName()));
+                    }
                     agent.setLastRefreshedAt(OffsetDateTime.now());
-                }
 
-                // Re-activate: the agent is in the BambooHR cache (Active status),
-                // so mark active even if a prior refresh soft-deleted them
-                agent.setActive("Active".equalsIgnoreCase(cached.status()));
+                    // Check if already assigned to a different desk
+                    if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
+                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                                "Agent already assigned to desk " + agent.getDeskId()));
+                        continue;
+                    }
 
-                // Backfill missing fields from BambooHR cache
-                if (agent.getEmail() == null || agent.getEmail().isBlank()) {
-                    agent.setEmail(cached.workEmail());
-                }
-                if (agent.getDepartment() == null || agent.getDepartment().isBlank()) {
-                    agent.setDepartment(cached.department());
-                }
-                if (agent.getJobTitle() == null || agent.getJobTitle().isBlank()) {
-                    agent.setJobTitle(cached.jobTitle());
-                }
+                    // Non-schedulable check — BEFORE desk assignment
+                    if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
+                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                                "Agent has non-schedulable job title: " + agent.getJobTitle()));
+                        continue;
+                    }
 
-                // Update fields from spreadsheet if provided
-                if (hasName) {
-                    agent.setName(name.trim());
-                    AgentNameSplitter.Split nameSplit = AgentNameSplitter.split(name.trim());
-                    agent.setFirstName(nameSplit.firstName());
-                    agent.setLastName(nameSplit.lastName());
-                }
-                if (hasEmail) {
-                    agent.setEmail(email.trim());
-                }
-                if (hasBambooId && (agent.getBamboohrId() == null || agent.getBamboohrId().startsWith("UPLOAD-"))) {
-                    agent.setBamboohrId(bamboohrId.trim());
-                }
-                agent.setLastRefreshedAt(OffsetDateTime.now());
+                    agent.setDeskId(desk.getId());
 
-                // Check if already assigned to a different desk
-                if (agent.getDeskId() != null && !agent.getDeskId().equals(desk.getId())) {
-                    skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
-                            "Agent already assigned to desk " + agent.getDeskId()));
-                    continue;
-                }
+                    // Assign specializations — modify the existing JPA-managed collection
+                    // in place (clear + addAll) rather than replacing the reference, so
+                    // Hibernate properly tracks changes to the join table.
+                    if (resolvedSpecialties.isEmpty()) {
+                        agent.setPrimarySpecialization(null);
+                    } else {
+                        agent.setPrimarySpecialization(resolvedSpecialties.get(0));
+                    }
+                    agent.getSecondarySpecializations().clear();
+                    if (resolvedSpecialties.size() > 1) {
+                        agent.getSecondarySpecializations().addAll(
+                                resolvedSpecialties.subList(1, resolvedSpecialties.size()));
+                    }
 
-                // Non-schedulable check — BEFORE desk assignment
-                if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
-                    skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
-                            "Agent has non-schedulable job title: " + agent.getJobTitle()));
-                    continue;
+                    agentRepository.save(agent);
+                    assigned.add("Row " + (i + 1) + ": " + agent.getName() + " -> " + desk.getName());
                 }
-
-                agent.setDeskId(desk.getId());
-
-                // Assign specializations — modify the existing JPA-managed collection
-                // in place (clear + addAll) rather than replacing the reference, so
-                // Hibernate properly tracks changes to the join table.
-                if (resolvedSpecialties.isEmpty()) {
-                    agent.setPrimarySpecialization(null);
-                } else {
-                    agent.setPrimarySpecialization(resolvedSpecialties.get(0));
-                }
-                agent.getSecondarySpecializations().clear();
-                if (resolvedSpecialties.size() > 1) {
-                    agent.getSecondarySpecializations().addAll(
-                            resolvedSpecialties.subList(1, resolvedSpecialties.size()));
-                }
-
-                agentRepository.save(agent);
-                assigned.add("Row " + (i + 1) + ": " + agent.getName() + " -> " + desk.getName());
             }
         }
 
@@ -387,6 +350,12 @@ public class DeskAssignmentUploadService {
         return idx >= 0 ? getCellString(row.getCell(idx)) : null;
     }
 
+    /**
+     * NOTE: numeric cells are truncated via (long) here — fine for identity/string
+     * reads (IDs, names) but MUST NOT be used for day-cell hours parsing, which needs
+     * to preserve fractional values (e.g. 7.5). Day-cell parsing reads
+     * cell.getNumericCellValue() directly instead (see parseDayCell, Task 2).
+     */
     private String getCellString(Cell cell) {
         if (cell == null) return null;
         return switch (cell.getCellType()) {
@@ -400,6 +369,23 @@ public class DeskAssignmentUploadService {
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
             default -> null;
         };
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private static String joinName(String firstName, String lastName) {
+        String first = firstName == null ? "" : firstName.trim();
+        String last = lastName == null ? "" : lastName.trim();
+        String combined = (first + " " + last).trim();
+        return combined.isBlank() ? null : combined;
+    }
+
+    private static boolean parseActive(String value) {
+        String v = value.trim();
+        return "true".equalsIgnoreCase(v) || "yes".equalsIgnoreCase(v)
+                || "active".equalsIgnoreCase(v) || "1".equals(v);
     }
 
     public record DeskAssignmentUploadResult(
