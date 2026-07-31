@@ -76,7 +76,20 @@ Plans:
   3. Operator can fill the Mon–Sun day cells; each cell is parsed per agent as hours (`>= 0`, where `0` = day not worked), `MANDATORY` (mandatory day off), or `PTO` (recurring weekly PTO), and a blank cell is invalid
   4. A row that fails validation (blank/invalid day cell, negative hours, unknown BambooHR ID) is skipped with a specific reason; the Upload Results view shows a per-sheet rollup, skip reasons, unmatched-sheet notices, and clamp warnings (>24 → 24); other valid rows in the same file still import
   5. A row whose BambooHR ID is not found is rejected with reason "BambooHR ID not found" rather than creating an agent; uploading a 6-column legacy sheet or an old flat enriched sheet is no longer accepted, and operators use the downloadable pre-seeded per-desk template instead
-**Plans**: TBD
+**Plans**: 6 plans in 3 waves
+Plans:
+
+**Wave 1** *(foundation — parallel)*
+- [ ] 10-01-PLAN.md — V30 day_off_type column + AgentDayHours label + D-12 refresh-wipe regression test (UPL-04, UPL-05)
+- [ ] 10-02-PLAN.md — EnrichedColumnLayout shared column definition + unit test (UPL-02, UPL-09)
+
+**Wave 2** *(parser + template — parallel, blocked on Wave 1)*
+- [ ] 10-03-PLAN.md — DeskAssignmentUploadService rewrite: multi-sheet, ID-only match, day-cell parse, retired-shape rejection, multipart limits (UPL-01, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07, UPL-08)
+- [ ] 10-04-PLAN.md — Pre-seeded per-desk template service + download endpoint + export symmetry + sanitization (UPL-09)
+
+**Wave 3** *(tests + UI — parallel, blocked on Wave 2)*
+- [ ] 10-05-PLAN.md — Parser behavioral test suite (multi-sheet, specialty, day-cell, validation, ID-reject) (UPL-01, UPL-02, UPL-03, UPL-04, UPL-05, UPL-06, UPL-07)
+- [ ] 10-06-PLAN.md — Frontend Upload Results rollup/warnings + template download button (UPL-06, UPL-09)
 **UI hint**: yes
 
 ### Phase 11: BambooHR Merge Engine & Report
