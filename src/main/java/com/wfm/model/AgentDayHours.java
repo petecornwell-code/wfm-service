@@ -29,6 +29,19 @@ public class AgentDayHours {
     @Column(nullable = false, precision = 5, scale = 2)
     private BigDecimal hours;
 
+    /**
+     * Descriptive flavour of this weekday's not-worked state (D-12).
+     * null = a normal worked day (hours > 0) or a plain unlabelled 0 (no descriptive reason).
+     * MANDATORY / PTO = the spreadsheet cell used that keyword (D-03) -- reuses the existing
+     * DayOffType enum vocabulary without reusing AgentDayOff's dated materialization mechanism.
+     * Reporting/label metadata only -- never read by the solver (unlike AgentDayOff.type,
+     * this column is intentionally nullable: the third "no label" state has no equivalent
+     * on AgentDayOff, which is always MANDATORY or PTO, never "worked").
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "day_off_type", length = 9)
+    private DayOffType dayOffType;
+
     public AgentDayHours() {}
 
     public UUID getId() { return id; }
@@ -45,4 +58,7 @@ public class AgentDayHours {
 
     public BigDecimal getHours() { return hours; }
     public void setHours(BigDecimal hours) { this.hours = hours; }
+
+    public DayOffType getDayOffType() { return dayOffType; }
+    public void setDayOffType(DayOffType dayOffType) { this.dayOffType = dayOffType; }
 }
