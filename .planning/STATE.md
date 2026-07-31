@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
 status: executing
-stopped_at: Completed 10-03-PLAN.md
-last_updated: "2026-07-31T22:05:14.839Z"
+stopped_at: Completed 10-05-PLAN.md
+last_updated: "2026-07-31T22:22:17.371Z"
 last_activity: 2026-07-31
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 ## Current Position
 
 Phase: 10 (enriched-upload-parsing) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-31
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 92%
 
 ## Milestone v1.2 Roadmap
 
@@ -99,6 +99,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 10]: [Phase 10 Plan 03] Row validation order settled: BambooHR ID presence -> all 7 day cells valid -> specialty resolution -> BambooHR cache lookup -> non-schedulable check (D-09 whole-row skip-and-continue)
 - [Phase 10]: [Phase 10 Plan 03] Identity fields read via EnrichedColumnLayout constants (no generic name/email fallback columns in the new per-desk-sheet shape)
 - [Phase 10]: [Phase 10 Plan 04] Sheet names derived from desk.getName() pass through WorkbookUtil.createSafeSheetName to prevent runtime failures on invalid/oversized Excel sheet names
+- [Phase 10]: [Phase 10 Plan 05] Colliding-sheet-name last-wins test uses a stateful Mockito registry (Map<bamboohrId,Agent> backing thenAnswer stubs) rather than static thenReturn stubs, to faithfully model clearDesk's unassign-then-reimport round trip across two sheets targeting the same desk
+- [Phase 10]: [Phase 10 Plan 05] D-16 guard (no AgentDayOffRepository dependency) verified via reflection over declared fields rather than Mockito verify(never()), since the collaborator does not exist to verify against
 
 ### Blockers/Concerns
 
@@ -109,8 +111,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-31T22:04:21.894Z
-Stopped at: Completed 10-03-PLAN.md
+Last session: 2026-07-31T22:22:17.367Z
+Stopped at: Completed 10-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
