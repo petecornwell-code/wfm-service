@@ -43,6 +43,9 @@ class ClientManagementServiceNonSchedulableTest {
         agentRepository = mock(AgentRepository.class);
         deskRepository = mock(DeskRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
+        // Job-title allowlist inactive for this suite; without this stub the mock defaults
+        // to false and every row would be skipped as "not in the configured allowlist".
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
 
         service = new ClientManagementService(
                 bambooHRClient, configurationService, agentRepository,

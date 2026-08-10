@@ -403,6 +403,25 @@ public class DeskAssignmentUploadService {
                         continue;
                     }
 
+                    // Inactive check — agent.active was refreshed from the BambooHR cache above,
+                    // so this reflects current BambooHR status rather than what the sheet claims.
+                    if (!agent.isActive()) {
+                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                                "Agent is not active"));
+                        sheetSkippedCount++;
+                        continue;
+                    }
+
+                    // Job-title allowlist — inactive (and therefore a no-op) until the tenant
+                    // configures at least one pattern on the Configuration page.
+                    if (!agentEligibilityService.isIncludedByTitleAllowlist(tenantId, agent.getJobTitle())) {
+                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
+                                "Agent job title is not in the configured allowlist: "
+                                        + agent.getJobTitle()));
+                        sheetSkippedCount++;
+                        continue;
+                    }
+
                     agent.setDeskId(desk.getId());
 
                     // Assign specializations — modify the existing JPA-managed collection

@@ -70,6 +70,9 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         when(agentEligibilityService.isNonSchedulable(TENANT_ID, "Agent")).thenReturn(false);
         // Handle null jobTitle gracefully
         when(agentEligibilityService.isNonSchedulable(anyLong(), isNull())).thenReturn(false);
+        // Job-title allowlist inactive — this suite covers the non-schedulable denylist only.
+        // Without this stub the mock would default to false and skip every row.
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
     }
 
     // ------------------------------------------------------------------ //

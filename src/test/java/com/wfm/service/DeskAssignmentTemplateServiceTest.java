@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -32,13 +33,20 @@ class DeskAssignmentTemplateServiceTest {
 
     private DeskRepository deskRepository;
     private DeskAgentService deskAgentService;
+    private AgentEligibilityService agentEligibilityService;
     private DeskAssignmentTemplateService service;
 
     @BeforeEach
     void setUp() {
         deskRepository = mock(DeskRepository.class);
         deskAgentService = mock(DeskAgentService.class);
-        service = new DeskAssignmentTemplateService(deskRepository, deskAgentService);
+        agentEligibilityService = mock(AgentEligibilityService.class);
+        // Default: allowlist inactive, so these pre-existing tests keep asserting the
+        // unfiltered seeding behaviour. The allowlist itself is covered by
+        // DeskAssignmentTemplateFilterTest.
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
+        service = new DeskAssignmentTemplateService(
+                deskRepository, deskAgentService, agentEligibilityService);
         TenantContext.setTenantId(TENANT_ID);
     }
 

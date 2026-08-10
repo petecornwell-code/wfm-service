@@ -33,10 +33,14 @@ public class DeskAssignmentTemplateService {
 
     private final DeskRepository deskRepository;
     private final DeskAgentService deskAgentService;
+    private final AgentEligibilityService agentEligibilityService;
 
-    public DeskAssignmentTemplateService(DeskRepository deskRepository, DeskAgentService deskAgentService) {
+    public DeskAssignmentTemplateService(DeskRepository deskRepository,
+                                         DeskAgentService deskAgentService,
+                                         AgentEligibilityService agentEligibilityService) {
         this.deskRepository = deskRepository;
         this.deskAgentService = deskAgentService;
+        this.agentEligibilityService = agentEligibilityService;
     }
 
     public byte[] generateTemplate() {
@@ -63,6 +67,13 @@ public class DeskAssignmentTemplateService {
 
                 int rowNum = 1;
                 for (DeskAgentResponse agent : roster) {
+                    // Seed only agents the operator can actually schedule: active, and passing the
+                    // tenant's job-title allowlist. Keeps the template consistent with what the
+                    // upload parser will accept, so a downloaded-then-reuploaded template cannot
+                    // produce rows that are immediately skipped.
+                    if (!isSeedable(tenantId, agent)) {
+                        continue;
+                    }
                     Row row = sheet.createRow(rowNum++);
                     writeSanitized(row, 0, agent.bamboohrId());
                     writeSanitized(row, 1, agent.firstName());
@@ -86,6 +97,21 @@ public class DeskAssignmentTemplateService {
         } catch (IOException e) {
             throw new RuntimeException("Failed to generate desk assignment template", e);
         }
+    }
+
+    /**
+     * Whether a roster agent should be pre-seeded into the template. Mirrors the corresponding
+     * checks in {@code DeskAssignmentUploadService} — inactive agents and agents failing the
+     * job-title allowlist are omitted rather than written as rows that would be skipped on
+     * re-upload.
+     *
+     * Note the non-schedulable denylist is deliberately NOT applied here: those agents are still
+     * roster members and the parser reports them with an explicit reason, so omitting them from
+     * the template would hide an actionable configuration problem from the operator.
+     */
+    private boolean isSeedable(long tenantId, DeskAgentResponse agent) {
+        return agent.active()
+                && agentEligibilityService.isIncludedByTitleAllowlist(tenantId, agent.jobTitle());
     }
 
     private List<String> buildHeaders() {

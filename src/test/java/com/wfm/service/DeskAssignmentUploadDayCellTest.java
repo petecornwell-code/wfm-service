@@ -53,6 +53,9 @@ class DeskAssignmentUploadDayCellTest {
         agentDayHoursRepository = mock(AgentDayHoursRepository.class);
         specializationRepository = mock(SpecializationRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
+        // Job-title allowlist inactive for this suite; without this stub the mock defaults
+        // to false and every row would be skipped as "not in the configured allowlist".
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
 
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
