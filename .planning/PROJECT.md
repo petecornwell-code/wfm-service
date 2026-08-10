@@ -115,7 +115,7 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 
 **Live URL:** `https://d2bbtcc80peap7.cloudfront.net`
 **AWS account:** 982940000233, region `eu-west-2`
-**Deploy:** Push to `main` → GitHub Actions → Docker build → ECS + S3/CloudFront
+**Deploy:** Push to `main` **or `claude/create-system-specification-451ge`** → GitHub Actions (`.github/workflows/deploy.yml`) → Docker build → ECS + S3/CloudFront. Auth is OIDC role assumption (`wfm-service-dev-github-actions`) — there are no long-lived AWS credentials, so deploys run only from CI, not from a developer machine. ⚠ The second trigger means pushing that working branch deploys straight to the live environment with no review gate.
 **BambooHR:** Credentials stored in DB via Configuration UI (not env vars); `DelegatingBambooHRClient` falls back to mock when unconfigured
 **Solver:** Timefold OptaPlanner; constraints include staffing demand, specialization match, PTO/exceptions, contracted hours, bulk overallocation limits
 **Multi-tenant:** Tenant ID via JWT; all entities scoped by `tenant_id`
