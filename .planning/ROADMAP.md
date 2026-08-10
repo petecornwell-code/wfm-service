@@ -216,3 +216,20 @@ Phases execute in numeric order: 9 → 10 → 11
 - [ ] Store the new key only in AWS Secrets Manager / deploy env config — never in chat or committed files
 - [ ] Scrub the value from tracked planning docs (`.planning/codebase/CONCERNS.md`, `02-01-PLAN.md`, `02-RESEARCH.md`, 06-01 planning docs) and confirm `git grep -i ad2bb` is clean
 - [ ] Decide whether git history rewrite is warranted given the repo is public
+
+---
+
+### Phase 999.8: Decommission Orphaned v1.0 Infrastructure (BACKLOG — COST)
+
+**Goal:** The v1.0 AWS resources in the abandoned account are audited and either destroyed or knowingly retained, so nothing bills silently
+**Source:** Discovered 2026-08-10 while reconciling stale endpoints in planning docs during Phase 10 UAT
+**Detail:** v1.0 was provisioned in AWS account **521757869980** (`03-01-SUMMARY.md`); the live environment is now account **982940000233** (`infra/main.tf`, `.github/workflows/deploy.yml`). Endpoints from the old account still resolve:
+- `d3f4cgjy3bqy.cloudfront.net` — live CloudFront distribution, S3 origin returns `AccessDenied`
+- `wfm-service-dev-1135113453.eu-west-2.elb.amazonaws.com` — live ALB (`18.171.68.68`), returns 503, zero healthy targets
+
+An idle ALB plus NAT gateway plus an RDS instance in that account would be the material cost; RDS/NAT status was **not** verified — only the two public endpoints above were probed from outside.
+**Work:**
+- [ ] Confirm whether account 521757869980 is still open and billing, and who owns it
+- [ ] Inventory surviving v1.0 resources there (RDS `wfm-service-dev`, NAT gateway, ALB, CloudFront, ECR, Secrets Manager)
+- [ ] Confirm no data in the old RDS instance is still needed before destroying
+- [ ] `terraform destroy` against the old state (`wfm-terraform-state-521757869980`) or delete manually if state is unrecoverable

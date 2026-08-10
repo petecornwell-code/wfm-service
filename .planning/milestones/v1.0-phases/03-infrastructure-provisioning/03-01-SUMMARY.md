@@ -56,6 +56,9 @@ completed: 2026-04-03
 
 **38 of 45 AWS resources provisioned via terraform apply — VPC, ECR, RDS PostgreSQL 16.6, ALB, CloudFront, S3 all live; IAM roles blocked by missing iam:CreateRole permission on pete.cornwell@helpware.com**
 
+> **⚠ All endpoints in this document are SUPERSEDED** (AWS account 521757869980 →
+> migrated to 982940000233). For the current live URL see `.planning/PROJECT.md`.
+
 ## Performance
 
 - **Duration:** 19 min
@@ -83,6 +86,13 @@ completed: 2026-04-03
 - All 5 Terraform outputs captured
 
 ## Terraform Outputs (Phase 4 dependency)
+
+> **⚠ SUPERSEDED — historical record as of 2026-04-03, do NOT use these endpoints.**
+> These outputs are from AWS account **521757869980**. The project has since migrated
+> to account **982940000233**; the live environment and its CloudFront URL are recorded
+> in `.planning/PROJECT.md` "Context". The endpoints below are kept verbatim because
+> this is an execution record of what `terraform apply` produced that day — they are
+> **not** current infrastructure. See Backlog 999.8 re: orphaned resources.
 
 ```
 alb_dns_name       = "wfm-service-dev-1135113453.eu-west-2.elb.amazonaws.com"
