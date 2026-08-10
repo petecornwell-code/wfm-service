@@ -4,6 +4,7 @@ import com.wfm.model.Agent;
 import com.wfm.model.JobTitleConfig;
 import com.wfm.model.Specialization;
 import com.wfm.repository.JobTitleConfigRepository;
+import com.wfm.repository.JobTitleIncludePatternRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -126,7 +128,7 @@ class SolverServiceEligibilityFilterTest {
         stubTitle(repo, "Regular", false);
         stubTitle(repo, "Excluded", true);
         stubTitle(repo, "AlsoRegular", false);
-        AgentEligibilityService elig = new AgentEligibilityService(repo);
+        AgentEligibilityService elig = new AgentEligibilityService(repo, emptyPatternRepo());
 
         Agent a1 = agent(true, "Regular", primarySpec());
         Agent a2 = agent(true, "Excluded", primarySpec());   // non-schedulable
@@ -166,7 +168,17 @@ class SolverServiceEligibilityFilterTest {
     private AgentEligibilityService eligServiceFor(String title, boolean nonSchedulable) {
         JobTitleConfigRepository repo = mock(JobTitleConfigRepository.class);
         stubTitle(repo, title, nonSchedulable);
-        return new AgentEligibilityService(repo);
+        return new AgentEligibilityService(repo, emptyPatternRepo());
+    }
+
+    /**
+     * An allowlist repository with no patterns for the tenant — the allowlist is inactive, so
+     * these solver-eligibility tests keep exercising only the non-schedulable denylist.
+     */
+    private JobTitleIncludePatternRepository emptyPatternRepo() {
+        JobTitleIncludePatternRepository repo = mock(JobTitleIncludePatternRepository.class);
+        when(repo.findByTenantId(anyLong())).thenReturn(List.of());
+        return repo;
     }
 
     private void stubTitle(JobTitleConfigRepository repo, String title, boolean nonSchedulable) {
