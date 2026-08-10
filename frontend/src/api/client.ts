@@ -439,6 +439,8 @@ export interface SheetSummary { deskName: string; importedCount: number; skipped
 
 export interface JobTitleConfigResponse { id: string; jobTitle: string; nonSchedulable: boolean; createdAt: string; updatedAt: string }
 
+export interface JobTitleIncludePatternResponse { id: string; pattern: string; createdAt: string; updatedAt: string }
+
 export interface BambooSyncEventResponse {
   startedAt: string | null
   finishedAt: string | null
@@ -465,6 +467,17 @@ export const jobTitleConfig = {
   setNonSchedulable: (id: string, nonSchedulable: boolean) =>
     request<JobTitleConfigResponse>(`/job-titles/${id}`,
       { method: 'PATCH', body: JSON.stringify({ nonSchedulable }) }),
+}
+
+// --- Job Title Allowlist ---
+// An empty list means the allowlist is INACTIVE and every job title is included.
+export const jobTitleIncludePattern = {
+  list: () => request<JobTitleIncludePatternResponse[]>('/job-title-patterns'),
+  add: (pattern: string) =>
+    request<JobTitleIncludePatternResponse>('/job-title-patterns',
+      { method: 'POST', body: JSON.stringify({ pattern }) }),
+  remove: (id: string) =>
+    request<void>(`/job-title-patterns/${id}`, { method: 'DELETE' }),
 }
 
 // --- BambooHR Sync Status ---

@@ -355,8 +355,10 @@ export default function ClientManagement() {
             Upload an .xlsx workbook with one worksheet per desk (sheet name = desk name). Each sheet needs a BambooHR ID
             column and one column per day (Monday…Sunday) — each day cell holds a number of hours (0–24), MANDATORY, or PTO.
             Specialty columns (Specialty 1, Specialty 2, …) are optional. Download the template above to get a workbook
-            pre-seeded with your current roster's identity columns. The old 6-column and flat enriched shapes are no longer
-            accepted — re-download the template if your file uses either.
+            pre-seeded with your current roster's identity columns. Only active agents are seeded, and if a Job Title
+            Allowlist is configured on the Configuration page, only matching job titles are seeded — the same rules are
+            enforced on upload, so non-matching rows are reported as skipped. The old 6-column and flat enriched shapes
+            are no longer accepted — re-download the template if your file uses either.
           </span>
         </div>
       </div>

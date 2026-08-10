@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { appConfiguration, jobTitleConfig, bambooSyncStatus, getErrorMessage, type JobTitleConfigResponse, type BambooSyncEventResponse } from '../api/client'
+import { appConfiguration, jobTitleConfig, jobTitleIncludePattern, bambooSyncStatus, getErrorMessage, type JobTitleConfigResponse, type JobTitleIncludePatternResponse, type BambooSyncEventResponse } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function Configuration() {
@@ -13,6 +13,11 @@ export default function Configuration() {
   // Non-Schedulable Job Titles
   const [jobTitles, setJobTitles] = useState<JobTitleConfigResponse[] | null>(null)
 
+  // Job Title Allowlist
+  const [patterns, setPatterns] = useState<JobTitleIncludePatternResponse[] | null>(null)
+  const [newPattern, setNewPattern] = useState('')
+  const [addingPattern, setAddingPattern] = useState(false)
+
   // BambooHR Sync Status
   const [syncStatus, setSyncStatus] = useState<BambooSyncEventResponse | null>(null)
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(true)
@@ -22,6 +27,42 @@ export default function Configuration() {
       .then(setJobTitles)
       .catch(err => showToast('error', getErrorMessage(err)))
   }, [])
+
+  useEffect(() => {
+    jobTitleIncludePattern.list()
+      .then(setPatterns)
+      .catch(err => showToast('error', getErrorMessage(err)))
+  }, [])
+
+  const handleAddPattern = async () => {
+    const trimmed = newPattern.trim()
+    if (!trimmed) return
+    setAddingPattern(true)
+    try {
+      const created = await jobTitleIncludePattern.add(trimmed)
+      // Re-adding an existing pattern returns the existing row, so guard against duplicates.
+      setPatterns(prev => {
+        if (!prev) return [created]
+        return prev.some(p => p.id === created.id) ? prev : [...prev, created]
+      })
+      setNewPattern('')
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setAddingPattern(false)
+    }
+  }
+
+  const handleRemovePattern = async (id: string) => {
+    const previous = patterns
+    setPatterns(prev => prev ? prev.filter(p => p.id !== id) : prev)
+    try {
+      await jobTitleIncludePattern.remove(id)
+    } catch (err) {
+      setPatterns(previous)
+      showToast('error', 'Failed to remove pattern — please try again')
+    }
+  }
 
   useEffect(() => {
     bambooSyncStatus.get()
@@ -145,6 +186,61 @@ export default function Configuration() {
                     <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>Non-schedulable</span>
                   )}
                 </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Job Title Allowlist */}
+      <section>
+        <div style={{ marginTop: '2rem', maxWidth: '500px' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Job Title Allowlist</h2>
+          <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+            Restricts which agents are pre-seeded into the desk-assignment template and accepted on
+            upload. A job title matches when it <em>contains</em> one of these entries, so
+            "Customer Support Representative" also matches "Senior Customer Support Representative II".
+            Matching ignores case.
+          </p>
+
+          {patterns !== null && patterns.length === 0 && (
+            <p style={{ fontSize: '0.85rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.75rem' }}>
+              No entries — the allowlist is <strong>inactive</strong> and every job title is included.
+              Add an entry to restrict it.
+            </p>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <input
+              value={newPattern}
+              onChange={e => setNewPattern(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddPattern() } }}
+              placeholder="e.g. Customer Support Representative"
+              style={{ flex: 1 }}
+              disabled={addingPattern}
+            />
+            <button className="primary" onClick={handleAddPattern} disabled={addingPattern || !newPattern.trim()}>
+              {addingPattern ? 'Adding...' : 'Add'}
+            </button>
+          </div>
+
+          {patterns === null ? (
+            <p>Loading allowlist...</p>
+          ) : (
+            <div>
+              {patterns.map(row => (
+                <div
+                  key={row.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6' }}
+                >
+                  <span>{row.pattern}</span>
+                  <button
+                    onClick={() => handleRemovePattern(row.id)}
+                    style={{ marginLeft: 'auto', fontSize: '0.85rem' }}
+                  >
+                    Remove
+                  </button>
+                </div>
               ))}
             </div>
           )}
