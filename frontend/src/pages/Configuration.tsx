@@ -81,7 +81,9 @@ export default function Configuration() {
     } catch (err) {
       // Revert on error
       setJobTitles(prev => prev ? prev.map(row => row.id === id ? { ...row, nonSchedulable: !value } : row) : prev)
-      showToast('error', 'Failed to update job title — please try again')
+      // Surface the actual failure rather than a generic string — the generic message made a
+      // real failure indistinguishable from a mis-click on another section.
+      showToast('error', `Failed to update job title: ${getErrorMessage(err)}`)
     }
   }
 
@@ -161,9 +163,10 @@ export default function Configuration() {
       {/* Non-Schedulable Job Titles */}
       <section>
         <div style={{ marginTop: '2rem', maxWidth: '500px' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Non-Schedulable Job Titles</h2>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Schedulable Job Titles</h2>
           <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-            Agents with these job titles are excluded from schedule solving and cannot be assigned to a desk.
+            Checked titles can be scheduled. <strong>Unchecked titles are excluded</strong> from schedule
+            solving and cannot be assigned to a desk.
           </p>
           {jobTitles === null ? (
             <p>Loading job titles...</p>
@@ -176,14 +179,17 @@ export default function Configuration() {
                   key={row.id}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontWeight: 400 }}
                 >
+                  {/* Checkbox represents SCHEDULABLE, the inverse of the stored nonSchedulable
+                      flag. Toggling flips the stored flag either way, so the handler call is
+                      unchanged — only the checked binding and labelling are inverted. */}
                   <input
                     type="checkbox"
-                    checked={row.nonSchedulable}
+                    checked={!row.nonSchedulable}
                     onChange={() => handleToggle(row.id, !row.nonSchedulable)}
                   />
                   <span>{row.jobTitle}</span>
                   {row.nonSchedulable && (
-                    <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>Non-schedulable</span>
+                    <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>Not schedulable</span>
                   )}
                 </label>
               ))}
