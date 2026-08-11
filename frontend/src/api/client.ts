@@ -65,6 +65,20 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (response.status === 204) return undefined as T
+
+  // Guard against a success status carrying a non-JSON body. The CloudFront distribution has
+  // historically rewritten API 403/404 responses into "200 OK" serving index.html, which made
+  // response.json() throw a bare SyntaxError ("... is not valid JSON") and hid the real status.
+  // Surface that as what it actually is so it is diagnosable from the UI alone.
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('json')) {
+    throw new ApiRequestError(response.status, {
+      code: 'NON_JSON_RESPONSE',
+      message: `Server returned ${response.status} with ${contentType || 'no content-type'} instead of JSON. `
+        + 'This usually means the request was rejected (404/403) and rewritten by CloudFront.',
+    })
+  }
+
   return response.json()
 }
 

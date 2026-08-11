@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { appConfiguration, jobTitleConfig, jobTitleIncludePattern, bambooSyncStatus, getErrorMessage, type JobTitleConfigResponse, type JobTitleIncludePatternResponse, type BambooSyncEventResponse } from '../api/client'
+import { appConfiguration, jobTitleConfig, jobTitleIncludePattern, bambooSyncStatus, getErrorMessage, ApiRequestError, type JobTitleConfigResponse, type JobTitleIncludePatternResponse, type BambooSyncEventResponse } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function Configuration() {
@@ -91,6 +91,19 @@ export default function Configuration() {
       // Surface the actual failure rather than a generic string — the generic message made a
       // real failure indistinguishable from a mis-click on another section.
       showToast('error', `Failed to update job title: ${getErrorMessage(err)}`)
+
+      // A 404 here means this row's id no longer exists server-side, which happens when the page
+      // has been open across a BambooHR re-sync. Re-fetch so the stale row cannot keep failing,
+      // rather than leaving the operator clicking a checkbox that can never succeed.
+      const status = err instanceof ApiRequestError ? err.status : null
+      if (status === 404 || status === 200) {
+        jobTitleConfig.list()
+          .then(fresh => {
+            setJobTitles(fresh)
+            showToast('success', 'Job title list refreshed — it was out of date.')
+          })
+          .catch(() => { /* keep the original error visible */ })
+      }
     }
   }
 
