@@ -15,6 +15,15 @@ variable "app_name" {
   default     = "wfm-service"
 }
 
+# Present in terraform.tfvars.example but never declared, so Terraform emitted "Value for
+# undeclared variable" on every plan. Declared here with an empty default meaning "derive the
+# CloudFront URL", which is what ecs.tf already did — so the default keeps current behaviour.
+variable "cors_allowed_origins" {
+  description = "CORS allowed origins for the API. Empty string derives https://<cloudfront-domain>."
+  type        = string
+  default     = ""
+}
+
 # ---------- Networking ----------
 
 variable "vpc_cidr" {

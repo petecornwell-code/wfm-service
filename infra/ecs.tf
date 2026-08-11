@@ -41,7 +41,7 @@ resource "aws_ecs_task_definition" "app" {
     environment = [
       { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.main.endpoint}/${var.db_name}" },
       { name = "SPRING_DATASOURCE_USERNAME", value = var.db_username },
-      { name = "CORS_ALLOWED_ORIGINS", value = "https://${aws_cloudfront_distribution.frontend.domain_name}" },
+      { name = "CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins != "" ? var.cors_allowed_origins : "https://${aws_cloudfront_distribution.frontend.domain_name}" },
       { name = "SOLVER_TIME_LIMIT", value = var.solver_time_limit },
       { name = "SPRING_PROFILES_ACTIVE", value = var.environment },
       { name = "JAVA_OPTS", value = "-XX:MaxRAMPercentage=75.0" },
@@ -98,4 +98,16 @@ resource "aws_ecs_service" "app" {
   deployment_maximum_percent         = 200
 
   depends_on = [aws_lb_listener.http]
+
+  # The deploy workflow (.github/workflows/deploy.yml) owns which task definition revision is
+  # running: it registers a new revision per commit SHA and calls update-service. Terraform must
+  # not fight it.
+  #
+  # Without this, `terraform apply` resets the service to the revision built from the block above,
+  # whose image is "<ecr>:latest" — a tag the deploy workflow NEVER pushes (it tags by commit
+  # SHA). Applying would therefore point the running service at a stale or non-existent image and
+  # take the site down. Observed 2026-08-11: state held revision 1 while live was revision 16.
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
 }
