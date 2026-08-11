@@ -23,7 +23,10 @@ permissions:
 env:
   AWS_REGION: eu-west-2
   AWS_ROLE_ARN: arn:aws:iam::982940000233:role/wfm-service-dev-github-terraform
-  TF_VERSION: '1.9.8'
+  # Must match the version used for local applies. Terraform upgrades the state file format
+  # one-way, so a CI pin older than the version that last wrote state fails with
+  # "state snapshot was created by Terraform vX, which is newer than current".
+  TF_VERSION: '1.15.8'
 
 jobs:
   plan:
