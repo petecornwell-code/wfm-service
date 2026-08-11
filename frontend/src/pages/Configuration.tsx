@@ -12,6 +12,7 @@ export default function Configuration() {
 
   // Non-Schedulable Job Titles
   const [jobTitles, setJobTitles] = useState<JobTitleConfigResponse[] | null>(null)
+  const [jobTitleFilter, setJobTitleFilter] = useState('')
 
   // Job Title Allowlist
   const [patterns, setPatterns] = useState<JobTitleIncludePatternResponse[] | null>(null)
@@ -70,6 +71,12 @@ export default function Configuration() {
       .catch(err => showToast('error', getErrorMessage(err)))
       .finally(() => setLoadingSyncStatus(false))
   }, [])
+
+  // Case-insensitive substring filter over the synced titles. Filtering is display-only —
+  // toggles still act on the row's own id, so a hidden row is never affected.
+  const visibleJobTitles = (jobTitles ?? []).filter(row =>
+    row.jobTitle.toLowerCase().includes(jobTitleFilter.trim().toLowerCase())
+  )
 
   const handleToggle = async (id: string, value: boolean) => {
     if (!jobTitles) return
@@ -174,7 +181,26 @@ export default function Configuration() {
             <p style={{ color: '#6b7280' }}>No job titles synced yet. Run a BambooHR refresh to populate this list.</p>
           ) : (
             <div>
-              {jobTitles.map(row => (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <input
+                  value={jobTitleFilter}
+                  onChange={e => setJobTitleFilter(e.target.value)}
+                  placeholder="Search job titles..."
+                  style={{ flex: 1 }}
+                />
+                {jobTitleFilter && (
+                  <button onClick={() => setJobTitleFilter('')} style={{ fontSize: '0.85rem' }}>Clear</button>
+                )}
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '0 0 0.5rem' }}>
+                Showing {visibleJobTitles.length} of {jobTitles.length}
+                {/* Unchecked titles are the actionable ones, so surface the count even when the
+                    filter hides them — otherwise an exclusion can sit off-screen unnoticed. */}
+                {' · '}{jobTitles.filter(r => r.nonSchedulable).length} not schedulable
+              </p>
+              {visibleJobTitles.length === 0 ? (
+                <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>No job titles match "{jobTitleFilter}".</p>
+              ) : visibleJobTitles.map(row => (
                 <label
                   key={row.id}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontWeight: 400 }}
