@@ -15,7 +15,12 @@ public class CorsConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
                 .allowedOriginPatterns(allowedOrigins.split(","))
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                // PATCH is required by JobTitleConfigController.setNonSchedulable. Browsers send an
+                // Origin header on same-origin non-GET requests, so Spring evaluates those as CORS
+                // requests — omitting PATCH here rejected every toggle with 403 while the same call
+                // succeeded from curl (which sends no Origin). HEAD is included so preflights for it
+                // cannot fail the same way.
+                .allowedMethods("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Content-Disposition")
                 .allowCredentials(true)
