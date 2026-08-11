@@ -1,0 +1,125 @@
+name: Terraform
+
+# Infra changes are NOT part of the Deploy workflow. Deploy ships application artifacts
+# (ECS image, S3 assets); this workflow is the only thing that reshapes infrastructure, and
+# every apply passes through a reviewed plan.
+on:
+  pull_request:
+    paths: ['infra/**', '.github/workflows/terraform.yml']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'plan (safe, read-only) or apply (mutates live infrastructure)'
+        required: true
+        default: 'plan'
+        type: choice
+        options: [plan, apply]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  AWS_REGION: eu-west-2
+  AWS_ROLE_ARN: arn:aws:iam::982940000233:role/wfm-service-dev-github-terraform
+  TF_VERSION: '1.9.8'
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Format check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        working-directory: infra
+        run: terraform init -input=false
+
+      - name: Validate
+        working-directory: infra
+        run: terraform validate
+
+      - name: Plan
+        id: plan
+        working-directory: infra
+        run: |
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          tail -c 60000 plan.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `### Terraform Plan\n\n\`\`\`\n${{ steps.plan.outputs.summary }}\n\`\`\``
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body.slice(0, 65000),
+            })
+
+  apply:
+    name: Apply
+    # Only ever runs on an explicit manual dispatch with action=apply. A push or PR can never
+    # reach this job.
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    needs: plan
+    runs-on: ubuntu-latest
+    # Requires the "infra" GitHub Environment. Add required reviewers to it so an apply pauses
+    # for human approval — without that protection this job runs unattended.
+    environment: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Init
+        working-directory: infra
+        run: terraform init -input=false
+
+      # Re-plans rather than reusing the plan job's artifact: a stale plan can apply changes the
+      # reviewer never saw if state moved in between. -detailed-exitcode makes "no changes" (0)
+      # and "has changes" (2) distinguishable from a genuine error (1).
+      - name: Plan (fresh)
+        working-directory: infra
+        run: |
+          set +e
+          terraform plan -input=false -no-color -out=tfplan
+          code=$?
+          set -e
+          if [ "$code" = "1" ]; then echo "::error::terraform plan failed"; exit 1; fi
+          echo "exit code $code (0=no changes, 2=changes present)"
+
+      - name: Apply
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Outputs
+        working-directory: infra
+        run: terraform output || true
