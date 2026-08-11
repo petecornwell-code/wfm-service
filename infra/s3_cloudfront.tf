@@ -15,6 +15,37 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
   restrict_public_buckets = true
 }
 
+# ---------- CloudFront Function: SPA routing ----------
+
+# Replaces the old distribution-wide custom_error_response 403/404 -> /index.html rules, which
+# also swallowed API errors. Attached to the default (S3) behavior only.
+#
+# A request is rewritten to /index.html only when it has no file extension — so /configuration
+# and /desks/<uuid>/agents reach the SPA, while /assets/index-abc123.js still 404s honestly if
+# it is genuinely missing rather than silently returning HTML.
+resource "aws_cloudfront_function" "spa_router" {
+  name    = "${var.app_name}-${var.environment}-spa-router"
+  runtime = "cloudfront-js-2.0"
+  comment = "Rewrite extensionless SPA routes to /index.html"
+  publish = true
+
+  code = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+
+      // Leave anything that looks like a real file alone (has an extension in the last segment).
+      var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+      if (lastSegment.indexOf('.') !== -1) {
+        return request;
+      }
+
+      request.uri = '/index.html';
+      return request;
+    }
+  EOT
+}
+
 # ---------- CloudFront OAC ----------
 
 resource "aws_cloudfront_origin_access_control" "frontend" {
@@ -79,6 +110,14 @@ resource "aws_cloudfront_distribution" "frontend" {
     target_origin_id       = "s3-frontend"
     viewer_protocol_policy = "redirect-to-https"
 
+    # Rewrites extensionless paths (/configuration, /desks/<id>/agents) to /index.html so the
+    # SPA router can handle them. Attached ONLY to this behavior, so /api/* and /actuator/*
+    # responses are never touched — unlike custom_error_response, which is distribution-wide.
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_router.arn
+    }
+
     forwarded_values {
       query_string = false
       cookies { forward = "none" }
@@ -126,18 +165,15 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl     = 0
   }
 
-  # SPA: return index.html for 403/404 (client-side routing)
-  custom_error_response {
-    error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
-  }
-
-  custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
-  }
+  # SPA client-side routing is handled by the spa_router CloudFront Function attached to
+  # default_cache_behavior (see below), NOT by custom_error_response.
+  #
+  # custom_error_response is DISTRIBUTION-WIDE — it cannot be scoped to a cache behavior. The
+  # previous 403->200 and 404->200 rules therefore also applied to /api/*, rewriting every API
+  # 403/404 into "200 OK" serving index.html. Clients saw a success status with an HTML body and
+  # failed at response.json() with "not valid JSON", masking the real status entirely.
+  #
+  # Do NOT reintroduce custom_error_response here while an API behavior shares this distribution.
 
   restrictions {
     geo_restriction { restriction_type = "none" }
