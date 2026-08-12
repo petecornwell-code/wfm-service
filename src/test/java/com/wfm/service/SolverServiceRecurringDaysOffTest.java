@@ -2,6 +2,8 @@ package com.wfm.service;
 
 import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
+import com.wfm.model.AgentDayOff;
+import com.wfm.model.DayOffStatus;
 import com.wfm.model.DayOffType;
 import org.junit.jupiter.api.Test;
 
@@ -45,69 +47,54 @@ class SolverServiceRecurringDaysOffTest {
         return h;
     }
 
-    @Test
-    void mandatoryDayBlocksEveryMatchingDateInPeriod() {
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
+    private List<AgentDayOff> expand(AgentDayHours... rows) {
+        return SolverService.buildRecurringDaysOff(1L, List.of(rows), FROM, TO);
+    }
 
-        SolverService.addRecurringDaysOff(map,
-                List.of(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00")), FROM, TO);
+    @Test
+    void mandatoryDayProducesAFactForEveryMatchingDate() {
+        List<AgentDayOff> facts = expand(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00"));
+
+        assertThat(facts).extracting(AgentDayOff::getDate).containsExactly(
+                LocalDate.of(2026, 1, 10), LocalDate.of(2026, 1, 17));
+        assertThat(facts).allSatisfy(f -> {
+            assertThat(f.getType()).isEqualTo(DayOffType.MANDATORY);
+            assertThat(f.getAgent().getId()).isEqualTo(agentId);
+            assertThat(f.getId()).isNotNull();
+        });
+    }
+
+    @Test
+    void ptoIsMarkedApprovedSoItBlocks() {
+        // buildAgentDaysOffMap only blocks PTO when APPROVED; a REQUESTED status would make
+        // spreadsheet PTO silently non-blocking.
+        List<AgentDayOff> facts = expand(dayHours(DayOfWeek.WEDNESDAY, DayOffType.PTO, "0.00"));
+
+        assertThat(facts).hasSize(2)
+                .allSatisfy(f -> assertThat(f.getStatus()).isEqualTo(DayOffStatus.APPROVED));
+    }
+
+    @Test
+    void workingDayWithHoursProducesNoFact() {
+        assertThat(expand(dayHours(DayOfWeek.MONDAY, null, "8.00"))).isEmpty();
+    }
+
+    @Test
+    void expandedFactsBlockInTheDaysOffMap() {
+        // End-to-end through the same helper the solver uses, proving the facts actually block.
+        List<AgentDayOff> facts = expand(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00"));
+
+        Map<UUID, Set<LocalDate>> map = SolverService.buildAgentDaysOffMap(facts);
 
         assertThat(map.get(agentId)).containsExactlyInAnyOrder(
                 LocalDate.of(2026, 1, 10), LocalDate.of(2026, 1, 17));
     }
 
     @Test
-    void ptoDayBlocksToo() {
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
-
-        SolverService.addRecurringDaysOff(map,
-                List.of(dayHours(DayOfWeek.WEDNESDAY, DayOffType.PTO, "0.00")), FROM, TO);
-
-        assertThat(map.get(agentId)).containsExactlyInAnyOrder(
-                LocalDate.of(2026, 1, 7), LocalDate.of(2026, 1, 14));
-    }
-
-    @Test
-    void workingDayWithHoursDoesNotBlock() {
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
-
-        SolverService.addRecurringDaysOff(map,
-                List.of(dayHours(DayOfWeek.MONDAY, null, "8.00")), FROM, TO);
-
-        assertThat(map).isEmpty();
-    }
-
-    @Test
-    void unionsWithExistingBambooHrDaysOffWithoutLosingThem() {
-        LocalDate bambooDate = LocalDate.of(2026, 1, 6);
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
-        map.put(agentId, new HashSet<>(Set.of(bambooDate)));
-
-        SolverService.addRecurringDaysOff(map,
-                List.of(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00")), FROM, TO);
-
-        assertThat(map.get(agentId)).contains(bambooDate);
-        assertThat(map.get(agentId)).hasSize(3); // the BambooHR date + two Saturdays
-    }
-
-    @Test
-    void overlappingDateIsNotDuplicated() {
-        LocalDate saturday = LocalDate.of(2026, 1, 10);
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
-        map.put(agentId, new HashSet<>(Set.of(saturday)));
-
-        SolverService.addRecurringDaysOff(map,
-                List.of(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00")), FROM, TO);
-
-        assertThat(map.get(agentId)).hasSize(2); // 10th already present, 17th added
-    }
-
-    @Test
     void allSevenDaysMandatoryBlocksTheWholePeriod() {
         // The live data shape that surfaced this: three agents whose spreadsheet rows had
         // MANDATORY in every day cell.
-        Map<UUID, Set<LocalDate>> map = new HashMap<>();
-        List<AgentDayHours> everyDayOff = List.of(
+        List<AgentDayOff> facts = expand(
                 dayHours(DayOfWeek.MONDAY, DayOffType.MANDATORY, "0.00"),
                 dayHours(DayOfWeek.TUESDAY, DayOffType.MANDATORY, "0.00"),
                 dayHours(DayOfWeek.WEDNESDAY, DayOffType.MANDATORY, "0.00"),
@@ -116,8 +103,8 @@ class SolverServiceRecurringDaysOffTest {
                 dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY, "0.00"),
                 dayHours(DayOfWeek.SUNDAY, DayOffType.MANDATORY, "0.00"));
 
-        SolverService.addRecurringDaysOff(map, everyDayOff, FROM, TO);
-
-        assertThat(map.get(agentId)).hasSize(14); // every date in the two-week period
+        assertThat(facts).hasSize(14);
+        assertThat(SolverService.buildAgentDaysOffMap(facts).get(agentId)).hasSize(14);
     }
+
 }
