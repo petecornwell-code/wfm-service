@@ -335,7 +335,16 @@ public class DeskAssignmentUploadService {
                     BambooEmployeeResponse cached =
                             clientManagementService.findCachedEmployee(bamboohrId.trim(), null, null);
                     if (cached == null) {
-                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID not found"));
+                        // The cache holds ACTIVE employees only, so a miss has two very different
+                        // causes needing different operator action: a wrong id (fix the cell) vs a
+                        // former employee (remove the row / reactivate in BambooHR). Reporting both
+                        // as "ID not found" sent operators hunting for a typo that did not exist
+                        // (UAT 2026-08-12).
+                        String status = clientManagementService.findEmployeeStatus(tenantId, bamboohrId);
+                        String reason = status == null
+                                ? "BambooHR ID not found"
+                                : "Agent is not active in BambooHR (status: " + status + ")";
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, reason));
                         sheetSkippedCount++;
                         continue;
                     }

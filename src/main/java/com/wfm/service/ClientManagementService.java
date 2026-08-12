@@ -38,6 +38,15 @@ public class ClientManagementService {
     /** Cache keyed by "tenantId::department" (lowercased). */
     private final Map<String, List<BambooEmployeeResponse>> cache = new ConcurrentHashMap<>();
 
+    /**
+     * BambooHR id -> employment status for EVERY employee seen during upload cache population,
+     * including inactive ones. {@link #cache} deliberately holds only Active employees, so a
+     * lookup miss there cannot distinguish "no such id" from "exists but has left" — which made
+     * the upload report a misleading "BambooHR ID not found" for former staff (UAT 2026-08-12).
+     * Keyed "tenantId::bamboohrId".
+     */
+    private final Map<String, String> statusByTenantAndId = new ConcurrentHashMap<>();
+
     public ClientManagementService(BambooHRClient bambooHRClient,
                                    AppConfigurationService configurationService,
                                    AgentRepository agentRepository,
@@ -128,6 +137,19 @@ public class ClientManagementService {
 
     public void clearCache() {
         cache.clear();
+        statusByTenantAndId.clear();
+    }
+
+    /**
+     * BambooHR employment status for an id seen during upload cache population, or null when the
+     * id was never seen at all. Lets callers distinguish a former employee ("Inactive") from a
+     * genuinely unknown id (null) — {@link #findCachedEmployee} returns null for both.
+     */
+    public String findEmployeeStatus(long tenantId, String bamboohrId) {
+        if (bamboohrId == null || bamboohrId.isBlank()) {
+            return null;
+        }
+        return statusByTenantAndId.get(tenantId + "::" + bamboohrId.trim());
     }
 
     /**
@@ -141,6 +163,17 @@ public class ClientManagementService {
 
         log.info("Pre-populating BambooHR cache for desk-assignment upload (tenant={})", tenantId);
         List<BambooEmployee> employees = bambooHRClient.listEmployees(String.valueOf(tenantId), null);
+
+        // Record every id and its status BEFORE the Active filter below, so the upload can tell
+        // "this person has left" apart from "this id does not exist". Not size-capped: it is one
+        // short string per employee, far smaller than the response cache it accompanies.
+        for (BambooEmployee e : employees) {
+            if (e.id() != null) {
+                statusByTenantAndId.put(tenantId + "::" + e.id().trim(),
+                        e.status() == null ? "Unknown" : e.status());
+            }
+        }
+
         List<BambooEmployeeResponse> result = employees.stream()
                 .filter(e -> "Active".equalsIgnoreCase(e.status()))
                 .map(e -> new BambooEmployeeResponse(

@@ -229,6 +229,36 @@ class DeskAssignmentUploadAllowlistTest {
     }
 
     // ------------------------------------------------------------------ //
+    //  Unmatched / inactive BambooHR ids                                   //
+    // ------------------------------------------------------------------ //
+
+    @Test
+    void unknownBambooHrId_reportsNotFound() throws Exception {
+        // No agent registered, and no status recorded for the id.
+        when(clientManagementService.findCachedEmployee(eq("B900"), isNull(), isNull())).thenReturn(null);
+        when(clientManagementService.findEmployeeStatus(TENANT_ID, "B900")).thenReturn(null);
+
+        var result = service.uploadDeskAssignments(workbookWith("B900"));
+
+        assertThat(onlySkipped(result).reason()).isEqualTo("BambooHR ID not found");
+    }
+
+    @Test
+    void formerEmployee_reportsInactiveRatherThanNotFound() throws Exception {
+        // The upload cache holds ACTIVE employees only, so a former employee misses the cache
+        // exactly like a bad id. The two need different operator action, so they must read
+        // differently.
+        when(clientManagementService.findCachedEmployee(eq("B901"), isNull(), isNull())).thenReturn(null);
+        when(clientManagementService.findEmployeeStatus(TENANT_ID, "B901")).thenReturn("Inactive");
+
+        var result = service.uploadDeskAssignments(workbookWith("B901"));
+
+        assertThat(onlySkipped(result).reason())
+                .isEqualTo("Agent is not active in BambooHR (status: Inactive)")
+                .doesNotContain("not found");
+    }
+
+    // ------------------------------------------------------------------ //
     //  Working days                                                        //
     // ------------------------------------------------------------------ //
 
