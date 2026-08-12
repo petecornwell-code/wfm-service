@@ -8,8 +8,8 @@ updated: 2026-08-12
 
 ## Current Test
 
-number: 2
-name: Template contains only schedulable agents
+number: 3
+name: Upload Results modal — rollup, skip reasons, clamp warnings
 expected: |
   See Tests section below.
 awaiting: user response
@@ -33,7 +33,7 @@ result: pass
 
 ### 2. Template contains only schedulable agents
 expected: On Client Management, "Download template" produces a workbook with one worksheet per desk. Each sheet is pre-seeded ONLY with agents who are active AND whose job title contains "Customer Support Representative" — including variants such as "Senior Customer Support Representative", "Customer Support Representative (German)" and "Customer Support Representative Tier 2". Inactive agents and unrelated titles (e.g. "Accountant", "Team Lead") are absent, with no blank gaps mid-roster. Identity columns are filled; the 7 Mon–Sun day cells and Specialty columns are blank.
-result: [pending]
+result: pass
 
 ### 3. Upload Results modal — rollup, skip reasons, clamp warnings
 expected: Uploading a mixed-validity workbook opens the Upload Results modal showing a per-sheet rollup (e.g. "Billing: 12 imported, 2 skipped"), a per-row reason for each skipped row, non-blocking amber clamp warnings where a day cell above 24 was clamped to 24, and a notice for any sheet whose name matches no configured desk.
@@ -62,9 +62,9 @@ result: [pending]
 ## Summary
 
 total: 8
-passed: 1
+passed: 2
 issues: 0
-pending: 7
+pending: 6
 skipped: 0
 blocked: 0
 
