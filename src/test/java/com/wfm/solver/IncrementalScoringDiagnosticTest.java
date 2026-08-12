@@ -73,12 +73,15 @@ class IncrementalScoringDiagnosticTest {
             }
         });
 
-        // Verify initial score matches expected
-        // underZero: 95 agents × 8 expectedSlots × weight 100 = 76,000
-        // bulkUnderHard: per-timeslot sum of floor(demand × 70/100) = 500
-        assertThat(initialScore.hardScore()).isEqualTo(-76500);
-        // Unassigned assignment is now per-timeslot: 12 timeslots × weight 1000 = 12,000
-        assertThat(initialScore.softScore()).isEqualTo(-12000);
+        // Verify initial score matches expected.
+        // bulkUnderHard: per-timeslot sum of floor(demand × 70/100) = 500. This is now the ONLY
+        // hard component: "Contracted hours (under, zero)" moved from hard to soft on 2026-08-12,
+        // because an over-staffed desk can never satisfy it and it made the whole problem
+        // infeasible (see V33__contracted_hours_under_to_soft.sql).
+        assertThat(initialScore.hardScore()).isEqualTo(-500);
+        // Unassigned assignment: 12 timeslots × weight 1000 = 12,000, PLUS the underZero
+        // shortfall that is now soft: 95 agents × 8 expectedSlots × weight 100 = 76,000.
+        assertThat(initialScore.softScore()).isEqualTo(-88000);
 
         // Now assign ONE agent to ONE seat
         Agent firstAgent = schedule.getAgents().get(0);
@@ -118,14 +121,19 @@ class IncrementalScoringDiagnosticTest {
         });
 
         // The assignment should IMPROVE the score.
-        // With the exactlyOneBreak fix (doesn't fire for < breakMinShiftHours slots),
-        // the delta is: +800 (underZero removed) -700 (under added) +1 (bulk) = +101 hard
+        // Both contracted-hours UNDER constraints are soft as of 2026-08-12, so the +800/-700
+        // pair that used to dominate this delta now lands on the soft score. The only remaining
+        // HARD movement is the bulk under-allocation term: +1.
         assertThat(afterScore.hardScore())
                 .as("Assigning one agent should improve hard score")
                 .isGreaterThan(initialScore.hardScore());
         assertThat(afterScore.hardScore() - initialScore.hardScore())
-                .as("Hard score delta should be +101 (no break penalty for 1 slot)")
-                .isEqualTo(101);
+                .as("Hard delta is now just the bulk under-allocation term; contracted-hours "
+                        + "under moved to soft")
+                .isEqualTo(1);
+        assertThat(afterScore.softScore() - initialScore.softScore())
+                .as("The contracted-hours improvement now shows up on the soft score")
+                .isEqualTo(100);
     }
 
     @Test

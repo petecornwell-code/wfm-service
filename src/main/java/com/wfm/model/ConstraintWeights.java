@@ -89,15 +89,24 @@ public class ConstraintWeights {
     @Column(name = "contracted_hours_over_weight")
     private HardSoftScore contractedHoursOverWeight = HardSoftScore.ofHard(1001);
 
+    // SOFT, deliberately. Under-allocation is usually a demand/roster mismatch rather than an
+    // illegal schedule: if a desk has more contracted agent-hours than staffing demand, the
+    // shortfall CANNOT be removed by any arrangement of assignments. As a hard constraint that
+    // made the whole problem infeasible — the solver churned at a flat hard score and returned no
+    // usable schedule at all (observed 2026-08-12: 112 contracted agent-hours against 27 hours of
+    // demand). As soft, the solver returns the best achievable roster and reports the shortfall.
+    //
+    // Over-allocation stays HARD: assigning MORE hours than contracted is a real breach, and it
+    // is always avoidable by simply not making the assignment.
     @ConstraintWeight("Contracted hours (under)")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "contracted_hours_under_weight")
-    private HardSoftScore contractedHoursUnderWeight = HardSoftScore.ofHard(100);
+    private HardSoftScore contractedHoursUnderWeight = HardSoftScore.ofSoft(100);
 
     @ConstraintWeight("Contracted hours (under, zero)")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "contracted_hours_under_zero_weight")
-    private HardSoftScore contractedHoursUnderZeroWeight = HardSoftScore.ofHard(100);
+    private HardSoftScore contractedHoursUnderZeroWeight = HardSoftScore.ofSoft(100);
 
     @ConstraintWeight("Bulk over-allocation limit")
     @Convert(converter = HardSoftScoreConverter.class)
