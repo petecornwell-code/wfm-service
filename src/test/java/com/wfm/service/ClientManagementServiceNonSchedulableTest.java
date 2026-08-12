@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Tests that ClientManagementService.assignEmployeesToDesk rejects agents
- * whose job titles are configured as non-schedulable with a ConflictException.
+ * whose job titles are not on the schedulable-titles allowlist with a ConflictException.
  */
 class ClientManagementServiceNonSchedulableTest {
 
@@ -51,10 +51,11 @@ class ClientManagementServiceNonSchedulableTest {
                 bambooHRClient, configurationService, agentRepository,
                 deskRepository, agentEligibilityService);
 
-        // Default: non-schedulable for the test title
-        when(agentEligibilityService.isNonSchedulable(TENANT_ID, NON_SCHEDULABLE_TITLE)).thenReturn(true);
-        when(agentEligibilityService.isNonSchedulable(TENANT_ID, REGULAR_TITLE)).thenReturn(false);
-        when(agentEligibilityService.isNonSchedulable(anyLong(), isNull())).thenReturn(false);
+        // The job-title allowlist replaced the non-schedulable denylist as the single control
+        // for schedulability (2026-08-12). REGULAR_TITLE is on the allowlist; the other is not.
+        when(agentEligibilityService.isIncludedByTitleAllowlist(TENANT_ID, NON_SCHEDULABLE_TITLE)).thenReturn(false);
+        when(agentEligibilityService.isIncludedByTitleAllowlist(TENANT_ID, REGULAR_TITLE)).thenReturn(true);
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), isNull())).thenReturn(true);
 
         // Config service returns default cache size
         when(configurationService.getConfigValue(anyString())).thenReturn(null);
@@ -119,7 +120,7 @@ class ClientManagementServiceNonSchedulableTest {
 
         assertThatThrownBy(() -> service.assignEmployeesToDesk(TENANT_ID, deskId, List.of(bambooId)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("non-schedulable job title:")
+                .hasMessageContaining("job title that is not schedulable:")
                 .hasMessageContaining(NON_SCHEDULABLE_TITLE);
     }
 
@@ -175,7 +176,7 @@ class ClientManagementServiceNonSchedulableTest {
         assertThatThrownBy(() ->
                 service.assignEmployeesToDesk(TENANT_ID, deskId, List.of(nsId, regularId)))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("non-schedulable job title:");
+                .hasMessageContaining("job title that is not schedulable:");
 
         // No save should have been called
         verify(agentRepository, never()).save(any(Agent.class));
@@ -201,7 +202,7 @@ class ClientManagementServiceNonSchedulableTest {
                 .satisfies(ex -> {
                     String msg = ex.getMessage();
                     assertThat(msg).contains(agentName);
-                    assertThat(msg).contains("non-schedulable job title:");
+                    assertThat(msg).contains("job title that is not schedulable:");
                     assertThat(msg).contains(NON_SCHEDULABLE_TITLE);
                 });
     }

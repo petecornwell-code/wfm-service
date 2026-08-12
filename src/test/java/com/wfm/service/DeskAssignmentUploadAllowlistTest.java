@@ -179,7 +179,7 @@ class DeskAssignmentUploadAllowlistTest {
         SkippedRow skipped = onlySkipped(result);
         assertThat(skipped.bamboohrId()).isEqualTo("B300");
         assertThat(skipped.reason())
-                .startsWith("Agent job title is not in the configured allowlist:")
+                .startsWith("Agent job title is not schedulable:")
                 .contains("Team Lead");
     }
 
@@ -225,7 +225,7 @@ class DeskAssignmentUploadAllowlistTest {
                 .containsExactlyInAnyOrder(
                         org.assertj.core.api.Assertions.tuple("B601", "Agent is not active"),
                         org.assertj.core.api.Assertions.tuple("B602",
-                                "Agent job title is not in the configured allowlist: Team Lead"));
+                                "Agent job title is not schedulable: Team Lead"));
     }
 
     @Test

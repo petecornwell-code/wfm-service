@@ -1,14 +1,14 @@
 package com.wfm.service;
 
 import com.wfm.model.Agent;
-import com.wfm.model.JobTitleConfig;
+import com.wfm.model.JobTitleIncludePattern;
 import com.wfm.model.Specialization;
 import com.wfm.repository.JobTitleConfigRepository;
 import com.wfm.repository.JobTitleIncludePatternRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,7 +17,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Verifies the non-schedulable eligibility filter in SolverService.
+ * Verifies the job-title eligibility filter in SolverService.
  *
  * Tests call the package-private static helper
  * {@code SolverService.filterEligible(List<Agent>, long, AgentEligibilityService)}
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
  *
  * The helper encapsulates the three-filter pipeline:
  *   1. Agent::isActive
- *   2. !agentEligibilityService.isNonSchedulable(tenantId, jobTitle)
+ *   2. agentEligibilityService.isIncludedByTitleAllowlist(tenantId, jobTitle)
  *   3. primarySpecialization != null
  */
 class SolverServiceEligibilityFilterTest {
@@ -39,7 +39,7 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void activeAgentWithPrimarySpec_regularTitle_isIncluded() {
-        AgentEligibilityService elig = eligServiceFor("Manager", false);
+        AgentEligibilityService elig = eligServiceAllowing("Manager");
         Agent agent = agent(true, "Manager", primarySpec());
 
         List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
@@ -48,8 +48,8 @@ class SolverServiceEligibilityFilterTest {
     }
 
     @Test
-    void activeAgentWithPrimarySpec_nonSchedulableTitle_isExcluded() {
-        AgentEligibilityService elig = eligServiceFor("Director", true);
+    void activeAgentWithPrimarySpec_titleNotOnAllowlist_isExcluded() {
+        AgentEligibilityService elig = eligServiceAllowing("Manager");
         Agent agent = agent(true, "Director", primarySpec());
 
         List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
@@ -59,7 +59,7 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void inactiveAgent_regularTitle_isExcluded() {
-        AgentEligibilityService elig = eligServiceFor("Agent", false);
+        AgentEligibilityService elig = eligServiceAllowing("Agent");
         Agent agent = agent(false, "Agent", primarySpec());
 
         List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
@@ -69,7 +69,7 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void activeAgent_noPrimarySpec_isExcluded() {
-        AgentEligibilityService elig = eligServiceFor("Agent", false);
+        AgentEligibilityService elig = eligServiceAllowing("Agent");
         Agent agent = agent(true, "Agent", null);
 
         List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
@@ -79,8 +79,8 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void activeAgentWithPrimarySpec_nullJobTitle_isIncluded() {
-        // AgentEligibilityService returns false for null jobTitle
-        AgentEligibilityService elig = eligServiceFor(null, false);
+        // Empty allowlist is fail-open, so a null title still passes filter 2
+        AgentEligibilityService elig = eligServiceAllowing();
         Agent agent = agent(true, null, primarySpec());
 
         List<Agent> result = SolverService.filterEligible(List.of(agent), TENANT, elig);
@@ -98,7 +98,7 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void activeAgentWithPrimarySpec_workingDaysUnknown_isExcluded() {
-        AgentEligibilityService elig = eligServiceFor("Support Rep", false);
+        AgentEligibilityService elig = eligServiceAllowing("Support Rep");
         Agent agent = agent(true, "Support Rep", primarySpec());
         agent.setWorkingDaysKnown(false);  // data-gap agent (blank/Variable customWorkingdays)
 
@@ -109,7 +109,7 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void activeAgentWithPrimarySpec_workingDaysKnown_isIncluded() {
-        AgentEligibilityService elig = eligServiceFor("Support Rep", false);
+        AgentEligibilityService elig = eligServiceAllowing("Support Rep");
         Agent agent = agent(true, "Support Rep", primarySpec());
         agent.setWorkingDaysKnown(true);  // explicitly set (default is also true)
 
@@ -124,14 +124,10 @@ class SolverServiceEligibilityFilterTest {
 
     @Test
     void filterPreservesOrderOfSurvivingAgents() {
-        JobTitleConfigRepository repo = mock(JobTitleConfigRepository.class);
-        stubTitle(repo, "Regular", false);
-        stubTitle(repo, "Excluded", true);
-        stubTitle(repo, "AlsoRegular", false);
-        AgentEligibilityService elig = new AgentEligibilityService(repo, emptyPatternRepo());
+        AgentEligibilityService elig = eligServiceAllowing("Regular", "AlsoRegular");
 
         Agent a1 = agent(true, "Regular", primarySpec());
-        Agent a2 = agent(true, "Excluded", primarySpec());   // non-schedulable
+        Agent a2 = agent(true, "Excluded", primarySpec());   // not on the allowlist
         Agent a3 = agent(true, "AlsoRegular", primarySpec());
 
         List<Agent> result = SolverService.filterEligible(List.of(a1, a2, a3), TENANT, elig);
@@ -164,32 +160,19 @@ class SolverServiceEligibilityFilterTest {
         return a;
     }
 
-    /** Stub that returns a JobTitleConfig with the given nonSchedulable flag for the given title. */
-    private AgentEligibilityService eligServiceFor(String title, boolean nonSchedulable) {
-        JobTitleConfigRepository repo = mock(JobTitleConfigRepository.class);
-        stubTitle(repo, title, nonSchedulable);
-        return new AgentEligibilityService(repo, emptyPatternRepo());
-    }
-
     /**
-     * An allowlist repository with no patterns for the tenant — the allowlist is inactive, so
-     * these solver-eligibility tests keep exercising only the non-schedulable denylist.
+     * Builds a service whose allowlist contains exactly {@code patterns}. Passing none leaves the
+     * allowlist empty, which is fail-open — every title passes.
      */
-    private JobTitleIncludePatternRepository emptyPatternRepo() {
+    private AgentEligibilityService eligServiceAllowing(String... patterns) {
         JobTitleIncludePatternRepository repo = mock(JobTitleIncludePatternRepository.class);
-        when(repo.findByTenantId(anyLong())).thenReturn(List.of());
-        return repo;
-    }
-
-    private void stubTitle(JobTitleConfigRepository repo, String title, boolean nonSchedulable) {
-        if (title == null) {
-            // AgentEligibilityService short-circuits before calling repo for null/blank
-            return;
-        }
-        JobTitleConfig cfg = new JobTitleConfig();
-        cfg.setTenantId(TENANT);
-        cfg.setJobTitle(title);
-        cfg.setNonSchedulable(nonSchedulable);
-        when(repo.findByTenantIdAndJobTitle(TENANT, title)).thenReturn(Optional.of(cfg));
+        when(repo.findByTenantId(anyLong())).thenReturn(
+                Arrays.stream(patterns).map(p -> {
+                    JobTitleIncludePattern e = new JobTitleIncludePattern();
+                    e.setTenantId(TENANT);
+                    e.setPattern(p);
+                    return e;
+                }).toList());
+        return new AgentEligibilityService(mock(JobTitleConfigRepository.class), repo);
     }
 }

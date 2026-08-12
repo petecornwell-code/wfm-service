@@ -395,14 +395,6 @@ public class DeskAssignmentUploadService {
                         continue;
                     }
 
-                    // Non-schedulable check — BEFORE desk assignment
-                    if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
-                        skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
-                                "Agent has non-schedulable job title: " + agent.getJobTitle()));
-                        sheetSkippedCount++;
-                        continue;
-                    }
-
                     // Inactive check — agent.active was refreshed from the BambooHR cache above,
                     // so this reflects current BambooHR status rather than what the sheet claims.
                     if (!agent.isActive()) {
@@ -412,12 +404,12 @@ public class DeskAssignmentUploadService {
                         continue;
                     }
 
-                    // Job-title allowlist — inactive (and therefore a no-op) until the tenant
-                    // configures at least one pattern on the Configuration page.
+                    // Job-title allowlist — the single control for schedulability, shared with the
+                    // solver and the template generator. Inactive (a no-op) only when the tenant
+                    // has no patterns configured at all.
                     if (!agentEligibilityService.isIncludedByTitleAllowlist(tenantId, agent.getJobTitle())) {
                         skipped.add(new SkippedRow(i + 1, agent.getBamboohrId(), agent.getName(),
-                                "Agent job title is not in the configured allowlist: "
-                                        + agent.getJobTitle()));
+                                "Agent job title is not schedulable: " + agent.getJobTitle()));
                         sheetSkippedCount++;
                         continue;
                     }

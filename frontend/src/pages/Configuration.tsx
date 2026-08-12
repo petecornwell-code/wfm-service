@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { appConfiguration, jobTitleConfig, jobTitleIncludePattern, bambooSyncStatus, getErrorMessage, ApiRequestError, type JobTitleConfigResponse, type JobTitleIncludePatternResponse, type BambooSyncEventResponse } from '../api/client'
+import { appConfiguration, jobTitleIncludePattern, bambooSyncStatus, getErrorMessage, type JobTitleIncludePatternResponse, type BambooSyncEventResponse } from '../api/client'
 import { showToast } from '../components/Toast'
 
 export default function Configuration() {
@@ -10,10 +10,6 @@ export default function Configuration() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Non-Schedulable Job Titles
-  const [jobTitles, setJobTitles] = useState<JobTitleConfigResponse[] | null>(null)
-  const [jobTitleFilter, setJobTitleFilter] = useState('')
-
   // Job Title Allowlist
   const [patterns, setPatterns] = useState<JobTitleIncludePatternResponse[] | null>(null)
   const [newPattern, setNewPattern] = useState('')
@@ -22,12 +18,6 @@ export default function Configuration() {
   // BambooHR Sync Status
   const [syncStatus, setSyncStatus] = useState<BambooSyncEventResponse | null>(null)
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(true)
-
-  useEffect(() => {
-    jobTitleConfig.list()
-      .then(setJobTitles)
-      .catch(err => showToast('error', getErrorMessage(err)))
-  }, [])
 
   useEffect(() => {
     jobTitleIncludePattern.list()
@@ -71,41 +61,6 @@ export default function Configuration() {
       .catch(err => showToast('error', getErrorMessage(err)))
       .finally(() => setLoadingSyncStatus(false))
   }, [])
-
-  // Case-insensitive substring filter over the synced titles. Filtering is display-only —
-  // toggles still act on the row's own id, so a hidden row is never affected.
-  const visibleJobTitles = (jobTitles ?? []).filter(row =>
-    row.jobTitle.toLowerCase().includes(jobTitleFilter.trim().toLowerCase())
-  )
-
-  const handleToggle = async (id: string, value: boolean) => {
-    if (!jobTitles) return
-    // Optimistic update
-    setJobTitles(jobTitles.map(row => row.id === id ? { ...row, nonSchedulable: value } : row))
-    try {
-      const updated = await jobTitleConfig.setNonSchedulable(id, value)
-      setJobTitles(prev => prev ? prev.map(row => row.id === id ? updated : row) : prev)
-    } catch (err) {
-      // Revert on error
-      setJobTitles(prev => prev ? prev.map(row => row.id === id ? { ...row, nonSchedulable: !value } : row) : prev)
-      // Surface the actual failure rather than a generic string — the generic message made a
-      // real failure indistinguishable from a mis-click on another section.
-      showToast('error', `Failed to update job title: ${getErrorMessage(err)}`)
-
-      // A 404 here means this row's id no longer exists server-side, which happens when the page
-      // has been open across a BambooHR re-sync. Re-fetch so the stale row cannot keep failing,
-      // rather than leaving the operator clicking a checkbox that can never succeed.
-      const status = err instanceof ApiRequestError ? err.status : null
-      if (status === 404 || status === 200) {
-        jobTitleConfig.list()
-          .then(fresh => {
-            setJobTitles(fresh)
-            showToast('success', 'Job title list refreshed — it was out of date.')
-          })
-          .catch(() => { /* keep the original error visible */ })
-      }
-    }
-  }
 
   useEffect(() => {
     appConfiguration.get()
@@ -180,78 +135,22 @@ export default function Configuration() {
         </button>
       </div>
 
-      {/* Non-Schedulable Job Titles */}
+      {/* Job Title Allowlist */}
       <section>
         <div style={{ marginTop: '2rem', maxWidth: '500px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Schedulable Job Titles</h2>
           <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-            Checked titles can be scheduled. <strong>Unchecked titles are excluded</strong> from schedule
-            solving and cannot be assigned to a desk.
-          </p>
-          {jobTitles === null ? (
-            <p>Loading job titles...</p>
-          ) : jobTitles.length === 0 ? (
-            <p style={{ color: '#6b7280' }}>No job titles synced yet. Run a BambooHR refresh to populate this list.</p>
-          ) : (
-            <div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <input
-                  value={jobTitleFilter}
-                  onChange={e => setJobTitleFilter(e.target.value)}
-                  placeholder="Search job titles..."
-                  style={{ flex: 1 }}
-                />
-                {jobTitleFilter && (
-                  <button onClick={() => setJobTitleFilter('')} style={{ fontSize: '0.85rem' }}>Clear</button>
-                )}
-              </div>
-              <p style={{ fontSize: '0.8rem', color: '#6b7280', margin: '0 0 0.5rem' }}>
-                Showing {visibleJobTitles.length} of {jobTitles.length}
-                {/* Unchecked titles are the actionable ones, so surface the count even when the
-                    filter hides them — otherwise an exclusion can sit off-screen unnoticed. */}
-                {' · '}{jobTitles.filter(r => r.nonSchedulable).length} not schedulable
-              </p>
-              {visibleJobTitles.length === 0 ? (
-                <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>No job titles match "{jobTitleFilter}".</p>
-              ) : visibleJobTitles.map(row => (
-                <label
-                  key={row.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0.5rem', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', fontWeight: 400 }}
-                >
-                  {/* Checkbox represents SCHEDULABLE, the inverse of the stored nonSchedulable
-                      flag. Toggling flips the stored flag either way, so the handler call is
-                      unchanged — only the checked binding and labelling are inverted. */}
-                  <input
-                    type="checkbox"
-                    checked={!row.nonSchedulable}
-                    onChange={() => handleToggle(row.id, !row.nonSchedulable)}
-                  />
-                  <span>{row.jobTitle}</span>
-                  {row.nonSchedulable && (
-                    <span style={{ fontSize: '0.85rem', color: '#ef4444', marginLeft: 'auto', fontWeight: 400 }}>Not schedulable</span>
-                  )}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Job Title Allowlist */}
-      <section>
-        <div style={{ marginTop: '2rem', maxWidth: '500px' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Job Title Allowlist</h2>
-          <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem' }}>
-            Restricts which agents are pre-seeded into the desk-assignment template and accepted on
-            upload. A job title matches when it <em>contains</em> one of these entries, so
-            "Customer Support Representative" also matches "Senior Customer Support Representative II".
+            <strong>Only</strong> agents whose job title matches an entry below are schedulable. This
+            single list controls schedule solving, desk assignment, the desk-assignment template, and
+            what is accepted on upload. A title matches when it <em>contains</em> an entry, so
+            "Customer Support Representative" also covers "Senior Customer Support Representative II".
             Matching ignores case.
           </p>
 
           {patterns !== null && patterns.length === 0 && (
             <p style={{ fontSize: '0.85rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.75rem' }}>
-              No entries — the allowlist is <strong>inactive</strong> and every job title is included.
-              Add an entry to restrict it.
+              No entries — the restriction is <strong>inactive</strong>, so <strong>every</strong> job
+              title is currently schedulable. Add an entry to restrict it.
             </p>
           )}
 

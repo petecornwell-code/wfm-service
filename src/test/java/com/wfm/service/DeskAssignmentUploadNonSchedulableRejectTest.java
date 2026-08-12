@@ -20,9 +20,12 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests that desk-assignment upload rejects agents whose job titles are
- * configured as non-schedulable, producing a structured SkippedRow with
- * reason "Agent has non-schedulable job title: <title>".
+ * Desk-assignment upload happy path and BambooHR-ID matching.
+ *
+ * The non-schedulable rejection tests that used to live here were removed on 2026-08-12: the
+ * job-title allowlist replaced the non-schedulable denylist as the single control for
+ * schedulability, and that rejection path no longer exists. Allowlist rejection is covered by
+ * DeskAssignmentUploadAllowlistTest.
  *
  * Updated for Phase 10 (D-01/D-08): the sheet name IS the desk (no per-row
  * "Desk" column) and matching is by BambooHR ID only, via
@@ -129,50 +132,6 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
     //  Tests                                                               //
     // ------------------------------------------------------------------ //
 
-    @Test
-    void nonSchedulableAgent_isSkippedWithStructuredReason() throws Exception {
-        UUID deskId = UUID.randomUUID();
-        Desk desk = new Desk();
-        desk.setId(deskId);
-        desk.setTenantId(TENANT_ID);
-        desk.setName("Support Desk");
-
-        Agent agent = new Agent();
-        agent.setId(UUID.randomUUID());
-        agent.setTenantId(TENANT_ID);
-        agent.setBamboohrId("B100");
-        agent.setName("Eve");
-        agent.setEmail("eve@example.com");
-        agent.setJobTitle(NON_SCHEDULABLE_TITLE);
-        agent.setActive(true);
-
-        when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(desk));
-        when(specializationRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
-        when(agentRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
-        when(agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, "B100"))
-                .thenReturn(Optional.of(agent));
-
-        BambooEmployeeResponse cached = new BambooEmployeeResponse(
-                "B100", "Eve", "eve@example.com", "QA", NON_SCHEDULABLE_TITLE, "Active");
-        when(clientManagementService.findCachedEmployee(eq("B100"), isNull(), isNull()))
-                .thenReturn(cached);
-
-        MockMultipartFile file = buildDeskWorkbook("Support Desk",
-                new String[][] { agentRow("B100", "Eve", "eve@example.com") });
-
-        DeskAssignmentUploadService.DeskAssignmentUploadResult result =
-                service.uploadDeskAssignments(file);
-
-        assertThat(result.assignedCount()).isEqualTo(0);
-        assertThat(result.skippedCount()).isEqualTo(1);
-        assertThat(result.skippedDetails()).hasSize(1);
-
-        SkippedRow skipped = result.skippedDetails().get(0);
-        assertThat(skipped.rowNumber()).isEqualTo(2);
-        assertThat(skipped.bamboohrId()).isEqualTo("B100");
-        assertThat(skipped.reason()).startsWith("Agent has non-schedulable job title:");
-        assertThat(skipped.reason()).contains(NON_SCHEDULABLE_TITLE);
-    }
 
     @Test
     void schedulableAgent_isAssigned() throws Exception {
@@ -213,66 +172,6 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         assertThat(result.skippedCount()).isEqualTo(0);
     }
 
-    @Test
-    void mixedAgents_nonSchedulableSkipped_schedulableAssigned() throws Exception {
-        UUID deskId = UUID.randomUUID();
-        Desk desk = new Desk();
-        desk.setId(deskId);
-        desk.setTenantId(TENANT_ID);
-        desk.setName("Mixed Desk");
-
-        Agent qaAgent = new Agent();
-        qaAgent.setId(UUID.randomUUID());
-        qaAgent.setTenantId(TENANT_ID);
-        qaAgent.setBamboohrId("B300");
-        qaAgent.setName("Grace");
-        qaAgent.setEmail("grace@example.com");
-        qaAgent.setJobTitle(NON_SCHEDULABLE_TITLE);
-        qaAgent.setActive(true);
-
-        Agent regularAgent = new Agent();
-        regularAgent.setId(UUID.randomUUID());
-        regularAgent.setTenantId(TENANT_ID);
-        regularAgent.setBamboohrId("B301");
-        regularAgent.setName("Henry");
-        regularAgent.setEmail("henry@example.com");
-        regularAgent.setJobTitle("Agent");
-        regularAgent.setActive(true);
-
-        when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(desk));
-        when(specializationRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
-        when(agentRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
-
-        when(agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, "B300"))
-                .thenReturn(Optional.of(qaAgent));
-        when(agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, "B301"))
-                .thenReturn(Optional.of(regularAgent));
-        when(agentRepository.save(any(Agent.class))).thenAnswer(i -> i.getArgument(0));
-
-        BambooEmployeeResponse cachedQa = new BambooEmployeeResponse(
-                "B300", "Grace", "grace@example.com", "QA", NON_SCHEDULABLE_TITLE, "Active");
-        BambooEmployeeResponse cachedReg = new BambooEmployeeResponse(
-                "B301", "Henry", "henry@example.com", "Sales", "Agent", "Active");
-
-        when(clientManagementService.findCachedEmployee(eq("B300"), isNull(), isNull()))
-                .thenReturn(cachedQa);
-        when(clientManagementService.findCachedEmployee(eq("B301"), isNull(), isNull()))
-                .thenReturn(cachedReg);
-
-        MockMultipartFile file = buildDeskWorkbook("Mixed Desk", new String[][] {
-                agentRow("B300", "Grace", "grace@example.com"),
-                agentRow("B301", "Henry", "henry@example.com")
-        });
-
-        DeskAssignmentUploadService.DeskAssignmentUploadResult result =
-                service.uploadDeskAssignments(file);
-
-        assertThat(result.assignedCount()).isEqualTo(1);
-        assertThat(result.skippedCount()).isEqualTo(1);
-        SkippedRow skipped = result.skippedDetails().get(0);
-        assertThat(skipped.bamboohrId()).isEqualTo("B300");
-        assertThat(skipped.reason()).startsWith("Agent has non-schedulable job title:");
-    }
 
     @Test
     void unmatchedBambooHrId_isRejected_noAgentCreated() throws Exception {

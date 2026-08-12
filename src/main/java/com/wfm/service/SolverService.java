@@ -1006,16 +1006,20 @@ public class SolverService {
     /**
      * Filters agents for solver eligibility (D-11):
      *   1. Agent::isActive
-     *   2. !agentEligibilityService.isNonSchedulable(tenantId, jobTitle)
+     *   2. agentEligibilityService.isIncludedByTitleAllowlist(tenantId, jobTitle)
      *   3. primarySpecialization != null
      *   4. Agent::isWorkingDaysKnown — excludes data-gap agents (blank/Variable customWorkingdays, D-07)
      * Order of surviving agents is preserved.
+     *
+     * Filter 2 was the non-schedulable denylist until 2026-08-12. The job-title allowlist is now
+     * the single control for schedulability across solver, upload and template, so the two can
+     * never disagree about who is eligible.
      */
     static List<Agent> filterEligible(List<Agent> agents, long tenantId,
                                        AgentEligibilityService agentEligibilityService) {
         return agents.stream()
                 .filter(Agent::isActive)
-                .filter(a -> !agentEligibilityService.isNonSchedulable(tenantId, a.getJobTitle()))
+                .filter(a -> agentEligibilityService.isIncludedByTitleAllowlist(tenantId, a.getJobTitle()))
                 .filter(a -> a.getPrimarySpecialization() != null)
                 .filter(Agent::isWorkingDaysKnown)
                 .toList();

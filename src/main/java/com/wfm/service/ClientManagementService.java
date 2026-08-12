@@ -295,9 +295,9 @@ public class ClientManagementService {
                 throw new ConflictException("Agent '" + agent.getName() + "' is already assigned to another desk");
             }
 
-            if (agentEligibilityService.isNonSchedulable(tenantId, agent.getJobTitle())) {
+            if (!agentEligibilityService.isIncludedByTitleAllowlist(tenantId, agent.getJobTitle())) {
                 throw new ConflictException("Agent '" + agent.getName()
-                        + "' has a non-schedulable job title: " + agent.getJobTitle());
+                        + "' has a job title that is not schedulable: " + agent.getJobTitle());
             }
 
             agent.setDeskId(deskId);
