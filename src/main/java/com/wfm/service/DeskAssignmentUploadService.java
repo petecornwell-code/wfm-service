@@ -430,6 +430,18 @@ public class DeskAssignmentUploadService {
                                 resolvedSpecialties.subList(1, resolvedSpecialties.size()));
                     }
 
+                    // Reaching here means all 7 Mon-Sun cells parsed (any failure skips the row
+                    // above), so this upload has explicitly stated the agent's working days. Mark
+                    // them known.
+                    //
+                    // Without this, workingDaysKnown stayed false for any agent whose BambooHR
+                    // field 4517 is blank or "Variable", and SolverService.filterEligible silently
+                    // dropped them — even though the operator had just supplied their hours for
+                    // every day of the week. On a live desk that left 6 of 14 agents schedulable
+                    // and made the enriched upload pointless for the rest (found in UAT 2026-08-12;
+                    // the ~24%-parseable risk recorded in PROJECT.md).
+                    agent.setWorkingDaysKnown(true);
+
                     agentRepository.save(agent);
 
                     // Write one agent_day_hours row per weekday (D-05/D-12): hours + nullable

@@ -228,6 +228,41 @@ class DeskAssignmentUploadAllowlistTest {
                                 "Agent job title is not schedulable: Team Lead"));
     }
 
+    // ------------------------------------------------------------------ //
+    //  Working days                                                        //
+    // ------------------------------------------------------------------ //
+
+    @Test
+    void successfulImport_marksWorkingDaysKnown() throws Exception {
+        // All 7 day cells parsed, so the operator has explicitly stated this agent's working
+        // days. Without this the flag stayed false whenever BambooHR field 4517 was blank or
+        // "Variable", and SolverService.filterEligible silently dropped the agent — the enriched
+        // upload supplied their hours and the solver ignored them anyway.
+        registerAgent("B800", CSR, "Active");
+        Agent stored = agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, "B800").orElseThrow();
+        stored.setWorkingDaysKnown(false); // as left by a BambooHR refresh that could not parse 4517
+
+        var result = service.uploadDeskAssignments(workbookWith("B800"));
+
+        assertThat(result.assignedCount()).isEqualTo(1);
+        assertThat(stored.isWorkingDaysKnown())
+                .as("upload supplied all 7 day cells, so working days are now known")
+                .isTrue();
+    }
+
+    @Test
+    void skippedRow_doesNotMarkWorkingDaysKnown() throws Exception {
+        // A row rejected before the day cells are accepted must not claim to establish them.
+        registerAgent("B801", CSR, "Inactive");
+        Agent stored = agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, "B801").orElseThrow();
+        stored.setWorkingDaysKnown(false);
+
+        var result = service.uploadDeskAssignments(workbookWith("B801"));
+
+        assertThat(result.assignedCount()).isZero();
+        assertThat(stored.isWorkingDaysKnown()).isFalse();
+    }
+
     @Test
     void inactiveTakesPrecedenceOverAllowlist_singleReasonPerRow() throws Exception {
         // An agent failing both filters is reported once, by the first check to fire, so the
