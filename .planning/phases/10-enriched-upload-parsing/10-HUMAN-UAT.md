@@ -8,8 +8,8 @@ updated: 2026-08-12
 
 ## Current Test
 
-number: 1
-name: Schedulable Job Titles configuration UI
+number: 2
+name: Template contains only schedulable agents
 expected: |
   See Tests section below.
 awaiting: user response
@@ -29,7 +29,7 @@ Current state: 24 of 836 synced job titles match the seeded pattern.
 
 ### 1. Schedulable Job Titles configuration UI
 expected: Configuration page shows a single "Schedulable Job Titles" section containing one entry, "Customer Support Representative" (seeded). Typing a new entry and clicking Add (or pressing Enter) adds it to the list. Re-adding the same text does not create a duplicate. Remove deletes an entry. Removing the last entry shows an amber warning that the restriction is inactive and every job title is currently schedulable. There is no checkbox list anywhere on the page.
-result: [pending]
+result: pass
 
 ### 2. Template contains only schedulable agents
 expected: On Client Management, "Download template" produces a workbook with one worksheet per desk. Each sheet is pre-seeded ONLY with agents who are active AND whose job title contains "Customer Support Representative" — including variants such as "Senior Customer Support Representative", "Customer Support Representative (German)" and "Customer Support Representative Tier 2". Inactive agents and unrelated titles (e.g. "Accountant", "Team Lead") are absent, with no blank gaps mid-roster. Identity columns are filled; the 7 Mon–Sun day cells and Specialty columns are blank.
@@ -62,9 +62,9 @@ result: [pending]
 ## Summary
 
 total: 8
-passed: 0
+passed: 1
 issues: 0
-pending: 8
+pending: 7
 skipped: 0
 blocked: 0
 
