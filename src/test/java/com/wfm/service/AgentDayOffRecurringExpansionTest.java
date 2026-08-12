@@ -53,7 +53,7 @@ class AgentDayOffRecurringExpansionTest {
 
         when(dayOffRepository.findByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any()))
                 .thenReturn(List.of());
-        when(dayHoursRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
+        when(dayHoursRepository.findDaysOffByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
     }
 
     private AgentDayHours dayHours(DayOfWeek day, DayOffType type) {
@@ -88,7 +88,7 @@ class AgentDayOffRecurringExpansionTest {
 
     @Test
     void recurringMandatoryAppearsOnEveryMatchingDateInRange() {
-        when(dayHoursRepository.findByTenantIdAndDeskId(anyLong(), any()))
+        when(dayHoursRepository.findDaysOffByTenantIdAndDeskId(anyLong(), any()))
                 .thenReturn(List.of(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY)));
 
         List<AgentDayOffResponse> result = list();
@@ -102,7 +102,7 @@ class AgentDayOffRecurringExpansionTest {
 
     @Test
     void recurringPtoIsExpandedToo() {
-        when(dayHoursRepository.findByTenantIdAndDeskId(anyLong(), any()))
+        when(dayHoursRepository.findDaysOffByTenantIdAndDeskId(anyLong(), any()))
                 .thenReturn(List.of(dayHours(DayOfWeek.WEDNESDAY, DayOffType.PTO)));
 
         assertThat(list()).hasSize(2)
@@ -113,7 +113,7 @@ class AgentDayOffRecurringExpansionTest {
     void workingDaysWithNoDayOffTypeAreNotExpanded() {
         AgentDayHours working = dayHours(DayOfWeek.MONDAY, null);
         working.setHours(new BigDecimal("8.00"));
-        when(dayHoursRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of(working));
+        when(dayHoursRepository.findDaysOffByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of(working));
 
         assertThat(list()).isEmpty();
     }
@@ -125,7 +125,7 @@ class AgentDayOffRecurringExpansionTest {
         LocalDate saturday = LocalDate.of(2026, 1, 10);
         when(dayOffRepository.findByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any()))
                 .thenReturn(List.of(dayOff(saturday, DayOffType.PTO)));
-        when(dayHoursRepository.findByTenantIdAndDeskId(anyLong(), any()))
+        when(dayHoursRepository.findDaysOffByTenantIdAndDeskId(anyLong(), any()))
                 .thenReturn(List.of(dayHours(DayOfWeek.SATURDAY, DayOffType.MANDATORY)));
 
         List<AgentDayOffResponse> result = list();

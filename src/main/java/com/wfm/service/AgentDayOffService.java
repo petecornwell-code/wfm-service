@@ -129,9 +129,9 @@ public class AgentDayOffService {
     private List<AgentDayOffResponse> recurringDaysOff(long tenantId, UUID deskId,
                                                        LocalDate fromDate, LocalDate toDate,
                                                        List<AgentDayOff> existing) {
-        List<AgentDayHours> dayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId).stream()
-                .filter(h -> h.getDayOffType() != null)
-                .toList();
+        // findDaysOffByTenantIdAndDeskId (not findByTenantIdAndDeskId) — it carries the
+        // @EntityGraph that initializes agent, which this method reads outside a transaction.
+        List<AgentDayHours> dayHours = agentDayHoursRepository.findDaysOffByTenantIdAndDeskId(tenantId, deskId);
         if (dayHours.isEmpty()) {
             return List.of();
         }
@@ -142,6 +142,9 @@ public class AgentDayOffService {
 
         List<AgentDayOffResponse> expanded = new ArrayList<>();
         for (AgentDayHours h : dayHours) {
+            if (h.getDayOffType() == null) {
+                continue; // the query already excludes these; belt-and-braces against an NPE below
+            }
             for (LocalDate date = fromDate; !date.isAfter(toDate); date = date.plusDays(1)) {
                 if (date.getDayOfWeek() != h.getDayOfWeek()) {
                     continue;
