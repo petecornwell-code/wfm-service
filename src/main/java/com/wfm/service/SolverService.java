@@ -165,6 +165,15 @@ public class SolverService {
         // Only APPROVED PTO rows block scheduling; MANDATORY rows always block regardless of status.
         Map<UUID, Set<LocalDate>> agentDaysOffMap = buildAgentDaysOffMap(allDaysOff);
 
+        // 5b. Fold in the recurring MANDATORY/PTO labels captured by the desk-assignment upload.
+        // Those live on agent_day_hours keyed by day-of-week, while agent_day_off holds only
+        // BambooHR-sourced dates. Before this, the solver read agent_day_hours for hours ONLY and
+        // ignored dayOffType entirely, so an agent marked MANDATORY on the upload spreadsheet was
+        // still scheduled on that day (found in UAT 2026-08-12). Zero contracted hours alone does
+        // not prevent assignment — the day has to be a day off.
+        addRecurringDaysOff(agentDaysOffMap, agentDayHours,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+
         // 6. Resolve preferences: weekly overrides standing per agent-day (spec §5.8)
         // Done before validation so break alignment check uses effective preferences.
         // Preferences on PTO days are excluded so they don't affect solver scoring.
@@ -1001,6 +1010,32 @@ public class SolverService {
             }
         }
         return map;
+    }
+
+    /**
+     * Folds recurring MANDATORY/PTO labels from {@code agent_day_hours} into an existing
+     * days-off map, expanding day-of-week to every matching date in [from, to].
+     *
+     * These come from the desk-assignment upload spreadsheet, which records a weekly pattern
+     * rather than dates. Both types block: a MANDATORY block always blocks, and PTO written
+     * directly on the spreadsheet is an operator assertion, so there is no REQUESTED state to
+     * honour the way {@link #buildAgentDaysOffMap} does for BambooHR rows.
+     *
+     * Mutates {@code map} in place, so a date already blocked by a BambooHR row simply stays
+     * blocked (Set semantics make the union idempotent).
+     */
+    static void addRecurringDaysOff(Map<UUID, Set<LocalDate>> map, List<AgentDayHours> agentDayHours,
+                                    LocalDate from, LocalDate to) {
+        for (AgentDayHours h : agentDayHours) {
+            if (h.getDayOffType() == null) {
+                continue; // a normal working day with contracted hours
+            }
+            for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+                if (date.getDayOfWeek() == h.getDayOfWeek()) {
+                    map.computeIfAbsent(h.getAgent().getId(), k -> new HashSet<>()).add(date);
+                }
+            }
+        }
     }
 
     /**
