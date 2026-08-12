@@ -9,11 +9,12 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the PTO filter rules for agentDaysOffMap construction in SolverService:
+ * Verifies agentDaysOffMap construction in SolverService.
  *
- *  - APPROVED PTO blocks the day (appears in map)
- *  - REQUESTED PTO does NOT block the day (absent from map)
- *  - MANDATORY entries always block regardless of status
+ * EVERY day-off row blocks its date, whatever the type or status (changed 2026-08-12,
+ * superseding D-22 which ignored REQUESTED PTO). PTO is PTO: an agent who has booked a day off
+ * is not available, and scheduling against a request awaiting approval produces a roster that
+ * falls apart the moment it is approved. Status survives for display only.
  *
  * Tests call the package-private static helper
  * {@code SolverService.buildAgentDaysOffMap(List<AgentDayOff>)} directly,
@@ -44,13 +45,14 @@ class SolverServicePtoFilterTest {
     }
 
     @Test
-    void pto_requested_doesNotBlockDay() {
+    void pto_requested_alsoBlocksDay() {
         Agent agent = agent("A1");
         AgentDayOff pto = dayOff(agent, D1, DayOffType.PTO, DayOffStatus.REQUESTED);
 
         Map<UUID, Set<LocalDate>> map = SolverService.buildAgentDaysOffMap(List.of(pto));
 
-        assertThat(map).doesNotContainKey(agent.getId());
+        assertThat(map).containsKey(agent.getId());
+        assertThat(map.get(agent.getId())).containsExactly(D1);
     }
 
     // -----------------------------------------------------------------
@@ -90,16 +92,16 @@ class SolverServicePtoFilterTest {
 
         List<AgentDayOff> daysOff = List.of(
                 dayOff(a1, D1, DayOffType.PTO, DayOffStatus.APPROVED),       // blocks A1 D1
-                dayOff(a1, D2, DayOffType.PTO, DayOffStatus.REQUESTED),      // does NOT block
+                dayOff(a1, D2, DayOffType.PTO, DayOffStatus.REQUESTED),      // blocks A1 D2
                 dayOff(a1, D3, DayOffType.MANDATORY, DayOffStatus.REQUESTED), // blocks A1 D3 (mandatory)
-                dayOff(a2, D1, DayOffType.PTO, DayOffStatus.REQUESTED),      // does NOT block A2
+                dayOff(a2, D1, DayOffType.PTO, DayOffStatus.REQUESTED),      // blocks A2 D1
                 dayOff(a2, D2, DayOffType.PTO, DayOffStatus.APPROVED)        // blocks A2 D2
         );
 
         Map<UUID, Set<LocalDate>> map = SolverService.buildAgentDaysOffMap(daysOff);
 
-        assertThat(map.get(a1.getId())).containsExactlyInAnyOrder(D1, D3);
-        assertThat(map.get(a2.getId())).containsExactly(D2);
+        assertThat(map.get(a1.getId())).containsExactlyInAnyOrder(D1, D2, D3);
+        assertThat(map.get(a2.getId())).containsExactlyInAnyOrder(D1, D2);
     }
 
     @Test

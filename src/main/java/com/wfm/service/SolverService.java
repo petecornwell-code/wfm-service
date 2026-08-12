@@ -999,19 +999,21 @@ public class SolverService {
 
     /**
      * Builds the agentDaysOffMap used by the solver and preference resolver.
-     * Rules (D-22):
-     *   - PTO row with status=APPROVED → blocks the date
-     *   - PTO row with status=REQUESTED → does NOT block the date
-     *   - MANDATORY row → always blocks, regardless of status
+     *
+     * EVERY day-off row blocks its date, whatever the type or status. PTO is PTO: an agent who
+     * has booked a day off is not available, and scheduling them against a request that is merely
+     * awaiting a manager's click produces a roster that falls apart on approval.
+     *
+     * Supersedes D-22, which blocked APPROVED PTO but not REQUESTED (changed 2026-08-12). Status
+     * remains meaningful for DISPLAY — the PTO tab labels requested days "(Req)" and the desk
+     * agent list shows a pending-PTO count — it simply no longer affects availability.
+     *
+     * Consequence: an unapproved request now removes capacity immediately.
      */
     static Map<UUID, Set<LocalDate>> buildAgentDaysOffMap(List<AgentDayOff> daysOff) {
         Map<UUID, Set<LocalDate>> map = new HashMap<>();
         for (AgentDayOff d : daysOff) {
-            boolean blocks = d.getType() == DayOffType.MANDATORY
-                    || d.getStatus() == DayOffStatus.APPROVED;
-            if (blocks) {
-                map.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
-            }
+            map.computeIfAbsent(d.getAgent().getId(), k -> new HashSet<>()).add(d.getDate());
         }
         return map;
     }

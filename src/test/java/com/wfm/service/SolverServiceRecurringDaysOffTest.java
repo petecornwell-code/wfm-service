@@ -66,8 +66,8 @@ class SolverServiceRecurringDaysOffTest {
 
     @Test
     void ptoIsMarkedApprovedSoItBlocks() {
-        // buildAgentDaysOffMap only blocks PTO when APPROVED; a REQUESTED status would make
-        // spreadsheet PTO silently non-blocking.
+        // Kept explicit even though every status now blocks: if the blocking rule is ever
+        // narrowed again, spreadsheet PTO must not be the thing that silently stops working.
         List<AgentDayOff> facts = expand(dayHours(DayOfWeek.WEDNESDAY, DayOffType.PTO, "0.00"));
 
         assertThat(facts).hasSize(2)
