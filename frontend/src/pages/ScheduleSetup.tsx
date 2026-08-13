@@ -43,6 +43,21 @@ export default function ScheduleSetup() {
   const [solving, setSolving] = useState(false)
   const [error, setError] = useState('')
 
+  // Persist on every change, not only on Solve. Staffing Requirements reads these
+  // values as its source of truth, so a setting held only in component state would
+  // silently fail to propagate — changing the increment here would appear to do
+  // nothing on that page until someone happened to run a solve.
+  useEffect(() => {
+    if (!deskId) return
+    saveScheduleSetup(deskId, {
+      periodStart, periodEnd, startTime, endTime, increment,
+      breakBlocked, breakDuration, breakMinShift, breakAlignment, breakCluster,
+      defaultHours, overallocationLimit, underallocationLimit, solveTimeMinutes,
+    })
+  }, [deskId, periodStart, periodEnd, startTime, endTime, increment,
+      breakBlocked, breakDuration, breakMinShift, breakAlignment, breakCluster,
+      defaultHours, overallocationLimit, underallocationLimit, solveTimeMinutes])
+
   // Validation summary
   const [agentCount, setAgentCount] = useState<number | null>(null)
   const [specCount, setSpecCount] = useState<number | null>(null)
