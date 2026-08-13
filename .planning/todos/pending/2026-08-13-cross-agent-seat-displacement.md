@@ -2,7 +2,12 @@
 created: 2026-08-13T00:00:00Z
 title: Cross-agent seat displacement for the atomic shift move
 area: solver
-resolves_phase: 12
+# resolves_phase intentionally unset: this is follow-up work Phase 12 does NOT
+# resolve — it is what Phase 12's benchmark proved is still missing. Setting it
+# to 12 would make close_phase_todos auto-sweep this into completed/ the moment
+# Phase 12 is marked complete, silently losing it. Set it to the phase that
+# actually takes this on, once that phase exists.
+raised_during_phase: 12
 files:
   - src/main/java/com/wfm/solver/AtomicShiftMoveFactory.java
   - src/main/java/com/wfm/solver/AssignSeatMove.java
