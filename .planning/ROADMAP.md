@@ -273,12 +273,12 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 - Should honour `breakBlockedHours` and `breakStartAlignment` at generation time so illegal placements are never produced
 - Success must be measured across repeated runs, not one solve: run-to-run variance currently exceeds the effect size of most changes
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 12-01-PLAN.md — Tracer: one atomic shift move executes end-to-end under FULL_ASSERT, composed with the existing change/swap selectors
+- [x] 12-01-PLAN.md — Tracer: one atomic shift move executes end-to-end under FULL_ASSERT, composed with the existing change/swap selectors
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

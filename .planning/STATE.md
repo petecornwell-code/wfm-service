@@ -5,15 +5,15 @@ milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
 status: executing
-stopped_at: Completed 10-06-PLAN.md
-last_updated: "2026-08-13T13:34:46.419Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-08-13T13:52:29.225Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
   percent: 50
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 ## Current Position
 
 Phase: 12 (atomic-shift-move) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 12
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-08-13 — Phase 12 execution started
 
-Progress: [██████████] 100%
+Progress: [█████████░] 87%
 
 ## Milestone v1.2 Roadmap
 
@@ -110,6 +110,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 10]: [Phase 10 Plan 05] Colliding-sheet-name last-wins test uses a stateful Mockito registry (Map<bamboohrId,Agent> backing thenAnswer stubs) rather than static thenReturn stubs, to faithfully model clearDesk's unassign-then-reimport round trip across two sheets targeting the same desk
 - [Phase 10]: [Phase 10 Plan 05] D-16 guard (no AgentDayOffRepository dependency) verified via reflection over declared fields rather than Mockito verify(never()), since the collaborator does not exist to verify against
 - [Phase 10]: [Phase 10 Plan 06] Frontend TS interfaces matched field-for-field to the already-implemented backend DeskAssignmentUploadResult/SheetSummary/SkippedSheet DTOs (Wave 2 plans 03/04 had already landed); warnings + skippedSheets rendered as a single combined amber notice block per D-11
+- [Phase ?]: [Phase 12 Plan 01] Explicit unionMoveSelector re-declares changeMoveSelector/swapMoveSelector alongside AtomicShiftMoveFactory — Timefold 1.16.0 only auto-builds the default change+swap union when localSearch declares no moveSelector at all
+- [Phase ?]: [Phase 12 Plan 01] AssignSeatMove implements only doMoveOnGenuineVariables and never overrides createUndoMove — deprecated for removal since 1.16.0; framework auto-generates undo
+- [Phase ?]: [Phase 12 Plan 01] ShiftWindowFinder stays a plain Java class with zero Timefold imports, mirroring ScheduleConstraintProvider's HALF_UP vs CEILING rounding modes exactly rather than unifying them
 
 ### Blockers/Concerns
 
@@ -120,10 +123,16 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-07-31T22:27:30.503Z
-Stopped at: Completed 10-06-PLAN.md
+Last session: 2026-08-13T13:52:29.218Z
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
 - Review and approve the v1.2 roadmap, then run `/gsd-plan-phase 9`
+
+## Performance Metrics
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 12 P01 | 35m | 2 tasks | 6 files |
