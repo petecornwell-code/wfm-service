@@ -17,8 +17,22 @@
     <constructionHeuristic/>
 
     <!-- Local search: improve the CH-built solution.
-         Termination is configured programmatically from the solver.time-limit property. -->
+         Termination is configured programmatically from the solver.time-limit property.
+
+         The unionMoveSelector is explicit because Timefold only auto-builds its
+         default change+swap union when <localSearch> declares no moveSelector at
+         all. changeMoveSelector/swapMoveSelector are re-declared alongside the
+         atomic shift move factory so today's fine-grained single-seat repair is
+         composed with, not replaced by, the new move. -->
     <localSearch>
+        <unionMoveSelector>
+            <changeMoveSelector/>
+            <swapMoveSelector/>
+            <moveListFactory>
+                <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
+                <fixedProbabilityWeight>1.0</fixedProbabilityWeight>
+            </moveListFactory>
+        </unionMoveSelector>
         <acceptor>
             <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
         </acceptor>
