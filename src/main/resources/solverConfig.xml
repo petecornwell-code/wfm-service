@@ -29,8 +29,11 @@
             <changeMoveSelector/>
             <swapMoveSelector/>
             <moveListFactory>
-                <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
+                <!-- Element order is XSD-significant: moveListFactoryConfig extends
+                     moveSelectorConfig, so every inherited element (fixedProbabilityWeight
+                     is the last of them) must precede moveListFactoryClass. -->
                 <fixedProbabilityWeight>1.0</fixedProbabilityWeight>
+                <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
             </moveListFactory>
         </unionMoveSelector>
         <acceptor>

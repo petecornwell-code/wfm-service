@@ -574,8 +574,8 @@ and `MoveIteratorFactoryConfig.XML_ELEMENT_NAME`).
 [VERIFIED: github.com/TimefoldAI/timefold-solver/blob/v1.16.0/core/src/main/java/ai/timefold/solver/core/config/heuristic/selector/move/MoveSelectorConfig.java, `fixedProbabilityWeight` field + `withFixedProbabilityWeight` builder method]
 ```xml
 <moveListFactory>
-    <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
     <fixedProbabilityWeight>1.0</fixedProbabilityWeight>
+    <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
 </moveListFactory>
 ```
 Start at parity (`1.0`, same default weight as the unweighted change/swap selectors) and tune
@@ -878,8 +878,8 @@ Move<Schedule> shiftMove = CompositeMove.buildMove(seatMoves);
         <changeMoveSelector/>
         <swapMoveSelector/>
         <moveListFactory>
-            <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
             <fixedProbabilityWeight>1.0</fixedProbabilityWeight>
+            <moveListFactoryClass>com.wfm.solver.AtomicShiftMoveFactory</moveListFactoryClass>
         </moveListFactory>
     </unionMoveSelector>
     <acceptor>
