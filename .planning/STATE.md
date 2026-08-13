@@ -5,8 +5,8 @@ milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
 status: executing
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-08-13T14:43:45.583Z"
+stopped_at: Paused at 12-03 Task 3 operator checkpoint — benchmark evidence recorded in 12-BENCHMARK.md, awaiting sign-off
+last_updated: "2026-08-13T15:11:43.206Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
@@ -124,12 +124,13 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. v1.2 Phase 11 (MRG-06) directly targets this by letting spreadsheet-supplied patterns fill the gap.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 - **MDL-02 is the highest-risk item in v1.2** — per-day contracted hours must compose with existing `AgentException` per-date overrides without changing solve behaviour for uniform-hours agents. Sequenced first (Phase 9) to gate parser and merge work.
+- Phase 12 plan 03 (atomic shift move) paused at Task 3 operator checkpoint: 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Awaiting operator verdict — see checkpoint in execution transcript.
 
 ## Session Continuity
 
-Last session: 2026-08-13T14:43:36.735Z
-Stopped at: Completed 12-02-PLAN.md
-Resume file: None
+Last session: 2026-08-13T15:11:43.199Z
+Stopped at: Paused at 12-03 Task 3 operator checkpoint — benchmark evidence recorded in 12-BENCHMARK.md, awaiting sign-off
+Resume file: .planning/phases/12-atomic-shift-move/12-03-PLAN.md
 
 ## Operator Next Steps
 
