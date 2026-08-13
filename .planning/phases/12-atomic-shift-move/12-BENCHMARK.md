@@ -169,3 +169,40 @@ that actually controls for the confound and is what threshold #1 above is evalua
 The historical -4,930 hard score is still the literal number `12-VALIDATION.md`'s should-pass
 threshold #5 names, which is why both the literal and within-run readings are reported above
 rather than only one.
+
+---
+
+## Operator Verdict
+
+**Date:** 2026-08-13
+**Decision:** Keep the code, but do not claim the phase goal.
+
+> Keep the move (correct, improves hard score, breaks nothing). Record threshold 1 as FAILED in
+> the phase record rather than marking the "more hours" goal achieved. Open follow-up scoped to
+> cross-agent seat displacement — the 130% data says that's the real lever. Phase does not get
+> marked complete on a failed must-pass.
+
+Ruling against each threshold in this document's Threshold Assessment table:
+
+| # | Threshold | Operator ruling |
+|---|---|---|
+| 1 | Median-vs-spread hours assigned (must-pass) | **FAILED.** Accepted as-measured: 0.25h margin against a 5.00h baseline spread does not clear the bar. This is the threshold the phase goal turns on, so the phase goal ("more hours assigned") is **not** claimed as achieved. |
+| 2 | Zero agent-days needing a break with none (must-pass) | **PASS.** Accepted as measured and asserted in code. |
+| 3 | `AtomicShiftMoveFullAssertTest` green (must-pass) | **PASS.** Accepted as measured. |
+| 4 | `BreakAwareConstructionTest` unmodified and green (must-pass) | **PASS.** Accepted as measured. |
+| 5 | Hard-score regression vs. `-4,930` in ≤1 of 5 runs (should-pass, non-blocking) | **Resolved in favour of the within-run reading (1 of 5).** The historical `-4,930` was wall-clock-terminated and unseeded under `EnvironmentMode.REPRODUCIBLE`, which 12-RESEARCH.md's own root-cause finding shows is not reproducible run-to-run under CPU-time variance — it is not a comparable number to a fixed-seed, step-count-terminated run. The within-run comparison against this harness's own best baseline hard score (-5460) is the like-for-like reading, and it passes the "no more than 1 of 5" bar. Non-blocking either way; recorded here only to close out the open reading.
+
+**Code disposition:** The atomic shift move is correct — it improves hard score, composes with
+change/swap, never corrupts the incremental score, and does not displace another agent's seat. It
+is kept as committed (12-01, 12-02). No code changes result from this checkpoint.
+
+**Phase disposition:** The phase's must-pass hours-assigned threshold (#1) is FAILED. The phase
+goal — agents reaching more contracted hours than before the fix — is **not** claimed as achieved.
+This plan closes with the evidence recorded and the verdict applied; it does not close the phase
+as complete. That determination belongs to the orchestrator, per the operator's explicit ruling.
+
+**Follow-up filed:** Cross-agent seat displacement, scoped from the 130% conservative-variant
+finding above (seat capacity, not move selection, is the binding constraint at realistic
+over-allocation, and the current move can only target free-or-self-held seats, never displace
+another agent). Filed as `.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`,
+`resolves_phase: 12`.
