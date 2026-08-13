@@ -82,6 +82,10 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 12 added 2026-08-13: **Atomic Shift Move** — custom Timefold move placing a full contracted shift plus its break in one step. Raised during Phase 10 UAT after the live desk proved unable to produce full-hours shifts: single-slot local search cannot cross the HARD `Exactly one break` rule, so agents pin one slot below the break threshold. Two threshold-tuning attempts were reverted (`76a715f`) before concluding a custom move is required.
+
 ### Decisions
 
 Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carried forward as active design constraints:
