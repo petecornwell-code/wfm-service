@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 
+export type ToastType = 'success' | 'error' | 'warning'
+
 export interface ToastMessage {
   id: number
-  type: 'success' | 'error'
+  type: ToastType
   text: string
 }
 
 let nextId = 0
 let globalAdd: ((msg: Omit<ToastMessage, 'id'>) => void) | null = null
 
-export function showToast(type: 'success' | 'error', text: string) {
+export function showToast(type: ToastType, text: string) {
   globalAdd?.({ type, text })
 }
 
@@ -36,7 +38,7 @@ export function ToastContainer() {
           padding: '0.75rem 1rem',
           borderRadius: '6px',
           color: '#fff',
-          background: t.type === 'error' ? '#dc2626' : '#16a34a',
+          background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#b45309' : '#16a34a',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           maxWidth: '400px',
           fontSize: '0.9rem',

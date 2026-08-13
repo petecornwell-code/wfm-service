@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useParams, Link } from 'react-router-dom'
 import { timeslots as timeslotApi, specializations as specApi, staffingRequirements as srApi, getErrorMessage } from '../api/client'
 import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, FteUploadResult } from '../api/client'
-import { saveTimeslotParams, loadTimeslotParams } from '../timeslotParams'
+import { saveTimeslotParams, loadScheduleSetup, saveScheduleSetup } from '../timeslotParams'
+import type { ScheduleSetupParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
 
 type DemandMap = Record<string, number>
@@ -13,12 +14,24 @@ function demandKey(timeslotId: string, specId: string) {
 
 export default function StaffingRequirements() {
   const { deskId } = useParams<{ deskId: string }>()
-  const saved = deskId ? loadTimeslotParams(deskId) : {}
-  const [periodStart, setPeriodStart] = useState(saved.periodStart ?? '')
-  const [periodEnd, setPeriodEnd] = useState(saved.periodEnd ?? '')
-  const [startTime, setStartTime] = useState(saved.startTime ?? '08:00')
-  const [endTime, setEndTime] = useState(saved.endTime ?? '18:00')
-  const [increment, setIncrement] = useState(saved.increment ?? 15)
+  // Schedule Setup is the single source of truth for period and timeslot geometry.
+  // This page reads those values and never edits them: two independently editable
+  // copies of the same fields is what let the two pages drift apart in the first place.
+  // setupVersion re-reads localStorage after this page writes it (FTE upload).
+  const [setupVersion, setSetupVersion] = useState(0)
+  const setup = useMemo(
+    () => (deskId ? loadScheduleSetup(deskId) : {}),
+    [deskId, setupVersion],
+  )
+  const periodStart = setup.periodStart ?? ''
+  const periodEnd = setup.periodEnd ?? ''
+  const startTime = setup.startTime ?? '08:00'
+  const endTime = setup.endTime ?? '18:00'
+  const increment = setup.increment ?? 15
+  const setupConfigured = Boolean(setup.periodStart && setup.periodEnd)
+  // Set when the stored timeslots did not match Schedule Setup and were realigned,
+  // which discards the staffing requirements attached to the removed slots.
+  const [realigned, setRealigned] = useState(false)
   const [slots, setSlots] = useState<Timeslot[]>([])
   const [specs, setSpecs] = useState<Specialization[]>([])
   const [demand, setDemand] = useState<DemandMap>({})
@@ -67,6 +80,19 @@ export default function StaffingRequirements() {
       setError('')
       setSaveMsg('')
       try {
+        // Compare what is actually stored against Schedule Setup BEFORE regenerating.
+        // Any difference means the stored timeslots belong to a different geometry, so
+        // the staffing requirements hanging off them cannot be carried across — the
+        // generate call below deletes those slots and cascades their requirements away.
+        const bounds = await timeslotApi.bounds(deskId).catch(() => null)
+        const mismatch = Boolean(bounds) && (
+          bounds!.periodStart !== periodStart ||
+          bounds!.periodEnd !== periodEnd ||
+          bounds!.startTime.slice(0, 5) !== startTime.slice(0, 5) ||
+          bounds!.endTime.slice(0, 5) !== endTime.slice(0, 5) ||
+          bounds!.incrementMinutes !== increment
+        )
+
         const generated = await timeslotApi.generate(deskId, {
           periodStartDate: periodStart,
           periodEndDate: periodEnd,
@@ -80,7 +106,17 @@ export default function StaffingRequirements() {
         // the timeslots in the database (which would cause timeslotsMatch to
         // fail on return, deleting all saved staffing requirements).
         saveTimeslotParams(deskId, { periodStart, periodEnd, startTime, endTime, increment })
-        await loadExisting(generated)
+
+        if (mismatch) {
+          // Align to Schedule Setup: the old requirements are gone server-side, so
+          // show the grid zeroed rather than briefly rendering stale values.
+          setDemand({})
+          setRealigned(true)
+          showToast('warning', 'Timeslots did not match Schedule Setup. They have been regenerated and staffing requirements reset to 0.')
+        } else {
+          setRealigned(false)
+          await loadExisting(generated)
+        }
       } catch (err) {
         setError(getErrorMessage(err))
         setSlots([])
@@ -199,13 +235,18 @@ export default function StaffingRequirements() {
     try {
       const result: FteUploadResult = await srApi.uploadFtes(deskId, file)
       showToast('success', `Uploaded: ${result.savedCount} requirements saved, ${result.skippedCount} skipped`)
-      // Update period/time config to match the uploaded spreadsheet so the
-      // grid regenerates with the correct date range and timeslots.
-      setPeriodStart(result.periodStart)
-      setPeriodEnd(result.periodEnd)
-      setStartTime(result.startTime)
-      setEndTime(result.endTime)
-      setIncrement(result.incrementMinutes)
+      // The spreadsheet dictates its own period and granularity, so push those back
+      // into Schedule Setup rather than holding a second copy here. Schedule Setup
+      // stays the single source of truth; its break and solver fields are preserved.
+      saveScheduleSetup(deskId, {
+        ...(loadScheduleSetup(deskId) as ScheduleSetupParams),
+        periodStart: result.periodStart,
+        periodEnd: result.periodEnd,
+        startTime: result.startTime,
+        endTime: result.endTime,
+        increment: result.incrementMinutes,
+      })
+      setSetupVersion(v => v + 1)
       // Regenerate timeslots to match the uploaded data, then load FTEs
       const generated = await timeslotApi.generate(deskId, {
         periodStartDate: result.periodStart,
@@ -246,20 +287,34 @@ export default function StaffingRequirements() {
       <h1>Staffing Requirements</h1>
 
       <div style={{ background: '#fff', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-        <h3>Period &amp; Timeslot Configuration</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
-          <label>Period Start<input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} /></label>
-          <label>Period End<input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} /></label>
-          <label>Start Time<input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} /></label>
-          <label>End Time<input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} /></label>
-          <label>Increment
-            <select value={increment} onChange={e => setIncrement(Number(e.target.value))}>
-              <option value={15}>15 min</option>
-              <option value={30}>30 min</option>
-              <option value={60}>60 min</option>
-            </select>
-          </label>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>Period &amp; Timeslot Configuration</h3>
+          <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>
+            From Schedule Setup — <Link to={`/desks/${deskId}/schedule-setup`}>edit there</Link>
+          </span>
         </div>
+
+        {!setupConfigured ? (
+          <p style={{ color: '#6b7280', marginTop: '0.75rem' }}>
+            No period configured yet. Set the period and time range in{' '}
+            <Link to={`/desks/${deskId}/schedule-setup`}>Schedule Setup</Link> to generate the timeslot grid.
+          </p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <label>Period Start<input type="date" value={periodStart} readOnly disabled /></label>
+            <label>Period End<input type="date" value={periodEnd} readOnly disabled /></label>
+            <label>Start Time<input type="time" value={startTime} readOnly disabled /></label>
+            <label>End Time<input type="time" value={endTime} readOnly disabled /></label>
+            <label>Increment<input type="text" value={`${increment} min`} readOnly disabled /></label>
+          </div>
+        )}
+
+        {realigned && (
+          <p style={{ color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '4px', padding: '0.5rem 0.75rem', marginTop: '0.75rem', fontSize: '0.85rem' }}>
+            Stored timeslots did not match Schedule Setup. The grid has been regenerated to align with it,
+            and the staffing requirements attached to the removed timeslots were discarded — all values below start at 0.
+          </p>
+        )}
         {loading && <p style={{ color: '#6b7280', marginTop: '0.5rem' }}>Generating timeslots...</p>}
         {error && <p style={{ color: '#dc2626', marginTop: '0.5rem' }}>{error}</p>}
       </div>
