@@ -16,7 +16,9 @@ env:
   ECS_SERVICE: wfm-service
   ECS_TASK_FAMILY: wfm-service-dev
   FRONTEND_BUCKET: wfm-service-dev-frontend-982940000233
-  ALB_NAME: wfm-service-dev
+  # Public origin used by the post-deploy smoke test. Deliberately not derived from
+  # the ALB via the AWS API — see the smoke test step for why.
+  HEALTH_URL: https://d2bbtcc80peap7.cloudfront.net/actuator/health
 
 jobs:
   # Deploy gate. ci.yml only runs on main and PRs to main, so before this job
@@ -131,18 +133,21 @@ jobs:
             --services $ECS_SERVICE
 
       # `services-stable` only proves ECS settled — it says nothing about whether
-      # the app can actually serve. Probe the ALB directly rather than through
-      # CloudFront, so a cached edge response cannot mask a dead origin.
+      # the app can actually serve.
+      #
+      # Probing goes through the public origin rather than the ALB directly: the
+      # deploy role has no elasticloadbalancing:DescribeLoadBalancers permission, so
+      # resolving the ALB DNS fails with AccessDenied and — under `bash -e` — aborts
+      # the step before the retry loop runs. Every request below is cache-busted with
+      # a unique query string and a no-cache header so a stale edge response cannot
+      # mask a dead origin; during the 2026-08-13 outage this same probe correctly
+      # returned 502/503 rather than a cached 200.
       - name: Smoke test
         run: |
-          ALB=$(aws elbv2 describe-load-balancers \
-            --names "$ALB_NAME" \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)
-          echo "Probing http://$ALB/actuator/health"
+          echo "Probing $HEALTH_URL"
 
           for i in $(seq 1 30); do
-            BODY=$(curl -fsS -m 10 "http://$ALB/actuator/health" 2>/dev/null || true)
+            BODY=$(curl -fsS -m 10 -H 'Cache-Control: no-cache' "$HEALTH_URL?_=$(date +%s)-$i" 2>/dev/null || true)
             # Require the db component explicitly: the app reports status UP while
             # its datasource is unusable, which is how a stale DB credential
             # produced a "successful" deploy in front of a 502.
