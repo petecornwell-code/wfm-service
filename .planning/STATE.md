@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 10
-current_phase_name: enriched-upload-parsing
+current_phase: 12
+current_phase_name: atomic-shift-move
 status: executing
 stopped_at: Completed 10-06-PLAN.md
-last_updated: "2026-08-13T13:29:37.524Z"
+last_updated: "2026-08-13T13:34:46.419Z"
 last_activity: 2026-08-13
-last_activity_desc: Phase 12 planning complete
+last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
   completed_plans: 12
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 10 — enriched-upload-parsing
+**Current focus:** Phase 12 — atomic-shift-move
 
 ## Current Position
 
-Phase: 10 (enriched-upload-parsing) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-08-13 — Phase 12 planning complete
+Phase: 12 (atomic-shift-move) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 12
+Last activity: 2026-08-13 — Phase 12 execution started
 
 Progress: [██████████] 100%
 
@@ -88,12 +88,13 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 ### Roadmap Evolution
 
 - Phase 12 added 2026-08-13: **Atomic Shift Move** — custom Timefold move placing a full contracted shift plus its break in one step. Raised during Phase 10 UAT after the live desk proved unable to produce full-hours shifts: single-slot local search cannot cross the HARD `Exactly one break` rule, so agents pin one slot below the break threshold. Two threshold-tuning attempts were reverted (`76a715f`) before concluding a custom move is required.
+- 2026-08-13: **Timefold version corrected.** The previously stated pinned version (recorded as a later 1.3x release) was incorrect — Phase 12 verified the actual pinned version is 1.16.0 against `build.gradle:35` (`ai.timefold.solver:timefold-solver-bom:1.16.0`) and against the running solver (custom-move API confirmed to be `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, not the newer `Neighborhoods` API introduced at 1.31.0). Assumption A3 in `12-RESEARCH.md` is thereby resolved.
 
 ### Decisions
 
 Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carried forward as active design constraints:
 
-- Timefold pinned at 1.33.0 — `ScoreAnalysis` moves to paid tier in 2.0
+- Timefold pinned at 1.16.0 (`build.gradle:35`) — `ScoreAnalysis` moves to paid tier in 2.0; custom moves at this version use `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, and the `Neighborhoods` custom-move API introduced at 1.31.0 is not available
 - PDF export must use OpenPDF 3.0.4 (LGPL/MPL) — iText rejected (AGPL)
 - Fairness constraints soft score only — hard fairness makes schedules infeasible
 - Quadratic penalties for hours consistency, not linear (avoids score traps)
