@@ -81,27 +81,37 @@ public class ShiftWindowFinder {
     }
 
     /**
-     * Finds legal candidate shift windows within {@code candidateSeats} for
-     * the given agent-day. Indexes seats by timeslot start time (exactly one
-     * seat per distinct start time, so a returned window can never violate
-     * {@code oneAssignmentPerTimeslot}), then walks contiguous runs of
-     * present start times looking for a span of
+     * Finds every legal candidate shift window within {@code candidateSeats}
+     * for the given agent-day. Indexes seats by timeslot start time —
+     * exactly one seat per distinct start time, so a returned window can
+     * never violate {@code oneAssignmentPerTimeslot}; when several seats
+     * share a start time, the one with the lowest {@code Timeslot.getId()}
+     * is kept, so repeated calls with the same input select identically —
+     * then walks every contiguous run of present start times of length
      * {@code requiredWorkSlots + breakSlotCount} (or just
-     * {@code requiredWorkSlots} when no break is required) consecutive
-     * present slots. For a break-requiring span, break offsets are tried in
-     * order and the first offset that is aligned, not inside the blocked
-     * window, is accepted.
+     * {@code requiredWorkSlots} when no break is required). For every
+     * break-requiring span, every break offset from 1 to
+     * {@code requiredWorkSlots - 1} is tried and a window is emitted for
+     * each one that is aligned and clears both blocked-margin checks — this
+     * does not relax legality, it only stops returning after the first
+     * legal candidate.
      *
-     * <p>Returns at most one element — the earliest legal window found. The
-     * signature returns a list so a later phase can broaden this to full
-     * enumeration without an API change.
+     * <p>Returned windows are ordered by span start ascending, then break
+     * offset ascending, so the order is stable across calls on the same
+     * input (the 12-03 benchmark harness depends on this for seeded
+     * reproducibility).
      */
     public static List<ShiftWindow> findWindows(List<AgentAssignment> candidateSeats, AgentDayConfig dayConfig) {
         if (candidateSeats == null || candidateSeats.isEmpty()) return List.of();
 
         TreeMap<LocalTime, AgentAssignment> seatsByStart = new TreeMap<>();
         for (AgentAssignment seat : candidateSeats) {
-            seatsByStart.putIfAbsent(seat.getTimeslot().getStartTime(), seat);
+            LocalTime start = seat.getTimeslot().getStartTime();
+            AgentAssignment existing = seatsByStart.get(start);
+            if (existing == null
+                    || seat.getTimeslot().getId().compareTo(existing.getTimeslot().getId()) < 0) {
+                seatsByStart.put(start, seat);
+            }
         }
 
         int incrementMinutes = dayConfig.incrementMinutes();
@@ -111,6 +121,8 @@ public class ShiftWindowFinder {
         boolean needsBreak = needsBreak(dayConfig);
         int breakSlotCount = needsBreak ? breakSlotCount(dayConfig) : 0;
         int spanLength = requiredWorkSlots + breakSlotCount;
+
+        List<ShiftWindow> windows = new ArrayList<>();
 
         for (LocalTime spanStart : seatsByStart.keySet()) {
             List<LocalTime> spanTimes = new ArrayList<>(spanLength);
@@ -131,7 +143,8 @@ public class ShiftWindowFinder {
                 for (LocalTime slotTime : spanTimes) {
                     workSeats.add(seatsByStart.get(slotTime));
                 }
-                return List.of(new ShiftWindow(workSeats, null));
+                windows.add(new ShiftWindow(workSeats, null));
+                continue;
             }
 
             LocalTime shiftEnd = spanStart.plusMinutes((long) spanLength * incrementMinutes);
@@ -154,10 +167,10 @@ public class ShiftWindowFinder {
                     if (inBreakWindow) continue;
                     workSeats.add(seatsByStart.get(slotTime));
                 }
-                return List.of(new ShiftWindow(workSeats, breakStart));
+                windows.add(new ShiftWindow(workSeats, breakStart));
             }
         }
 
-        return List.of();
+        return windows;
     }
 }

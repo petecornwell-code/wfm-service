@@ -5,6 +5,7 @@ import ai.timefold.solver.core.impl.heuristic.move.AbstractMove;
 import com.wfm.model.*;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -56,7 +57,9 @@ final class AssignSeatMove extends AbstractMove<Schedule> {
 
     @Override
     public Collection<?> getPlanningValues() {
-        return List.of(toAgent);
+        // toAgent is legitimately null for an unassign move; List.of(...) rejects
+        // null elements, so use a null-tolerant singleton instead.
+        return Collections.singletonList(toAgent);
     }
 
     @Override
