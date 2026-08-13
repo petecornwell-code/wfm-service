@@ -77,8 +77,12 @@ class IncrementalScoringDiagnosticTest {
         // underZero: 95 agents × 8 expectedSlots × weight 100 = 76,000
         // bulkUnderHard: per-timeslot sum of floor(demand × 70/100) = 500
         assertThat(initialScore.hardScore()).isEqualTo(-76500);
-        // Unassigned assignment is now per-timeslot: 12 timeslots × weight 1000 = 12,000
-        assertThat(initialScore.softScore()).isEqualTo(-12000);
+        // Unassigned assignment is per-timeslot: 12 timeslots × weight 1000 = 12,000
+        // bulkUnderallocationSoft: nothing is assigned yet, so the shortfall is the full
+        //   demand across all timeslots × weight 1 = 720. This term was absent while that
+        //   constraint was a no-op; it is what gives the solver a reason to cover demand
+        //   at all, rather than treating any arrangement above the hard floor as equal.
+        assertThat(initialScore.softScore()).isEqualTo(-12720);
 
         // Now assign ONE agent to ONE seat
         Agent firstAgent = schedule.getAgents().get(0);

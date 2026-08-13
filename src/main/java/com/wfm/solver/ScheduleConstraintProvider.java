@@ -495,13 +495,38 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 14. Bulk under-allocation soft — soft penalty proportional to demand shortfall.
-     * Pre-solve check handles the input-based validation.
+     * 14. Bulk under-allocation soft — soft penalty proportional to the shortfall
+     * against <em>full</em> demand in each timeslot.
+     *
+     * <p>This is the only constraint that makes covering satisfiable demand
+     * preferable to leaving it bare. {@link #bulkUnderallocationHard} is a
+     * feasibility floor at {@code underallocationHardLimitPct} of demand — it is
+     * binary, so above that floor the solver previously saw no difference between
+     * staffing an hour and ignoring it. A schedule could therefore score a flawless
+     * 0soft while whole hours of demand went unstaffed and other hours were
+     * over-stacked, because nothing pulled coverage in either direction.
+     *
+     * <p>Measured against 100% of demand, not the hard limit: the hard floor is the
+     * point below which a schedule is illegal, whereas this expresses that meeting
+     * demand exactly is what "good" means. Excess above demand is not rewarded here
+     * — over-allocation is {@link #bulkOverallocationLimit}'s concern.
+     *
+     * <p>CH-friendly in the same way as the hard variant: forEachIncludingUnassigned
+     * with a sum over assigned entities, so the constraint is already active while
+     * every entity is still null. Using forEach here would leave the penalty absent
+     * until the first assignment and then introduce it as a cliff, which stalls the
+     * construction heuristic on large schedules.
      */
-    private Constraint bulkUnderallocationSoft(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getAgent() != null)
-                .penalizeConfigurable(a -> 0)
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint bulkUnderallocationSoft(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(AgentAssignment.class)
+                .groupBy(a -> a.getTimeslot(),
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
+                .join(TimeslotDemandConfig.class,
+                        equal((ts, cnt) -> ts, TimeslotDemandConfig::timeslot))
+                .filter((ts, totalAssigned, tsDemand) -> totalAssigned < tsDemand.totalDemandFTEs())
+                .penalizeConfigurable((ts, totalAssigned, tsDemand) ->
+                        tsDemand.totalDemandFTEs() - totalAssigned)
                 .asConstraint("Bulk under-allocation soft");
     }
 
