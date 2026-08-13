@@ -272,11 +272,13 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 - Should honour `breakBlockedHours` and `breakStartAlignment` at generation time so illegal placements are never produced
 - Success must be measured across repeated runs, not one solve: run-to-run variance currently exceeds the effect size of most changes
 
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 12 to break down)
+- [ ] 12-01-PLAN.md — Tracer: one atomic shift move executes end-to-end under FULL_ASSERT, composed with the existing change/swap selectors
+- [ ] 12-02-PLAN.md — Enumerate every legal window, rewrite pinned agent-days atomically, bound the move pool
+- [ ] 12-03-PLAN.md — Seeded step-count benchmark (5 baseline vs 5 with-move), recorded evidence and operator sign-off
 
 ---
 
