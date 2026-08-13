@@ -25,6 +25,9 @@ import java.util.UUID;
 @Service
 public class TimeslotGeneratorService {
 
+    /** Cap on ids per delete statement, to stay well clear of the JDBC parameter limit. */
+    private static final int DELETE_BATCH_SIZE = 1000;
+
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final ScheduleRepository scheduleRepository;
@@ -73,33 +76,40 @@ public class TimeslotGeneratorService {
 
         long tenantId = TenantContext.getTenantId();
 
+        // Load ALL live timeslots for the desk, deliberately unbounded by date.
+        // A date-bounded load can only ever see slots inside the requested period,
+        // so shrinking the period used to strand every slot outside the new range
+        // with no way to reach it on any later call.
+        List<Timeslot> existing = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullOrderByDateAscStartTimeAsc(tenantId, deskId);
+
         // Check if existing timeslots already match the requested parameters.
         // If so, return them as-is to preserve linked staffing requirements.
-        List<Timeslot> existing = timeslotRepository
-                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
-                        tenantId, deskId, periodStart, periodEnd);
-
         if (timeslotsMatch(existing, periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
             return existing;
         }
 
-        // Build lookup of existing timeslots keyed by "date|startTime|endTime"
-        Map<String, Timeslot> existingByKey = new HashMap<>();
-        for (Timeslot ts : existing) {
-            existingByKey.put(slotKey(ts.getDate(), ts.getStartTime(), ts.getEndTime()), ts);
-        }
-
-        // Determine which existing timeslots are no longer needed and remove them
-        // (along with their staffing requirements) without touching valid ones.
+        // Partition into slots that survive this generation and slots that do not.
+        // The surviving set is what suppresses re-creation below; obsolete slots must
+        // NOT contribute keys, or a stale slot would block its own replacement.
+        Map<String, Timeslot> survivingByKey = new HashMap<>();
         List<UUID> obsoleteIds = new ArrayList<>();
         for (Timeslot ts : existing) {
-            if (!isDesired(ts.getDate(), ts.getStartTime(), periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+            if (isDesired(ts.getDate(), ts.getStartTime(), ts.getEndTime(),
+                    periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+                survivingByKey.put(slotKey(ts.getDate(), ts.getStartTime(), ts.getEndTime()), ts);
+            } else {
                 obsoleteIds.add(ts.getId());
             }
         }
         if (!obsoleteIds.isEmpty()) {
-            staffingRequirementRepository.deleteLiveByDeskAndTimeslotIds(tenantId, deskId, obsoleteIds);
-            timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndIdIn(tenantId, deskId, obsoleteIds);
+            // Chunked: a full quarter at 15-minute granularity is thousands of ids, and
+            // a single IN clause would eventually breach the JDBC parameter limit.
+            for (int i = 0; i < obsoleteIds.size(); i += DELETE_BATCH_SIZE) {
+                List<UUID> batch = obsoleteIds.subList(i, Math.min(i + DELETE_BATCH_SIZE, obsoleteIds.size()));
+                staffingRequirementRepository.deleteLiveByDeskAndTimeslotIds(tenantId, deskId, batch);
+                timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleIdIsNullAndIdIn(tenantId, deskId, batch);
+            }
             entityManager.flush();
             entityManager.clear();
         }
@@ -109,7 +119,7 @@ public class TimeslotGeneratorService {
         for (LocalDate date = periodStart; !date.isAfter(periodEnd); date = date.plusDays(1)) {
             for (LocalTime time = startTime; time.isBefore(endTime); time = time.plusMinutes(incrementMinutes)) {
                 String key = slotKey(date, time, time.plusMinutes(incrementMinutes));
-                if (!existingByKey.containsKey(key)) {
+                if (!survivingByKey.containsKey(key)) {
                     Timeslot ts = new Timeslot();
                     ts.setTenantId(tenantId);
                     ts.setDeskId(deskId);
@@ -133,42 +143,54 @@ public class TimeslotGeneratorService {
         return date + "|" + start + "|" + end;
     }
 
-    private static boolean isDesired(LocalDate date, LocalTime slotStart,
-                                     LocalDate periodStart, LocalDate periodEnd,
-                                     LocalTime startTime, LocalTime endTime, int incrementMinutes) {
+    /**
+     * Whether an existing live timeslot is still wanted under the requested parameters.
+     * Anything answering {@code false} is deleted, together with its staffing requirements.
+     *
+     * <p>Package-private for direct unit testing: this predicate is the whole correctness
+     * story of regeneration, and it previously shipped without coverage.
+     *
+     * <p>The duration check is load-bearing. Judging a slot solely by its start time keeps
+     * any stale slot whose start happens to land on the new grid — so refining granularity
+     * (60&rarr;30, 60&rarr;15, 30&rarr;15) kept <em>every</em> old slot, and the insert loop then
+     * added the correctly-sized slot alongside it. The unique index includes {@code end_time},
+     * so the database accepts both and the desk ends up mixing granularities.
+     */
+    static boolean isDesired(LocalDate date, LocalTime slotStart, LocalTime slotEnd,
+                             LocalDate periodStart, LocalDate periodEnd,
+                             LocalTime startTime, LocalTime endTime, int incrementMinutes) {
         if (date.isBefore(periodStart) || date.isAfter(periodEnd)) return false;
         if (slotStart.isBefore(startTime) || !slotStart.isBefore(endTime)) return false;
         long minutesFromStart = startTime.until(slotStart, ChronoUnit.MINUTES);
-        return minutesFromStart % incrementMinutes == 0;
+        if (minutesFromStart % incrementMinutes != 0) return false;
+        return slotEnd.equals(slotStart.plusMinutes(incrementMinutes));
     }
 
     /**
-     * Check if existing timeslots exactly match the requested generation parameters.
-     * Verifies date coverage, start/end times, and increment are all consistent.
+     * Whether the desk's live timeslots are already exactly what these parameters describe,
+     * in which case generation is a no-op and linked staffing requirements are preserved.
+     *
+     * <p>This is an exact check rather than boundary sampling: the expected count plus
+     * "every slot is one we would have produced" is complete, given the partial unique
+     * index on (tenant, desk, date, start_time, end_time) rules out duplicates. The
+     * previous version inspected only the first and last rows, so corruption in the middle
+     * of the period could report a match and skip the cleanup entirely.
      */
     private boolean timeslotsMatch(List<Timeslot> existing, LocalDate periodStart, LocalDate periodEnd,
                                    LocalTime startTime, LocalTime endTime, int incrementMinutes) {
         if (existing.isEmpty()) return false;
 
-        // Calculate expected count: days × slots-per-day
         long days = ChronoUnit.DAYS.between(periodStart, periodEnd) + 1;
         long slotsPerDay = startTime.until(endTime, ChronoUnit.MINUTES) / incrementMinutes;
-        long expectedCount = days * slotsPerDay;
+        if (existing.size() != days * slotsPerDay) return false;
 
-        if (existing.size() != expectedCount) return false;
-
-        // Verify first and last timeslots match the expected boundaries
-        Timeslot first = existing.get(0);
-        Timeslot last = existing.get(existing.size() - 1);
-
-        if (!first.getDate().equals(periodStart)) return false;
-        if (!first.getStartTime().equals(startTime)) return false;
-        if (!last.getDate().equals(periodEnd)) return false;
-        if (!last.getEndTime().equals(endTime)) return false;
-
-        // Verify increment by checking first timeslot's duration
-        long actualIncrement = first.getStartTime().until(first.getEndTime(), ChronoUnit.MINUTES);
-        return actualIncrement == incrementMinutes;
+        for (Timeslot ts : existing) {
+            if (!isDesired(ts.getDate(), ts.getStartTime(), ts.getEndTime(),
+                    periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Transactional

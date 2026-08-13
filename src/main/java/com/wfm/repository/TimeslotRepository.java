@@ -17,6 +17,14 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, UUID> {
     List<Timeslot> findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
             long tenantId, UUID deskId, LocalDate from, LocalDate to);
 
+    /**
+     * All live (non-snapshot) timeslots for a desk, unbounded by date.
+     * Regeneration needs this: a date-bounded query cannot see slots that fall
+     * outside a newly-shortened period, so those slots could never be cleaned up.
+     */
+    List<Timeslot> findByTenantIdAndDeskIdAndScheduleIdIsNullOrderByDateAscStartTimeAsc(
+            long tenantId, UUID deskId);
+
     @Query(value = "SELECT MIN(t.date) as periodStart, MAX(t.date) as periodEnd, " +
                    "MIN(t.start_time) as startTime, MAX(t.end_time) as endTime, " +
                    "MIN(EXTRACT(EPOCH FROM (t.end_time - t.start_time)) / 60)::int as incrementMinutes " +
