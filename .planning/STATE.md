@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
-status: executing
-stopped_at: Paused at 12-03 Task 3 operator checkpoint — benchmark evidence recorded in 12-BENCHMARK.md, awaiting sign-off
-last_updated: "2026-08-13T15:11:43.206Z"
+status: verifying
+stopped_at: Resolved 12-03 Task 3 operator checkpoint — threshold 1 FAILED, phase goal not claimed achieved; cross-agent seat displacement follow-up filed
+last_updated: "2026-08-13T15:17:25.866Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 50
+  completed_plans: 15
+  percent: 75
 ---
 
 # Project State
@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 
 Phase: 12 (atomic-shift-move) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-13 — Phase 12 execution started
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Milestone v1.2 Roadmap
 
@@ -117,6 +117,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 12 Plan 02] AtomicShiftMoveFactory.buildSeatMoves rewrites a pinned agent-day atomically: unassign every currently-held seat the target window doesn't reuse, assign every window seat not already held, skipping no-op pairs
 - [Phase ?]: [Phase 12 Plan 02] MAX_WINDOWS_PER_AGENT_DAY = 8, down-sampled by fixed stride (ceil(size/8)-th element) rather than truncation, so retained candidates spread across span starts and repeated calls select identically
 - [Phase ?]: [Phase 12 Plan 02] Rule 1 fix: AssignSeatMove.getPlanningValues() switched from List.of(toAgent) to Collections.singletonList(toAgent) — List.of rejects null, and unassign moves (toAgent=null) are new in this plan
+- [Phase ?]: Operator verdict (12-03): keep the atomic shift move (correct, kept), but the phase's must-pass median-vs-spread threshold FAILED and the phase goal of 'more hours assigned' is NOT claimed as achieved. Cross-agent seat displacement filed as follow-up.
 
 ### Blockers/Concerns
 
@@ -124,13 +125,13 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. v1.2 Phase 11 (MRG-06) directly targets this by letting spreadsheet-supplied patterns fill the gap.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 - **MDL-02 is the highest-risk item in v1.2** — per-day contracted hours must compose with existing `AgentException` per-date overrides without changing solve behaviour for uniform-hours agents. Sequenced first (Phase 9) to gate parser and merge work.
-- Phase 12 plan 03 (atomic shift move) paused at Task 3 operator checkpoint: 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Awaiting operator verdict — see checkpoint in execution transcript.
+- **Phase 12 must-pass threshold FAILED — phase goal not achieved.** 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Operator ruling (2026-08-13): keep the atomic shift move as committed code (correct, improves hard score, breaks nothing), but do NOT claim the phase goal — record threshold 1 as FAILED rather than the "more hours assigned" goal achieved. Cross-agent seat displacement filed as follow-up (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`, `resolves_phase: 12`) since the 130% conservative-variant data shows seat capacity, not move selection, is the binding constraint at realistic over-allocation. Phase 12 should not be marked complete against its original success criteria on this ruling.
 
 ## Session Continuity
 
-Last session: 2026-08-13T15:11:43.199Z
-Stopped at: Paused at 12-03 Task 3 operator checkpoint — benchmark evidence recorded in 12-BENCHMARK.md, awaiting sign-off
-Resume file: .planning/phases/12-atomic-shift-move/12-03-PLAN.md
+Last session: 2026-08-13T15:17:25.859Z
+Stopped at: Resolved 12-03 Task 3 operator checkpoint — threshold 1 FAILED, phase goal not claimed achieved; cross-agent seat displacement follow-up filed
+Resume file: None
 
 ## Operator Next Steps
 
@@ -142,3 +143,4 @@ Resume file: .planning/phases/12-atomic-shift-move/12-03-PLAN.md
 |------|----------|-------|-------|
 | Phase 12 P01 | 35m | 2 tasks | 6 files |
 | Phase 12 P02 | 55m | 2 tasks | 5 files |
+| Phase 12 P03 | 25m (continuation; +55m prior) | 3 tasks | 5 files |

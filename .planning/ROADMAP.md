@@ -273,7 +273,7 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 - Should honour `breakBlockedHours` and `breakStartAlignment` at generation time so illegal placements are never produced
 - Success must be measured across repeated runs, not one solve: run-to-run variance currently exceeds the effect size of most changes
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
 **Wave 1**
@@ -286,7 +286,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 12-03-PLAN.md — Seeded step-count benchmark (5 baseline vs 5 with-move), recorded evidence and operator sign-off
+- [x] 12-03-PLAN.md — Seeded step-count benchmark (5 baseline vs 5 with-move), recorded evidence and operator sign-off
 
 ---
 
