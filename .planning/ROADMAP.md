@@ -266,6 +266,7 @@ Measured on 2026-08-13, identical settings (400% over-allocation, 15-min increme
 Two independent runs converging on the *identical* -29,810 indicates a structural attractor, not noise — the 80.5h run was the outlier. Two attempts at moving the break-enforcement threshold (to `expectedWorkSlots`, and softening under-allocation) only relocated the wall and were reverted; see `76a715f`.
 
 **Known design constraints for planning:**
+
 - Seats are per-timeslot with a required specialization; a shift move must find free, spec-matching seats across a contiguous window
 - Timefold requires exactly reversible moves — incorrect undo produces corrupted-score bugs that are hard to diagnose
 - Must compose with existing change moves (`unionMoveSelector`), not replace them — fine-grained repair is still needed
@@ -275,9 +276,16 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 12-01-PLAN.md — Tracer: one atomic shift move executes end-to-end under FULL_ASSERT, composed with the existing change/swap selectors
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 12-02-PLAN.md — Enumerate every legal window, rewrite pinned agent-days atomically, bound the move pool
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 12-03-PLAN.md — Seeded step-count benchmark (5 baseline vs 5 with-move), recorded evidence and operator sign-off
 
 ---
