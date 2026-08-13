@@ -132,3 +132,25 @@ unmodified `BreakAwareConstructionTest` regression check.
 - FOUND: src/test/java/com/wfm/solver/AtomicShiftMoveFullAssertTest.java
 - FOUND: commit d03e2a0 (feat(12-01): end-to-end atomic shift move via composite AssignSeatMove)
 - FOUND: commit 7592503 (docs(12-01): correct pinned Timefold version in STATE.md to 1.16.0)
+
+## Post-Merge Gate Correction (orchestrator, commit 776693b)
+
+The plan's Self-Check above passed against `./gradlew test --tests "com.wfm.solver.*"`, but the
+orchestrator's post-merge gate (`./gradlew build`, full suite) found 6 failures: every
+`@SpringBootTest` suite failed to load its ApplicationContext.
+
+Root cause: `solverConfig.xml` declared `<moveListFactoryClass>` before
+`<fixedProbabilityWeight>`. `moveListFactoryConfig` extends `moveSelectorConfig` in the Timefold
+1.16.0 XSD, so all inherited elements — `fixedProbabilityWeight` is the last — must precede the
+extension sequence. The wrong order failed XSD validation inside
+`SolverConfig.createFromXmlResource`, so `TimefoldSolverAutoConfiguration` could not build a
+`SolverConfig` and the Spring context never started.
+
+The ordering was copied verbatim from two XML snippets in `12-RESEARCH.md`, which carried the same
+defect; both snippets were corrected in the same commit so plans 12-02/12-03 cannot re-inherit it.
+
+Detection gap worth carrying forward: no test under `src/test/java/com/wfm/solver/` loads the
+Spring context, so a scoped solver-package run can never catch a `solverConfig.xml` regression.
+Any future change to that file must be validated with the full suite.
+
+Post-fix state: `./gradlew build` exit 0, 177 tests, 0 failures.
