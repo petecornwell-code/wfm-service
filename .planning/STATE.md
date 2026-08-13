@@ -5,15 +5,15 @@ milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
 status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-08-13T13:52:29.225Z"
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-08-13T14:43:45.583Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 50
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 ## Current Position
 
 Phase: 12 (atomic-shift-move) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-08-13 — Phase 12 execution started
 
-Progress: [█████████░] 87%
+Progress: [█████████░] 93%
 
 ## Milestone v1.2 Roadmap
 
@@ -113,6 +113,10 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 12 Plan 01] Explicit unionMoveSelector re-declares changeMoveSelector/swapMoveSelector alongside AtomicShiftMoveFactory — Timefold 1.16.0 only auto-builds the default change+swap union when localSearch declares no moveSelector at all
 - [Phase ?]: [Phase 12 Plan 01] AssignSeatMove implements only doMoveOnGenuineVariables and never overrides createUndoMove — deprecated for removal since 1.16.0; framework auto-generates undo
 - [Phase ?]: [Phase 12 Plan 01] ShiftWindowFinder stays a plain Java class with zero Timefold imports, mirroring ScheduleConstraintProvider's HALF_UP vs CEILING rounding modes exactly rather than unifying them
+- [Phase ?]: [Phase 12 Plan 02] ShiftWindowFinder.findWindows returns every legal (span start, break offset) pair ordered by span start then break offset ascending, not just the earliest — required for 12-03's seeded benchmark reproducibility
+- [Phase ?]: [Phase 12 Plan 02] AtomicShiftMoveFactory.buildSeatMoves rewrites a pinned agent-day atomically: unassign every currently-held seat the target window doesn't reuse, assign every window seat not already held, skipping no-op pairs
+- [Phase ?]: [Phase 12 Plan 02] MAX_WINDOWS_PER_AGENT_DAY = 8, down-sampled by fixed stride (ceil(size/8)-th element) rather than truncation, so retained candidates spread across span starts and repeated calls select identically
+- [Phase ?]: [Phase 12 Plan 02] Rule 1 fix: AssignSeatMove.getPlanningValues() switched from List.of(toAgent) to Collections.singletonList(toAgent) — List.of rejects null, and unassign moves (toAgent=null) are new in this plan
 
 ### Blockers/Concerns
 
@@ -123,8 +127,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-13T13:52:29.218Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-08-13T14:43:36.735Z
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -136,3 +140,4 @@ Resume file: None
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 12 P01 | 35m | 2 tasks | 6 files |
+| Phase 12 P02 | 55m | 2 tasks | 5 files |

@@ -273,7 +273,7 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 - Should honour `breakBlockedHours` and `breakStartAlignment` at generation time so illegal placements are never produced
 - Success must be measured across repeated runs, not one solve: run-to-run variance currently exceeds the effect size of most changes
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -282,7 +282,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 12-02-PLAN.md — Enumerate every legal window, rewrite pinned agent-days atomically, bound the move pool
+- [x] 12-02-PLAN.md — Enumerate every legal window, rewrite pinned agent-days atomically, bound the move pool
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
