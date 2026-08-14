@@ -3,6 +3,15 @@ name: Deploy
 on:
   push:
     branches: [main, claude/create-system-specification-451ge]
+    # Planning artifacts cannot change the deployed artifact: the Dockerfile copies
+    # only gradlew, gradle/, build.gradle, settings.gradle and src/, and .dockerignore
+    # excludes *.md outright. A .planning-only push previously rebuilt the image and
+    # rolled ECS — replacing a healthy task to ship a text file.
+    #
+    # This skips the whole workflow, test gate included, but ONLY when every changed
+    # file matches. A push touching .planning AND source still runs in full.
+    paths-ignore:
+      - '.planning/**'
 
 permissions:
   contents: read
