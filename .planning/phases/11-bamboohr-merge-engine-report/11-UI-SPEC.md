@@ -15,6 +15,8 @@ created: 2026-08-18
 
 **Scope framing (from CONTEXT.md D-12):** this is a small, additive extension to an *existing* Upload Results modal, not a new page or a new design system. The whole surrounding frontend (`frontend/src/pages/*.tsx`) is plain React 19 with inline `style={{}}` objects and one shared `index.css` — no Tailwind, no component library, no shadcn, no icon library anywhere in `frontend/src`. Everything in this contract deliberately reuses hex values, font sizes, and layout idioms already present in that codebase rather than inventing new ones — see the shadcn gate decision immediately below.
 
+**Primary visual anchor:** when both new sections render, the green **"Newly eligible for scheduling" callout is the primary focal point** of the modal — it is the milestone's headline win (D-14, MRG-06) and uses the only saturated block-color (success green) among the modal's new additions, while the Merge Report table stays neutral gray/white with small colored badges. Layout order follows this priority: Eligibility callout renders **first** (directly below the per-desk rollup, above the Merge Report table), so the operator's eye lands on it before scanning the denser divergence table. The Merge Report table is the secondary, reference-detail element — dense and scannable, not attention-grabbing — consistent with its role as backup evidence for what the callout already announced.
+
 ---
 
 ## Design System
@@ -39,15 +41,17 @@ Declared values (must be multiples of 4):
 |-------|-------|-------|
 | xs | 4px | Badge/pill internal vertical padding, tight inline gaps |
 | sm | 8px | Compact element spacing, badge horizontal padding, list-item gaps |
+| block | 12px | Block/card padding for boxed sections (Merge Report block, "Newly eligible for scheduling" callout, and the pre-existing sibling "Warnings" box and "Upload Desk Assignments" panel, `ClientManagement.tsx:345,518`) |
 | md | 16px | Default block spacing, modal internal padding (existing: `padding: '1.5rem'` on the modal itself stays unchanged) |
 | lg | 24px | Section padding (unused by this phase's additions — reserved) |
 | xl | 32px | Layout gaps (unused by this phase's additions — reserved) |
 | 2xl | 48px | Major section breaks (unused by this phase's additions — reserved) |
 | 3xl | 64px | Page-level spacing (unused by this phase's additions — reserved) |
 
-**Exceptions:**
-- **12px (0.75rem)** — established block-padding convention already used by the sibling "Warnings" box and the "Upload Desk Assignments" panel in this same file (`ClientManagement.tsx:345,518`). The new "Merge Report" section and the "Newly eligible for scheduling" callout both use this same 12px block padding so the three sibling boxes read as one family, not three different spacing systems.
-- **Modal width: 600px → ~760px.** The existing Upload Results modal is fixed at `width: '600px'` (`ClientManagement.tsx:490`). The Merge Report table needs 6 columns (Agent, Field, BambooHR value, Sheet value, Outcome) which crowds at 600px. Widen the modal's fixed width to **760px** — a content-driven adjustment to the existing modal, not a new modal, not a new breakpoint system. All other modal styling (border-radius, padding, max-height 80vh) stays unchanged.
+**12px is a named token (`block`), not an exception.** Verified directly against `ClientManagement.tsx:345,518`: the app's existing boxed-section convention (Upload panel, Warnings box) already uses `0.75rem`/12px block padding, not 16px or 8px. Rounding this phase's new sections to 8px or 16px would visually break alignment against those two panels that ship today, which the checker explicitly warned against. This project's spacing system therefore genuinely includes 12px alongside the 4/8/16/24/32/48/64 set — it is declared here as an intentional, permanent addition (the `block` token), not a one-off deviation. The Merge Report section and the "Newly eligible for scheduling" callout use this same `block` (12px) padding so all three boxed sections in this modal read as one family.
+
+**Non-spacing layout exception:**
+- **Modal width: 600px → ~760px.** The existing Upload Results modal is fixed at `width: '600px'` (`ClientManagement.tsx:490`). The Merge Report table needs 6 columns (Agent, Field, BambooHR value, Sheet value, Outcome) which crowds at 600px. Widen the modal's fixed width to **760px** — a content-driven adjustment to the existing modal, not a new modal, not a new breakpoint system. All other modal styling (border-radius, padding, max-height 80vh) stays unchanged. (This is a component-width value, not a spacing-scale token, so it is not part of the spacing scale table above.)
 
 ---
 
