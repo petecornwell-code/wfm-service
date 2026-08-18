@@ -4,15 +4,15 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
-status: verifying
+status: executing
 stopped_at: Phase 11 PARTIALLY planned — 11-01-PLAN.md written (MRG-01/02/04/05/07); 11-02-PLAN.md still owed for MRG-03 + MRG-06, blocked on opus 529 capacity. Do NOT execute phase 11 until plan 02 exists.
-last_updated: "2026-08-18T20:12:01.438Z"
+last_updated: "2026-08-18T20:38:47.639Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 17
+  total_plans: 18
   completed_plans: 15
   percent: 75
 ---
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 
 Phase: 12 (atomic-shift-move) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-08-13 — Phase 12 execution started
 
 Progress: [██████████] 100%
