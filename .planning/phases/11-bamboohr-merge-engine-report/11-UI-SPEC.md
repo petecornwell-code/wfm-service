@@ -40,15 +40,14 @@ Declared values (must be multiples of 4):
 | Token | Value | Usage |
 |-------|-------|-------|
 | xs | 4px | Badge/pill internal vertical padding, tight inline gaps |
-| sm | 8px | Compact element spacing, badge horizontal padding, list-item gaps |
-| block | 12px | Block/card padding for boxed sections (Merge Report block, "Newly eligible for scheduling" callout, and the pre-existing sibling "Warnings" box and "Upload Desk Assignments" panel, `ClientManagement.tsx:345,518`) |
+| sm | 8px | Compact element spacing, badge horizontal padding, list-item gaps; also the Merge Report section's and "Newly eligible for scheduling" callout's block padding (see below) |
 | md | 16px | Default block spacing, modal internal padding (existing: `padding: '1.5rem'` on the modal itself stays unchanged) |
 | lg | 24px | Section padding (unused by this phase's additions — reserved) |
 | xl | 32px | Layout gaps (unused by this phase's additions — reserved) |
 | 2xl | 48px | Major section breaks (unused by this phase's additions — reserved) |
 | 3xl | 64px | Page-level spacing (unused by this phase's additions — reserved) |
 
-**12px is a named token (`block`), not an exception.** Verified directly against `ClientManagement.tsx:345,518`: the app's existing boxed-section convention (Upload panel, Warnings box) already uses `0.75rem`/12px block padding, not 16px or 8px. Rounding this phase's new sections to 8px or 16px would visually break alignment against those two panels that ship today, which the checker explicitly warned against. This project's spacing system therefore genuinely includes 12px alongside the 4/8/16/24/32/48/64 set — it is declared here as an intentional, permanent addition (the `block` token), not a one-off deviation. The Merge Report section and the "Newly eligible for scheduling" callout use this same `block` (12px) padding so all three boxed sections in this modal read as one family.
+**Block padding for the two new boxed sections: `sm` (8px), not 12px.** Corrected after re-reading the cited evidence directly: `ClientManagement.tsx:345` (the green Upload panel) does use `padding: '0.75rem'` (12px), but `ClientManagement.tsx:518` (the Warnings box) uses `padding: '0.5rem'` — **8px**, not 12px. Only one existing site uses 12px; it is an outlier against the standard set, not an established convention, and is not propagated into new sections. The Merge Report block and the "Newly eligible for scheduling" callout both use **8px (`sm`)** block padding instead, matching `ClientManagement.tsx:518`'s Warnings box exactly — the nearest structural sibling to the new Merge Report section (both are conditionally-rendered informational boxes inserted into the same modal, as opposed to the Upload panel, which is a persistent action panel outside the modal). This keeps the Spacing Scale strictly to the declared 4/8/16/24/32/48/64 set with no non-standard values.
 
 **Non-spacing layout exception:**
 - **Modal width: 600px → ~760px.** The existing Upload Results modal is fixed at `width: '600px'` (`ClientManagement.tsx:490`). The Merge Report table needs 6 columns (Agent, Field, BambooHR value, Sheet value, Outcome) which crowds at 600px. Widen the modal's fixed width to **760px** — a content-driven adjustment to the existing modal, not a new modal, not a new breakpoint system. All other modal styling (border-radius, padding, max-height 80vh) stays unchanged. (This is a component-width value, not a spacing-scale token, so it is not part of the spacing scale table above.)
