@@ -118,7 +118,17 @@ Plans:
   5. An agent whose working pattern BambooHR doesn't know but the spreadsheet supplies becomes solver-eligible — `workingDaysKnown` resolves true and the agent is no longer filtered out
   6. If the BambooHR sync fails during upload (e.g. 503 rate limit), the operator sees a clear message and no partial merge is written
 
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
+Plans:
+
+**Wave 1** *(tracer — fresh-sync merge path end to end)*
+
+- [ ] 11-01-PLAN.md — Fresh-sync-before-merge upload path, per-field identity precedence, merge report, sync-failure abort (MRG-01, MRG-02, MRG-04, MRG-05, MRG-07)
+
+**Wave 2** *(expansion — blocked on Wave 1)*
+
+- [ ] 11-02-PLAN.md — Spreadsheet-sourced solver eligibility with refresh downgrade guard, dated-vs-recurring PTO arbitration, working-pattern report row (MRG-03, MRG-06)
+
 **UI hint**: yes
 
 ## Progress
