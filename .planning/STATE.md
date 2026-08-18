@@ -5,14 +5,14 @@ milestone_name: Unified Agent Provisioning
 current_phase: 12
 current_phase_name: atomic-shift-move
 status: verifying
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-08-18T16:04:36.262Z"
+stopped_at: Phase 11 PARTIALLY planned — 11-01-PLAN.md written (MRG-01/02/04/05/07); 11-02-PLAN.md still owed for MRG-03 + MRG-06, blocked on opus 529 capacity. Do NOT execute phase 11 until plan 02 exists.
+last_updated: "2026-08-18T20:12:01.438Z"
 last_activity: 2026-08-13
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 15
+  total_plans: 17
   completed_plans: 15
   percent: 75
 ---
@@ -129,9 +129,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-18T16:04:36.249Z
-Stopped at: Phase 11 UI-SPEC approved
-Resume file: .planning/phases/11-bamboohr-merge-engine-report/11-UI-SPEC.md
+Last session: 2026-08-18T20:12:01.428Z
+Stopped at: Phase 11 PARTIALLY planned — 11-01-PLAN.md written (MRG-01/02/04/05/07); 11-02-PLAN.md still owed for MRG-03 + MRG-06, blocked on opus 529 capacity. Do NOT execute phase 11 until plan 02 exists.
+Resume file: .planning/phases/11-bamboohr-merge-engine-report/11-01-PLAN.md
 
 ## Operator Next Steps
 
