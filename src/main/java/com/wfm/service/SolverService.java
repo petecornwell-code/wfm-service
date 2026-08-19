@@ -57,6 +57,16 @@ public class SolverService {
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final AgentEligibilityService agentEligibilityService;
 
+    // D-09/D-10: same window BambooRefreshService uses to sync PTO from BambooHR. Field
+    // injection (not a constructor parameter) so every existing SolverService test — which
+    // either calls the static helpers directly or constructs the service with its current
+    // parameter list — keeps working untouched.
+    @Value("${bamboohr.time-off.lookahead-weeks:8}")
+    private int bambooLookaheadWeeks;
+
+    @Value("${bamboohr.time-off.lookback-weeks:12}")
+    private int bambooLookbackWeeks;
+
     public SolverService(@Value("${solver.time-limit:PT5M}") Duration defaultTimeLimit,
                          InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
@@ -149,6 +159,14 @@ public class SolverService {
         // Load per-day contracted hours for this desk (D-09; MDL-02 resolution authority)
         List<AgentDayHours> agentDayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
+        // D-05: a weekday the sheet marks as worked un-blocks a stale BambooHR field-4517
+        // MANDATORY row for that weekday. Runs against the persisted rows ONLY — before any
+        // recurring fact from the spreadsheet has been added below — so a spreadsheet-sourced
+        // recurring MANDATORY fact can never be mistaken for a BambooHR one.
+        int persistedBeforeUnblock = allDaysOff.size();
+        unblockSheetWorkedDays(allDaysOff, agentDayHours);
+        int unblockedCount = persistedBeforeUnblock - allDaysOff.size();
+
         // Materialise the recurring MANDATORY/PTO labels captured by the desk-assignment upload as
         // AgentDayOff facts, so they flow into EVERYTHING that consults days off — most importantly
         // the "Agent day off" HARD constraint, which joins AgentDayOff problem facts directly
@@ -158,8 +176,31 @@ public class SolverService {
         // schedule.setAgentDaysOff, so the map, the pre-solve validation and the constraint all
         // see one consistent set. Populating only the map left the hard constraint blind and an
         // agent marked MANDATORY on the spreadsheet was still scheduled (UAT 2026-08-12).
-        allDaysOff.addAll(buildRecurringDaysOff(tenantId, agentDayHours,
-                schedule.getPeriodStartDate(), schedule.getPeriodEndDate()));
+        //
+        // D-09: before joining allDaysOff, the recurring facts pass through window arbitration —
+        // BambooHR's dated PTO governs every date inside its synced window entirely, so a
+        // recurring weekly PTO label asserts nothing there; the persisted BambooHR PTO rows
+        // loaded above already supply whatever blocks. Outside the window the recurring pattern
+        // stands. Same window bounds BambooRefreshService itself syncs against, so the solver and
+        // the refresh never disagree about what "inside the window" means. D-10: nothing here is
+        // persisted — both passes run on the in-memory list and are re-derived on every solve.
+        LocalDate bambooWindowFrom = LocalDate.now().minusWeeks(bambooLookbackWeeks);
+        LocalDate bambooWindowTo = LocalDate.now().plusWeeks(bambooLookaheadWeeks);
+        List<AgentDayOff> recurringDaysOff = buildRecurringDaysOff(tenantId, agentDayHours,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        int recurringBeforeArbitration = recurringDaysOff.size();
+        List<AgentDayOff> arbitratedRecurringDaysOff =
+                arbitratePtoAgainstBambooWindow(recurringDaysOff, bambooWindowFrom, bambooWindowTo);
+        int suppressedPtoCount = recurringBeforeArbitration - arbitratedRecurringDaysOff.size();
+
+        // Counts only at INFO — no agent name, no email, no date list (T-11-11). Per-agent detail
+        // is not logged at all here; WorkingDaysParser's DEBUG-only convention for raw values has
+        // no per-agent equivalent to emit since this arbitration only ever produces counts.
+        log.info("PTO/pattern arbitration for desk {} — suppressed {} recurring PTO fact(s) inside "
+                        + "the BambooHR window, un-blocked {} MANDATORY row(s) for sheet-worked weekdays",
+                deskId, suppressedPtoCount, unblockedCount);
+
+        allDaysOff.addAll(arbitratedRecurringDaysOff);
 
         // Load preferences for this desk
         List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
@@ -1057,6 +1098,71 @@ public class SolverService {
             }
         }
         return facts;
+    }
+
+    /**
+     * D-09: BambooHR's dated PTO governs every date inside its synced window entirely — a
+     * recurring weekly PTO label from the spreadsheet asserts nothing there, because the
+     * persisted BambooHR PTO rows loaded earlier in {@link #startSolve} already supply whatever
+     * blocks that date. Outside the window BambooHR has no visibility, so the recurring pattern
+     * stands.
+     *
+     * MANDATORY is deliberately out of scope: MRG-03's precedence rule names PTO only, and a
+     * spreadsheet MANDATORY day is an operator assertion about the week that D-05 makes
+     * authoritative regardless of BambooHR's window.
+     *
+     * The window is a closed interval — a date equal to either {@code windowFrom} or
+     * {@code windowTo} counts as inside it, so BambooHR governs it (D-09). The input list is not
+     * mutated and relative order is preserved, so two solves over the same data produce the same
+     * fact sequence.
+     */
+    static List<AgentDayOff> arbitratePtoAgainstBambooWindow(List<AgentDayOff> recurringFacts,
+                                                               LocalDate windowFrom, LocalDate windowTo) {
+        List<AgentDayOff> result = new ArrayList<>();
+        for (AgentDayOff fact : recurringFacts) {
+            if (fact.getType() != DayOffType.PTO) {
+                result.add(fact);
+                continue;
+            }
+            boolean insideWindow = !fact.getDate().isBefore(windowFrom) && !fact.getDate().isAfter(windowTo);
+            if (!insideWindow) {
+                result.add(fact);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * D-05: a weekday the spreadsheet states as worked un-blocks a stale BambooHR field-4517
+     * MANDATORY {@link AgentDayOff} row for that weekday — an operator correcting a wrong
+     * BambooHR week via the sheet is no longer silently re-blocked by the row
+     * {@code BambooRefreshService.persistRefreshData} generated.
+     *
+     * Only MANDATORY rows are removable. A persisted PTO row is a dated fact about a specific
+     * absence and is never un-blocked by a weekly pattern — MRG-03/D-05's precedence rule is
+     * scoped to PTO arbitration alone, not to this un-block pass. An agent with no
+     * {@code agent_day_hours} rows at all has an empty worked set, so none of their persisted
+     * rows are touched — the sheet has said nothing about their week.
+     *
+     * "Worked" means the sheet's day-off type is null for that weekday, the same predicate
+     * {@link #buildRecurringDaysOff} uses to skip a normal working day — which per the
+     * 2026-08-18 operator revision includes an explicit zero-hours cell: zero means no
+     * contracted hours, not unavailability.
+     *
+     * Mutates {@code persistedDaysOff} in place by removing entries; does not read or modify
+     * {@code agentDayHours}.
+     */
+    static void unblockSheetWorkedDays(List<AgentDayOff> persistedDaysOff, List<AgentDayHours> agentDayHours) {
+        Map<UUID, Set<DayOfWeek>> workedWeekdaysByAgent = new HashMap<>();
+        for (AgentDayHours h : agentDayHours) {
+            if (h.getDayOffType() == null) {
+                workedWeekdaysByAgent.computeIfAbsent(h.getAgent().getId(), k -> new HashSet<>())
+                        .add(h.getDayOfWeek());
+            }
+        }
+        persistedDaysOff.removeIf(d -> d.getType() == DayOffType.MANDATORY
+                && workedWeekdaysByAgent.getOrDefault(d.getAgent().getId(), Set.of())
+                        .contains(d.getDate().getDayOfWeek()));
     }
 
     /**
