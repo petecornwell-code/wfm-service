@@ -426,22 +426,29 @@ The D-15 provenance marker follows this exact style — a new nullable/defaulted
 
 **If this table is empty:** N/A — three assumptions above need planner/operator confirmation before becoming locked decisions; everything else in this document is `[VERIFIED]` against source read directly in this session.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three questions below were resolved during Phase 11 planning (2026-08-19). Each carries a
+> **RESOLVED** line recording the outcome and where it landed. The original question text is left
+> intact so the reasoning that produced the answer stays readable.
 
 1. **Where does the D-05 un-blocking mechanism actually execute — merge-write time or solve time?**
    - What we know: BambooHR's field-4517 MANDATORY days live in `AgentDayOff` (written only by `BambooRefreshService.persistRefreshData`, which D-03 forbids the upload from calling). The sheet's pattern lives in `agent_day_hours` (written by the upload/merge engine). The solver already reads both tables when assembling `allDaysOff` (`SolverService.java:139-178`).
    - What's unclear: whether "the sheet un-blocks a BambooHR day off" (D-05) should be implemented by having the merge engine actively delete/suppress stale `AgentDayOff` rows for re-imported agents, or by teaching the solver's day-off assembly to prefer `agent_day_hours` over `AgentDayOff` for the same (agent, weekday) when both exist.
    - Recommendation: solve-time arbitration (matches D-09's PTO-window arbitration, which is explicitly solve-time and explicitly avoids new storage per D-10) — but this must be confirmed as a plan-time decision, not assumed silently. See Assumption A1.
+   - **RESOLVED (2026-08-19) — deliberately NOT auto-resolved.** The recommendation was honoured but *not* assumed: because D-05 is rated a **one-way door**, `11-02-PLAN.md` Task 2 is a `checkpoint:decision gate="blocking"` placed immediately before Task 3, so a human confirms the choice before the door closes. The plan proposes **solve-time** arbitration — `SolverService.arbitratePtoAgainstBambooWindow` and `unblockSheetWorkedDays`, in-memory only per D-10, inserted before `SolverService.java:161` so the day-off map, pre-solve validation and hard constraint all agree. `11-02-PLAN.md` is `autonomous: false` as a result. The residual risk that BambooHR silence is indistinguishable from "no refresh ever ran" is carried as flagged assumption **A-02-1** and threat row **T-11-13**, and surfaced in the checkpoint's `<context>`.
 
 2. **Should `refreshInProgress` (the per-desk guard in `BambooRefreshService`) interact with the upload's batched fetch?**
    - What we know: `refreshDeskAgents` guards against concurrent refreshes of the *same desk* via `refreshInProgress.putIfAbsent(deskId, true)`. D-03 says the upload sync is read-only and does not call `persistRefreshData`, so it never touches this guard today.
    - What's unclear: if an operator clicks "Refresh from BambooHR" on a desk (`DeskAgentController.java:83-85`) at the same moment they upload a workbook touching that same desk, both fetch from BambooHR concurrently with no coordination. This is a pre-existing race in the codebase's design (not introduced by Phase 11), but Phase 11 adds a second, more frequent trigger for BambooHR fetches, raising the odds of hitting it.
    - Recommendation: out of scope to fix in Phase 11 given the CONTEXT doesn't mention it and MRG-07's failure mode (503) already covers the rate-limit consequence of concurrent fetches; worth a one-line note in the plan's risk section rather than new synchronization code.
+   - **RESOLVED (2026-08-19) — carried, not fixed.** Recommendation accepted. `11-01-PLAN.md:228-229` records it explicitly as "Open Question 2 (carried, not fixed)": an upload-triggered sync does not acquire `refreshInProgress` and never throws `RefreshInProgressException`, so a manual desk refresh and an upload can fetch concurrently. This pre-existing race is **not** introduced by Phase 11 and no synchronization code is added. It is pinned as a resolved edge in `11-01-PLAN.md:52` (`MRG-01/adjacency`, verification: explicit) rather than left as prose, so the verifier checks the documented behaviour instead of silently assuming coordination exists.
 
 3. **What HTTP timeout should the batched upload-sync fetch use?**
    - What we know: D-04 says "synchronous upload with a longer timeout" but does not specify a value. `HttpBambooHRClient`'s current timeout configuration was not located in this research pass (out of the phase's cited file list).
    - What's unclear: the concrete timeout value/config key.
    - Recommendation: planner should locate `HttpBambooHRClient`'s HTTP client configuration during planning and decide whether the existing timeout is sufficient for a whole-tenant fetch (potentially larger than a single desk's `listEmployees` call) or needs an explicit override for this endpoint.
+   - **RESOLVED (2026-08-19) — there was no timeout to bump.** Located during planning and recorded in `11-01-PLAN.md:226`: `HttpBambooHRClient.java:48` calls `RestClient.create()` with **no request factory**, so today the client has *no connect or read timeout at all* — a hung BambooHR call would hang the upload indefinitely. D-04's "longer timeout" therefore needed a concrete value, not an increase. `11-01-PLAN.md` Task 3 replaces the bare `create()` with a builder installing an explicit request factory, both values `@Value`-injected: `bamboohr.http.connect-timeout-seconds` (default **10**) and `bamboohr.http.read-timeout-seconds` (default **120**). The 120 s read default is D-04's "longer timeout" made concrete and sized for a whole-tenant `listEmployees` fetch.
 
 ## Environment Availability
 
