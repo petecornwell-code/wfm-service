@@ -28,6 +28,15 @@ public class ScheduleOutputService {
 
     private static final Logger log = LoggerFactory.getLogger(ScheduleOutputService.class);
 
+    /**
+     * Width of the start-time honour band in {@link #buildPreferenceReport}, as a multiple of
+     * the schedule's timeslot increment. Expressed in increments rather than fixed minutes so
+     * the band means the same thing on a 15-, 30- or 60-minute schedule, and so it lines up
+     * with {@code ScheduleConstraintProvider.honourPreferredStartTime}, which charges deviation
+     * in whole increments.
+     */
+    private static final int START_TOLERANCE_INCREMENTS = 1;
+
     private final SolutionManager<Schedule, HardSoftScore> solutionManager;
 
     public ScheduleOutputService(SolverFactory<Schedule> solverFactory) {
@@ -187,6 +196,22 @@ public class ScheduleOutputService {
 
     /**
      * 8.3 Preference Report — per-agent per-day preference resolution and honour flags.
+     *
+     * <p><b>Amends spec §8.3.</b> The start-time flag was {@code actualStart >= preferredStart},
+     * which treated any amount of lateness as honoured. That matched the solver while
+     * {@code honourPreferredStartTime} penalised only earliness, but the constraint is now
+     * two-directional, so the old flag would have reported an agent placed three hours late as
+     * honoured while the solver was charging three increments for it. The flag is now a
+     * symmetric band of {@link #START_TOLERANCE_INCREMENTS} increment(s) either side of the
+     * preference.
+     *
+     * <p>A band rather than an exact match because the constraint rounds deviation up: a
+     * preference no slot boundary can hit (09:30 against hourly slots) is never exactly
+     * satisfiable, and an exact-match flag would report those agents as permanently
+     * dishonoured however well they were placed. One increment is the smallest band that
+     * admits the best available placement in that case.
+     *
+     * <p>The break flag is unchanged — {@link #breaksOverlapPreferred} was already symmetric.
      */
     public PreferenceReport buildPreferenceReport(Schedule schedule) {
         // Group assignments by agent + date, compute actual start times and breaks
@@ -249,12 +274,13 @@ public class ScheduleOutputService {
                     actualBreaks.getOrDefault(agentId, Map.of()).get(date),
                     prefBreak);
 
-            // Start time honoured: actualStartTime >= preferredStartTime (spec §8.3)
+            // Start time honoured: actual start within START_TOLERANCE_INCREMENTS of the
+            // preference, in either direction (amends spec §8.3 — see method javadoc)
             boolean startOk;
             if (prefStart == null) {
                 startOk = true;
             } else {
-                startOk = actStart != null && !actStart.isBefore(prefStart);
+                startOk = withinStartTolerance(actStart, prefStart, schedule.getIncrementMinutes());
             }
             if (prefStart != null) {
                 totalFields++;
@@ -297,6 +323,19 @@ public class ScheduleOutputService {
                 totalPrefs, startHonoured, breakHonoured, overallPct);
 
         return new PreferenceReport(entries, summary);
+    }
+
+    /**
+     * Whether an actual shift start sits inside the honour band around a preferred start.
+     * Symmetric, and measured in minutes against a band derived from the schedule's own
+     * increment. An agent who was not scheduled at all that day has no start to compare and
+     * is not honoured. See {@link #buildPreferenceReport} for why the band exists.
+     */
+    private boolean withinStartTolerance(LocalTime actualStart, LocalTime preferredStart,
+                                         int incrementMinutes) {
+        if (actualStart == null) return false;
+        long deviationMinutes = Math.abs(ChronoUnit.MINUTES.between(preferredStart, actualStart));
+        return deviationMinutes <= (long) incrementMinutes * START_TOLERANCE_INCREMENTS;
     }
 
     /**
