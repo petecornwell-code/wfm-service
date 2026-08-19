@@ -51,6 +51,10 @@ public class Agent {
     @Column(name = "working_days_known", nullable = false)
     private boolean workingDaysKnown = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "working_days_source", nullable = false, length = 20)
+    private WorkingDaysSource workingDaysSource = WorkingDaysSource.BAMBOOHR;
+
     @Column(name = "last_refreshed_at")
     private OffsetDateTime lastRefreshedAt;
 
@@ -111,6 +115,9 @@ public class Agent {
 
     public boolean isWorkingDaysKnown() { return workingDaysKnown; }
     public void setWorkingDaysKnown(boolean workingDaysKnown) { this.workingDaysKnown = workingDaysKnown; }
+
+    public WorkingDaysSource getWorkingDaysSource() { return workingDaysSource; }
+    public void setWorkingDaysSource(WorkingDaysSource workingDaysSource) { this.workingDaysSource = workingDaysSource; }
 
     public OffsetDateTime getLastRefreshedAt() { return lastRefreshedAt; }
     public void setLastRefreshedAt(OffsetDateTime lastRefreshedAt) { this.lastRefreshedAt = lastRefreshedAt; }

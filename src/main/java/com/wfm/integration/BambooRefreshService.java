@@ -83,6 +83,18 @@ public class BambooRefreshService {
     }
 
     /**
+     * D-15: a routine BambooHR refresh must never downgrade a pattern the spreadsheet already
+     * supplied. Returns true only when the agent's working-days pattern is still owned by
+     * BambooHR ({@link WorkingDaysSource#BAMBOOHR}) — a spreadsheet-sourced agent
+     * ({@link WorkingDaysSource#SPREADSHEET}) keeps {@code workingDaysKnown} true across every
+     * future refresh, however blank/Variable BambooHR's own field 4517 stays. This method never
+     * assigns {@code workingDaysSource} itself — only the upload path does that (D-05/D-15).
+     */
+    static boolean shouldDowngradeWorkingDaysKnown(Agent agent) {
+        return agent.getWorkingDaysSource() != WorkingDaysSource.SPREADSHEET;
+    }
+
+    /**
      * Refresh desk agents from BambooHR.
      * API calls happen BEFORE the transaction boundary to avoid holding a DB connection
      * open during potentially slow external HTTP calls.
@@ -270,10 +282,18 @@ public class BambooRefreshService {
                     WorkingDaysParser.parseWorkingDays(emp.customWorkingdays());
 
             if (workingDaysOpt.isEmpty()) {
-                // Data gap: blank or Variable customWorkingdays — exclude from solver (D-07)
+                // Data gap: blank or Variable customWorkingdays. dataGapCount describes
+                // BambooHR's data quality regardless of what happens next, so it stays
+                // unconditional. The downgrade itself is guarded (D-15): a pattern the
+                // spreadsheet already supplied must never be silently reclaimed by a
+                // routine refresh (the UAT 2026-08-12 hazard) — BambooRefreshService never
+                // assigns workingDaysSource itself, so only the upload can ever move an
+                // agent back under BambooHR ownership.
                 dataGapCount++;
-                agent.setWorkingDaysKnown(false);
-                agentRepository.save(agent);
+                if (shouldDowngradeWorkingDaysKnown(agent)) {
+                    agent.setWorkingDaysKnown(false);
+                    agentRepository.save(agent);
+                }
                 continue;
             }
 

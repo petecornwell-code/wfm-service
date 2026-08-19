@@ -483,6 +483,7 @@ export interface DeskAssignmentUploadResult {
   warnings: string[]
   skippedSheets: SkippedSheet[]
   mergeReport: MergeReportEntry[]
+  newlyEligibleAgents: string[]
 }
 
 // --- Job Title Config ---

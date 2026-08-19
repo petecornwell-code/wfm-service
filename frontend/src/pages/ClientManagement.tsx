@@ -514,6 +514,19 @@ export default function ClientManagement() {
                 </ul>
               </div>
             )}
+            {uploadResult.newlyEligibleAgents.length > 0 && (
+              <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>Newly eligible for scheduling</div>
+                <div style={{ fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                  {uploadResult.newlyEligibleAgents.length} agent{uploadResult.newlyEligibleAgents.length !== 1 ? 's' : ''} whose working pattern BambooHR doesn't know {uploadResult.newlyEligibleAgents.length !== 1 ? 'are' : 'is'} now solver-eligible from the uploaded sheet:
+                </div>
+                <ul style={{ fontSize: '0.85rem', margin: 0, paddingLeft: '1.25rem' }}>
+                  {uploadResult.newlyEligibleAgents.map((name: string, idx: number) => (
+                    <li key={idx}>{name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {uploadResult.mergeReport.length > 0 && (
               <div style={{ marginTop: '0.75rem' }}>
                 <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>

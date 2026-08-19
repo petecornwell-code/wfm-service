@@ -11,6 +11,7 @@ import com.wfm.model.AgentDayHours;
 import com.wfm.model.DayOffType;
 import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
+import com.wfm.model.WorkingDaysSource;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentPreferenceRepository;
@@ -96,6 +97,10 @@ public class DeskAssignmentUploadService {
         List<String> warnings = new ArrayList<>();
         List<SheetSummary> sheetSummaries = new ArrayList<>();
         List<MergeReportEntry> mergeReport = new ArrayList<>();
+        // MRG-06/D-14: names of agents whose workingDaysKnown flipped false-to-true during
+        // this upload. Declared outside the transactionTemplate lambda so it stays effectively
+        // final and survives it (mirrors mergeReport above).
+        List<String> newlyEligibleAgents = new ArrayList<>();
 
         // Pre-load all desks for this tenant keyed by name (case-insensitive). Also keyed by
         // the Excel-safe sheet name WorkbookUtil.createSafeSheetName(...) would produce for
@@ -480,7 +485,17 @@ public class DeskAssignmentUploadService {
                     // every day of the week. On a live desk that left 6 of 14 agents schedulable
                     // and made the enriched upload pointless for the rest (found in UAT 2026-08-12;
                     // the ~24%-parseable risk recorded in PROJECT.md).
+                    //
+                    // MRG-06/D-14: capture the PRE-upload flag before mutating it -- reading after
+                    // the setter would make the newly-eligible list unconditionally empty.
+                    boolean wasWorkingDaysKnown = agent.isWorkingDaysKnown();
                     agent.setWorkingDaysKnown(true);
+                    if (!wasWorkingDaysKnown) {
+                        newlyEligibleAgents.add(agent.getName());
+                    }
+                    // D-15: only the upload ever assigns this column, so a later BambooHR refresh
+                    // can never reclaim ownership of a week the operator just supplied.
+                    agent.setWorkingDaysSource(WorkingDaysSource.SPREADSHEET);
 
                     agentRepository.save(agent);
 
@@ -514,7 +529,7 @@ public class DeskAssignmentUploadService {
 
         return new DeskAssignmentUploadResult(
                 assigned.size(), skipped.size(), assigned, skipped,
-                sheetSummaries, warnings, skippedSheets, mergeReport);
+                sheetSummaries, warnings, skippedSheets, mergeReport, newlyEligibleAgents);
     }
 
     private void clearDesk(long tenantId, UUID deskId) {
@@ -590,7 +605,8 @@ public class DeskAssignmentUploadService {
             List<SheetSummary> sheetSummaries,
             List<String> warnings,
             List<SkippedSheet> skippedSheets,
-            List<MergeReportEntry> mergeReport
+            List<MergeReportEntry> mergeReport,
+            List<String> newlyEligibleAgents
     ) {}
 
     /** Per-sheet (per-desk) import rollup (D-11). */
