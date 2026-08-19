@@ -114,6 +114,17 @@ public class ConstraintWeights {
     @Column(name = "bulk_underallocation_hard_weight")
     private HardSoftScore bulkUnderallocationHardWeight = HardSoftScore.ofHard(1);
 
+    /**
+     * Weight for "Minimum staffing" — at least one agent on every timeslot, whatever the
+     * forecast says. Soft by default so an under-supplied day still yields a schedule;
+     * set to {@code ofHard(n)} to make an unstaffed hour illegal instead. 1000 outranks
+     * every other soft term so it reliably pulls an agent onto an empty hour.
+     */
+    @ConstraintWeight("Minimum staffing")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "min_staffing_weight")
+    private HardSoftScore minStaffingWeight = HardSoftScore.ofSoft(1000);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -178,4 +189,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getBulkUnderallocationHardWeight() { return bulkUnderallocationHardWeight; }
     public void setBulkUnderallocationHardWeight(HardSoftScore bulkUnderallocationHardWeight) { this.bulkUnderallocationHardWeight = bulkUnderallocationHardWeight; }
+
+    public HardSoftScore getMinStaffingWeight() { return minStaffingWeight; }
+    public void setMinStaffingWeight(HardSoftScore minStaffingWeight) { this.minStaffingWeight = minStaffingWeight; }
 }

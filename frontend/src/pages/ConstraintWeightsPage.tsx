@@ -21,6 +21,7 @@ const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = 
   { key: 'honourBreakTimeWeight', label: 'Honour Preferred Break Time', description: 'Try to honour agent preferred break time' },
   { key: 'breakClusteringWeight', label: 'Break Clustering', description: 'Avoid too many agents on break at the same time' },
   { key: 'bulkUnderallocationSoftWeight', label: 'Bulk Under-allocation (Soft)', description: 'Soft penalty for under-staffing' },
+  { key: 'minStaffingWeight', label: 'Minimum Staffing', description: 'Keep at least one agent on every hour, even where forecast demand is zero' },
 ]
 
 const DEFAULTS: Record<string, Score> = {
@@ -41,6 +42,7 @@ const DEFAULTS: Record<string, Score> = {
   honourBreakTimeWeight: { hardScore: 0, softScore: 5 },
   breakClusteringWeight: { hardScore: 0, softScore: 2 },
   bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
+  minStaffingWeight: { hardScore: 0, softScore: 1000 },
 }
 
 export default function ConstraintWeightsPage() {

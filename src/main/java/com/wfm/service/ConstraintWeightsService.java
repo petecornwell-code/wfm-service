@@ -93,6 +93,9 @@ public class ConstraintWeightsService {
         if (updates.getBulkUnderallocationHardWeight() != null) {
             weights.setBulkUnderallocationHardWeight(toScore(updates.getBulkUnderallocationHardWeight()));
         }
+        if (updates.getMinStaffingWeight() != null) {
+            weights.setMinStaffingWeight(toScore(updates.getMinStaffingWeight()));
+        }
 
         ConstraintWeights saved = constraintWeightsRepository.save(weights);
         return toDto(saved);
@@ -117,6 +120,7 @@ public class ConstraintWeightsService {
         dto.setBulkOverallocationLimitWeight(fromScore(w.getBulkOverallocationLimitWeight()));
         dto.setBulkUnderallocationSoftWeight(fromScore(w.getBulkUnderallocationSoftWeight()));
         dto.setBulkUnderallocationHardWeight(fromScore(w.getBulkUnderallocationHardWeight()));
+        dto.setMinStaffingWeight(fromScore(w.getMinStaffingWeight()));
         return dto;
     }
 

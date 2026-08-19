@@ -14,6 +14,13 @@ import static ai.timefold.solver.core.api.score.stream.Joiners.*;
 
 public class ScheduleConstraintProvider implements ConstraintProvider {
 
+    /**
+     * Floor enforced by {@link #minimumStaffing} — at least this many agents on every
+     * timeslot inside operating hours, whatever the forecast says. See that constraint
+     * for why the value is fixed rather than carried in as a problem fact.
+     */
+    private static final int MIN_AGENTS_PER_TIMESLOT = 1;
+
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
         return new Constraint[] {
@@ -35,6 +42,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             bulkOverallocationLimit(factory),
             bulkUnderallocationSoft(factory),
             bulkUnderallocationHard(factory),
+            minimumStaffing(factory),
         };
     }
 
@@ -411,6 +419,50 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     return minRequired - totalAssigned;
                 })
                 .asConstraint("Bulk under-allocation hard");
+    }
+
+    /**
+     * 16. Minimum staffing — every timeslot inside operating hours must carry at least one
+     * assigned agent, irrespective of forecast demand.
+     *
+     * <p>The bulk under-allocation constraints derive their floor from demand
+     * ({@code underallocationHardLimitPct} of {@code totalDemandFTEs}), so a timeslot
+     * forecast at zero FTEs obliges nothing — 50% of 0 is 0. A demand file with leading
+     * zeros therefore leaves the desk legitimately unstaffed for those hours, and because
+     * an 8h shift plus a 1h break spans exactly 9 of a 13h window, the solver packs every
+     * shift against the first non-zero hour. That is correct against the forecast but
+     * leaves no cover at all for walk-ins, spillover or a forecast that simply understates
+     * the early hours.
+     *
+     * <p><strong>Deliberately weight-driven rather than hard-coded.</strong>
+     * {@link ConstraintWeights} is a {@code @ConstraintConfiguration} whose weights are
+     * persisted {@code HardSoftScore}s, so whether this constraint is hard or soft is a
+     * per-desk configuration row, not a code decision — set {@code minStaffingWeight} to
+     * {@code ofHard(n)} to make an unstaffed hour illegal, or {@code ofSoft(n)} to make it
+     * merely expensive. It defaults to {@code ofSoft(1000)}: high enough to dominate the
+     * other soft terms (honour-start-time 5, prefer-primary 1, break-clustering 2) and
+     * reliably pull an agent onto an empty hour, without the failure mode a hard default
+     * would carry. Because {@code contractedHoursOver} is hard, an agent works exactly
+     * their contracted hours, so a 9h shift span cannot tile a 13h window alone; a hard
+     * minimum on a day with too few available agents makes the whole solve infeasible,
+     * returning no schedule rather than an imperfect one.
+     *
+     * <p>The threshold is one agent — the case this addresses is an hour with nobody on it.
+     * A configurable minimum of N would need the threshold carried in as a problem fact
+     * (this groups by timeslot, so it cannot reach {@code AgentDayConfig}); until that is
+     * needed, one avoids a migration and a solver-facing config field for no gain.
+     *
+     * <p>CH-friendly in the same way as the bulk constraints: {@code forEachIncludingUnassigned}
+     * with a sum over assigned entities, so the penalty is already present while every entity
+     * is still null rather than appearing as a cliff on the first assignment.
+     */
+    Constraint minimumStaffing(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(AgentAssignment.class)
+                .groupBy(a -> a.getTimeslot(),
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
+                .filter((ts, totalAssigned) -> totalAssigned < MIN_AGENTS_PER_TIMESLOT)
+                .penalizeConfigurable((ts, totalAssigned) -> MIN_AGENTS_PER_TIMESLOT - totalAssigned)
+                .asConstraint("Minimum staffing");
     }
 
     // ============================================================

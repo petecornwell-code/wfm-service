@@ -82,7 +82,12 @@ class IncrementalScoringDiagnosticTest {
         //   demand across all timeslots × weight 1 = 720. This term was absent while that
         //   constraint was a no-op; it is what gives the solver a reason to cover demand
         //   at all, rather than treating any arrangement above the hard floor as equal.
-        assertThat(initialScore.softScore()).isEqualTo(-12720);
+        // Minimum staffing: every timeslot is bare in this initial state, so all 12 breach
+        //   the one-agent floor × weight 1000 = 12,000. It tracks "Unassigned assignment"
+        //   exactly here because both are per-timeslot at the same weight, but they diverge
+        //   as soon as any slot is staffed at all: this one falls silent at the first agent,
+        //   while unassigned-assignment keeps penalising each empty seat.
+        assertThat(initialScore.softScore()).isEqualTo(-24720);
 
         // Now assign ONE agent to ONE seat
         Agent firstAgent = schedule.getAgents().get(0);

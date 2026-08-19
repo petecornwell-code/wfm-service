@@ -1,0 +1,27 @@
+-- Weight for the new "Minimum staffing" constraint: at least one agent on every timeslot
+-- inside operating hours, whatever the forecast says.
+--
+-- The bulk under-allocation constraints derive their floor from demand
+-- (underallocation_hard_limit_pct of the timeslot's demand FTEs), so an hour forecast at
+-- zero obliges nothing — 50% of 0 is 0. Observed on the live desk 2026-01-10: a demand
+-- file with 0,0,0 for 08:00-10:00 left those hours legitimately unstaffed, and because an
+-- 8h shift plus a 1h break spans exactly 9 of the 13h window, all 25 rostered agents
+-- packed onto the single 11:00-20:00 placement. Correct against the forecast, but no cover
+-- at all before 11:00.
+--
+-- Weights are stored per desk, so the Java default in ConstraintWeights only applies to
+-- rows created after this — existing rows are backfilled here to the same value.
+--
+-- SOFT by default, deliberately. ConstraintWeights is a @ConstraintConfiguration, so
+-- hard-vs-soft is this column's value rather than a code decision: set '1hard/0soft' to
+-- make an unstaffed hour illegal. It is not the default because contracted_hours_over is
+-- hard — an agent works exactly their contracted hours, so a 9h shift span cannot tile a
+-- 13h window alone, and a hard minimum on a day with too few available agents would make
+-- the entire solve infeasible, returning no schedule rather than an imperfect one. That is
+-- the same failure mode V33 had to undo for contracted_hours_under.
+--
+-- 1000 soft outranks every other soft term (honour-start-time 5, prefer-primary 1,
+-- break-clustering 2, bulk-under-allocation-soft 1), so it reliably pulls an agent onto an
+-- empty hour without being able to render a schedule unusable.
+ALTER TABLE constraint_weights
+    ADD COLUMN min_staffing_weight VARCHAR(50) NOT NULL DEFAULT '0hard/1000soft';
