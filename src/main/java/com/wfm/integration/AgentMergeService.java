@@ -33,6 +33,15 @@ public class AgentMergeService {
     /** D-06/D-08: outcome label when BambooHR had no data and the sheet filled the gap. */
     public static final String OUTCOME_GAP_FILLED = "Gap-filled by spreadsheet";
 
+    /**
+     * D-08 contested identity field labels, in the fixed order the merge report renders them
+     * (UI-SPEC Copywriting Contract) -- callers merge in this order so a re-upload of an
+     * unchanged workbook against unchanged BambooHR data produces an identical merge-report
+     * array (MRG-05/ordering).
+     */
+    public static final List<String> IDENTITY_FIELD_ORDER = List.of(
+            "First name", "Last name", "Email", "Department", "Job title", "Active status");
+
     private final BambooHRClient bambooHRClient;
 
     @Value("${bamboohr.time-off.lookahead-weeks:8}")

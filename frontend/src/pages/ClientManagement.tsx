@@ -516,7 +516,11 @@ export default function ClientManagement() {
             )}
             {uploadResult.mergeReport.length > 0 && (
               <div style={{ marginTop: '0.75rem' }}>
-                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>Merge Report</div>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>
+                  Merge Report ({uploadResult.mergeReport.length} field{uploadResult.mergeReport.length !== 1 ? 's' : ''} across{' '}
+                  {new Set(uploadResult.mergeReport.map((entry: MergeReportEntry) => entry.bamboohrId)).size} agent
+                  {new Set(uploadResult.mergeReport.map((entry: MergeReportEntry) => entry.bamboohrId)).size !== 1 ? 's' : ''})
+                </div>
                 <div style={{ overflowY: 'auto', maxHeight: '300px', border: '1px solid #e5e7eb', borderRadius: '4px' }}>
                   <table style={{ width: '100%', fontSize: '0.85rem' }}>
                     <thead>

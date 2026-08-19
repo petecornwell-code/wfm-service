@@ -374,30 +374,44 @@ public class DeskAssignmentUploadService {
                         agent.setLastRefreshedAt(OffsetDateTime.now());
                     }
 
-                    // Re-activate: the agent is Active in the fresh BambooHR snapshot, so mark
-                    // active even if a prior refresh soft-deleted them
-                    agent.setActive("Active".equalsIgnoreCase(employee.status()));
+                    // Merge every D-08 contested identity field BambooHR-first (MRG-02/D-06/D-07),
+                    // in the fixed field order the merge report renders (UI-SPEC Copywriting
+                    // Contract): First name, Last name, Email, Department, Job title, Active status.
+                    AgentNameSplitter.Split employeeNameSplit = AgentNameSplitter.split(employee.displayName());
+                    String mergedFirstName = agentMergeService.mergeIdentityFields(
+                            employeeNameSplit.firstName(), firstName, "First name",
+                            trimmedBamboohrId, rowName, mergeReport);
+                    String mergedLastName = agentMergeService.mergeIdentityFields(
+                            employeeNameSplit.lastName(), lastName, "Last name",
+                            trimmedBamboohrId, rowName, mergeReport);
+                    String mergedEmail = agentMergeService.mergeIdentityFields(
+                            employee.workEmail(), email, "Email", trimmedBamboohrId, rowName, mergeReport);
+                    String mergedDepartment = agentMergeService.mergeIdentityFields(
+                            employee.department(), department, "Department",
+                            trimmedBamboohrId, rowName, mergeReport);
+                    String mergedJobTitle = agentMergeService.mergeIdentityFields(
+                            employee.jobTitle(), jobTitle, "Job title", trimmedBamboohrId, rowName, mergeReport);
 
-                    // Backfill missing identity fields from the fresh BambooHR snapshot
-                    if (isBlank(agent.getDepartment())) agent.setDepartment(employee.department());
-                    if (isBlank(agent.getJobTitle())) agent.setJobTitle(employee.jobTitle());
-                    if (isBlank(agent.getFirstName()) || isBlank(agent.getLastName())) {
-                        AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(employee.displayName());
-                        if (isBlank(agent.getFirstName())) agent.setFirstName(cachedSplit.firstName());
-                        if (isBlank(agent.getLastName())) agent.setLastName(cachedSplit.lastName());
-                    }
-                    if (isBlank(agent.getName())) agent.setName(employee.displayName());
+                    // Active status is rendered for the report through the same two labels both
+                    // sides use: "Active"/"Inactive". The ID-match gate above already rejected any
+                    // row whose BambooHR status isn't Active, so BambooHR always has data here.
+                    String bambooActiveLabel = "Active".equalsIgnoreCase(employee.status())
+                            ? "Active" : "Inactive";
+                    String sheetActiveLabel = isBlank(activeStr)
+                            ? null : (parseActive(activeStr) ? "Active" : "Inactive");
+                    String mergedActiveLabel = agentMergeService.mergeIdentityFields(
+                            bambooActiveLabel, sheetActiveLabel, "Active status",
+                            trimmedBamboohrId, rowName, mergeReport);
 
-                    // Spreadsheet-supplied identity fields are optional and override the
-                    // snapshot when present (D-07) — EXCEPT Email, which now merges BambooHR
-                    // first (MRG-02); Task 2 converts the remaining contested fields the same way.
-                    if (!isBlank(firstName)) agent.setFirstName(firstName.trim());
-                    if (!isBlank(lastName)) agent.setLastName(lastName.trim());
-                    if (!isBlank(jobTitle)) agent.setJobTitle(jobTitle.trim());
-                    agent.setEmail(agentMergeService.mergeIdentityFields(
-                            employee.workEmail(), email, "Email", trimmedBamboohrId, rowName, mergeReport));
-                    if (!isBlank(department)) agent.setDepartment(department.trim());
-                    if (!isBlank(activeStr)) agent.setActive(parseActive(activeStr));
+                    // Both-blank leaves the Agent's previously stored value untouched (D-06 edge:
+                    // MRG-02/empty) -- mergeIdentityFields returns the (blank) sheet value in that
+                    // case, so only apply a merged value when it actually carries data.
+                    if (AgentMergeService.hasData(mergedFirstName)) agent.setFirstName(mergedFirstName);
+                    if (AgentMergeService.hasData(mergedLastName)) agent.setLastName(mergedLastName);
+                    if (AgentMergeService.hasData(mergedEmail)) agent.setEmail(mergedEmail);
+                    if (AgentMergeService.hasData(mergedDepartment)) agent.setDepartment(mergedDepartment);
+                    if (AgentMergeService.hasData(mergedJobTitle)) agent.setJobTitle(mergedJobTitle);
+                    agent.setActive("Active".equalsIgnoreCase(mergedActiveLabel));
                     if (!isBlank(agent.getFirstName()) || !isBlank(agent.getLastName())) {
                         agent.setName(joinName(agent.getFirstName(), agent.getLastName()));
                     }
