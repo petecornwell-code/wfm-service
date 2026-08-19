@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.net.URI;
@@ -43,9 +44,27 @@ public class HttpBambooHRClient implements BambooHRClient {
     private final String overrideSubdomain;
     private final String overrideApiKey;
 
-    public HttpBambooHRClient(AppConfigurationService configurationService, ObjectMapper objectMapper) {
+    /**
+     * D-04: the fetch this client makes now runs once per upload against the whole tenant
+     * (AgentMergeService.fetchSnapshot), not just on a manual per-desk refresh, so an
+     * unbounded HTTP call can hang the upload indefinitely. The default-constructed RestClient
+     * this class used to build configured no request factory and therefore no connect/read
+     * timeout at all -- {@code connectTimeoutSeconds}/{@code readTimeoutSeconds} give it one
+     * explicitly.
+     *
+     * This class is instantiated manually by {@code DelegatingBambooHRClient} rather than as
+     * its own Spring bean, so the two timeout values are resolved there (from config keys
+     * {@code bamboohr.http.connect-timeout-seconds} default 10 and
+     * {@code bamboohr.http.read-timeout-seconds} default 120 via {@code @Value}) and passed in
+     * as plain constructor parameters rather than {@code @Value}-annotated fields on this class.
+     */
+    public HttpBambooHRClient(AppConfigurationService configurationService, ObjectMapper objectMapper,
+                               int connectTimeoutSeconds, int readTimeoutSeconds) {
         this.configurationService = configurationService;
-        this.restClient = RestClient.create();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutSeconds * 1000);
+        requestFactory.setReadTimeout(readTimeoutSeconds * 1000);
+        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
         this.objectMapper = objectMapper;
         this.overrideSubdomain = null;
         this.overrideApiKey = null;

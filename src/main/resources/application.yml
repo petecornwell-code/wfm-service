@@ -40,6 +40,13 @@ bamboohr:
   time-off:
     lookahead-weeks: 8
     lookback-weeks: 12
+  http:
+    # D-04: the upload-triggered fetch (AgentMergeService.fetchSnapshot) is a whole-tenant
+    # call, larger than a single desk's manual refresh, and runs on every upload rather than
+    # only when an operator clicks refresh -- these bound it so a hung BambooHR call can no
+    # longer hang the upload indefinitely.
+    connect-timeout-seconds: 10
+    read-timeout-seconds: 120
 
 # Solver
 solver:

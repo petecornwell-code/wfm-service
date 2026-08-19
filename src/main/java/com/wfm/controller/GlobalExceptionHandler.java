@@ -4,6 +4,7 @@ import com.wfm.dto.ErrorResponse;
 import com.wfm.dto.ErrorResponse.Error;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.exception.BambooHRRateLimitedException;
+import com.wfm.exception.BambooHRSyncFailedException;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
@@ -67,6 +68,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BambooHRRateLimitedException.class)
     public ResponseEntity<ErrorResponse> handleBambooHRRateLimited(BambooHRRateLimitedException ex) {
         return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "BAMBOOHR_RATE_LIMITED", ex.getMessage(), List.of());
+    }
+
+    @ExceptionHandler(BambooHRSyncFailedException.class)
+    public ResponseEntity<ErrorResponse> handleBambooHRSyncFailed(BambooHRSyncFailedException ex) {
+        // Required because handleUncaught below replaces any message with a fixed string --
+        // without this dedicated handler a timeout or a BambooHR 500 during an upload-triggered
+        // sync would reach the operator with no reason at all (MRG-07).
+        return buildResponse(HttpStatus.SERVICE_UNAVAILABLE, "BAMBOOHR_SYNC_FAILED", ex.getMessage(), List.of());
     }
 
     @ExceptionHandler(UnprocessableException.class)

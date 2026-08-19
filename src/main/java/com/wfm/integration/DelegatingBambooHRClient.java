@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wfm.service.AppConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -29,9 +30,12 @@ public class DelegatingBambooHRClient implements BambooHRClient {
 
     public DelegatingBambooHRClient(AppConfigurationService configurationService,
                                      MockBambooHRClient mockClient,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     @Value("${bamboohr.http.connect-timeout-seconds:10}") int connectTimeoutSeconds,
+                                     @Value("${bamboohr.http.read-timeout-seconds:120}") int readTimeoutSeconds) {
         this.configurationService = configurationService;
-        this.httpClient = new HttpBambooHRClient(configurationService, objectMapper);
+        this.httpClient = new HttpBambooHRClient(
+                configurationService, objectMapper, connectTimeoutSeconds, readTimeoutSeconds);
         this.mockClient = mockClient;
     }
 

@@ -1,6 +1,8 @@
 package com.wfm.integration;
 
 import com.wfm.dto.MergeReportEntry;
+import com.wfm.exception.BambooHRRateLimitedException;
+import com.wfm.exception.BambooHRSyncFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,24 +64,48 @@ public class AgentMergeService {
      * distinguish an unknown id from an inactive one. Performs no database access (D-03).
      */
     public BambooSnapshot fetchSnapshot(long tenantId) {
-        List<BambooEmployee> employees = bambooHRClient.listEmployees(String.valueOf(tenantId), null);
+        try {
+            List<BambooEmployee> employees = bambooHRClient.listEmployees(String.valueOf(tenantId), null);
 
-        Map<String, BambooEmployee> employeesById = new LinkedHashMap<>();
-        for (BambooEmployee employee : employees) {
-            if (employee.id() == null) continue;
-            // First occurrence wins on a duplicate id (mirrors BambooRefreshService's
-            // dedupedDaysOff idiom) so repeated uploads of identical BambooHR data resolve
-            // identically.
-            employeesById.putIfAbsent(employee.id().trim(), employee);
+            Map<String, BambooEmployee> employeesById = new LinkedHashMap<>();
+            for (BambooEmployee employee : employees) {
+                if (employee.id() == null) continue;
+                // First occurrence wins on a duplicate id (mirrors BambooRefreshService's
+                // dedupedDaysOff idiom) so repeated uploads of identical BambooHR data resolve
+                // identically.
+                employeesById.putIfAbsent(employee.id().trim(), employee);
+            }
+
+            LocalDate windowFrom = LocalDate.now().minusWeeks(lookbackWeeks);
+            LocalDate windowTo = LocalDate.now().plusWeeks(lookaheadWeeks);
+            // If listEmployees succeeded but this call throws, the catch below still fires
+            // before any transaction opens, so zero rows are written (MRG-07).
+            List<BambooTimeOff> timeOffs = bambooHRClient.listTimeOff(String.valueOf(tenantId), windowFrom, windowTo);
+            Map<String, List<BambooTimeOff>> timeOffByEmployeeId = timeOffs.stream()
+                    .collect(Collectors.groupingBy(BambooTimeOff::employeeId));
+
+            return new BambooSnapshot(employeesById, timeOffByEmployeeId, windowFrom, windowTo);
+        } catch (BambooHRRateLimitedException e) {
+            // Never swallowed, never log-and-continue: this rethrows unconditionally, so the
+            // throw still precedes transactionTemplate.executeWithoutResult and zero writes is
+            // structural rather than something this method has to arrange (MRG-07/D-02).
+            throw new BambooHRRateLimitedException(
+                    uploadSyncFailureMessage(e.getMessage()), e.getRetryAfterSeconds());
+        } catch (RuntimeException e) {
+            throw new BambooHRSyncFailedException(uploadSyncFailureMessage(e.getMessage()), e);
         }
+    }
 
-        LocalDate windowFrom = LocalDate.now().minusWeeks(lookbackWeeks);
-        LocalDate windowTo = LocalDate.now().plusWeeks(lookaheadWeeks);
-        List<BambooTimeOff> timeOffs = bambooHRClient.listTimeOff(String.valueOf(tenantId), windowFrom, windowTo);
-        Map<String, List<BambooTimeOff>> timeOffByEmployeeId = timeOffs.stream()
-                .collect(Collectors.groupingBy(BambooTimeOff::employeeId));
-
-        return new BambooSnapshot(employeesById, timeOffByEmployeeId, windowFrom, windowTo);
+    /**
+     * The upload-specific MRG-07 operator sentence, applied only at this upload fetch site --
+     * {@code HttpBambooHRClient.applyRateLimitHandler}'s own message stays untouched so the
+     * manual desk-refresh path keeps its existing wording. When the upstream reason is null or
+     * blank, substitutes a fixed literal so the sentence stays well-formed.
+     */
+    private static String uploadSyncFailureMessage(String upstreamReason) {
+        String reason = hasData(upstreamReason) ? upstreamReason : "no detail available";
+        return "BambooHR sync failed (" + reason + ") — no changes were made. "
+                + "Retry the upload once BambooHR is available.";
     }
 
     /** D-06: "BambooHR has data" -- not null, not empty, not whitespace-only. */
