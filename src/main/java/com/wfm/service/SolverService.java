@@ -193,14 +193,23 @@ public class SolverService {
                 arbitratePtoAgainstBambooWindow(recurringDaysOff, bambooWindowFrom, bambooWindowTo);
         int suppressedPtoCount = recurringBeforeArbitration - arbitratedRecurringDaysOff.size();
 
+        // One problem fact per (agent, date): where BambooHR and the sheet agree an agent is off,
+        // the persisted row already blocks the date and the synthesized recurring fact would be a
+        // second match for the same HARD constraint, inflating the reported violation count and
+        // hard-score magnitude. Runs last, so it dedupes only facts that survived both passes.
+        List<AgentDayOff> dedupedRecurringDaysOff =
+                dedupeAgainstPersisted(arbitratedRecurringDaysOff, allDaysOff);
+        int duplicateRecurringCount = arbitratedRecurringDaysOff.size() - dedupedRecurringDaysOff.size();
+
         // Counts only at INFO — no agent name, no email, no date list (T-11-11). Per-agent detail
         // is not logged at all here; WorkingDaysParser's DEBUG-only convention for raw values has
         // no per-agent equivalent to emit since this arbitration only ever produces counts.
         log.info("PTO/pattern arbitration for desk {} — suppressed {} recurring PTO fact(s) inside "
-                        + "the BambooHR window, un-blocked {} MANDATORY row(s) for sheet-worked weekdays",
-                deskId, suppressedPtoCount, unblockedCount);
+                        + "the BambooHR window, un-blocked {} MANDATORY row(s) for sheet-worked weekdays, "
+                        + "dropped {} recurring fact(s) duplicating an already-blocked date",
+                deskId, suppressedPtoCount, unblockedCount, duplicateRecurringCount);
 
-        allDaysOff.addAll(arbitratedRecurringDaysOff);
+        allDaysOff.addAll(dedupedRecurringDaysOff);
 
         // Load preferences for this desk
         List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
@@ -1163,6 +1172,49 @@ public class SolverService {
         persistedDaysOff.removeIf(d -> d.getType() == DayOffType.MANDATORY
                 && workedWeekdaysByAgent.getOrDefault(d.getAgent().getId(), Set.of())
                         .contains(d.getDate().getDayOfWeek()));
+    }
+
+    /**
+     * Returns the recurring facts that do not duplicate an (agent, date) already blocked by a
+     * persisted row, plus at most one fact per (agent, date) from the recurring list itself.
+     *
+     * The "Agent day off" HARD constraint joins {@link AgentDayOff} problem facts directly
+     * (ScheduleConstraintProvider.agentDayOff) rather than through a lookup map, so two facts for
+     * one real-world day-off are matched twice: the day is blocked either way, but that agent-date
+     * contributes roughly double to the constraint's match count and to the hard-score magnitude
+     * operators see in ConstraintViolationEntry. BambooHR and the spreadsheet agreeing on an
+     * off-day (both marking Sat/Sun MANDATORY, say) is the common case, not an edge case — the
+     * un-block pass above only removes a persisted row where the sheet marks that weekday
+     * <em>worked</em>, so agreement leaves the persisted row standing and
+     * {@link #buildRecurringDaysOff} then synthesizes a second fact for the same date.
+     *
+     * First-wins by (agent, date), mirroring the {@code putIfAbsent} idiom
+     * {@code BambooRefreshService.persistRefreshData} already uses for the same kind of merge.
+     * The persisted row wins because it is a real dated record with a database identity, and by
+     * the time this runs both the un-block pass (D-05) and the window arbitration (D-09) have
+     * already removed the facts that should not block — so anything surviving on both sides is
+     * genuine agreement, where either fact expresses the same outcome.
+     *
+     * Neither input list is modified; nothing here is persisted (D-10).
+     */
+    static List<AgentDayOff> dedupeAgainstPersisted(List<AgentDayOff> recurringFacts,
+                                                     List<AgentDayOff> persistedDaysOff) {
+        Set<String> blocked = new HashSet<>();
+        for (AgentDayOff d : persistedDaysOff) {
+            blocked.add(agentDateKey(d));
+        }
+        List<AgentDayOff> result = new ArrayList<>();
+        for (AgentDayOff fact : recurringFacts) {
+            if (blocked.add(agentDateKey(fact))) {
+                result.add(fact);
+            }
+        }
+        return result;
+    }
+
+    private static String agentDateKey(AgentDayOff dayOff) {
+        UUID agentId = dayOff.getAgent() == null ? null : dayOff.getAgent().getId();
+        return agentId + "|" + dayOff.getDate();
     }
 
     /**
