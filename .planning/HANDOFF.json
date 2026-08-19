@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-19T23:36:15.504Z",
+  "phase": "11",
+  "phase_name": "bamboohr-merge-engine-report",
+  "phase_dir": ".planning/phases/11-bamboohr-merge-engine-report",
+  "plan": 2,
+  "task": 5,
+  "total_tasks": 5,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "11-01 fresh-sync merge engine + merge report + 503 abort", "status": "done", "commit": "177342c"},
+    {"id": 2, "name": "11-02 workingDaysSource provenance + solve-time PTO arbitration", "status": "done", "commit": "1b5403d"},
+    {"id": 3, "name": "Post-merge fix: stale UploadFreshSyncTest assertion", "status": "done", "commit": "57c9cfd"},
+    {"id": 4, "name": "Code review WR-01: dedupe day-off facts per agent-date", "status": "done", "commit": "22707bc"},
+    {"id": 5, "name": "Minimum staffing constraint + seat generation", "status": "done", "commit": "1aa9578"}
+  ],
+  "remaining_tasks": [
+    {"id": 6, "name": "Phase 11 UAT — 5 manual items, all still pending", "status": "not_started"},
+    {"id": 7, "name": "Re-run gsd-verifier — VERIFICATION.md predates 3 commits of solver work", "status": "not_started"},
+    {"id": 8, "name": "gsd-secure-phase 11 — security enforcement on, no SECURITY.md", "status": "not_started"},
+    {"id": 9, "name": "Consistency plan Stage 0 — fix honourPreferredStartTime asymmetry", "status": "not_started"},
+    {"id": 10, "name": "Implement breakClustering — registered but a no-op stub", "status": "not_started"}
+  ],
+  "blockers": [
+    {
+      "description": "Schedule b44ac8f8 is COMPLETED on desk Stubhub (EN) and blocks any new solve with CONFLICT. It is the breakBlockedHours=3.0 run: soft -258005, 51 of 138 agent-days collapsed to 3-hour shifts. Reject it, do not accept.",
+      "type": "external",
+      "workaround": "PUT /api/v1/desks/{deskId}/schedules/b44ac8f8-4219-40f4-ba9b-03b6bf5b2341/reject"
+    },
+    {
+      "description": "Phase 11 cannot complete until UAT passes: uat_passed=false, verification_status=human_needed, phase_complete=false.",
+      "type": "human_action",
+      "workaround": "/gsd-verify-work 11"
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Run the solve with breakBlockedHours: 4.0", "context": "User elected to run this manually. 4.0 is the only value that collapses the break window to a single point (+4h exactly); +3h is not expressible because the knob is symmetric.", "blocking": false},
+    {"action": "Walk the 5 Phase 11 UAT items in 11-UAT.md", "context": "Three of five are answerable with one upload of StubHub-EN-combined-CSR-test.xlsx against the Stubhub (EN) desk.", "blocking": true},
+    {"action": "Confirm BambooHR field alias for custom field 4517", "context": "UAT item 5. Evidence suggests it resolves — the live API returned real customWorkingdays values and real dated PTO — but it was inferred from a side-effect, not deliberately verified.", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Solve-time PTO arbitration, not merge-write time", "rationale": "Human operator selected at the plan 11-02 blocking checkpoint. Keeps D-03's one-writer invariant; nothing persisted, so a wrong rule is corrected by changing code and re-solving.", "phase": "11"},
+    {"decision": "Minimum staffing hard-vs-soft is configuration, not code", "rationale": "ConstraintWeights is a @ConstraintConfiguration with persisted HardSoftScores, so min_staffing_weight decides the level. Defaults soft because contracted_hours_over is hard — a 9h shift span cannot tile a 13h window, so a hard floor on a thin day returns no schedule at all.", "phase": "11"},
+    {"decision": "Seat generation, not just a constraint", "rationale": "The constraint groups AgentAssignment by timeslot and a groupBy emits no group for an absent key, so it was inert on zero-demand hours at any weight. expandMinimumStaffingSeats guarantees a seat so the timeslot both appears in the grouping and has a variable the solver can assign into.", "phase": "11"},
+    {"decision": "breakBlockedHours 4.0 over 3.0", "rationale": "3.0 gave the +3..+5h window the user asked for and all 87 breaks complied, but 51 agent-days collapsed to 3-hour shifts (soft -258005) because contracted_hours_under is soft while breakBlockedWindow is hard. 4.0 pins +4h exactly; +3h is not expressible.", "phase": "11"},
+    {"decision": "Consistency via cross-day constraints, staged", "rationale": "Standing preferences cannot express consistency: preferredBreakTime is an absolute LocalTime and honourPreferredStartTime only penalises starting EARLIER, so it is a floor not an anchor. Four-stage plan agreed, not started.", "phase": "11"}
+  ],
+  "uncommitted_files": [
+    "StubHub-EN-combined-CSR-test.xlsx (untracked test artifact, real roster from the dev API)",
+    "stubhub_demand_ES.xlsx (untracked test artifact, hourly demand 2026-01-05..11)",
+    ".gsd/ (tooling)",
+    ".planning/research/.cache/ (tooling)"
+  ],
+  "next_action": "Reject schedule b44ac8f8, then either run the breakBlockedHours=4.0 solve or start Stage 0 of the consistency plan (fix the isBefore asymmetry in honourPreferredStartTime). Phase 11 itself is blocked on UAT, not on code.",
+  "context_notes": "All source work is committed and pushed (HEAD 1aa9578) and deployed to dev (task def wfm-service-dev:39, verified live). Full suite green locally and on CI. The phase is code-complete but NOT verification-complete. Live desk config has been changed this session: minStaffingWeight was lowered 1000 -> 1 soft to stop it outbidding peak coverage, so any solve now behaves differently from the one VERIFICATION.md was written against."
+}
