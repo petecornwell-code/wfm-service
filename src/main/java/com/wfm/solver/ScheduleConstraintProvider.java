@@ -18,8 +18,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * Floor enforced by {@link #minimumStaffing} — at least this many agents on every
      * timeslot inside operating hours, whatever the forecast says. See that constraint
      * for why the value is fixed rather than carried in as a problem fact.
+     *
+     * <p>Public because {@code SolverService.expandMinimumStaffingSeats} must create the
+     * same number of seats that this constraint demands. The constraint alone cannot
+     * deliver the floor: it can only penalise a timeslot the solver has a planning entity
+     * for, and a zero-demand hour has none.
      */
-    private static final int MIN_AGENTS_PER_TIMESLOT = 1;
+    public static final int MIN_AGENTS_PER_TIMESLOT = 1;
 
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
@@ -451,6 +456,19 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * A configurable minimum of N would need the threshold carried in as a problem fact
      * (this groups by timeslot, so it cannot reach {@code AgentDayConfig}); until that is
      * needed, one avoids a migration and a solver-facing config field for no gain.
+     *
+     * <p><strong>Depends on seats existing.</strong> This groups {@link AgentAssignment}
+     * entities by timeslot, and a groupBy emits a group only for keys present in the stream —
+     * so it is silent on a timeslot with no entities at all, at any weight. That is exactly
+     * the zero-demand hour this constraint exists for: {@code FteUploadService} skips
+     * {@code fteValue <= 0}, so no {@code StaffingRequirement} is persisted, and
+     * {@code expandAssignments} therefore creates no seat. {@code SolverService}
+     * .{@code expandMinimumStaffingSeats} closes that by guaranteeing
+     * {@link #MIN_AGENTS_PER_TIMESLOT} seats on every timeslot before solving; without it
+     * this constraint is inert on precisely the hours it was written for, and promoting it
+     * to hard changes nothing because there is nothing to make hard. The seat also gives the
+     * solver a planning variable to satisfy the penalty with — penalising a timeslot the
+     * solver cannot assign into would just make the schedule permanently infeasible.
      *
      * <p>CH-friendly in the same way as the bulk constraints: {@code forEachIncludingUnassigned}
      * with a sum over assigned entities, so the penalty is already present while every entity

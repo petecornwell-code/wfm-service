@@ -10,6 +10,7 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.*;
+import com.wfm.solver.ScheduleConstraintProvider;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentExceptionRepository;
@@ -285,6 +286,18 @@ public class SolverService {
         assignments.addAll(overflowAssignments);
         log.debug("Overflow assignments: {} demand + {} overflow = {} total",
                 demandAssignments.size(), overflowAssignments.size(), assignments.size());
+
+        // 10d. Guarantee a seat on every timeslot so the "Minimum staffing" constraint can
+        // actually bite. Deliberately AFTER computeTimeslotDemandConfigs above, so these
+        // seats are never counted as demand — they exist to be fillable, not to be required.
+        List<AgentAssignment> minStaffingSeats = expandMinimumStaffingSeats(
+                tenantId, deskId, schedule.getId(), timeslots, assignments,
+                staffingRequirements, specializations);
+        if (!minStaffingSeats.isEmpty()) {
+            assignments.addAll(minStaffingSeats);
+            log.debug("Minimum-staffing seats: {} added for timeslots with no demand-derived seat",
+                    minStaffingSeats.size());
+        }
 
         log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedAgents.size(), timeslots.size(),
@@ -941,6 +954,118 @@ public class SolverService {
             }
         }
         return assignments;
+    }
+
+    /**
+     * Creates the seats the "Minimum staffing" constraint needs in order to have any effect.
+     *
+     * <p>{@code FteUploadService} skips a demand cell of zero ({@code if (fteValue <= 0)
+     * continue}), so no {@link StaffingRequirement} is persisted for that hour and
+     * {@link #expandAssignments} creates no seat for it. {@link #expandOverflowAssignments}
+     * iterates the same requirements and computes {@code (0 * pct + 99) / 100 == 0}, so it
+     * adds nothing either. The timeslot still exists — {@code generateTimeslots} covers the
+     * whole operating window — but it carries no planning entity at all.
+     *
+     * <p>That is why the constraint alone could not deliver the floor. It groups
+     * {@link AgentAssignment} by timeslot, and a groupBy emits no group for a key absent
+     * from the stream, so it stayed silent on exactly the hours it was written for — at any
+     * weight, hard included. Creating the seat fixes both halves: the timeslot now appears
+     * in the grouping, and the solver has a variable it can actually assign an agent to.
+     * Penalising an hour the solver cannot staff would only make the schedule permanently
+     * infeasible.
+     *
+     * <p>Seats are created only up to {@link ScheduleConstraintProvider#MIN_AGENTS_PER_TIMESLOT}
+     * and only where the timeslot falls short, so a timeslot with real demand is untouched.
+     * They are appended AFTER {@code computeTimeslotDemandConfigs} has run, so they never
+     * inflate {@link TimeslotDemandConfig} — a filler seat is fillable, not required, and the
+     * under/over-allocation constraints continue to judge the hour on its real forecast.
+     *
+     * <p>Each seat must carry a real {@link Specialization}: {@code specializationMatch}
+     * dereferences {@code getRequiredSpecialization().getId()} with no null guard, so a null
+     * would throw during scoring rather than merely go unmatched. The desk's predominant
+     * specialization by total required FTEs is used — it is the one demand is actually
+     * expressed in, so agents rostered on the desk are the most likely to hold it and be able
+     * to satisfy that hard constraint. Ties break on id so a given schedule always expands
+     * identically.
+     *
+     * @return the extra seats to append; empty when every timeslot already has enough, or
+     *         when the desk has no specialization to attribute a seat to.
+     */
+    static List<AgentAssignment> expandMinimumStaffingSeats(
+            long tenantId, UUID deskId, UUID scheduleId,
+            List<Timeslot> timeslots,
+            List<AgentAssignment> existingAssignments,
+            List<StaffingRequirement> staffingRequirements,
+            List<Specialization> specializations) {
+
+        if (timeslots == null || timeslots.isEmpty()) {
+            return List.of();
+        }
+        Specialization fillerSpec = predominantSpecialization(staffingRequirements, specializations);
+        if (fillerSpec == null) {
+            // No specialization exists on the desk, so any seat created here would NPE in
+            // specializationMatch. Nothing safe to add.
+            return List.of();
+        }
+
+        Map<UUID, Integer> seatsPerTimeslot = new HashMap<>();
+        for (AgentAssignment a : existingAssignments) {
+            if (a.getTimeslot() != null) {
+                seatsPerTimeslot.merge(a.getTimeslot().getId(), 1, Integer::sum);
+            }
+        }
+
+        List<AgentAssignment> extra = new ArrayList<>();
+        for (Timeslot ts : timeslots) {
+            int have = seatsPerTimeslot.getOrDefault(ts.getId(), 0);
+            for (int i = have; i < ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT; i++) {
+                AgentAssignment a = new AgentAssignment();
+                a.setId(UUID.randomUUID());
+                a.setTenantId(tenantId);
+                a.setDeskId(deskId);
+                a.setScheduleId(scheduleId);
+                a.setTimeslot(ts);
+                a.setRequiredSpecialization(fillerSpec);
+                // agent stays null — the solver fills it, driven by "Minimum staffing"
+                extra.add(a);
+            }
+        }
+        return extra;
+    }
+
+    /**
+     * The specialization carrying the most demand on this desk, used to attribute
+     * minimum-staffing seats. Falls back to the lowest-id specialization when there is no
+     * demand at all, and to null when the desk has no specializations.
+     */
+    private static Specialization predominantSpecialization(
+            List<StaffingRequirement> staffingRequirements, List<Specialization> specializations) {
+
+        Map<UUID, Integer> ftesBySpec = new HashMap<>();
+        Map<UUID, Specialization> byId = new HashMap<>();
+        if (staffingRequirements != null) {
+            for (StaffingRequirement sr : staffingRequirements) {
+                Specialization s = sr.getSpecialization();
+                if (s == null) continue;
+                byId.putIfAbsent(s.getId(), s);
+                ftesBySpec.merge(s.getId(), sr.getRequiredFTEs(), Integer::sum);
+            }
+        }
+        if (!ftesBySpec.isEmpty()) {
+            return ftesBySpec.entrySet().stream()
+                    .sorted(Map.Entry.<UUID, Integer>comparingByValue().reversed()
+                            .thenComparing(e -> e.getKey().toString()))
+                    .map(e -> byId.get(e.getKey()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (specializations == null || specializations.isEmpty()) {
+            return null;
+        }
+        return specializations.stream()
+                .filter(s -> s.getId() != null)
+                .min(Comparator.comparing(s -> s.getId().toString()))
+                .orElse(null);
     }
 
     /**
