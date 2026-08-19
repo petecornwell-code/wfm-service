@@ -4,16 +4,16 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 11
 current_phase_name: bamboohr-merge-engine-report
-status: executing
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-08-19T12:32:56.498Z"
+status: verifying
+stopped_at: Completed 11-02-PLAN.md
+last_updated: "2026-08-19T13:15:31.125Z"
 last_activity: 2026-08-19
 last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 75
 ---
 
@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-07-29)
 
 Phase: 11 (bamboohr-merge-engine-report) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-19 — Phase 11 execution started
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 94%
 
 ## Milestone v1.2 Roadmap
 
@@ -121,6 +121,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 11 Plan 01] Both-blank identity-field merge leaves the Agent's previously stored value untouched — callers only apply a merged field when AgentMergeService.hasData(merged) is true, since the literal winner formula returns blank when both sources are blank
 - [Phase ?]: [Phase 11 Plan 01] HttpBambooHRClient timeout config (@Value) lives on DelegatingBambooHRClient, the Spring-managed caller, and is passed to HttpBambooHRClient as constructor params, since HttpBambooHRClient is manually instantiated (not a Spring bean)
 - [Phase ?]: [Phase 11 Plan 01] AgentMergeService.IDENTITY_FIELD_ORDER documents the fixed six-field merge order (First name, Last name, Email, Department, Job title, Active status) used across the merge engine
+- [Phase ?]: [Phase 11 Plan 02] Checkpoint resolved: PTO/pattern arbitration runs at solve time (SolverService.arbitratePtoAgainstBambooWindow/unblockSheetWorkedDays, in-memory, re-derived per solve, no AgentDayOffRepository added to the upload path) — human-selected one-way door, per the mechanism sketch attached to the selection
+- [Phase ?]: [Phase 11 Plan 02] SolverService.bambooLookaheadWeeks/bambooLookbackWeeks are @Value field injections (not constructor params), matching BambooRefreshService, so every existing SolverService test stays untouched
+- [Phase ?]: [Phase 11 Plan 02] MergeReportTest fixtures set customWorkingdays="Mon-Sun" (Rule 3 fix) so the new mergeWorkingPattern check doesn't spuriously add a gap-fill row against the suite's pre-existing full-week workbook fixture
 
 ### Blockers/Concerns
 
@@ -132,8 +135,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-19T12:32:56.491Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-08-19T13:15:31.113Z
+Stopped at: Completed 11-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -148,3 +151,4 @@ Resume file: None
 | Phase 12 P02 | 55m | 2 tasks | 5 files |
 | Phase 12 P03 | 25m (continuation; +55m prior) | 3 tasks | 5 files |
 | Phase 11 P01 | 45min | 3 tasks | 23 files |
+| Phase 11 P02 | ~40min (continuation) | 4 tasks | 15 files |

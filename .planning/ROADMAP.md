@@ -118,7 +118,7 @@ Plans:
   5. An agent whose working pattern BambooHR doesn't know but the spreadsheet supplies becomes solver-eligible — `workingDaysKnown` resolves true and the agent is no longer filtered out
   6. If the BambooHR sync fails during upload (e.g. 503 rate limit), the operator sees a clear message and no partial merge is written
 
-**Plans**: 1/2 plans executed in 2 waves
+**Plans**: 2/2 plans executed in 2 waves
 Plans:
 
 **Wave 1** *(tracer — fresh-sync merge path end to end)*
@@ -127,7 +127,7 @@ Plans:
 
 **Wave 2** *(expansion — blocked on Wave 1)*
 
-- [ ] 11-02-PLAN.md — Spreadsheet-sourced solver eligibility with refresh downgrade guard, dated-vs-recurring PTO arbitration, working-pattern report row (MRG-03, MRG-06)
+- [x] 11-02-PLAN.md — Spreadsheet-sourced solver eligibility with refresh downgrade guard, dated-vs-recurring PTO arbitration, working-pattern report row (MRG-03, MRG-06)
 
 **UI hint**: yes
 
@@ -148,7 +148,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
 | 9. Agent Data Model Foundation | v1.2 | 0/6 | Not started | - |
 | 10. Enriched Upload Parsing | v1.2 | 6/6 | Complete   | 2026-07-31 |
-| 11. BambooHR Merge Engine & Report | v1.2 | 1/2 | In Progress|  |
+| 11. BambooHR Merge Engine & Report | v1.2 | 2/2 | In Progress|  |
 
 ## Backlog
 
