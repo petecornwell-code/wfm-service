@@ -143,8 +143,12 @@ class UploadFreshSyncTest {
 
     @Test
     void upload_fetchesFreshSnapshotBeforeTransaction_andMergesEmailBambooHRFirst() throws Exception {
+        // customWorkingdays="Mon-Sun" matches this test's workbook fixture, whose seven day cells
+        // all parse to a null day-off type (a full worked week). Leaving it null would make
+        // mergeWorkingPattern emit a gap-filled "Working pattern" row on top of the Email row this
+        // test is about — see the same fixture correction in MergeReportTest (plan 11-02, df44f1e).
         BambooEmployee employee = new BambooEmployee("B1", "Alice A", "bamboo-email@example.com",
-                "Support", "Agent", "Active", "Full-Time", null, null, null);
+                "Support", "Agent", "Active", "Full-Time", "Mon-Sun", null, null);
         when(bambooHRClient.listEmployees(eq(String.valueOf(TENANT_ID)), isNull()))
                 .thenReturn(List.of(employee));
         when(bambooHRClient.listTimeOff(eq(String.valueOf(TENANT_ID)), any(), any()))
