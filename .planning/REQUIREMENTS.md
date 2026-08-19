@@ -30,13 +30,13 @@
 
 ### Merge & Precedence
 
-- [ ] **MRG-01**: Uploading triggers a fresh BambooHR sync before merging, so the merge always runs against current BambooHR data
-- [ ] **MRG-02**: For every field carried by both sources, BambooHR's value is used where BambooHR has data; the spreadsheet value is used only where BambooHR's is absent
+- [x] **MRG-01**: Uploading triggers a fresh BambooHR sync before merging, so the merge always runs against current BambooHR data
+- [x] **MRG-02**: For every field carried by both sources, BambooHR's value is used where BambooHR has data; the spreadsheet value is used only where BambooHR's is absent
 - [ ] **MRG-03**: BambooHR's dated PTO takes precedence for the dates it covers; the spreadsheet's recurring weekly PTO pattern applies only to dates with no BambooHR PTO record
-- [ ] **MRG-04**: Operator can see a merge report after upload showing, per field, which values came from BambooHR and which the spreadsheet supplied
-- [ ] **MRG-05**: The merge report shows which spreadsheet values were overridden by BambooHR, so operators can spot disagreement between the two sources
+- [x] **MRG-04**: Operator can see a merge report after upload showing, per field, which values came from BambooHR and which the spreadsheet supplied
+- [x] **MRG-05**: The merge report shows which spreadsheet values were overridden by BambooHR, so operators can spot disagreement between the two sources
 - [ ] **MRG-06**: An agent whose working pattern is unknown to BambooHR but supplied by the spreadsheet becomes eligible for solving — `workingDaysKnown` resolves true and the agent is no longer filtered out
-- [ ] **MRG-07**: If the BambooHR sync fails during upload (e.g. 503 rate limit), the operator gets a clear message and no partial merge is written
+- [x] **MRG-07**: If the BambooHR sync fails during upload (e.g. 503 rate limit), the operator gets a clear message and no partial merge is written
 
 ### Agent Data Model
 
@@ -91,13 +91,13 @@
 | UPL-07 | Phase 10 | Complete |
 | UPL-08 | Phase 10 | Complete |
 | UPL-09 | Phase 10 | Complete |
-| MRG-01 | Phase 11 | Pending |
-| MRG-02 | Phase 11 | Pending |
+| MRG-01 | Phase 11 | Complete |
+| MRG-02 | Phase 11 | Complete |
 | MRG-03 | Phase 11 | Pending |
-| MRG-04 | Phase 11 | Pending |
-| MRG-05 | Phase 11 | Pending |
+| MRG-04 | Phase 11 | Complete |
+| MRG-05 | Phase 11 | Complete |
 | MRG-06 | Phase 11 | Pending |
-| MRG-07 | Phase 11 | Pending |
+| MRG-07 | Phase 11 | Complete |
 | MDL-01 | Phase 9 | Pending |
 | MDL-02 | Phase 9 | Pending |
 | MDL-03 | Phase 9 | Pending |

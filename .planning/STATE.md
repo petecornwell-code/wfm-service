@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 12
-current_phase_name: atomic-shift-move
+current_phase: 11
+current_phase_name: bamboohr-merge-engine-report
 status: executing
-stopped_at: Phase 11 PARTIALLY planned — 11-01-PLAN.md written (MRG-01/02/04/05/07); 11-02-PLAN.md still owed for MRG-03 + MRG-06, blocked on opus 529 capacity. Do NOT execute phase 11 until plan 02 exists.
-last_updated: "2026-08-18T20:38:47.639Z"
-last_activity: 2026-08-13
-last_activity_desc: Phase 12 execution started
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-08-19T12:32:56.498Z"
+last_activity: 2026-08-19
+last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 75
 ---
 
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-29)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 12 — atomic-shift-move
+**Current focus:** Phase 11 — bamboohr-merge-engine-report
 
 ## Current Position
 
-Phase: 12 (atomic-shift-move) — EXECUTING
-Plan: 3 of 3
+Phase: 11 (bamboohr-merge-engine-report) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-08-13 — Phase 12 execution started
+Last activity: 2026-08-19 — Phase 11 execution started
 
-Progress: [██████████] 100%
+Progress: [█████████░] 89%
 
 ## Milestone v1.2 Roadmap
 
@@ -118,6 +118,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 12 Plan 02] MAX_WINDOWS_PER_AGENT_DAY = 8, down-sampled by fixed stride (ceil(size/8)-th element) rather than truncation, so retained candidates spread across span starts and repeated calls select identically
 - [Phase ?]: [Phase 12 Plan 02] Rule 1 fix: AssignSeatMove.getPlanningValues() switched from List.of(toAgent) to Collections.singletonList(toAgent) — List.of rejects null, and unassign moves (toAgent=null) are new in this plan
 - [Phase ?]: Operator verdict (12-03): keep the atomic shift move (correct, kept), but the phase's must-pass median-vs-spread threshold FAILED and the phase goal of 'more hours assigned' is NOT claimed as achieved. Cross-agent seat displacement filed as follow-up.
+- [Phase ?]: [Phase 11 Plan 01] Both-blank identity-field merge leaves the Agent's previously stored value untouched — callers only apply a merged field when AgentMergeService.hasData(merged) is true, since the literal winner formula returns blank when both sources are blank
+- [Phase ?]: [Phase 11 Plan 01] HttpBambooHRClient timeout config (@Value) lives on DelegatingBambooHRClient, the Spring-managed caller, and is passed to HttpBambooHRClient as constructor params, since HttpBambooHRClient is manually instantiated (not a Spring bean)
+- [Phase ?]: [Phase 11 Plan 01] AgentMergeService.IDENTITY_FIELD_ORDER documents the fixed six-field merge order (First name, Last name, Email, Department, Job title, Active status) used across the merge engine
 
 ### Blockers/Concerns
 
@@ -129,9 +132,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-18T20:12:01.428Z
-Stopped at: Phase 11 PARTIALLY planned — 11-01-PLAN.md written (MRG-01/02/04/05/07); 11-02-PLAN.md still owed for MRG-03 + MRG-06, blocked on opus 529 capacity. Do NOT execute phase 11 until plan 02 exists.
-Resume file: .planning/phases/11-bamboohr-merge-engine-report/11-01-PLAN.md
+Last session: 2026-08-19T12:32:56.491Z
+Stopped at: Completed 11-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -144,3 +147,4 @@ Resume file: .planning/phases/11-bamboohr-merge-engine-report/11-01-PLAN.md
 | Phase 12 P01 | 35m | 2 tasks | 6 files |
 | Phase 12 P02 | 55m | 2 tasks | 5 files |
 | Phase 12 P03 | 25m (continuation; +55m prior) | 3 tasks | 5 files |
+| Phase 11 P01 | 45min | 3 tasks | 23 files |
