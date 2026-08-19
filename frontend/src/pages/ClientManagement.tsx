@@ -555,15 +555,28 @@ export default function ClientManagement() {
                           <td style={{ wordWrap: 'break-word' }}>{entry.bambooValue}</td>
                           <td style={{ wordWrap: 'break-word' }}>{entry.sheetValue}</td>
                           <td>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '0.125rem 0.5rem',
-                              borderRadius: '9999px',
-                              fontSize: '0.8rem',
-                              fontWeight: 600,
-                              color: '#ffffff',
-                              background: entry.outcome === 'BambooHR override' ? '#92400e' : '#3b82f6',
-                            }}>
+                            <span style={
+                              entry.outcome === 'Replaced by spreadsheet'
+                                ? {
+                                    display: 'inline-block',
+                                    padding: '0.125rem 0.5rem',
+                                    borderRadius: '9999px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    color: 'inherit',
+                                    background: '#f9fafb',
+                                    border: '1px solid #e5e7eb',
+                                  }
+                                : {
+                                    display: 'inline-block',
+                                    padding: '0.125rem 0.5rem',
+                                    borderRadius: '9999px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    color: '#ffffff',
+                                    background: entry.outcome === 'BambooHR override' ? '#92400e' : '#3b82f6',
+                                  }
+                            }>
                               {entry.outcome}
                             </span>
                           </td>

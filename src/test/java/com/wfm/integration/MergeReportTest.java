@@ -148,8 +148,15 @@ class MergeReportTest {
     }
 
     private BambooEmployee employee() {
+        // customWorkingdays="Mon-Sun" matches this suite's fixed day-cell fixture (every weekday
+        // has a parsed day-off type of null, including the Sat/Sun "0" cells — a zero-hours cell
+        // still counts as "worked" per Task 3/4's shared predicate), so Task 4's
+        // AgentMergeService.mergeWorkingPattern sees equal working-day sets and stays silent
+        // (D-11). Fixture predates MRG-03/D-05 (plan 11-01); a blank/gap value here would spuriously
+        // add a "Working pattern" merge-report row this suite's identity-field-only assertions
+        // don't expect.
         return new BambooEmployee("B1", "Bamboo Name", "bamboo@example.com", "Bamboo Dept", "Bamboo Title",
-                "Active", "Full-Time", null, null, null);
+                "Active", "Full-Time", "Mon-Sun", null, null);
     }
 
     @Test
@@ -210,7 +217,7 @@ class MergeReportTest {
     @Test
     void gapFilledField_emitsGapFilledOutcome_notOverride() throws Exception {
         BambooEmployee employeeNoDept = new BambooEmployee("B1", "Bamboo Name", "bamboo@example.com",
-                null, "Bamboo Title", "Active", "Full-Time", null, null, null);
+                null, "Bamboo Title", "Active", "Full-Time", "Mon-Sun", null, null);
         when(bambooHRClient.listEmployees(eq(String.valueOf(TENANT_ID)), isNull()))
                 .thenReturn(List.of(employeeNoDept));
         MockMultipartFile file = buildWorkbook("B1", "Bamboo", "Name", "Bamboo Title",

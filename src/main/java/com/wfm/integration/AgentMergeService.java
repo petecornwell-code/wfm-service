@@ -3,15 +3,20 @@ package com.wfm.integration;
 import com.wfm.dto.MergeReportEntry;
 import com.wfm.exception.BambooHRRateLimitedException;
 import com.wfm.exception.BambooHRSyncFailedException;
+import com.wfm.util.EnrichedColumnLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -34,6 +39,17 @@ public class AgentMergeService {
 
     /** D-06/D-08: outcome label when BambooHR had no data and the sheet filled the gap. */
     public static final String OUTCOME_GAP_FILLED = "Gap-filled by spreadsheet";
+
+    /** UI-SPEC Copywriting Contract label for the D-05 working-pattern report row. */
+    public static final String FIELD_WORKING_PATTERN = "Working pattern (Mon–Sun)";
+
+    /**
+     * D-05: outcome label for the direction unique to this field — the sheet's day group
+     * replaces BambooHR's field-4517 pattern, the inverse of {@link #OUTCOME_BAMBOOHR_OVERRIDE}.
+     * Not in the UI-SPEC's two-value outcome vocabulary yet (flagged assumption A-02-3); uses
+     * only already-declared palette values on the frontend side.
+     */
+    public static final String OUTCOME_PATTERN_REPLACED = "Replaced by spreadsheet";
 
     /**
      * D-08 contested identity field labels, in the fixed order the merge report renders them
@@ -140,6 +156,56 @@ public class AgentMergeService {
                     OUTCOME_GAP_FILLED));
         }
         return winner;
+    }
+
+    /**
+     * D-05: reports whether the sheet's day group replaced or filled BambooHR's field-4517
+     * working-days pattern. Decides nothing about what is persisted — the sheet's day group is
+     * already authoritative under D-05 and is already written by the caller's
+     * {@code agent_day_hours} loop; this method only reports.
+     *
+     * Calls {@link WorkingDaysParser#parseWorkingDays} on the raw BambooHR string. When the
+     * result is empty (blank or the literal {@code "Variable"} — a data gap), the BambooHR side
+     * renders as the literal {@code "not stated"} and a gap-fill entry is appended
+     * unconditionally. When BambooHR does parse, both sides render as comma-joined three-letter
+     * weekday abbreviations in {@link EnrichedColumnLayout#DAY_ORDER} sequence, and a
+     * replacement entry is appended only when the two working-day sets differ — matching sets
+     * emit nothing, the same silent-agreement rule D-11 established for identity fields. Appends
+     * at most one entry per call.
+     */
+    public void mergeWorkingPattern(String bambooWorkingDaysRaw, Set<DayOfWeek> sheetWorkedDays,
+                                     String bamboohrId, String agentName, List<MergeReportEntry> report) {
+        Optional<Set<DayOfWeek>> bambooWorkingDays = WorkingDaysParser.parseWorkingDays(bambooWorkingDaysRaw);
+
+        if (bambooWorkingDays.isEmpty()) {
+            log.info("Merge decision: bamboohrId={}, field={}, outcome=gap-filled", bamboohrId, FIELD_WORKING_PATTERN);
+            log.debug("Merge gap-fill detail: bamboohrId={}, field={}, sheetDays={}",
+                    bamboohrId, FIELD_WORKING_PATTERN, renderDays(sheetWorkedDays));
+            report.add(new MergeReportEntry(bamboohrId, agentName, FIELD_WORKING_PATTERN,
+                    "not stated", renderDays(sheetWorkedDays), OUTCOME_GAP_FILLED));
+            return;
+        }
+
+        if (!bambooWorkingDays.get().equals(sheetWorkedDays)) {
+            log.info("Merge decision: bamboohrId={}, field={}, outcome=replaced", bamboohrId, FIELD_WORKING_PATTERN);
+            log.debug("Merge replacement detail: bamboohrId={}, field={}, bambooDays={}, sheetDays={}",
+                    bamboohrId, FIELD_WORKING_PATTERN, renderDays(bambooWorkingDays.get()), renderDays(sheetWorkedDays));
+            report.add(new MergeReportEntry(bamboohrId, agentName, FIELD_WORKING_PATTERN,
+                    renderDays(bambooWorkingDays.get()), renderDays(sheetWorkedDays), OUTCOME_PATTERN_REPLACED));
+        }
+        // Equal sets: silent agreement, nothing appended (D-11).
+    }
+
+    /** Renders a weekday set as comma-joined three-letter abbreviations in Mon-Sun order. */
+    private static String renderDays(Set<DayOfWeek> days) {
+        List<String> abbreviations = new ArrayList<>();
+        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+            if (days.contains(day)) {
+                String name = day.name();
+                abbreviations.add(name.substring(0, 1) + name.substring(1, 3).toLowerCase());
+            }
+        }
+        return String.join(", ", abbreviations);
     }
 
     /** D-01/D-03: a single read-only fetch of the whole tenant's BambooHR employees + time-off. */

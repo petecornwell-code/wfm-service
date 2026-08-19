@@ -499,6 +499,21 @@ public class DeskAssignmentUploadService {
 
                     agentRepository.save(agent);
 
+                    // D-05: report whether the sheet's day group replaced or filled BambooHR's
+                    // field-4517 pattern. Placed after the identity merge (six identity rows stay
+                    // first, deterministic report ordering) and before the agent_day_hours write
+                    // loop below. "Worked" is the same predicate the write loop and
+                    // SolverService.unblockSheetWorkedDays both use: a weekday whose parsed
+                    // day-off type is null.
+                    Set<DayOfWeek> sheetWorkedDays = EnumSet.noneOf(DayOfWeek.class);
+                    for (Map.Entry<DayOfWeek, DayCellResult> dayResultEntry : dayResults.entrySet()) {
+                        if (dayResultEntry.getValue().type() == null) {
+                            sheetWorkedDays.add(dayResultEntry.getKey());
+                        }
+                    }
+                    agentMergeService.mergeWorkingPattern(employee.customWorkingdays(), sheetWorkedDays,
+                            trimmedBamboohrId, agent.getName(), mergeReport);
+
                     // Write one agent_day_hours row per weekday (D-05/D-12): hours + nullable
                     // dayOffType label. This is a union with BambooHR field-4517 MANDATORY
                     // blocks (D-16) — clamp warnings are surfaced, never silently logged only
