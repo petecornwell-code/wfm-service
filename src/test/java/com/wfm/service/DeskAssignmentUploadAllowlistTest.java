@@ -1,7 +1,9 @@
 package com.wfm.service;
 
-import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.SkippedRow;
+import com.wfm.integration.AgentMergeService;
+import com.wfm.integration.BambooEmployee;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import org.apache.poi.ss.usermodel.Row;
@@ -10,6 +12,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -34,6 +37,10 @@ class DeskAssignmentUploadAllowlistTest {
     private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
+    private BambooHRClient bambooHRClient;
+    private AgentMergeService agentMergeService;
+    private TransactionTemplate transactionTemplate;
+    private Map<String, BambooEmployee> bambooEmployees;
 
     private DeskAssignmentUploadService service;
 
@@ -56,10 +63,24 @@ class DeskAssignmentUploadAllowlistTest {
         specializationRepository = mock(SpecializationRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
 
+        bambooEmployees = new LinkedHashMap<>();
+        bambooHRClient = mock(BambooHRClient.class);
+        when(bambooHRClient.listEmployees(anyString(), isNull()))
+                .thenAnswer(inv -> new ArrayList<>(bambooEmployees.values()));
+        when(bambooHRClient.listTimeOff(anyString(), any(), any())).thenReturn(List.of());
+        agentMergeService = new AgentMergeService(bambooHRClient);
+
+        transactionTemplate = mock(TransactionTemplate.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<Object> action = inv.getArgument(0);
+            action.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
 
@@ -128,10 +149,9 @@ class DeskAssignmentUploadAllowlistTest {
 
         when(agentRepository.findByTenantIdAndBamboohrId(TENANT_ID, bamboohrId))
                 .thenReturn(Optional.of(agent));
-        when(clientManagementService.findCachedEmployee(eq(bamboohrId), isNull(), isNull()))
-                .thenReturn(new BambooEmployeeResponse(
-                        bamboohrId, "Agent " + bamboohrId, bamboohrId + "@example.com",
-                        "Support", jobTitle, bambooStatus));
+        bambooEmployees.put(bamboohrId, new BambooEmployee(
+                bamboohrId, "Agent " + bamboohrId, bamboohrId + "@example.com",
+                "Support", jobTitle, bambooStatus, "Full-Time", null, null, null));
     }
 
     private SkippedRow onlySkipped(DeskAssignmentUploadService.DeskAssignmentUploadResult result) {
@@ -151,7 +171,10 @@ class DeskAssignmentUploadAllowlistTest {
 
         assertThat(result.assignedCount()).isZero();
         assertThat(result.skippedCount()).isEqualTo(1);
-        assertThat(onlySkipped(result).reason()).isEqualTo("Agent is not active");
+        // The BambooHR-status gate now fires at the snapshot lookup, before an Agent is even
+        // resolved, so the reason names the BambooHR status rather than the generic form the
+        // old cache-then-inactive-check path produced.
+        assertThat(onlySkipped(result).reason()).isEqualTo("Agent is not active in BambooHR (status: Inactive)");
     }
 
     @Test
@@ -223,7 +246,8 @@ class DeskAssignmentUploadAllowlistTest {
         assertThat(result.skippedDetails())
                 .extracting(SkippedRow::bamboohrId, SkippedRow::reason)
                 .containsExactlyInAnyOrder(
-                        org.assertj.core.api.Assertions.tuple("B601", "Agent is not active"),
+                        org.assertj.core.api.Assertions.tuple("B601",
+                                "Agent is not active in BambooHR (status: Inactive)"),
                         org.assertj.core.api.Assertions.tuple("B602",
                                 "Agent job title is not schedulable: Team Lead"));
     }
@@ -234,10 +258,7 @@ class DeskAssignmentUploadAllowlistTest {
 
     @Test
     void unknownBambooHrId_reportsNotFound() throws Exception {
-        // No agent registered, and no status recorded for the id.
-        when(clientManagementService.findCachedEmployee(eq("B900"), isNull(), isNull())).thenReturn(null);
-        when(clientManagementService.findEmployeeStatus(TENANT_ID, "B900")).thenReturn(null);
-
+        // No employee registered in the snapshot at all -- a genuine unknown id.
         var result = service.uploadDeskAssignments(workbookWith("B900"));
 
         assertThat(onlySkipped(result).reason()).isEqualTo("BambooHR ID not found");
@@ -245,11 +266,13 @@ class DeskAssignmentUploadAllowlistTest {
 
     @Test
     void formerEmployee_reportsInactiveRatherThanNotFound() throws Exception {
-        // The upload cache holds ACTIVE employees only, so a former employee misses the cache
-        // exactly like a bad id. The two need different operator action, so they must read
-        // differently.
-        when(clientManagementService.findCachedEmployee(eq("B901"), isNull(), isNull())).thenReturn(null);
-        when(clientManagementService.findEmployeeStatus(TENANT_ID, "B901")).thenReturn("Inactive");
+        // The snapshot retains every employee regardless of status (unlike the old cache,
+        // which held ACTIVE employees only), so a former employee resolves to a hit with an
+        // Inactive status rather than a miss -- the two need different operator action, so
+        // they must read differently.
+        bambooEmployees.put("B901", new BambooEmployee(
+                "B901", "Agent B901", "b901@example.com", "Support", CSR, "Inactive",
+                "Full-Time", null, null, null));
 
         var result = service.uploadDeskAssignments(workbookWith("B901"));
 
@@ -303,6 +326,6 @@ class DeskAssignmentUploadAllowlistTest {
         var result = service.uploadDeskAssignments(workbookWith("B700"));
 
         assertThat(result.skippedCount()).isEqualTo(1);
-        assertThat(onlySkipped(result).reason()).isEqualTo("Agent is not active");
+        assertThat(onlySkipped(result).reason()).isEqualTo("Agent is not active in BambooHR (status: Inactive)");
     }
 }

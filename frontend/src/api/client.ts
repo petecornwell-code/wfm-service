@@ -465,6 +465,15 @@ export interface BambooSyncEventResponse {
   retryAfterSeconds: number | null
 }
 
+export interface MergeReportEntry {
+  bamboohrId: string
+  agentName: string
+  field: string
+  bambooValue: string
+  sheetValue: string
+  outcome: string
+}
+
 export interface DeskAssignmentUploadResult {
   assignedCount: number
   skippedCount: number
@@ -473,6 +482,7 @@ export interface DeskAssignmentUploadResult {
   sheetSummaries: SheetSummary[]
   warnings: string[]
   skippedSheets: SkippedSheet[]
+  mergeReport: MergeReportEntry[]
 }
 
 // --- Job Title Config ---

@@ -1,9 +1,11 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
-import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.MergeReportEntry;
 import com.wfm.dto.SkippedRow;
 import com.wfm.dto.SkippedSheet;
+import com.wfm.integration.AgentMergeService;
+import com.wfm.integration.BambooEmployee;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.DayOffType;
@@ -22,7 +24,7 @@ import org.apache.poi.ss.util.WorkbookUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -55,6 +57,8 @@ public class DeskAssignmentUploadService {
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final SpecializationRepository specializationRepository;
     private final AgentEligibilityService agentEligibilityService;
+    private final AgentMergeService agentMergeService;
+    private final TransactionTemplate transactionTemplate;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
@@ -63,7 +67,9 @@ public class DeskAssignmentUploadService {
                                         AgentExceptionRepository agentExceptionRepository,
                                         AgentDayHoursRepository agentDayHoursRepository,
                                         SpecializationRepository specializationRepository,
-                                        AgentEligibilityService agentEligibilityService) {
+                                        AgentEligibilityService agentEligibilityService,
+                                        AgentMergeService agentMergeService,
+                                        TransactionTemplate transactionTemplate) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
@@ -72,21 +78,24 @@ public class DeskAssignmentUploadService {
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.specializationRepository = specializationRepository;
         this.agentEligibilityService = agentEligibilityService;
+        this.agentMergeService = agentMergeService;
+        this.transactionTemplate = transactionTemplate;
     }
 
-    @Transactional
     public DeskAssignmentUploadResult uploadDeskAssignments(MultipartFile file) throws IOException {
         long tenantId = TenantContext.getTenantId();
 
-        // Pre-populate the BambooHR cache so findCachedEmployee can match agents
-        // even if the user hasn't manually fetched a department on this page yet.
-        clientManagementService.ensureCachePopulatedForUpload(tenantId);
+        // Fresh BambooHR snapshot BEFORE any transaction opens (D-01/D-02/D-04) -- one
+        // listEmployees + one listTimeOff call serves the whole workbook, unconditionally,
+        // regardless of whether ClientManagementService's cache is already warm.
+        AgentMergeService.BambooSnapshot snapshot = agentMergeService.fetchSnapshot(tenantId);
 
         List<String> assigned = new ArrayList<>();
         List<SkippedRow> skipped = new ArrayList<>();
         List<SkippedSheet> skippedSheets = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         List<SheetSummary> sheetSummaries = new ArrayList<>();
+        List<MergeReportEntry> mergeReport = new ArrayList<>();
 
         // Pre-load all desks for this tenant keyed by name (case-insensitive). Also keyed by
         // the Excel-safe sheet name WorkbookUtil.createSafeSheetName(...) would produce for
@@ -196,6 +205,10 @@ public class DeskAssignmentUploadService {
                 }
             }
 
+            // Every write for the whole workbook runs inside this single transaction (D-02);
+            // per-row/per-sheet parse failures still skip-and-continue exactly as before --
+            // only a sync failure (already thrown above, before this point) aborts everything.
+            transactionTemplate.executeWithoutResult(status -> {
             // --- Iterate every sheet: sheet name = desk, no per-row Desk column (D-01) ---
             for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
                 Sheet sheet = workbook.getSheetAt(s);
@@ -330,55 +343,59 @@ public class DeskAssignmentUploadService {
                         continue;
                     }
 
-                    // Match by BambooHR ID only (D-08) — a row whose ID is not in the
-                    // BambooHR cache is rejected; no agent is created (D-07/UPL-07).
-                    BambooEmployeeResponse cached =
-                            clientManagementService.findCachedEmployee(bamboohrId.trim(), null, null);
-                    if (cached == null) {
-                        // The cache holds ACTIVE employees only, so a miss has two very different
-                        // causes needing different operator action: a wrong id (fix the cell) vs a
-                        // former employee (remove the row / reactivate in BambooHR). Reporting both
-                        // as "ID not found" sent operators hunting for a typo that did not exist
-                        // (UAT 2026-08-12).
-                        String status = clientManagementService.findEmployeeStatus(tenantId, bamboohrId);
-                        String reason = status == null
-                                ? "BambooHR ID not found"
-                                : "Agent is not active in BambooHR (status: " + status + ")";
-                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, reason));
+                    // Match by BambooHR ID only (D-08) against the fresh whole-tenant snapshot
+                    // fetched before this transaction opened — a row whose ID is unknown to
+                    // BambooHR is rejected; no agent is created (D-07/UPL-07).
+                    String trimmedBamboohrId = bamboohrId.trim();
+                    BambooEmployee employee = snapshot.employeesById().get(trimmedBamboohrId);
+                    if (employee == null) {
+                        // The snapshot retains every employee regardless of status, so a miss
+                        // here means the id genuinely doesn't exist in BambooHR (fix the cell),
+                        // distinct from the inactive-employee case handled just below. Reporting
+                        // both as "ID not found" sent operators hunting for a typo that did not
+                        // exist (UAT 2026-08-12).
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName, "BambooHR ID not found"));
+                        sheetSkippedCount++;
+                        continue;
+                    }
+                    if (!"Active".equalsIgnoreCase(employee.status())) {
+                        skipped.add(new SkippedRow(i + 1, bamboohrId, rowName,
+                                "Agent is not active in BambooHR (status: " + employee.status() + ")"));
                         sheetSkippedCount++;
                         continue;
                     }
 
-                    Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, bamboohrId.trim())
+                    Agent agent = agentRepository.findByTenantIdAndBamboohrId(tenantId, trimmedBamboohrId)
                             .orElse(null);
                     if (agent == null) {
                         agent = new Agent();
                         agent.setTenantId(tenantId);
-                        agent.setBamboohrId(bamboohrId.trim());
+                        agent.setBamboohrId(trimmedBamboohrId);
                         agent.setLastRefreshedAt(OffsetDateTime.now());
                     }
 
-                    // Re-activate: the agent is in the BambooHR cache (Active status),
-                    // so mark active even if a prior refresh soft-deleted them
-                    agent.setActive("Active".equalsIgnoreCase(cached.status()));
+                    // Re-activate: the agent is Active in the fresh BambooHR snapshot, so mark
+                    // active even if a prior refresh soft-deleted them
+                    agent.setActive("Active".equalsIgnoreCase(employee.status()));
 
-                    // Backfill missing identity fields from the BambooHR cache
-                    if (isBlank(agent.getEmail())) agent.setEmail(cached.workEmail());
-                    if (isBlank(agent.getDepartment())) agent.setDepartment(cached.department());
-                    if (isBlank(agent.getJobTitle())) agent.setJobTitle(cached.jobTitle());
+                    // Backfill missing identity fields from the fresh BambooHR snapshot
+                    if (isBlank(agent.getDepartment())) agent.setDepartment(employee.department());
+                    if (isBlank(agent.getJobTitle())) agent.setJobTitle(employee.jobTitle());
                     if (isBlank(agent.getFirstName()) || isBlank(agent.getLastName())) {
-                        AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(cached.displayName());
+                        AgentNameSplitter.Split cachedSplit = AgentNameSplitter.split(employee.displayName());
                         if (isBlank(agent.getFirstName())) agent.setFirstName(cachedSplit.firstName());
                         if (isBlank(agent.getLastName())) agent.setLastName(cachedSplit.lastName());
                     }
-                    if (isBlank(agent.getName())) agent.setName(cached.displayName());
+                    if (isBlank(agent.getName())) agent.setName(employee.displayName());
 
                     // Spreadsheet-supplied identity fields are optional and override the
-                    // cache when present (D-07)
+                    // snapshot when present (D-07) — EXCEPT Email, which now merges BambooHR
+                    // first (MRG-02); Task 2 converts the remaining contested fields the same way.
                     if (!isBlank(firstName)) agent.setFirstName(firstName.trim());
                     if (!isBlank(lastName)) agent.setLastName(lastName.trim());
                     if (!isBlank(jobTitle)) agent.setJobTitle(jobTitle.trim());
-                    if (!isBlank(email)) agent.setEmail(email.trim());
+                    agent.setEmail(agentMergeService.mergeIdentityFields(
+                            employee.workEmail(), email, "Email", trimmedBamboohrId, rowName, mergeReport));
                     if (!isBlank(department)) agent.setDepartment(department.trim());
                     if (!isBlank(activeStr)) agent.setActive(parseActive(activeStr));
                     if (!isBlank(agent.getFirstName()) || !isBlank(agent.getLastName())) {
@@ -478,11 +495,12 @@ public class DeskAssignmentUploadService {
 
                 sheetSummaries.add(new SheetSummary(desk.getName(), sheetImportedCount, sheetSkippedCount));
             }
+            });
         }
 
         return new DeskAssignmentUploadResult(
                 assigned.size(), skipped.size(), assigned, skipped,
-                sheetSummaries, warnings, skippedSheets);
+                sheetSummaries, warnings, skippedSheets, mergeReport);
     }
 
     private void clearDesk(long tenantId, UUID deskId) {
@@ -557,7 +575,8 @@ public class DeskAssignmentUploadService {
             List<SkippedRow> skippedDetails,
             List<SheetSummary> sheetSummaries,
             List<String> warnings,
-            List<SkippedSheet> skippedSheets
+            List<SkippedSheet> skippedSheets,
+            List<MergeReportEntry> mergeReport
     ) {}
 
     /** Per-sheet (per-desk) import rollup (D-11). */

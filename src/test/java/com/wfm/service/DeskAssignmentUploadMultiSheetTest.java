@@ -1,6 +1,8 @@
 package com.wfm.service;
 
-import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.integration.AgentMergeService;
+import com.wfm.integration.BambooEmployee;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.util.EnrichedColumnLayout;
@@ -10,6 +12,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -38,6 +41,10 @@ class DeskAssignmentUploadMultiSheetTest {
     private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
+    private BambooHRClient bambooHRClient;
+    private AgentMergeService agentMergeService;
+    private TransactionTemplate transactionTemplate;
+    private Map<String, BambooEmployee> bambooEmployees;
     private DeskAssignmentUploadService service;
 
     private static final long TENANT_ID = 1L;
@@ -57,10 +64,24 @@ class DeskAssignmentUploadMultiSheetTest {
         // to false and every row would be skipped as "not in the configured allowlist".
         when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
 
+        bambooEmployees = new LinkedHashMap<>();
+        bambooHRClient = mock(BambooHRClient.class);
+        when(bambooHRClient.listEmployees(anyString(), isNull()))
+                .thenAnswer(inv -> new ArrayList<>(bambooEmployees.values()));
+        when(bambooHRClient.listTimeOff(anyString(), any(), any())).thenReturn(List.of());
+        agentMergeService = new AgentMergeService(bambooHRClient);
+
+        transactionTemplate = mock(TransactionTemplate.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<Object> action = inv.getArgument(0);
+            action.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
         when(agentEligibilityService.isNonSchedulable(anyLong(), anyString())).thenReturn(false);
@@ -127,9 +148,9 @@ class DeskAssignmentUploadMultiSheetTest {
     }
 
     private void stubCachedEmployee(String id, String displayName) {
-        BambooEmployeeResponse cached = new BambooEmployeeResponse(id, displayName,
-                displayName.toLowerCase() + "@example.com", "Dept", "Agent", "Active");
-        when(clientManagementService.findCachedEmployee(eq(id), isNull(), isNull())).thenReturn(cached);
+        bambooEmployees.put(id, new BambooEmployee(id, displayName,
+                displayName.toLowerCase() + "@example.com", "Dept", "Agent", "Active",
+                "Full-Time", null, null, null));
     }
 
     // ------------------------------------------------------------------ //

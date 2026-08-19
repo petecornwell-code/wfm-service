@@ -1,7 +1,9 @@
 package com.wfm.service;
 
-import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.SkippedRow;
+import com.wfm.integration.AgentMergeService;
+import com.wfm.integration.BambooEmployee;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import org.apache.poi.ss.usermodel.Row;
@@ -10,6 +12,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -41,6 +44,10 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
     private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
+    private BambooHRClient bambooHRClient;
+    private AgentMergeService agentMergeService;
+    private TransactionTemplate transactionTemplate;
+    private Map<String, BambooEmployee> bambooEmployees;
 
     private DeskAssignmentUploadService service;
 
@@ -61,10 +68,24 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         specializationRepository = mock(SpecializationRepository.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
 
+        bambooEmployees = new LinkedHashMap<>();
+        bambooHRClient = mock(BambooHRClient.class);
+        when(bambooHRClient.listEmployees(anyString(), isNull()))
+                .thenAnswer(inv -> new ArrayList<>(bambooEmployees.values()));
+        when(bambooHRClient.listTimeOff(anyString(), any(), any())).thenReturn(List.of());
+        agentMergeService = new AgentMergeService(bambooHRClient);
+
+        transactionTemplate = mock(TransactionTemplate.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<Object> action = inv.getArgument(0);
+            action.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
 
@@ -157,10 +178,9 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
                 .thenReturn(Optional.of(agent));
         when(agentRepository.save(any(Agent.class))).thenAnswer(i -> i.getArgument(0));
 
-        BambooEmployeeResponse cached = new BambooEmployeeResponse(
-                "B200", "Frank", "frank@example.com", "Sales", "Agent", "Active");
-        when(clientManagementService.findCachedEmployee(eq("B200"), isNull(), isNull()))
-                .thenReturn(cached);
+        bambooEmployees.put("B200", new BambooEmployee(
+                "B200", "Frank", "frank@example.com", "Sales", "Agent", "Active",
+                "Full-Time", null, null, null));
 
         MockMultipartFile file = buildDeskWorkbook("Sales Desk",
                 new String[][] { agentRow("B200", "Frank", "frank@example.com") });
@@ -187,9 +207,7 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(desk));
         when(specializationRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
         when(agentRepository.findByTenantIdAndDeskId(TENANT_ID, deskId)).thenReturn(List.of());
-        // No BambooHR cache entry for this ID -- findCachedEmployee returns null
-        when(clientManagementService.findCachedEmployee(eq("B999"), isNull(), isNull()))
-                .thenReturn(null);
+        // No BambooHR employee for this ID -- the snapshot lookup misses (bambooEmployees stays empty)
 
         MockMultipartFile file = buildDeskWorkbook("Orphan Desk",
                 new String[][] { agentRow("B999", "Ghost", "ghost@example.com") });

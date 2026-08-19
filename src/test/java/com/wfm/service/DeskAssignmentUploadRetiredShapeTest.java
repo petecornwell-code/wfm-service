@@ -1,5 +1,8 @@
 package com.wfm.service;
 
+import com.wfm.integration.AgentMergeService;
+import com.wfm.integration.BambooEmployee;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import org.apache.poi.ss.usermodel.Row;
@@ -8,10 +11,14 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +41,10 @@ class DeskAssignmentUploadRetiredShapeTest {
     private AgentDayHoursRepository agentDayHoursRepository;
     private SpecializationRepository specializationRepository;
     private AgentEligibilityService agentEligibilityService;
+    private BambooHRClient bambooHRClient;
+    private AgentMergeService agentMergeService;
+    private TransactionTemplate transactionTemplate;
+    private Map<String, BambooEmployee> bambooEmployees;
     private DeskAssignmentUploadService service;
     private static final long TENANT_ID = 1L;
 
@@ -50,10 +61,25 @@ class DeskAssignmentUploadRetiredShapeTest {
         // Job-title allowlist inactive for this suite; without this stub the mock defaults
         // to false and every row would be skipped as "not in the configured allowlist".
         when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
+
+        bambooEmployees = new LinkedHashMap<>();
+        bambooHRClient = mock(BambooHRClient.class);
+        when(bambooHRClient.listEmployees(anyString(), isNull()))
+                .thenAnswer(inv -> new ArrayList<>(bambooEmployees.values()));
+        when(bambooHRClient.listTimeOff(anyString(), any(), any())).thenReturn(List.of());
+        agentMergeService = new AgentMergeService(bambooHRClient);
+
+        transactionTemplate = mock(TransactionTemplate.class);
+        doAnswer(inv -> {
+            java.util.function.Consumer<Object> action = inv.getArgument(0);
+            action.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
         when(agentEligibilityService.isNonSchedulable(anyLong(), anyString())).thenReturn(false);
         when(deskRepository.findByTenantId(TENANT_ID)).thenReturn(List.of());

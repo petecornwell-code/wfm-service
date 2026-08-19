@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, type SheetSummary, type SkippedSheet, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, type SheetSummary, type SkippedSheet, type MergeReportEntry, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitle' | 'status'
@@ -487,7 +487,7 @@ export default function ClientManagement() {
       {/* Upload Result Modal */}
       {uploadResult !== null && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: '8px', padding: '1.5rem', width: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', padding: '1.5rem', width: '760px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <h3>Upload Results</h3>
             <div style={{ marginBottom: '0.5rem' }}>
               <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '1.1rem' }}>
@@ -512,6 +512,49 @@ export default function ClientManagement() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {uploadResult.mergeReport.length > 0 && (
+              <div style={{ marginTop: '0.75rem' }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem' }}>Merge Report</div>
+                <div style={{ overflowY: 'auto', maxHeight: '300px', border: '1px solid #e5e7eb', borderRadius: '4px' }}>
+                  <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr>
+                        <th>BambooHR ID</th>
+                        <th>Agent</th>
+                        <th>Field</th>
+                        <th>BambooHR value</th>
+                        <th>Sheet value</th>
+                        <th>Outcome</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uploadResult.mergeReport.map((entry: MergeReportEntry, idx: number) => (
+                        <tr key={idx}>
+                          <td>{entry.bamboohrId}</td>
+                          <td>{entry.agentName}</td>
+                          <td>{entry.field}</td>
+                          <td style={{ wordWrap: 'break-word' }}>{entry.bambooValue}</td>
+                          <td style={{ wordWrap: 'break-word' }}>{entry.sheetValue}</td>
+                          <td>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '9999px',
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                              color: '#ffffff',
+                              background: entry.outcome === 'BambooHR override' ? '#92400e' : '#3b82f6',
+                            }}>
+                              {entry.outcome}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
             {(uploadResult.warnings.length > 0 || uploadResult.skippedSheets.length > 0) && (
