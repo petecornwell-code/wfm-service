@@ -34,7 +34,6 @@ public class ScheduleDetailResponse {
     private List<StaffingSummaryEntry> staffingSummary;
     private List<AgentScheduleEntry> agentSchedule;
     private PreferenceReport preferenceReport;
-    private ConsistencyReport consistencyReport;
     private List<ConstraintViolationEntry> constraintViolations;
     private List<String> warnings;
     private int version;
@@ -94,65 +93,6 @@ public class ScheduleDetailResponse {
             int startTimeHonouredCount,
             int breakTimeHonouredCount,
             BigDecimal overallHonouredPct
-    ) {}
-
-    /**
-     * 8.5 Consistency Report — per-agent start and break-offset spread across the whole
-     * schedule period. Stage 3 of the consistency plan: the constraints that shape start and
-     * break consistency are only visible in the aggregate soft score, which conflates every
-     * constraint, so this reports the thing itself.
-     *
-     * <p>Whole-period by nature — a spread measured over a single day is always zero — so
-     * unlike the other output views this one is not filtered by the {@code date} query
-     * parameter.
-     */
-    public record ConsistencyReport(
-            List<ConsistencyReportEntry> entries,
-            ConsistencySummary summary
-    ) {}
-
-    /**
-     * One agent's consistency across the days they work. Break fields are null for an agent
-     * whose worked days carry no break at all.
-     */
-    public record ConsistencyReportEntry(
-            UUID agentId,
-            String agentName,
-            int daysWorked,
-            LocalTime earliestStart,
-            LocalTime latestStart,
-            int startSpreadMinutes,
-            int daysWithBreak,
-            Integer minBreakOffsetMinutes,
-            Integer maxBreakOffsetMinutes,
-            Integer breakOffsetSpreadMinutes
-    ) {}
-
-    /**
-     * Aggregate consistency, phrased to answer the plan's target directly: at least 80% of
-     * agents on an identical start every worked day, and no agent's spread over two hours.
-     *
-     * @param totalAgents agents with at least one worked day
-     * @param singleDayAgents agents working exactly one day, who are trivially consistent and
-     *        counted in every figure below — surfaced separately so a headline percentage
-     *        cannot quietly rest on them
-     * @param startSpreadTargetMinutes the target spread this summary was scored against,
-     *        echoed so a client does not have to hardcode it
-     * @param identicalBreakOffsetPct measured over agents with break data, not over all agents
-     */
-    public record ConsistencySummary(
-            int totalAgents,
-            int singleDayAgents,
-            int identicalStartAgents,
-            BigDecimal identicalStartPct,
-            int startSpreadWithinTargetAgents,
-            BigDecimal startSpreadWithinTargetPct,
-            int startSpreadTargetMinutes,
-            int maxStartSpreadMinutes,
-            int agentsWithBreakData,
-            int identicalBreakOffsetAgents,
-            BigDecimal identicalBreakOffsetPct,
-            int maxBreakOffsetSpreadMinutes
     ) {}
 
     public record ConstraintViolationEntry(
@@ -226,8 +166,6 @@ public class ScheduleDetailResponse {
     public void setAgentSchedule(List<AgentScheduleEntry> v) { this.agentSchedule = v; }
     public PreferenceReport getPreferenceReport() { return preferenceReport; }
     public void setPreferenceReport(PreferenceReport v) { this.preferenceReport = v; }
-    public ConsistencyReport getConsistencyReport() { return consistencyReport; }
-    public void setConsistencyReport(ConsistencyReport v) { this.consistencyReport = v; }
     public List<ConstraintViolationEntry> getConstraintViolations() { return constraintViolations; }
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
     public List<String> getWarnings() { return warnings; }
