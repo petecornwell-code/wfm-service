@@ -74,6 +74,20 @@ public class ConstraintWeights {
     @Column(name = "honour_start_time_weight")
     private HardSoftScore honourStartTimeWeight = HardSoftScore.ofSoft(5);
 
+    /**
+     * Spread between an agent's earliest and latest daily start, per increment.
+     *
+     * <p>Soft by default and intended to stay that way — a hard consistency rule is escapable
+     * by shortening shifts, which is how the breakBlockedHours 3.0 run collapsed 51 agent-days
+     * to three-hour shifts. 2 places it just above honour-preferred-start-time (5) per agent
+     * rather than per agent-day, so a week of scattered starts outweighs a single honoured
+     * preference without being able to outbid coverage.
+     */
+    @ConstraintWeight("Consistent daily start")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "consistent_start_weight")
+    private HardSoftScore consistentStartWeight = HardSoftScore.ofSoft(2);
+
     @ConstraintWeight("Honour preferred break time")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "honour_break_time_weight")
@@ -192,4 +206,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(HardSoftScore minStaffingWeight) { this.minStaffingWeight = minStaffingWeight; }
+
+    public HardSoftScore getConsistentStartWeight() { return consistentStartWeight; }
+    public void setConsistentStartWeight(HardSoftScore consistentStartWeight) { this.consistentStartWeight = consistentStartWeight; }
 }

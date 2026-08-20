@@ -21,6 +21,7 @@ public class ConstraintWeightsDto {
     private ScoreDto bulkUnderallocationSoftWeight;
     private ScoreDto bulkUnderallocationHardWeight;
     private ScoreDto minStaffingWeight;
+    private ScoreDto consistentStartWeight;
 
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
@@ -59,4 +60,6 @@ public class ConstraintWeightsDto {
     public void setBulkUnderallocationHardWeight(ScoreDto v) { this.bulkUnderallocationHardWeight = v; }
     public ScoreDto getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(ScoreDto v) { this.minStaffingWeight = v; }
+    public ScoreDto getConsistentStartWeight() { return consistentStartWeight; }
+    public void setConsistentStartWeight(ScoreDto v) { this.consistentStartWeight = v; }
 }

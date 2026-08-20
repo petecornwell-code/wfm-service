@@ -1,0 +1,25 @@
+-- Weight for the new "Consistent daily start" constraint: the spread between an agent's
+-- earliest and latest shift start across the days they work, charged per increment.
+--
+-- Stage 1 of the consistency plan. Stage 0 made a stated preference an anchor rather than a
+-- floor, but that only reaches agents who have a preference on file. This reaches every agent
+-- and leaves the anchor to the solver — it says nothing about which start time an agent should
+-- have, only that it should be the same one each day.
+--
+-- Weights are stored per desk, so the Java default in ConstraintWeights applies only to rows
+-- created after this. Existing rows are backfilled here to the same value.
+--
+-- SOFT, and it needs to stay soft. A hard consistency rule does not force consistent starts;
+-- it forces shorter shifts, because contracted_hours_under is soft while a hard rule is not.
+-- That is exactly how the breakBlockedHours 3.0 run collapsed 51 of 138 agent-days onto
+-- three-hour shifts while every break dutifully complied. ConstraintWeights is a
+-- @ConstraintConfiguration, so this column decides the level: setting '1hard/0soft' here is
+-- available but is the known failure mode, not a stricter setting.
+--
+-- 2 soft is deliberately modest. The penalty is per agent, not per agent-day, so on the live
+-- desk's 28 CSRs a four-increment spread each is 28 x 4 x 2 = 224 soft — enough to break ties
+-- between equal-coverage schedules, not enough to outbid bulk under-allocation (1 per missing
+-- FTE per hour) or minimum staffing. Consistency should shape a schedule that already covers
+-- demand, never buy consistency with uncovered hours.
+ALTER TABLE constraint_weights
+    ADD COLUMN consistent_start_weight VARCHAR(50) NOT NULL DEFAULT '0hard/2soft';
