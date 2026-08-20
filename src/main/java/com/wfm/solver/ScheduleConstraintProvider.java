@@ -6,7 +6,6 @@ import com.wfm.model.*;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.*;
 
@@ -49,7 +48,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             bulkUnderallocationSoft(factory),
             bulkUnderallocationHard(factory),
             minimumStaffing(factory),
-            consistentDailyStart(factory),
         };
     }
 
@@ -579,53 +577,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 17. Consistent daily start — penalise the spread between an agent's earliest and latest
-     * shift start across the days they work, in whole increments.
-     *
-     * <p>The anchor is the solver's to choose. Nothing here says <em>which</em> start time an
-     * agent should have; only that it should be the same one every day. That is what separates
-     * this from {@link #honourPreferredStartTime}, which measures against a start the agent
-     * asked for and applies only to agents who expressed a preference. This applies to every
-     * agent, including the majority who have no preference on file.
-     *
-     * <p>Spread, not per-day deviation, and that has a consequence worth knowing: the penalty
-     * is set entirely by the two extreme days, so moving a middle day changes nothing until it
-     * becomes an extreme. The search sees a plateau rather than a gradient, and an agent with
-     * one badly-placed Saturday costs the same whether the other five days agree perfectly or
-     * not. If Stage 1 shows less movement than expected, summing each day's deviation from the
-     * agent's own earliest start is the variant to try — it gives every day a gradient, at the
-     * cost of no longer matching the "no spread over 2h" target directly.
-     *
-     * <p>Must stay soft. A hard consistency rule is escapable by shortening shifts — exactly
-     * how the {@code breakBlockedHours} 3.0 run collapsed 51 agent-days to three-hour shifts,
-     * since {@code contracted_hours_under} is soft while the hard window is not. Hard-vs-soft
-     * is the {@code consistent_start_weight} column's decision, so this is a property of the
-     * default, not of the code.
-     *
-     * <p>An agent who works a single day has an earliest equal to their latest and is not
-     * penalised; an agent with no assignments at all forms no group. Both are correct — there
-     * is nothing to be consistent about.
-     */
-    // Package-private so ConstraintVerifier can target this constraint in isolation.
-    Constraint consistentDailyStart(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
-                        min((AgentAssignment a) -> a.getTimeslot().getStartTime()))
-                .groupBy(
-                        (agent, date, dayStart) -> agent,
-                        min((Agent agent, LocalDate date, LocalTime dayStart) -> dayStart),
-                        max((Agent agent, LocalDate date, LocalTime dayStart) -> dayStart))
-                .join(ScheduleConfig.class)
-                .filter((agent, earliest, latest, config) -> earliest.isBefore(latest))
-                .penalizeConfigurable((agent, earliest, latest, config) ->
-                        spreadIncrements(earliest, latest, config.incrementMinutes()))
-                .asConstraint("Consistent daily start");
-    }
-
-    /**
      * 11. Break clustering — penalise when the number of agents on break in a
      * single timeslot exceeds the threshold percentage of assigned agents.
      * Evaluated as a no-op placeholder — full implementation requires cross-agent
@@ -769,18 +720,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (deviationMinutes == 0) return 0;
         return BigDecimal.valueOf(deviationMinutes)
                 .divide(BigDecimal.valueOf(deriveIncrement(assignments)), 0, RoundingMode.CEILING)
-                .intValue();
-    }
-
-    /**
-     * Distance between an agent's earliest and latest daily shift start, in whole increments,
-     * rounded up so that no spread is free. See {@link #consistentDailyStart}.
-     */
-    private int spreadIncrements(LocalTime earliest, LocalTime latest, int incrementMinutes) {
-        long spreadMinutes = java.time.temporal.ChronoUnit.MINUTES.between(earliest, latest);
-        if (spreadMinutes <= 0) return 0;
-        return BigDecimal.valueOf(spreadMinutes)
-                .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.CEILING)
                 .intValue();
     }
 

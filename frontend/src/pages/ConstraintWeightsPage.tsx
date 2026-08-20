@@ -22,7 +22,6 @@ const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = 
   { key: 'breakClusteringWeight', label: 'Break Clustering', description: 'Avoid too many agents on break at the same time' },
   { key: 'bulkUnderallocationSoftWeight', label: 'Bulk Under-allocation (Soft)', description: 'Soft penalty for under-staffing' },
   { key: 'minStaffingWeight', label: 'Minimum Staffing', description: 'Keep at least one agent on every hour, even where forecast demand is zero' },
-  { key: 'consistentStartWeight', label: 'Consistent Daily Start', description: 'Prefer agents starting at the same time every day they work' },
 ]
 
 const DEFAULTS: Record<string, Score> = {
@@ -44,7 +43,6 @@ const DEFAULTS: Record<string, Score> = {
   breakClusteringWeight: { hardScore: 0, softScore: 2 },
   bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
   minStaffingWeight: { hardScore: 0, softScore: 1000 },
-  consistentStartWeight: { hardScore: 0, softScore: 2 },
 }
 
 export default function ConstraintWeightsPage() {
