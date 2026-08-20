@@ -88,19 +88,6 @@ public class ConstraintWeights {
     @Column(name = "consistent_start_weight")
     private HardSoftScore consistentStartWeight = HardSoftScore.ofSoft(2);
 
-    /**
-     * Spread in how far into the shift an agent's break falls, per increment.
-     *
-     * <p>Matches consistentStartWeight at 2 because the two measure comparably-sized faults and
-     * neither should dominate the other — an agent with a steady start and a wandering break is
-     * no better or worse off than the reverse. Soft for the same reason: a hard rule here buys
-     * compliance by shortening shifts.
-     */
-    @ConstraintWeight("Consistent break offset")
-    @Convert(converter = HardSoftScoreConverter.class)
-    @Column(name = "consistent_break_weight")
-    private HardSoftScore consistentBreakWeight = HardSoftScore.ofSoft(2);
-
     @ConstraintWeight("Honour preferred break time")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "honour_break_time_weight")
@@ -222,7 +209,4 @@ public class ConstraintWeights {
 
     public HardSoftScore getConsistentStartWeight() { return consistentStartWeight; }
     public void setConsistentStartWeight(HardSoftScore consistentStartWeight) { this.consistentStartWeight = consistentStartWeight; }
-
-    public HardSoftScore getConsistentBreakWeight() { return consistentBreakWeight; }
-    public void setConsistentBreakWeight(HardSoftScore consistentBreakWeight) { this.consistentBreakWeight = consistentBreakWeight; }
 }

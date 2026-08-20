@@ -99,9 +99,6 @@ public class ConstraintWeightsService {
         if (updates.getConsistentStartWeight() != null) {
             weights.setConsistentStartWeight(toScore(updates.getConsistentStartWeight()));
         }
-        if (updates.getConsistentBreakWeight() != null) {
-            weights.setConsistentBreakWeight(toScore(updates.getConsistentBreakWeight()));
-        }
 
         ConstraintWeights saved = constraintWeightsRepository.save(weights);
         return toDto(saved);
@@ -128,7 +125,6 @@ public class ConstraintWeightsService {
         dto.setBulkUnderallocationHardWeight(fromScore(w.getBulkUnderallocationHardWeight()));
         dto.setMinStaffingWeight(fromScore(w.getMinStaffingWeight()));
         dto.setConsistentStartWeight(fromScore(w.getConsistentStartWeight()));
-        dto.setConsistentBreakWeight(fromScore(w.getConsistentBreakWeight()));
         return dto;
     }
 
