@@ -27,6 +27,32 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     public static final int MIN_AGENTS_PER_TIMESLOT = 1;
 
+    // ------------------------------------------------------------------
+    //  Shared grouping building blocks
+    //
+    //  Timefold shares a constraint-stream node between constraints only when they are
+    //  built from *identical* building blocks, and it compares lambdas by instance. An
+    //  inline `a -> a.getAgent().getId()` written in six places is six distinct objects,
+    //  so six separate agent-day groupings were being built and maintained, each with its
+    //  own map and its own list, all recomputed on every move that touched an agent-day.
+    //
+    //  Hoisting them to single instances lets those collapse into one shared node per
+    //  distinct grouping. Purely a cost change — the grouping semantics are unchanged.
+    //  Measured on BreakAwareConstructionTest's 30-agent scenario; see the commit message.
+    // ------------------------------------------------------------------
+
+    private static final java.util.function.Function<AgentAssignment, UUID> AGENT_ID =
+            a -> a.getAgent().getId();
+
+    private static final java.util.function.Function<AgentAssignment, java.time.LocalDate> DATE =
+            a -> a.getTimeslot().getDate();
+
+    private static final ai.timefold.solver.core.api.score.stream.uni.UniConstraintCollector<
+            AgentAssignment, ?, List<AgentAssignment>> TO_LIST = toList();
+
+    private static final ai.timefold.solver.core.api.score.stream.uni.UniConstraintCollector<
+            AgentAssignment, ?, Integer> COUNT = count();
+
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
         return new Constraint[] {
@@ -159,10 +185,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
@@ -212,10 +235,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint breakDuration(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
@@ -241,10 +261,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint breakBlockedWindow(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
@@ -281,10 +298,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint breakStartAlignment(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
@@ -310,10 +324,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint contractedHoursOver(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        count())
+                .groupBy(AGENT_ID, DATE, COUNT)
                 .join(AgentDayConfig.class,
                         equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
@@ -339,10 +350,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint contractedHoursUnder(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent().getId(),
-                        a -> a.getTimeslot().getDate(),
-                        count())
+                .groupBy(AGENT_ID, DATE, COUNT)
                 .join(AgentDayConfig.class,
                         equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
@@ -535,18 +543,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     Constraint honourPreferredStartTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentPreference.class,
-                        equal((agent, date, assignments) -> agent.getId(),
+                        equal((agentId, date, assignments) -> agentId,
                                 p -> p.getAgent().getId()),
-                        equal((agent, date, assignments) -> date,
+                        equal((agentId, date, assignments) -> date,
                                 AgentPreference::getDate))
-                .filter((agent, date, assignments, pref) ->
+                .filter((agentId, date, assignments, pref) ->
                         startDeviationIncrements(assignments, pref.getPreferredStartTime()) > 0)
-                .penalizeConfigurable((agent, date, assignments, pref) ->
+                .penalizeConfigurable((agentId, date, assignments, pref) ->
                         startDeviationIncrements(assignments, pref.getPreferredStartTime()))
                 .asConstraint("Honour preferred start time");
     }
@@ -559,23 +564,20 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private Constraint honourPreferredBreakTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentPreference.class,
-                        equal((agent, date, assignments) -> agent.getId(),
+                        equal((agentId, date, assignments) -> agentId,
                                 p -> p.getAgent().getId()),
-                        equal((agent, date, assignments) -> date,
+                        equal((agentId, date, assignments) -> date,
                                 AgentPreference::getDate))
-                .filter((agent, date, assignments, pref) -> {
+                .filter((agentId, date, assignments, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
                     int increment = deriveIncrement(assignments);
                     LocalTime breakStart = findBreakStart(assignments, increment);
                     if (breakStart == null) return false;
                     return !breakStart.equals(pref.getPreferredBreakTime());
                 })
-                .penalizeConfigurable((agent, date, assignments, pref) -> 1)
+                .penalizeConfigurable((agentId, date, assignments, pref) -> 1)
                 .asConstraint("Honour preferred break time");
     }
 
@@ -611,17 +613,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     Constraint consistentDailyStart(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
+                .groupBy(AGENT_ID, DATE,
                         min((AgentAssignment a) -> a.getTimeslot().getStartTime()))
                 .groupBy(
-                        (agent, date, dayStart) -> agent,
-                        min((Agent agent, LocalDate date, LocalTime dayStart) -> dayStart),
-                        max((Agent agent, LocalDate date, LocalTime dayStart) -> dayStart))
+                        (agentId, date, dayStart) -> agentId,
+                        min((UUID agentId, LocalDate date, LocalTime dayStart) -> dayStart),
+                        max((UUID agentId, LocalDate date, LocalTime dayStart) -> dayStart))
                 .join(ScheduleConfig.class)
-                .filter((agent, earliest, latest, config) -> earliest.isBefore(latest))
-                .penalizeConfigurable((agent, earliest, latest, config) ->
+                .filter((agentId, earliest, latest, config) -> earliest.isBefore(latest))
+                .penalizeConfigurable((agentId, earliest, latest, config) ->
                         spreadIncrements(earliest, latest, config.incrementMinutes()))
                 .asConstraint("Consistent daily start");
     }
@@ -654,20 +654,17 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     Constraint consistentBreakOffset(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
+                .groupBy(AGENT_ID, DATE, TO_LIST)
                 // Map to the offset before filtering or aggregating. Computing it inside the
                 // filter and again inside each collector would run findBreakStart three times
                 // per agent-day, on every move that touches that agent-day.
-                .map((agent, date, assignments) -> agent,
-                        (agent, date, assignments) -> breakOffsetMinutes(assignments))
-                .filter((agent, offset) -> offset != null)
+                .map((agentId, date, assignments) -> agentId,
+                        (agentId, date, assignments) -> breakOffsetMinutes(assignments))
+                .filter((agentId, offset) -> offset != null)
                 .groupBy(
-                        (agent, offset) -> agent,
-                        min((Agent agent, Integer offset) -> offset),
-                        max((Agent agent, Integer offset) -> offset))
+                        (agentId, offset) -> agentId,
+                        min((UUID agentId, Integer offset) -> offset),
+                        max((UUID agentId, Integer offset) -> offset))
                 .join(ScheduleConfig.class)
                 .filter((agent, earliest, latest, config) -> latest > earliest)
                 .penalizeConfigurable((agent, earliest, latest, config) ->
