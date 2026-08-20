@@ -1,0 +1,26 @@
+-- Weight for the new "Consistent break offset" constraint: the spread in how far into an
+-- agent's shift their break falls, across the days they work, charged per increment.
+--
+-- Stage 2 of the consistency plan, and the counterpart to consistent_start_weight (V38).
+--
+-- Measured as an offset from that day's shift start rather than as a time of day. An agent
+-- starting 09:00 and breaking at 13:00 and one starting 10:00 and breaking at 14:00 have the
+-- same rhythm, four hours in, and this treats them as identical. That is precisely what
+-- honour_break_time cannot express: its preferred_break_time is an absolute LocalTime.
+--
+-- The offset framing also keeps this independent of consistent_start_weight. Measured
+-- absolutely, an agent with scattered starts would be charged twice for a single fault — once
+-- by the start constraint and again here, because the break necessarily moved with the shift.
+-- As an offset the two weights stay independently meaningful, which matters because they are
+-- tuned separately.
+--
+-- Weights are stored per desk, so the Java default in ConstraintWeights applies only to rows
+-- created after this. Existing rows are backfilled here to the same value.
+--
+-- 2 soft, matching consistent_start_weight. The two measure comparably-sized faults and
+-- neither should dominate: an agent with a steady start and a wandering break is no better or
+-- worse placed than the reverse. Soft for the same reason as every other constraint in this
+-- plan — a hard consistency rule does not produce consistency, it produces shorter shifts,
+-- because contracted_hours_under is soft while a hard rule is not.
+ALTER TABLE constraint_weights
+    ADD COLUMN consistent_break_weight VARCHAR(50) NOT NULL DEFAULT '0hard/2soft';

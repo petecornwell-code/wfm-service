@@ -50,6 +50,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             bulkUnderallocationHard(factory),
             minimumStaffing(factory),
             consistentDailyStart(factory),
+            consistentBreakOffset(factory),
         };
     }
 
@@ -626,6 +627,52 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
+     * 18. Consistent break offset — penalise the spread in how far into an agent's shift their
+     * break falls, across the days they work, in whole increments.
+     *
+     * <p>Measured as an offset from that day's shift start, not as an absolute time of day, and
+     * that choice is the whole point of the constraint. An agent who starts at 09:00 and breaks
+     * at 13:00 and one who starts at 10:00 and breaks at 14:00 have the same working rhythm —
+     * four hours in — and this treats them as identical. It is the contrast with
+     * {@link #honourPreferredBreakTime}, whose {@code preferredBreakTime} is an absolute
+     * {@code LocalTime} and so cannot express "the same distance into the shift".
+     *
+     * <p>Offset also keeps this independent of {@link #consistentDailyStart}. Were the break
+     * measured absolutely, an agent with scattered starts would be charged twice for one fault:
+     * once by that constraint, and again here because the break necessarily moved with the
+     * shift. As an offset, the two constraints measure genuinely different things and their
+     * weights stay independently meaningful.
+     *
+     * <p>The spread plateau documented on {@link #consistentDailyStart} applies here too: only
+     * the two extreme days set the penalty.
+     *
+     * <p>An agent-day with no break contributes nothing — short shifts are not obliged to carry
+     * one, and {@code exactlyOneBreak} is what decides whether a day should have had one.
+     * An agent with one break-carrying day has an offset equal to itself and is not penalised.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint consistentBreakOffset(ConstraintFactory factory) {
+        return factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getAgent() != null)
+                .groupBy(
+                        a -> a.getAgent(),
+                        a -> a.getTimeslot().getDate(),
+                        toList())
+                .filter((agent, date, assignments) -> breakOffsetMinutes(assignments) != null)
+                .groupBy(
+                        (agent, date, assignments) -> agent,
+                        min((Agent agent, LocalDate date, List<AgentAssignment> as) ->
+                                breakOffsetMinutes(as)),
+                        max((Agent agent, LocalDate date, List<AgentAssignment> as) ->
+                                breakOffsetMinutes(as)))
+                .join(ScheduleConfig.class)
+                .filter((agent, earliest, latest, config) -> latest > earliest)
+                .penalizeConfigurable((agent, earliest, latest, config) ->
+                        offsetSpreadIncrements(earliest, latest, config.incrementMinutes()))
+                .asConstraint("Consistent break offset");
+    }
+
+    /**
      * 11. Break clustering — penalise when the number of agents on break in a
      * single timeslot exceeds the threshold percentage of assigned agents.
      * Evaluated as a no-op placeholder — full implementation requires cross-agent
@@ -778,6 +825,31 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     private int spreadIncrements(LocalTime earliest, LocalTime latest, int incrementMinutes) {
         long spreadMinutes = java.time.temporal.ChronoUnit.MINUTES.between(earliest, latest);
+        if (spreadMinutes <= 0) return 0;
+        return BigDecimal.valueOf(spreadMinutes)
+                .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.CEILING)
+                .intValue();
+    }
+
+    /**
+     * How far into an agent-day's shift its break starts, in minutes, or {@code null} when the
+     * day has no break to place. See {@link #consistentBreakOffset} for why this is an offset
+     * rather than a time of day.
+     */
+    private Integer breakOffsetMinutes(List<AgentAssignment> assignments) {
+        LocalTime shiftStart = getShiftStart(assignments);
+        if (shiftStart == null) return null;
+        LocalTime breakStart = findBreakStart(assignments, deriveIncrement(assignments));
+        if (breakStart == null) return null;
+        return (int) java.time.temporal.ChronoUnit.MINUTES.between(shiftStart, breakStart);
+    }
+
+    /**
+     * Distance between an agent's shortest and longest break offset, in whole increments,
+     * rounded up so that no spread is free. See {@link #consistentBreakOffset}.
+     */
+    private int offsetSpreadIncrements(int earliestOffset, int latestOffset, int incrementMinutes) {
+        int spreadMinutes = latestOffset - earliestOffset;
         if (spreadMinutes <= 0) return 0;
         return BigDecimal.valueOf(spreadMinutes)
                 .divide(BigDecimal.valueOf(incrementMinutes), 0, RoundingMode.CEILING)
