@@ -13,7 +13,7 @@ export default function ScheduleResults() {
   const { deskId, scheduleId } = useParams<{ deskId: string; scheduleId: string }>()
   const navigate = useNavigate()
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null)
-  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'violations' | 'pto'>('staffing')
+  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'consistency' | 'violations' | 'pto'>('staffing')
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
@@ -253,10 +253,10 @@ export default function ScheduleResults() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {(['staffing', 'agents', 'allocation', 'preferences', 'violations', 'pto'] as const).map(tab => (
+        {(['staffing', 'agents', 'allocation', 'preferences', 'consistency', 'violations', 'pto'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ background: activeTab === tab ? '#3b82f6' : '#e5e7eb', color: activeTab === tab ? '#fff' : '#374151', borderRadius: 0, padding: '0.5rem 1.25rem' }}>
-            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
+            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'consistency' ? 'Consistency' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
           </button>
         ))}
       </div>
@@ -267,6 +267,7 @@ export default function ScheduleResults() {
         {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} specs={specs} />}
         {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} specs={specs} specFilter={specFilter} onSpecFilterChange={setSpecFilter} />}
         {activeTab === 'preferences' && <PreferenceTab schedule={schedule} dateFilter={dateFilter} />}
+        {activeTab === 'consistency' && <ConsistencyTab schedule={schedule} />}
         {activeTab === 'violations' && (
           <ViolationsTab
             data={filteredViolations}
@@ -754,6 +755,73 @@ function PreferenceTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dat
               <td style={{ padding: '4px 8px' }}>{e.actualBreakTime || '—'}</td>
               <td style={{ textAlign: 'center', padding: '4px 8px' }}>
                 <span style={{ color: e.breakTimeHonoured ? '#16a34a' : '#dc2626' }}>{e.breakTimeHonoured ? 'Yes' : 'No'}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+function formatSpread(minutes: number | null): string {
+  if (minutes === null) return '—'
+  if (minutes === 0) return '0'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`
+}
+
+// Deliberately takes no dateFilter: spread is measured across the whole period, and within a
+// single day it is always zero. The backend leaves this view unfiltered for the same reason.
+function ConsistencyTab({ schedule }: { schedule: ScheduleDetail }) {
+  const report = schedule.consistencyReport
+  if (!report || !report.entries || report.entries.length === 0) {
+    return <p style={{ color: '#6b7280' }}>No consistency data available.</p>
+  }
+
+  const s = report.summary
+  const targetLabel = formatSpread(s.startSpreadTargetMinutes)
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '0.5rem', fontSize: '0.85rem', background: '#f9fafb', padding: '0.75rem', borderRadius: '6px', flexWrap: 'wrap' }}>
+        <div>Agents scheduled: <strong>{s.totalAgents}</strong></div>
+        <div>Identical start every day: <strong>{s.identicalStartAgents}</strong> ({Number(s.identicalStartPct).toFixed(1)}%)</div>
+        <div>Start spread within {targetLabel}: <strong>{s.startSpreadWithinTargetAgents}</strong> ({Number(s.startSpreadWithinTargetPct).toFixed(1)}%)</div>
+        <div>Worst start spread: <strong>{formatSpread(s.maxStartSpreadMinutes)}</strong></div>
+        <div>Identical break offset: <strong>{s.identicalBreakOffsetAgents}</strong> of {s.agentsWithBreakData} ({Number(s.identicalBreakOffsetPct).toFixed(1)}%)</div>
+        <div>Worst break-offset spread: <strong>{formatSpread(s.maxBreakOffsetSpreadMinutes)}</strong></div>
+      </div>
+      <p style={{ color: '#6b7280', fontSize: '0.78rem', marginTop: 0, marginBottom: '1rem' }}>
+        Measured across the whole schedule period, so the date filter does not apply.
+        {s.singleDayAgents > 0 && ` ${s.singleDayAgents} of ${s.totalAgents} agent(s) work only one day and are counted as consistent by default.`}
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Agent</th>
+            <th style={{ textAlign: 'center', padding: '6px 8px' }}>Days</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Earliest Start</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Latest Start</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px' }}>Start Spread</th>
+            <th style={{ textAlign: 'center', padding: '6px 8px' }}>Days w/ Break</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px' }}>Break Offset Spread</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.entries.map(e => (
+            <tr key={e.agentId}>
+              <td style={{ padding: '4px 8px' }}>{e.agentName}</td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{e.daysWorked}</td>
+              <td style={{ padding: '4px 8px' }}>{e.earliestStart}</td>
+              <td style={{ padding: '4px 8px' }}>{e.latestStart}</td>
+              <td style={{ textAlign: 'right', padding: '4px 8px', color: e.startSpreadMinutes === 0 ? '#16a34a' : e.startSpreadMinutes > s.startSpreadTargetMinutes ? '#dc2626' : '#374151' }}>
+                {formatSpread(e.startSpreadMinutes)}
+              </td>
+              <td style={{ textAlign: 'center', padding: '4px 8px' }}>{e.daysWithBreak}</td>
+              <td style={{ textAlign: 'right', padding: '4px 8px', color: e.breakOffsetSpreadMinutes === 0 ? '#16a34a' : '#374151' }}>
+                {formatSpread(e.breakOffsetSpreadMinutes)}
               </td>
             </tr>
           ))}

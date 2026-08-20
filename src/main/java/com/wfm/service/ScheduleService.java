@@ -151,6 +151,7 @@ public class ScheduleService {
         response.setStaffingSummary(scheduleOutputService.buildStaffingSummary(schedule));
         response.setAgentSchedule(scheduleOutputService.buildAgentSchedule(schedule));
         response.setPreferenceReport(scheduleOutputService.buildPreferenceReport(schedule));
+        response.setConsistencyReport(scheduleOutputService.buildConsistencyReport(schedule));
         response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule));
 
         // Derive violatedHardConstraints from constraint violations (deduplicated)
@@ -166,6 +167,8 @@ public class ScheduleService {
 
         // If date filter provided, filter output views to that date
         // Constraint violations are always returned in full regardless of date filter (spec §8.4)
+        // The consistency report is likewise unfiltered (spec §8.5): it measures spread across
+        // the whole period, and spread within a single day is always zero.
         if (dateFilter != null && !dateFilter.isBlank()) {
             LocalDate filterDate;
             try {

@@ -372,6 +372,39 @@ export interface PreferenceReport {
   summary: PreferenceSummary
 }
 
+export interface ConsistencyReportEntry {
+  agentId: string
+  agentName: string
+  daysWorked: number
+  earliestStart: string
+  latestStart: string
+  startSpreadMinutes: number
+  daysWithBreak: number
+  minBreakOffsetMinutes: number | null
+  maxBreakOffsetMinutes: number | null
+  breakOffsetSpreadMinutes: number | null
+}
+
+export interface ConsistencySummary {
+  totalAgents: number
+  singleDayAgents: number
+  identicalStartAgents: number
+  identicalStartPct: number
+  startSpreadWithinTargetAgents: number
+  startSpreadWithinTargetPct: number
+  startSpreadTargetMinutes: number
+  maxStartSpreadMinutes: number
+  agentsWithBreakData: number
+  identicalBreakOffsetAgents: number
+  identicalBreakOffsetPct: number
+  maxBreakOffsetSpreadMinutes: number
+}
+
+export interface ConsistencyReport {
+  entries: ConsistencyReportEntry[]
+  summary: ConsistencySummary
+}
+
 export interface ViolationDetail {
   agentId: string | null
   agentName: string | null
@@ -393,6 +426,7 @@ export interface ScheduleDetail extends ScheduleSummary {
   staffingSummary: StaffingSummaryEntry[]
   agentSchedule: AgentScheduleEntry[]
   preferenceReport: PreferenceReport | null
+  consistencyReport: ConsistencyReport | null
   constraintViolations: ConstraintViolationEntry[]
   violatedHardConstraints: string[]
   warnings?: string[]
