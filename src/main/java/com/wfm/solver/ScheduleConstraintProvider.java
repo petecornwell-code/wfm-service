@@ -658,16 +658,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         a -> a.getAgent(),
                         a -> a.getTimeslot().getDate(),
                         toList())
-                // Map to the offset before filtering or aggregating. Computing it inside the
-                // filter and again inside each collector would run findBreakStart three times
-                // per agent-day, on every move that touches that agent-day.
-                .map((agent, date, assignments) -> agent,
-                        (agent, date, assignments) -> breakOffsetMinutes(assignments))
-                .filter((agent, offset) -> offset != null)
+                .filter((agent, date, assignments) -> breakOffsetMinutes(assignments) != null)
                 .groupBy(
-                        (agent, offset) -> agent,
-                        min((Agent agent, Integer offset) -> offset),
-                        max((Agent agent, Integer offset) -> offset))
+                        (agent, date, assignments) -> agent,
+                        min((Agent agent, LocalDate date, List<AgentAssignment> as) ->
+                                breakOffsetMinutes(as)),
+                        max((Agent agent, LocalDate date, List<AgentAssignment> as) ->
+                                breakOffsetMinutes(as)))
                 .join(ScheduleConfig.class)
                 .filter((agent, earliest, latest, config) -> latest > earliest)
                 .penalizeConfigurable((agent, earliest, latest, config) ->
