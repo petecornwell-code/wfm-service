@@ -504,47 +504,22 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 9. Honour preferred start time — penalise how far an agent's actual shift start
-     * on a day sits from the start time they asked for, in either direction.
+     * 9. Honour preferred start time — penalise assigning an agent to a
+     * timeslot before their preferred start time for that day.
      * Preferences are pre-resolved (weekly vs standing) by SolverService,
      * so all preferences have an exact date set.
-     *
-     * <p>Two-directional by design. The original form penalised only
-     * {@code slotStart.isBefore(preferredStartTime)}, which made a preference a floor
-     * rather than an anchor: an agent who asked for 09:00 paid nothing for being placed
-     * at 14:00, so nothing held a start time steady from one day to the next. Deviation
-     * is measured on the agent-day's earliest assigned slot and charged in whole
-     * increments, which leaves the early direction at almost exactly its old magnitude
-     * (a contiguous shift starting 2h early on 60-minute slots cost 2 before and costs 2
-     * now) while lateness stops being free.
-     *
-     * <p>Rounds up: any non-zero deviation costs at least one increment. Rounding to
-     * nearest would restore a band of free deviation below half an increment — the same
-     * class of hole the {@code isBefore} test was. A preference no slot boundary can hit
-     * (09:30 against hourly slots) therefore carries a constant floor of 1, equal on both
-     * sides, so it does not bias placement one way or the other.
-     *
-     * <p>An agent with no assignment on a date forms no group and is not penalised: not
-     * working is not a start-time deviation. Whether the day should have been worked at
-     * all is {@link #contractedHoursUnder}'s concern.
      */
-    // Package-private so ConstraintVerifier can target this constraint in isolation.
-    Constraint honourPreferredStartTime(ConstraintFactory factory) {
+    private Constraint honourPreferredStartTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                .groupBy(
-                        a -> a.getAgent(),
-                        a -> a.getTimeslot().getDate(),
-                        toList())
                 .join(AgentPreference.class,
-                        equal((agent, date, assignments) -> agent.getId(),
-                                p -> p.getAgent().getId()),
-                        equal((agent, date, assignments) -> date,
-                                AgentPreference::getDate))
-                .filter((agent, date, assignments, pref) ->
-                        startDeviationIncrements(assignments, pref.getPreferredStartTime()) > 0)
-                .penalizeConfigurable((agent, date, assignments, pref) ->
-                        startDeviationIncrements(assignments, pref.getPreferredStartTime()))
+                        equal(a -> a.getAgent().getId(), p -> p.getAgent().getId()),
+                        equal(a -> a.getTimeslot().getDate(), AgentPreference::getDate))
+                .filter((a, p) -> {
+                    if (p.getPreferredStartTime() == null) return false;
+                    return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
+                })
+                .penalizeConfigurable((a, p) -> 1)
                 .asConstraint("Honour preferred start time");
     }
 
@@ -703,24 +678,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return assignments.stream()
                 .map(a -> a.getTimeslot().getStartTime())
                 .min(LocalTime::compareTo).orElse(null);
-    }
-
-    /**
-     * Absolute distance between an agent-day's shift start and a preferred start time,
-     * in whole timeslot increments, rounded up so that no deviation is free.
-     * Returns 0 when there is nothing to compare. See {@link #honourPreferredStartTime}
-     * for why it rounds this way.
-     */
-    private int startDeviationIncrements(List<AgentAssignment> assignments, LocalTime preferredStart) {
-        if (preferredStart == null) return 0;
-        LocalTime shiftStart = getShiftStart(assignments);
-        if (shiftStart == null) return 0;
-        long deviationMinutes = Math.abs(
-                java.time.temporal.ChronoUnit.MINUTES.between(preferredStart, shiftStart));
-        if (deviationMinutes == 0) return 0;
-        return BigDecimal.valueOf(deviationMinutes)
-                .divide(BigDecimal.valueOf(deriveIncrement(assignments)), 0, RoundingMode.CEILING)
-                .intValue();
     }
 
     private LocalTime getShiftEnd(List<AgentAssignment> assignments) {
