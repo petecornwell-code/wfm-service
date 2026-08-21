@@ -163,6 +163,13 @@ decision or a concrete gap CONTEXT.md left to "Claude's discretion.")*
   new visual layer, unlike the file's two existing `position: fixed` overlays which are correctly
   *not* the pattern to copy here — 13-RESEARCH.md's explicit correction to CONTEXT.md).
 
+**Visual focal point** (closes the checker's Dimension 2 recommendation): the collapsed `Hours/Day`
+value is the primary scan target on the roster — an operator sweeping the table is checking that
+number against what they uploaded, and it is the one cell this phase changes the meaning of. Once a
+row is expanded, the `MAND` / `PTO` badges become the secondary visual signal; the numeric day values
+sit below both in priority. Nothing in this phase should out-weigh the collapsed `Hours/Day` cell at
+the table level — in particular the chevron is deliberately low-contrast chrome, not an attractor.
+
 ### 3. Per-day cell — display and edit modes
 
 **Display mode** (not currently being edited), branching in this exact order — this order is
@@ -266,24 +273,82 @@ per weekday: {
 > Empty-state and error-state COPY live in `## Copywriting Contract` above — this section covers
 > state coverage and REFERENCES those rows rather than restating the copy (de-dup).
 
-Applicable state considerations resolved: 12 covered, 0 backstop, 0 unresolved.
+**Probe run:** 5 elements, 38 applicable considerations.
+**Resolved: 38 / 38** — 26 `verification: explicit`, 4 `verification: backstop`, 8 dismissed with reason, 0 unresolved.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Expanded weekday row (list-collection) | ✅ covered | Zero `AgentDayHours` rows → all 7 cells render the resolved default in the Muted/not-set style plus the "No per-day hours uploaded…" note (see Copywriting Contract) |
-| empty | Per-day five-state cell (form) | ✅ covered | The combo's "empty" value is the explicit `Not set (default)` entry, never a blank/unstyled input (D-04) |
-| loading | Expand/collapse toggle (interactive-control) | ✅ covered | Expand reveals data already present in the bulk roster GET response (13-RESEARCH.md Pattern 1) — no secondary fetch or spinner on expand |
-| loading | Per-cell save (form) | ✅ covered | Combobox input disables during the PUT; no distinct spinner, matching the existing `saveHours`/`saveSpec` synchronous convention; re-enables on response |
-| loading | Bulk "Set all days" apply (form/interactive-control) | ✅ covered | Apply button disables during the PUT, mirroring the existing `assigning`/`exporting`/`uploading` boolean-flag pattern already used 4x in this file |
-| error | Per-cell save (form) | ✅ covered | Server rejection → toast via existing `showToast('error', getErrorMessage(err))`; out-of-range input rejected client-side first (Copywriting Contract) |
-| error | Bulk "Set all days" apply (form) | ✅ covered | Same toast pattern; bulk endpoint required to stay transactional so failure never leaves a partial 3-of-7 write (Section 4) |
-| error | Roster load as a whole (list-collection) | ✅ covered | Unchanged by this phase — the existing `loadAgents()` catch/`showToast` already covers a failed roster GET; this phase only adds fields to the same response, not a new request |
-| populated | Expanded weekday row (list-collection) | ✅ covered | Matches the CONTEXT.md accepted mockup exactly — mixed numeric/`MAND`/`PTO` values in one row |
-| partial | Expanded row + per-day cell (list-collection/form) | ✅ covered | The five-state model (Section 3) is designed for this as the *primary* case, not an edge case — some days set, some not, is the expected shape after most uploads |
-| overflow | Expanded row layout (list-collection/static-content) | ✅ covered | No new columns are added (D-01); the region reuses whatever horizontal-scroll behavior the existing 13-column table already has, unmodified |
-| overflow | Collapsed summary text (static-content) | ✅ covered | The range algorithm (Section 1) caps output at ~7 characters (`"12-24"` worst case), well under the table's widest existing cell content |
-| zero-one-many | Weekday set (list-collection) | ✅ covered | Always exactly 7 fixed days — never zero/one/variable-many; the agent list itself (which does vary) is unchanged by this phase and already has working pagination |
-| long-text | Cell values / collapsed summary (form/static-content) | ✅ covered | Every value in this surface is a short, closed-vocabulary token (a number ≤5 chars, or `PTO`/`MANDATORY`/`Not set (default)`) — no operator-authored free text appears anywhere in scope, so truncation/wrapping cannot occur |
+Element kinds were confirmed against the heuristic classifier rather than accepted from it: E3 and E4
+were re-run with `static-content` added to their detected kinds, which raised `long-text` on E3 and
+`overflow` on E4 — two axes the cue-match alone would have silently dropped. E4 legitimately carries no
+`populated` / `zero-one-many` row: those belong to the list-collection axis and E4 is a single cell.
+
+**Backstop rationale (load-bearing):** this repo has **no frontend test framework at all** (zero
+vitest/jest/testing-library — verified in 13-RESEARCH.md), so the four visual claims below cannot be
+proven by assertion. They are marked `verification: backstop` deliberately. At verify time each routes
+to `human_needed` (reason `insufficient_spec`) unless visual evidence is wired — the intended
+honest-verifier behavior, not over-flagging.
+
+### E1 — Collapsed `Hours/Day` summary cell *(list-collection, static-content)*
+
+| Category | Status | Verification | Resolution / Reason |
+|----------|--------|--------------|---------------------|
+| empty | ✅ resolved | explicit | Zero `AgentDayHours` rows → the cell shows the single resolved schedule default styled Muted/not-set `#9ca3af`; never blank |
+| loading | ✅ resolved | explicit | Value arrives in the existing roster GET (13-RESEARCH.md Pattern 1); no skeleton or spinner is added |
+| error | ✅ resolved | explicit | Roster GET failure is unchanged existing behavior — `loadAgents()` catch → `showToast('error')`; no per-cell error state |
+| populated | ✅ resolved | explicit | Single value when all 7 effective hours are equal; `min-max` range (e.g. `12-24`) when they differ; never renders `MAND`/`PTO` (Section 1) |
+| partial | ✅ resolved | explicit | Unset days resolve to the schedule default *before* min/max is computed, so the summary always spans all 7 values |
+| overflow | ✅ resolved | **backstop** | Range output caps at ~7 chars (`12-24` worst case) inside the existing dense 13-column row — provable only by viewing the rendered table |
+| zero-one-many | ⊘ dismissed | — | Weekdays are a fixed set of 7; the zero/one/many axis cannot vary and no copy pluralizes |
+| long-text | ✅ resolved | explicit | Numeric closed vocabulary ≤5 chars; truncation impossible |
+
+### E2 — Expand/collapse chevron toggle *(list-collection, media, interactive-control, static-content)*
+
+| Category | Status | Verification | Resolution / Reason |
+|----------|--------|--------------|---------------------|
+| empty | ✅ resolved | explicit | Chevron always renders, even when the agent has zero `AgentDayHours` rows (expanding reveals the "No per-day hours uploaded…" note). Never hidden |
+| loading | ✅ resolved | explicit | No secondary fetch on expand — data is already in the roster response; no spinner on the toggle |
+| populated | ✅ resolved | explicit | `▸` collapsed / `▾` expanded, with `aria-label="Expand hours detail for {agentName}"` / `"Collapse hours detail"` (Copywriting Contract) |
+| error | ⊘ dismissed | — | Pure client-side state toggle — it cannot fail, so there is no error affordance to specify |
+| partial | ⊘ dismissed | — | Not data-bound; its appearance does not vary with data completeness |
+| overflow | ⊘ dismissed | — | Fixed-width unicode glyph inside pre-existing row chrome |
+| zero-one-many | ⊘ dismissed | — | One toggle per roster row; row count is governed by existing pagination, unchanged by this phase |
+| long-text | ⊘ dismissed | — | Icon-only; the `aria-label` is never visually rendered |
+
+### E3 — Expanded weekday detail row *(list-collection, static-content — `static-content` added at kind confirmation)*
+
+| Category | Status | Verification | Resolution / Reason |
+|----------|--------|--------------|---------------------|
+| empty | ✅ resolved | explicit | Zero rows → single-line note "No per-day hours uploaded — every day shows the schedule default ({X}h)." above the 7-day grid; all 7 cells render the default Muted |
+| loading | ✅ resolved | explicit | Region renders synchronously from already-loaded data; no spinner |
+| error | ✅ resolved | explicit | No independent error state; failures surface at the cell (E4) or bulk (E5) level as toasts |
+| partial | ✅ resolved | explicit | The *primary* expected case after most uploads. The 5-state priority order MANDATORY → PTO → explicit-zero → worked hours → not-set must not be collapsed into 3 states (13-RESEARCH.md Pitfalls 1 and 2) |
+| long-text | ✅ resolved | explicit | Badge text is fixed (`MAND`, `PTO`); the only variable-length string is the empty-state note, which wraps at full row width rather than truncating |
+| populated | ✅ resolved | **backstop** | "Matches the CONTEXT.md accepted mockup — mixed numeric/`MAND`/`PTO` in one row" is a visual claim; no source assertion can prove the render matches |
+| overflow | ✅ resolved | **backstop** | Adds no new columns (D-01) and inherits the existing 13-column table's horizontal-scroll behavior unmodified — verifiable only by viewing it |
+| zero-one-many | ⊘ dismissed | — | Fixed set of exactly 7 weekdays; never zero/one/variable-many |
+
+### E4 — Per-day five-state editable cell *(form, interactive-control, static-content — `static-content` added at kind confirmation)*
+
+| Category | Status | Verification | Resolution / Reason |
+|----------|--------|--------------|---------------------|
+| empty | ✅ resolved | explicit | The "empty" value is the explicit `Not set (default)` datalist entry (D-04), never a blank or unstyled input |
+| loading | ✅ resolved | explicit | Input disables during the PUT and re-enables on response — matches the existing `saveHours`/`saveSpec` convention; no distinct spinner |
+| error | ✅ resolved | explicit | Client-side range check first ("Enter a number from 0 to 24, or choose PTO / MANDATORY / Not set (default)."); server rejection → `showToast('error', getErrorMessage(err))` as "Couldn't save {Weekday} — {reason}." |
+| partial | ✅ resolved | explicit | A row with `hours=0.00, dayOffType=null` renders as Explicit-zero `#6b7280`, visually distinct from Muted/not-set `#9ca3af` (13-RESEARCH.md Pitfalls 1 and 2) |
+| long-text | ✅ resolved | explicit | Free entry is numeric 0–24 and validated before submit; no operator-authored free text can reach the cell |
+| overflow | ✅ resolved | **backstop** | `Not set (default)` is wider than the weekday mini-column but renders in the browser's native `<datalist>` dropdown, which the cell width does not constrain — browser-dependent and visual |
+
+### E5 — Bulk "Set all days to…" action *(form, list-collection, interactive-control, static-content)*
+
+| Category | Status | Verification | Resolution / Reason |
+|----------|--------|--------------|---------------------|
+| empty | ✅ resolved | explicit | Opens blank with placeholder `(type a number)`; Apply is inert until a value or picklist entry is chosen |
+| loading | ✅ resolved | explicit | Apply disables during the transactional PUT, mirroring the existing `assigning`/`exporting`/`uploading` boolean-flag pattern |
+| error | ✅ resolved | explicit | The bulk endpoint must be transactional so a failure never leaves a partial 3-of-7 write; failure → error toast with zero rows changed (Section 4) |
+| populated | ✅ resolved | explicit | The amber warning notice (bg `#fffbeb`, border `#fde68a`, text `#92400e`) is always visible above the input |
+| partial | ✅ resolved | explicit | Native `confirm()` fires **only** when the agent's existing rows carry a `MANDATORY`/`PTO` label — the trigger is "rows carry a label", NOT "rows exist" (13-RESEARCH.md Pitfall 4) |
+| overflow | ✅ resolved | explicit | Single-line action row at the 12px house spacing below the weekday grid; no overflow path exists |
+| zero-one-many | ✅ resolved | explicit | Always applies to exactly 7 days; the confirmation copy pluralizes via `{N} day(s)` |
+| long-text | ⊘ dismissed | — | Same closed vocabulary as E4 — `PTO` / `MANDATORY` / `Not set (default)` / a number; no free text is possible |
 
 ---
 
@@ -301,11 +366,11 @@ safety gate does not apply.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS *(FLAG at review — no focal point declared; closed by the "Visual focal point" note in Component Specifications §2)*
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-08-21 (gsd-ui-checker — APPROVED, 5 PASS + 1 non-blocking FLAG, since closed)
