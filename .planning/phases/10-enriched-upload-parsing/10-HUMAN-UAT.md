@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 10-enriched-upload-parsing
 source: [10-VERIFICATION.md]
 started: 2026-07-31
-updated: 2026-08-12
+updated: 2026-08-21
 ---
 
 ## Current Test
 
-number: 3
-name: Upload Results modal — rollup, skip reasons, clamp warnings
-expected: |
-  See Tests section below.
-awaiting: user response
+[testing complete]
 
 <!--
 Rewritten 2026-08-12. The original single test described a template "pre-seeded with the current
@@ -37,34 +33,34 @@ result: pass
 
 ### 3. Upload Results modal — rollup, skip reasons, clamp warnings
 expected: Uploading a mixed-validity workbook opens the Upload Results modal showing a per-sheet rollup (e.g. "Billing: 12 imported, 2 skipped"), a per-row reason for each skipped row, non-blocking amber clamp warnings where a day cell above 24 was clamped to 24, and a notice for any sheet whose name matches no configured desk.
-result: [pending]
+result: pass
 
 ### 4. Upload enforces active + schedulable
 expected: A workbook containing an inactive agent and an agent whose title is not schedulable imports neither. The modal reports each with its own reason — "Agent is not active" and "Agent job title is not schedulable: <title>" — while a valid active, schedulable agent on the same sheet still imports.
-result: [pending]
+result: pass
 
 ### 5. Day cell values behave as documented
 expected: A day cell accepts a number 0–24 (fractions preserved, e.g. 7.5), or the words MANDATORY or PTO (case-insensitive, both stored as 0 hours). A value above 24 clamps to 24 and raises an amber warning but still imports. A blank cell, a negative number, or any other word skips the WHOLE row with a specific reason naming the day and the problem.
-result: [pending]
+result: pass
 
 ### 6. Solver only considers schedulable agents
 expected: Building a schedule for a desk considers only agents who are active, have a job title on the allowlist, have a primary specialization, and have known working days. Agents excluded solely by job title no longer appear in the resulting schedule. (This is a behaviour change as of 2026-08-12 — desks staffed by non-CSR titles will now find no eligible agents.)
-result: [pending]
+result: pass
 
 ### 7. Desk assignment blocked for non-schedulable titles
 expected: On Client Management, assigning an employee whose job title is not on the allowlist is rejected with a clear message naming the agent and the title ("... has a job title that is not schedulable: <title>"), rather than silently assigning them.
-result: [pending]
+result: pass
 
 ### 8. Empty allowlist falls back to permitting everything
 expected: With every allowlist entry removed, the amber warning appears and behaviour reverts to pre-restriction: all job titles are schedulable, the template seeds all active agents, and upload accepts any active agent. (Deliberate fail-open, so the system cannot be locked into a state where nothing is schedulable. Re-add "Customer Support Representative" afterwards.)
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 8
-passed: 2
+passed: 8
 issues: 0
-pending: 6
+pending: 0
 skipped: 0
 blocked: 0
 
