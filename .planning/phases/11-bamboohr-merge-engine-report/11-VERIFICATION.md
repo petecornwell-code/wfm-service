@@ -1,23 +1,28 @@
 ---
 phase: 11-bamboohr-merge-engine-report
 verified: 2026-08-19T00:00:00Z
-status: human_needed
+status: passed
 score: 6/6 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Upload a spreadsheet that overrides several identity fields and inspect the Merge Report table in the browser (not just the JSON payload)."
     expected: "Table renders BambooHR ID / Agent / Field / BambooHR value / Sheet value / Outcome columns inside the 760px modal; amber 'BambooHR override' pill and blue 'Gap-filled by spreadsheet' pill render as specified; long job-title/email values wrap rather than overflow the modal (UI-SPEC E1/long-text, backstop)."
     why_human: "Visual wrapping/overflow at a specific pixel width cannot be confirmed by grep or a unit test; UI-SPEC explicitly marks this a backstop item requiring a held-out visual check with realistic long-value fixture data."
+
   - test: "Upload a sheet supplying a full week for an agent with a pathologically long name, whose working pattern BambooHR does not know."
     expected: "Green 'Newly eligible for scheduling' callout renders above the Merge Report table (not merged into it), and the long agent name wraps inside the 760px modal rather than overflowing."
     why_human: "Same backstop class as above (UI-SPEC E2/long-text) — rendering/wrapping is a browser-only observable."
+
   - test: "Trigger a BambooHR sync failure during upload (e.g. force a 503/timeout) and observe the toast."
     expected: "Toast.tsx renders the full lengthened MRG-07 message ('BambooHR sync failed (...) — no changes were made. Retry the upload once BambooHR is available.') without truncating the load-bearing 'no changes were made' clause or overflowing the viewport."
     why_human: "UI-SPEC flags both the toast's overflow behavior and its long-text truncation behavior as unconfirmed backstop items — Toast.tsx has a 400px maxWidth and no explicit wrapping rule was verified against this specific message length."
+
   - test: "Run two uploads concurrently against workbooks that touch the same desk (MRG-04/concurrency, backstop) and separately verify non-ASCII BambooHR values (e.g. a Georgian agent name) round-trip through the merge report and the sync-failure message without mojibake (MRG-07/encoding, backstop)."
     expected: "Each upload returns its own merge report with no cross-contamination; non-ASCII text renders correctly end-to-end."
     why_human: "Both are explicitly declared `verification: backstop` in the plan frontmatter — concurrency races and encoding round-trips are not exercised by the existing unit-test suite (all fixtures use ASCII names)."
+
   - test: "Confirm against a live BambooHR account (Company Settings → Field Alias) that custom field 4517 is actually returned under the JSON key `customWorkingdays` by the `/reports/custom` response."
     expected: "The key `customWorkingdays` is populated for real employees whose working-days pattern is set in BambooHR."
     why_human: "Code review IN-03: the report request asks for field id `4517` but the parser reads back the key `customWorkingdays` — if no field alias exists on the tenant's BambooHR account, this value is always null in production, meaning MRG-03's window arbitration and MRG-06's gap-fill/replace reporting would silently never activate for BambooHR-sourced patterns even though every unit test (which hand-constructs `BambooEmployee` fixtures) passes. This is pre-existing code, not modified by this phase, but phase 11 makes it far more load-bearing than before."

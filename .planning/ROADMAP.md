@@ -40,7 +40,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 - [ ] **Phase 9: Agent Data Model Foundation** - Per-day contracted hours and first/last name split, migrated without solve-behaviour regression
 - [x] **Phase 10: Enriched Upload Parsing** - Extended spreadsheet format with unbounded specializations and Mon–Sun hours/days-off/PTO columns, with per-row validation (completed 2026-07-31)
-- [ ] **Phase 11: BambooHR Merge Engine & Report** - Fresh-sync merge with per-field precedence and an operator-facing merge report
+- [x] **Phase 11: BambooHR Merge Engine & Report** - Fresh-sync merge with per-field precedence and an operator-facing merge report (completed 2026-08-21)
 
 ## Phase Details
 
@@ -148,7 +148,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
 | 9. Agent Data Model Foundation | v1.2 | 0/6 | Not started | - |
 | 10. Enriched Upload Parsing | v1.2 | 6/6 | Complete   | 2026-07-31 |
-| 11. BambooHR Merge Engine & Report | v1.2 | 2/2 | In Progress|  |
+| 11. BambooHR Merge Engine & Report | v1.2 | 2/2 | Complete    | 2026-08-21 |
 
 ## Backlog
 

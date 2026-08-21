@@ -87,6 +87,13 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 - ✓ Data-gap agents (blank/`Variable` working days) excluded from solving rather than mis-scheduled — v1.1
 - ✓ PTO correctness: only APPROVED PTO blocks; REQUESTED is visible-only — v1.1
 - ✓ BambooHR 503/429 rate limits surface a human-readable retry message — v1.1
+- ✓ Every upload runs a fresh BambooHR sync before any merge decision — v1.2 Phase 11 (MRG-01)
+- ✓ Per-field precedence: BambooHR authoritative where populated, spreadsheet fills gaps — v1.2 Phase 11 (MRG-02)
+- ✓ BambooHR dated PTO wins for the dates it covers; spreadsheet recurring PTO applies only outside that window — v1.2 Phase 11 (MRG-03)
+- ✓ Merge report in the Upload Results modal showing per-field source attribution — v1.2 Phase 11 (MRG-04)
+- ✓ Merge report flags spreadsheet values overridden by BambooHR, surfacing source disagreement — v1.2 Phase 11 (MRG-05)
+- ✓ A spreadsheet-supplied working pattern makes a BambooHR-unknown agent solver-eligible, with a refresh downgrade guard — v1.2 Phase 11 (MRG-06)
+- ✓ BambooHR sync failure during upload aborts the whole upload with a clear operator message and zero partial writes — v1.2 Phase 11 (MRG-07)
 
 ### Active (carried to next milestone — see ROADMAP.md Backlog)
 
@@ -102,6 +109,8 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 - Solver constraint weight / time limit tuning UI (QUAL-05) → 999.6
 - **Operator-facing surface for data-gap and outlier agents** — currently CloudWatch logs only
 - **⚠ BambooHR API key rotation and public-repo scrub** → 999.7 (security, unresolved)
+- **⚠ BambooHR field-4517 alias dependency** — emerged at Phase 11 (code review IN-03): the `/reports/custom` request asks for field id `4517` but the parser reads the key `customWorkingdays`. Without a tenant Field Alias the value is always null in production and MRG-03/MRG-06 silently never activate, with the unit suite still green. Operator confirmed the alias at UAT 2026-08-21; needs re-checking after any BambooHR account change.
+- **Cross-agent seat displacement** — emerged at Phase 12: seat capacity, not move selection, is the binding constraint at realistic over-allocation (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`)
 
 ### Out of Scope
 
@@ -149,11 +158,14 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 | Solver *respects* BambooHR fixed weekends rather than *choosing* 2 contiguous days off | Employees have fixed weekly patterns in BambooHR field 4517; choosing would override real contracts | ✓ Good |
 | Pull working days from BambooHR API (field 4517), not the desk-upload spreadsheet | Automated sync, no manual upload dependency — though the spreadsheet's Mon–Sun columns carry the same data as a proven fallback | ✓ Good |
 | `Agent.working_days_known` DEFAULT TRUE kept permanently | Avoids retro-flagging pre-existing agents as data gaps on migration | ✓ Good |
-| Timefold pinned at 1.33.0 | `ScoreAnalysis` moves to paid tier in 2.0 | ✓ Good |
+| Timefold pinned at 1.16.0 | `ScoreAnalysis` moves to paid tier in 2.0. Corrected 2026-08-13 — this row previously read 1.33.0; Phase 12 verified the actual pin against `build.gradle:35` and the running solver's custom-move API | ✓ Good |
 | PDF export via OpenPDF 3.0.4 | LGPL/MPL licensed; iText rejected as AGPL | — Pending (unbuilt) |
 | Fairness soft-score only; quadratic hours-consistency penalties | Hard fairness makes schedules infeasible; linear penalties create score traps | — Pending (unbuilt) |
 | Phase 6 narrowed to QUAL-01 only | Data foundation had to land before fairness/consistency constraints | ⚠ Revisit — QUAL-02/03 were never re-homed and nearly lost |
 | BambooHR key rotation gate bypassed | Operator directive 2026-07-29, accepted risk | ⚠ Revisit — still unresolved, key is public |
+| Fresh BambooHR sync fetched *before* the upload transaction opens, not inside it (Phase 11) | Makes zero-write on sync failure structural rather than a caught-exception discipline: the fetch throws before `transactionTemplate.executeWithoutResult` is ever reached (MRG-07/T-11-01) | ✓ Good |
+| PTO/pattern arbitration runs at solve time, in-memory, re-derived per solve (Phase 11, D-10) | Operator-selected one-way door: no new storage, no `AgentDayOffRepository` in the upload path. Deterministic and reproducible from inputs | ⚠ Revisit — leaves no persisted audit of which recurring PTO facts a given solve suppressed (accepted risk R-11-02) |
+| `Agent.workingDaysSource` provenance marker (V36), defaulting to `BAMBOOHR` (Phase 11, D-15) | A BambooHR refresh must never reclaim ownership of a week an operator corrected via spreadsheet; the default keeps every existing agent's eligibility unchanged at deploy time | ✓ Good |
 
 ## Evolution
 
@@ -173,4 +185,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-29 after v1.1 milestone close (4/16 requirements shipped; 12 carried to Backlog 999.4–999.6)*
+*Last updated: 2026-08-21 after Phase 11 (BambooHR Merge Engine & Report) — MRG-01…07 validated*

@@ -2,48 +2,50 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 11
-current_phase_name: bamboohr-merge-engine-report
-status: verifying
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-08-19T13:15:31.125Z"
-last_activity: 2026-08-19
-last_activity_desc: Phase 11 execution started
+current_phase: 9
+current_phase_name: Agent Data Model Foundation
+status: planning
+stopped_at: Phase 11 complete, ready to plan Phase 9
+last_updated: "2026-08-21T13:03:49.129Z"
+last_activity: 2026-08-21
+last_activity_desc: Phase 11 complete, transitioned to Phase 9
+state_head: 7faa15ebd11788b97cba8e2b57ad049c852f9c4e
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 18
+  completed_phases: 1
+  total_plans: 17
   completed_plans: 17
-  percent: 75
+  percent: 25
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-29)
+See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 11 — bamboohr-merge-engine-report
+**Current focus:** Phase 9 — Agent Data Model Foundation
 
 ## Current Position
 
-Phase: 11 (bamboohr-merge-engine-report) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-08-19 — Phase 11 execution started
+Phase: 9 — Agent Data Model Foundation
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-21 — Phase 11 complete, transitioned to Phase 9
 
-Progress: [█████████░] 94%
+Progress: [████████████████████] 17/17 plans (100%)
 
 ## Milestone v1.2 Roadmap
 
-18/18 requirements mapped across 3 phases. See `.planning/ROADMAP.md` for full detail.
+18/18 requirements mapped across 3 phases, plus Phase 12 added mid-milestone. See `.planning/ROADMAP.md` for full detail.
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | Not started |
-| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | Not started |
-| 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | Not started |
+| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | Executed (6/6 plans) — verification missing |
+| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | Executed (6/6 plans) — UAT in progress |
+| 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | **Complete (2/2 plans)** — verified + UAT passed 2026-08-21 |
+| 12 | Atomic Shift Move | (added mid-milestone) | Executed (3/3 plans) — verification missing; threshold FAILED |
 
 ## Milestone v1.1 Outcome
 
@@ -128,20 +130,22 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ### Blockers/Concerns
 
 - **⚠ SECURITY — Backlog 999.7:** BambooHR API key (prefix `ad2bb…2be`) exposed 2026-06-02 was never rotated. Still present in tracked planning docs in a **public** repo; integration code has deployed to the live environment. Accepted as risk by operator on 2026-07-29 but unresolved.
-- **Solver data quality:** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values are excluded from solving via `Agent.workingDaysKnown`. v1.2 Phase 11 (MRG-06) directly targets this by letting spreadsheet-supplied patterns fill the gap.
+- **Solver data quality — mitigated by Phase 11 (2026-08-21).** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values were excluded from solving via `Agent.workingDaysKnown`. MRG-06 shipped: a spreadsheet-supplied pattern now sets `Agent.workingDaysSource=SPREADSHEET` (V36) and makes the agent solver-eligible, with `BambooRefreshService.shouldDowngradeWorkingDaysKnown` preventing a later refresh from reclaiming it. Residual risk: the field-4517 alias dependency below.
+- **⚠ [Phase 11] BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517` but the parser reads back the JSON key `customWorkingdays`. If the tenant has no Field Alias configured, the value is always null in production and MRG-03 window arbitration + MRG-06 gap-fill/replace reporting never activate — while every unit test still passes, because the fixtures hand-construct `BambooEmployee`. Confirmed by operator at UAT 2026-08-21 (test 5); re-check after any BambooHR account change. Origin: code review IN-03.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 - **MDL-02 is the highest-risk item in v1.2** — per-day contracted hours must compose with existing `AgentException` per-date overrides without changing solve behaviour for uniform-hours agents. Sequenced first (Phase 9) to gate parser and merge work.
 - **Phase 12 must-pass threshold FAILED — phase goal not achieved.** 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Operator ruling (2026-08-13): keep the atomic shift move as committed code (correct, improves hard score, breaks nothing), but do NOT claim the phase goal — record threshold 1 as FAILED rather than the "more hours assigned" goal achieved. Cross-agent seat displacement filed as follow-up (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`, `resolves_phase: 12`) since the 130% conservative-variant data shows seat capacity, not move selection, is the binding constraint at realistic over-allocation. Phase 12 should not be marked complete against its original success criteria on this ruling.
 
 ## Session Continuity
 
-Last session: 2026-08-19T13:15:31.113Z
-Stopped at: Completed 11-02-PLAN.md
+Last session: 2026-08-21
+Stopped at: Phase 11 complete (UAT 5/5 passed, verification passed, threats_open 0), ready to plan Phase 9
 Resume file: None
 
 ## Operator Next Steps
 
-- Review and approve the v1.2 roadmap, then run `/gsd-plan-phase 9`
+- `/gsd-plan-phase 9` — Phase 9 has CONTEXT.md; ready to plan
+- Close the two remaining verification gaps: Phase 10 UAT (stalled at test 3 since 2026-08-12), Phases 9 and 12 have no VERIFICATION.md
 
 ## Performance Metrics
 
