@@ -309,6 +309,34 @@ Plans:
 
 - [x] 12-03-PLAN.md — Seeded step-count benchmark (5 baseline vs 5 with-move), recorded evidence and operator sign-off
 
+### Phase 13: Per-Day Hours Visibility
+
+**Goal:** An operator who uploads Mon–Sun contracted hours can see exactly what the system stored — the roster and the Excel export resolve effective hours from the authoritative `agent_day_hours` model rather than the retired `Agent.contractedHoursPerDay` scalar, and per-weekday hours, `MANDATORY` days and `PTO` markers are visible in the UI.
+**Requirements**: none new — closes v1.2 audit gaps I-1/F-1 (and I-3, I-4) against existing MDL-02, UPL-03/04/05, UPL-09
+**Depends on:** Phases 9 and 10 (the per-day model and the parser that populates it)
+**Source:** `.planning/v1.2-MILESTONE-AUDIT.md` (2026-08-21, status `gaps_found`)
+**Plans:** 0 plans
+
+**Why (audit evidence, 2026-08-21):** Phase 9 made `agent_day_hours` authoritative and Phase 10's upload writes those rows, but the read path was never migrated. `DeskAgentService.toResponse` (`DeskAgentService.java:72-74`) computes effective hours as `getContractedHoursPerDay() ?: deskDefault` and never touches `AgentDayHoursRepository` — which is injected into the class but used only by the write path at `:210`. Meanwhile `DeskAssignmentUploadService.clearDesk` (`:561`) nulls that scalar on every re-import and never restores it. Net effect: after any enriched upload the roster (`frontend/src/pages/DeskAgents.tsx:362`) and the export (`DeskAgentExportService.java:57-58`) show a flat desk-default number unrelated to what was uploaded, and no component in `frontend/src` surfaces per-day hours, MANDATORY days or PTO markers at all. The solver is unaffected — it resolves correctly through `SolverService.resolveEffectiveHours`. This is a reporting/verification defect, not a scheduling-correctness one.
+
+**Scope (from the audit):**
+
+- **I-1 / F-1 (critical):** `DeskAgentService.toResponse` and `DeskAgentExportService` resolve from the per-day model; roster UI surfaces Mon–Sun values, `MANDATORY` and `PTO`
+- **I-3 (medium):** `DeskAgentService.setContractedHours` (`:206-217`) deletes all seven rows and recreates them uniformly with `dayOffType` unset, silently wiping upload-set MANDATORY/PTO — preserve them, or warn the operator
+- **I-4 (low):** `DeskAssignmentTemplateService.java:31-32` hardcodes `"Specialty 1"`/`"Specialty 2"`; source them from `EnrichedColumnLayout` (which today exposes only the `specialtyIndex` detection regex)
+
+**Out of scope:** I-2 (the manual "Refresh from BambooHR" button bypassing `AgentMergeService`) is a scoping decision, not a defect — either route it through the merge engine or document that the merge-report guarantee covers the upload path only. Deferred to backlog.
+
+**Known design constraints for planning:**
+
+- `Agent.contractedHoursPerDay` stays a live field by decision (D-05, V29 migration comment) — this phase changes readers, not the schema
+- Five writers touch the scalar (`BambooRefreshService:244`, `DeskAgentService:143`/`:198`, `DeskAssignmentUploadService:561`, `DeskService:147`); do not assume it is null
+- `SolverService.resolveEffectiveHours` is the existing correct resolution — prefer reusing it over a second implementation
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
+
 ---
 
 ### Phase 999.8: Decommission Orphaned v1.0 Infrastructure (BACKLOG — COST)

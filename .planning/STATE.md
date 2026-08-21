@@ -89,6 +89,9 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 
 ### Roadmap Evolution
 
+- Phase 13 added 2026-08-21: **Per-Day Hours Visibility** — closure phase for the v1.2 milestone audit's critical finding (I-1/F-1). Phase 9 made `agent_day_hours` authoritative and Phase 10 populates it, but `DeskAgentService.toResponse` and `DeskAgentExportService` still read the retired `Agent.contractedHoursPerDay` scalar, which the upload path nulls — so the roster shows a desk-default number unrelated to the uploaded Mon–Sun values. Solver unaffected. Also folds I-3 (Edit Hours wipes MANDATORY/PTO) and I-4 (hardcoded specialty headers). See `.planning/v1.2-MILESTONE-AUDIT.md`.
+- v1.2 milestone close PAUSED 2026-08-21 pending Phase 13 — audit returned `gaps_found` (19/19 requirements satisfied, but 1 critical cross-phase integration gap and 1 broken E2E flow). Recorded closeout choices for when it resumes: override_closeout noting Phase 12 withdrawal; acknowledge all 3 open todos as deferred.
+
 - Phase 12 added 2026-08-13: **Atomic Shift Move** — custom Timefold move placing a full contracted shift plus its break in one step. Raised during Phase 10 UAT after the live desk proved unable to produce full-hours shifts: single-slot local search cannot cross the HARD `Exactly one break` rule, so agents pin one slot below the break threshold. Two threshold-tuning attempts were reverted (`76a715f`) before concluding a custom move is required.
 - 2026-08-13: **Timefold version corrected.** The previously stated pinned version (recorded as a later 1.3x release) was incorrect — Phase 12 verified the actual pinned version is 1.16.0 against `build.gradle:35` (`ai.timefold.solver:timefold-solver-bom:1.16.0`) and against the running solver (custom-move API confirmed to be `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, not the newer `Neighborhoods` API introduced at 1.31.0). Assumption A3 in `12-RESEARCH.md` is thereby resolved.
 
