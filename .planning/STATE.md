@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 10
-current_phase_name: Enriched Upload Parsing
-status: planning
-stopped_at: Phase 09 complete, ready to plan Phase 10
-last_updated: "2026-08-21T13:56:49.056Z"
+current_phase: 11
+current_phase_name: BambooHR Merge Engine & Report
+status: milestone-complete
+stopped_at: All v1.2 phases closed (9,10,11 complete; 12 withdrawn) — ready to close milestone
+last_updated: "2026-08-21T14:58:19.734Z"
 last_activity: 2026-08-21
-last_activity_desc: Phase 09 complete, transitioned to Phase 10
-state_head: 205123414bcf85e0179a9cb6c4a8af5946796211
+last_activity_desc: Phase 10 verified + UAT passed + threat-secure; all v1.2 phases closed
+state_head: 01c89873fa051a77d7a2f4f3602c6dde9072c761
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 17
   completed_plans: 17
-  percent: 50
+  percent: 75
 ---
 
 # Project State
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 09 — Agent Data Model Foundation
+**Current focus:** v1.2 complete — ready to close the milestone
 
 ## Current Position
 
-Phase: 10 — Enriched Upload Parsing
+Phase: none active — all v1.2 phases closed
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-21 — Phase 09 complete, transitioned to Phase 10
+Status: Milestone v1.2 complete — ready to close
+Last activity: 2026-08-21 — Phase 10 verified + UAT passed (8/8) + threat-secure (threats_open: 0)
 
 Progress: [████████████████████] 17/17 plans (100%)
 
@@ -42,10 +42,10 @@ Progress: [████████████████████] 17/17 p
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | Executed (6/6 plans) — verification missing |
-| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | Executed (6/6 plans) — UAT in progress |
+| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | **Complete (6/6 plans)** — verified 4/4 must-haves 2026-08-21 |
+| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | **Complete (6/6 plans)** — verified + UAT 8/8 + SECURITY threats_open:0 2026-08-21 |
 | 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | **Complete (2/2 plans)** — verified + UAT passed 2026-08-21 |
-| 12 | Atomic Shift Move | (added mid-milestone) | Executed (3/3 plans) — verification missing; threshold FAILED |
+| 12 | Atomic Shift Move | (added mid-milestone) | **WITHDRAWN** — goal not achieved, code reverted (`299c42c`); see 12-VERIFICATION.md |
 
 ## Milestone v1.1 Outcome
 
@@ -143,7 +143,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-08-21
-Stopped at: Phase 09 complete, ready to plan Phase 10
+Stopped at: Phase 10 complete, ready to plan Phase 11
 Resume file: None
 
 ## Operator Next Steps

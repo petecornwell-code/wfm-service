@@ -147,7 +147,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
 | 9. Agent Data Model Foundation | v1.2 | 6/6 | Complete    | 2026-08-21 |
-| 10. Enriched Upload Parsing | v1.2 | 6/6 | Complete   | 2026-07-31 |
+| 10. Enriched Upload Parsing | v1.2 | 6/6 | Complete    | 2026-07-31 |
 | 11. BambooHR Merge Engine & Report | v1.2 | 2/2 | Complete    | 2026-08-21 |
 
 ## Backlog
