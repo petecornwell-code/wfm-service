@@ -650,9 +650,14 @@ marked them "OPEN — for research." The planner should either adopt them explic
 adoption as a plan-level decision) or route back through `/gsd-discuss-phase` if the user wants to
 weigh in before locking.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the new per-cell edit endpoint need a distinct HTTP verb/path from the existing
+Both questions below were resolved at plan time. Question 1 → `13-02-PLAN.md` decision `P-05`
+(two endpoints, matching the recommendation). Question 2 → `13-02-PLAN.md` decision `P-06`
+(scalar left untouched by the per-cell endpoint, matching the recommendation). Retained here as
+the reasoning trail; no open decisions remain.
+
+1. **RESOLVED (see `13-02-PLAN.md` P-05) — Does the new per-cell edit endpoint need a distinct HTTP verb/path from the existing
    `PUT .../contracted-hours` fan-out, or should both live under one controller method with a
    discriminator?**
    - What we know: D-05 (per-cell) and D-07 (bulk fan-out, renamed/labelled) are two structurally
@@ -664,7 +669,7 @@ weigh in before locking.
      seven rows" (D-07) operations structurally distinct in the API surface, mirroring how they're
      already structurally distinct in the UI (single cell vs. bulk action button).
 
-2. **Should `Agent.contractedHoursPerDay` still be updated as a side effect of the new per-cell
+2. **RESOLVED (see `13-02-PLAN.md` P-06) — Should `Agent.contractedHoursPerDay` still be updated as a side effect of the new per-cell
    edit, for backward-compat display purposes?**
    - What we know: `setContractedHours` (the existing fan-out) sets both the scalar and the seven
      rows. `DeskAgentResponse.contractedHoursPerDay()` still echoes the scalar today.

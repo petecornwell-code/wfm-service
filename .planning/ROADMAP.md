@@ -334,10 +334,17 @@ Plans:
 - `SolverService.resolveEffectiveHours` is the existing correct resolution — prefer reusing it over a second implementation
 
 Plans:
+**Wave 1**
 
 - [ ] 13-01-PLAN.md — Tracer: roster resolves per-day hours end-to-end from `agent_day_hours` (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 13-02-PLAN.md — Per-cell edit endpoint: one weekday, one row (wave 2)
 - [ ] 13-03-PLAN.md — Export gains seven Mon–Sun columns; specialty headers sourced from `EnrichedColumnLayout` (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 13-04-PLAN.md — Per-cell combo UI and warning-guarded "Set all days to…" bulk action (wave 3)
 
 ---
