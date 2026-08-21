@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 9
-current_phase_name: Agent Data Model Foundation
+current_phase: 10
+current_phase_name: Enriched Upload Parsing
 status: planning
-stopped_at: Phase 11 complete, ready to plan Phase 9
-last_updated: "2026-08-21T13:03:49.129Z"
+stopped_at: Phase 09 complete, ready to plan Phase 10
+last_updated: "2026-08-21T13:56:49.056Z"
 last_activity: 2026-08-21
-last_activity_desc: Phase 11 complete, transitioned to Phase 9
-state_head: 7faa15ebd11788b97cba8e2b57ad049c852f9c4e
+last_activity_desc: Phase 09 complete, transitioned to Phase 10
+state_head: 205123414bcf85e0179a9cb6c4a8af5946796211
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
   completed_plans: 17
-  percent: 25
+  percent: 50
 ---
 
 # Project State
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 9 — Agent Data Model Foundation
+**Current focus:** Phase 09 — Agent Data Model Foundation
 
 ## Current Position
 
-Phase: 9 — Agent Data Model Foundation
+Phase: 10 — Enriched Upload Parsing
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-08-21 — Phase 11 complete, transitioned to Phase 9
+Last activity: 2026-08-21 — Phase 09 complete, transitioned to Phase 10
 
 Progress: [████████████████████] 17/17 plans (100%)
 
@@ -143,7 +143,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-08-21
-Stopped at: Phase 11 complete (UAT 5/5 passed, verification passed, threats_open 0), ready to plan Phase 9
+Stopped at: Phase 09 complete, ready to plan Phase 10
 Resume file: None
 
 ## Operator Next Steps

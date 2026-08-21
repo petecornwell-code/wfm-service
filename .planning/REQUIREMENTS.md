@@ -40,9 +40,9 @@
 
 ### Agent Data Model
 
-- [ ] **MDL-01**: Agent stores first name and last name as separate fields
-- [ ] **MDL-02**: Agent stores contracted hours per day of week, replacing the single `contractedHoursPerDay` scalar; `AgentDayConfig` resolves effective hours per date from the per-day values
-- [ ] **MDL-03**: Existing agents migrate without data loss — the current scalar contracted hours becomes the per-day value for working days, and the existing single `name` is split into first and last
+- [x] **MDL-01**: Agent stores first name and last name as separate fields
+- [x] **MDL-02**: Agent stores contracted hours per day of week, replacing the single `contractedHoursPerDay` scalar; `AgentDayConfig` resolves effective hours per date from the per-day values
+- [x] **MDL-03**: Existing agents migrate without data loss — the current scalar contracted hours becomes the per-day value for working days, and the existing single `name` is split into first and last
 
 ---
 
@@ -98,6 +98,6 @@
 | MRG-05 | Phase 11 | Complete |
 | MRG-06 | Phase 11 | Complete |
 | MRG-07 | Phase 11 | Complete |
-| MDL-01 | Phase 9 | Pending |
-| MDL-02 | Phase 9 | Pending |
-| MDL-03 | Phase 9 | Pending |
+| MDL-01 | Phase 9 | Complete |
+| MDL-02 | Phase 9 | Complete |
+| MDL-03 | Phase 9 | Complete |

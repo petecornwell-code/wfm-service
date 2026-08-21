@@ -38,7 +38,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 **Milestone Goal:** One spreadsheet upload fully provisions an agent roster — identity, desk, specializations, working pattern, days off, and PTO — merged field-by-field with BambooHR as source of truth and the spreadsheet filling every gap.
 
-- [ ] **Phase 9: Agent Data Model Foundation** - Per-day contracted hours and first/last name split, migrated without solve-behaviour regression
+- [x] **Phase 9: Agent Data Model Foundation** - Per-day contracted hours and first/last name split, migrated without solve-behaviour regression (completed 2026-08-21)
 - [x] **Phase 10: Enriched Upload Parsing** - Extended spreadsheet format with unbounded specializations and Mon–Sun hours/days-off/PTO columns, with per-row validation (completed 2026-07-31)
 - [x] **Phase 11: BambooHR Merge Engine & Report** - Fresh-sync merge with per-field precedence and an operator-facing merge report (completed 2026-08-21)
 
@@ -146,7 +146,7 @@ Phases execute in numeric order: 9 → 10 → 11
 | 6. Solver Quality Constraints | v1.1 | 3/3 | Complete | 2026-07-29 |
 | 7. Coverage, Utilization & Diagnostics | v1.1 | 0/TBD | Deferred → 999.5 | - |
 | 8. Export, Score Breakdown & Tuning | v1.1 | 0/TBD | Deferred → 999.6 | - |
-| 9. Agent Data Model Foundation | v1.2 | 0/6 | Not started | - |
+| 9. Agent Data Model Foundation | v1.2 | 6/6 | Complete    | 2026-08-21 |
 | 10. Enriched Upload Parsing | v1.2 | 6/6 | Complete   | 2026-07-31 |
 | 11. BambooHR Merge Engine & Report | v1.2 | 2/2 | Complete    | 2026-08-21 |
 
