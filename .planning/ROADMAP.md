@@ -257,7 +257,18 @@ Phases execute in numeric order: 9 → 10 → 11
 - [ ] Scrub the value from tracked planning docs (`.planning/codebase/CONCERNS.md`, `02-01-PLAN.md`, `02-RESEARCH.md`, 06-01 planning docs) and confirm `git grep -i ad2bb` is clean
 - [ ] Decide whether git history rewrite is warranted given the repo is public
 
-### Phase 12: Atomic Shift Move
+### Phase 12: Atomic Shift Move — WITHDRAWN (goal not achieved, 2026-08-13)
+
+> **Disposition:** All 3 plans executed, but the phase goal is **not** claimed as achieved and the
+> implementation was deliberately reverted in `299c42c`. The seeded 5×5 benchmark showed the move's
+> effect on hours assigned (+0.25h median) sat inside the baseline's own run-to-run noise (5.00h
+> spread), and it was inert at realistic 130% over-allocation because seat capacity — not move
+> selection — is the binding constraint. Operator ruling (`12-03-SUMMARY.md`): keep the record,
+> withdraw the code. Full report: `12-VERIFICATION.md`. Successor work (cross-agent seat
+> displacement) filed at `.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`.
+>
+> **Do not re-plan this phase as gap closure** — the missing artifacts are absent by decision, not
+> by incomplete execution.
 
 **Goal:** The solver can place a full contracted shift — contiguous work slots plus one correctly positioned break — as a single move, so rosters where agents work their full contracted hours are actually reachable.
 **Requirements**: TBD
@@ -283,7 +294,7 @@ Two independent runs converging on the *identical* -29,810 indicates a structura
 - Should honour `breakBlockedHours` and `breakStartAlignment` at generation time so illegal placements are never produced
 - Success must be measured across repeated runs, not one solve: run-to-run variance currently exceeds the effect size of most changes
 
-**Plans:** 3/3 plans executed
+**Plans:** 3/3 plans executed — code subsequently withdrawn (`299c42c`); phase closed as WITHDRAWN, goal not claimed
 
 Plans:
 **Wave 1**
