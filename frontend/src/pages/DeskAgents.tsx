@@ -1,12 +1,16 @@
 import { Fragment, useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, getErrorMessage } from '../api/client'
+import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type DayHoursEntry, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type SortField = 'firstName' | 'lastName'
 type SortDir = 'asc' | 'desc'
 
 const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const
+
+const DAY_LABELS: Record<(typeof DAY_ORDER)[number], string> = {
+  MONDAY: 'Mon', TUESDAY: 'Tue', WEDNESDAY: 'Wed', THURSDAY: 'Thu', FRIDAY: 'Fri', SATURDAY: 'Sat', SUNDAY: 'Sun',
+}
 
 function getFirstName(name: string) { return name.split(' ')[0] ?? '' }
 function getLastName(name: string) { return name.split(' ').slice(1).join(' ') }
@@ -23,6 +27,40 @@ function formatHoursSummary(da: DeskAgent) {
   const min = Math.min(...values)
   const max = Math.max(...values)
   return min === max ? formatHours(min) : `${formatHours(min)}-${formatHours(max)}`
+}
+
+/** Per-day cell display (13-UI-SPEC.md Section 3, rules 1-5) — this branch order is
+ * load-bearing (13-RESEARCH.md Pitfalls 1 and 2): a MANDATORY/PTO label always wins over the
+ * stored hours value, and a stored 0.00 row is never conflated with "not set". */
+function DayCell({ entry }: { entry: DayHoursEntry }) {
+  if (entry.dayOffType === 'MANDATORY') {
+    return (
+      <span style={{ display: 'inline-block', background: '#e5e7eb', color: '#374151', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+        MAND
+      </span>
+    )
+  }
+  if (entry.dayOffType === 'PTO') {
+    return (
+      <span style={{ display: 'inline-block', background: '#fef9c3', color: '#92400e', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+        PTO
+      </span>
+    )
+  }
+  if (entry.hasRow && entry.hours === 0) {
+    return <span style={{ color: '#6b7280', fontSize: '0.85rem', fontWeight: 400 }}>0</span>
+  }
+  if (entry.hasRow && entry.hours !== null) {
+    return <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>{formatHours(entry.hours)}</span>
+  }
+  return (
+    <span
+      title="Not set — using schedule default"
+      style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '0.85rem', fontWeight: 400 }}
+    >
+      {formatHours(entry.effectiveHours)}
+    </span>
+  )
 }
 
 export default function DeskAgents() {
@@ -374,6 +412,12 @@ export default function DeskAgents() {
                   onClick={() => setExpandedAgentId(expandedAgentId === da.id ? null : da.id)}
                   style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
                 >
+                  <span
+                    aria-label={expandedAgentId === da.id ? 'Collapse hours detail' : `Expand hours detail for ${da.name}`}
+                    style={{ color: '#9ca3af', marginRight: '4px' }}
+                  >
+                    {expandedAgentId === da.id ? '▾' : '▸'}
+                  </span>
                   {formatHoursSummary(da)}
                 </span>
               </td>
@@ -411,10 +455,19 @@ export default function DeskAgents() {
             {expandedAgentId === da.id && (
               <tr>
                 <td colSpan={14} style={{ background: '#fff', padding: '0.75rem' }}>
-                  {/* 13-UI-SPEC.md Section 2 empty-state note and Section 3 seven-column
-                      weekday grid are added in Task 2. This scaffold relocates the existing
-                      inline hours editor here so it stays reachable (D-07) once the collapsed
-                      cell above only toggles expansion. */}
+                  {DAY_ORDER.every(d => !da.dayHours[d].hasRow) && (
+                    <div style={{ marginBottom: '16px', fontSize: '0.85rem' }}>
+                      No per-day hours uploaded — every day shows the schedule default ({formatHours(da.dayHours[DAY_ORDER[0]].effectiveHours)}h).
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    {DAY_ORDER.map(d => (
+                      <div key={d} style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{DAY_LABELS[d]}</div>
+                        <div><DayCell entry={da.dayHours[d]} /></div>
+                      </div>
+                    ))}
+                  </div>
                   {editHoursAgentId === da.id ? (
                     <div style={{ display: 'flex', gap: '0.25rem' }}>
                       <input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))}
