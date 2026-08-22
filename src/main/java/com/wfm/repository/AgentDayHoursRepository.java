@@ -6,13 +6,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.DayOfWeek;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface AgentDayHoursRepository extends JpaRepository<AgentDayHours, UUID> {
 
     List<AgentDayHours> findByTenantIdAndAgent_Id(long tenantId, UUID agentId);
+
+    // Single-weekday finder for the per-cell upsert (setDayHours, D-05). Not tenant-scoped,
+    // mirroring deleteByAgent_Id below — callers must resolve tenant scope via AgentRepository
+    // before calling this (T-13-05).
+    Optional<AgentDayHours> findByAgent_IdAndDayOfWeek(UUID agentId, DayOfWeek dayOfWeek);
 
     // Bulk fetch for SolverService — mirrors AgentDayOffRepository's join-through-agent style.
     // AgentDayHours has no desk_id column of its own; desk scoping goes through h.agent.deskId.

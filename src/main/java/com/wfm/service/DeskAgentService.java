@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.*;
@@ -271,5 +272,70 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
         return toResponse(saved, scheduleDefault, dayRows, List.of());
+    }
+
+    /**
+     * D-05: edit exactly one weekday's agent_day_hours row, provably leaving the other six
+     * untouched. Deliberately does NOT reuse setContractedHours' delete-all-seven-and-recreate
+     * fan-out — that multi-row rewrite is exactly the behaviour that caused audit finding I-3.
+     * Leaves Agent.contractedHoursPerDay untouched (P-06): a single-weekday edit has no single
+     * scalar value to write.
+     */
+    @Transactional
+    public DeskAgentResponse setDayHours(UUID deskId, UUID agentId, DayOfWeek day,
+                                          BigDecimal hours, DayOffType dayOffType, boolean clearRow) {
+        long tenantId = TenantContext.getTenantId();
+
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+
+        // Mandatory access-control step (T-13-05): resolve the agent within tenant+desk scope
+        // BEFORE any AgentDayHoursRepository call — findByAgent_IdAndDayOfWeek accepts a raw
+        // agent id and would otherwise be an IDOR.
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
+
+        if (clearRow) {
+            // Absent row is a no-op, not an error (D-04 — absent is not the same as 0).
+            agentDayHoursRepository.findByAgent_IdAndDayOfWeek(agentId, day)
+                    .ifPresent(agentDayHoursRepository::delete);
+        } else if (dayOffType == DayOffType.MANDATORY || dayOffType == DayOffType.PTO) {
+            // Matches the upload parser's own encoding (DeskAssignmentUploadService:673-680) --
+            // any hours supplied alongside a label is ignored, not merged.
+            upsertDayHoursRow(agent, day, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), dayOffType);
+        } else if (hours != null) {
+            BigDecimal normalized = BigDecimals.normalize(hours);
+            if (normalized.signum() < 0 || normalized.compareTo(new BigDecimal("24")) > 0) {
+                // Reject, do not clamp (P-04) -- unlike the bulk upload parser's silent clamp.
+                throw new IllegalArgumentException("Hours must be between 0 and 24");
+            }
+            upsertDayHoursRow(agent, day, normalized, null);
+        } else {
+            // No hours, no label, no clear -- a 400, not a silent no-op.
+            throw new IllegalArgumentException("Must provide hours, a day-off type, or clearRow");
+        }
+
+        agentDayHoursRepository.flush();
+
+        // Re-read after the write so the returned payload reflects the row just written.
+        Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
+        return toResponse(agent, scheduleDefault, dayRows, List.of());
+    }
+
+    /**
+     * Reuses the existing row for (agent, day) if present, otherwise constructs a fresh one --
+     * never a second row for a weekday that already has one (the unique constraint on
+     * (agent_id, day_of_week) is the backstop, T-13-08).
+     */
+    private void upsertDayHoursRow(Agent agent, DayOfWeek day, BigDecimal hours, DayOffType dayOffType) {
+        AgentDayHours row = agentDayHoursRepository.findByAgent_IdAndDayOfWeek(agent.getId(), day)
+                .orElseGet(AgentDayHours::new);
+        row.setTenantId(agent.getTenantId());
+        row.setAgent(agent);
+        row.setDayOfWeek(day);
+        row.setHours(hours);
+        row.setDayOffType(dayOffType);
+        agentDayHoursRepository.save(row);
     }
 }
