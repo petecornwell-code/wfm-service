@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 13
 current_phase_name: Per-Day Hours Visibility
-status: milestone-complete
-stopped_at: Phase 13 UI-SPEC approved
-last_updated: "2026-08-21T23:59:03.433Z"
+status: executing
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-08-22T00:23:13.287Z"
 last_activity: 2026-08-21
-last_activity_desc: Phase 10 verified + UAT passed + threat-secure; all v1.2 phases closed
-state_head: e82070fc7f450bf005d9bcaef26e81bc703b44f3
+last_activity_desc: Phase 13 execution started
+state_head: c29ae6194cfc8eff4f91d87ec68cd0d1467dc749
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 17
+  completed_plans: 18
   percent: 60
 ---
 
@@ -25,16 +25,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-21)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** v1.2 complete — ready to close the milestone
+**Current focus:** Phase 13 — Per-Day Hours Visibility
 
 ## Current Position
 
-Phase: 13 (Per-Day Hours Visibility) — READY TO EXECUTE
-Plan: Not started
-Status: Milestone v1.2 complete — ready to close
-Last activity: 2026-08-21 — Phase 10 verified + UAT passed (8/8) + threat-secure (threats_open: 0)
+Phase: 13 (Per-Day Hours Visibility) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-08-21 — Phase 13 execution started
 
-Progress: [████████████████████] 17/17 plans (100%)
+Progress: [████████████████████] 17/17 plans ([██████░░░░] 60%)
 
 ## Milestone v1.2 Roadmap
 
@@ -133,6 +133,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 11 Plan 02] Checkpoint resolved: PTO/pattern arbitration runs at solve time (SolverService.arbitratePtoAgainstBambooWindow/unblockSheetWorkedDays, in-memory, re-derived per solve, no AgentDayOffRepository added to the upload path) — human-selected one-way door, per the mechanism sketch attached to the selection
 - [Phase ?]: [Phase 11 Plan 02] SolverService.bambooLookaheadWeeks/bambooLookbackWeeks are @Value field injections (not constructor params), matching BambooRefreshService, so every existing SolverService test stays untouched
 - [Phase ?]: [Phase 11 Plan 02] MergeReportTest fixtures set customWorkingdays="Mon-Sun" (Rule 3 fix) so the new mergeWorkingPattern check doesn't spuriously add a gap-fill row against the suite's pre-existing full-week workbook fixture
+- [Phase 13]: Phase 13 Plan 01: adopted PLAN.md's P-01/P-02/P-03 planner decisions verbatim (schedule-derived D-06 default via ScheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc; always-7-key DeskAgentResponse.dayHours DTO shape; effectiveContractedHoursPerDay recomputed as max of the 7 resolved weekday values)
+- [Phase 13]: Phase 13 Plan 01: relocated the pre-existing editHoursAgentId/editHours/startEditHours/saveHours inline-edit triad into the new expanded-row scaffold in Task 1 rather than Task 2, to keep npm run build green under noUnusedLocals:true once the collapsed cell no longer referenced it
 
 ### Blockers/Concerns
 
@@ -145,9 +147,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-21T23:26:07.920Z
-Stopped at: Phase 13 UI-SPEC approved
-Resume file: /Users/pete/IdeaProjects/wfm-service/.planning/phases/13-per-day-hours-visibility/13-UI-SPEC.md
+Last session: 2026-08-22T00:23:13.138Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -163,3 +165,4 @@ Resume file: /Users/pete/IdeaProjects/wfm-service/.planning/phases/13-per-day-ho
 | Phase 12 P03 | 25m (continuation; +55m prior) | 3 tasks | 5 files |
 | Phase 11 P01 | 45min | 3 tasks | 23 files |
 | Phase 11 P02 | ~40min (continuation) | 4 tasks | 15 files |
+| Phase 13 P01 | 22min | 2 tasks | 7 files |
