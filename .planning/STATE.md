@@ -5,16 +5,16 @@ milestone_name: Unified Agent Provisioning
 current_phase: 13
 current_phase_name: Per-Day Hours Visibility
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-08-22T00:23:13.287Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-08-22T00:39:12.002Z"
 last_activity: 2026-08-21
 last_activity_desc: Phase 13 execution started
-state_head: c29ae6194cfc8eff4f91d87ec68cd0d1467dc749
+state_head: 5b06802d9be810f53ad3c21e70c2e106aa47310b
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 19
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 ## Current Position
 
 Phase: 13 (Per-Day Hours Visibility) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-08-21 — Phase 13 execution started
 
@@ -135,6 +135,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase ?]: [Phase 11 Plan 02] MergeReportTest fixtures set customWorkingdays="Mon-Sun" (Rule 3 fix) so the new mergeWorkingPattern check doesn't spuriously add a gap-fill row against the suite's pre-existing full-week workbook fixture
 - [Phase 13]: Phase 13 Plan 01: adopted PLAN.md's P-01/P-02/P-03 planner decisions verbatim (schedule-derived D-06 default via ScheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc; always-7-key DeskAgentResponse.dayHours DTO shape; effectiveContractedHoursPerDay recomputed as max of the 7 resolved weekday values)
 - [Phase 13]: Phase 13 Plan 01: relocated the pre-existing editHoursAgentId/editHours/startEditHours/saveHours inline-edit triad into the new expanded-row scaffold in Task 1 rather than Task 2, to keep npm run build green under noUnusedLocals:true once the collapsed cell no longer referenced it
+- [Phase 13]: Phase 13 Plan 02: adopted PLAN.md's P-04/P-05/P-06/P-07 planner decisions verbatim (reject-not-clamp; two distinct endpoints; setDayHours leaves Agent.contractedHoursPerDay untouched; D-07 warning computed client-side)
+- [Phase 13]: Phase 13 Plan 02: added explicit agentDayHoursRepository.flush() after setContractedHours' recreate loop to make the read-after-write ordering deterministic rather than relying on Hibernate auto-flush
 
 ### Blockers/Concerns
 
@@ -147,8 +149,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-22T00:23:13.138Z
-Stopped at: Completed 13-01-PLAN.md
+Last session: 2026-08-22T00:39:11.846Z
+Stopped at: Completed 13-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -166,3 +168,4 @@ Resume file: None
 | Phase 11 P01 | 45min | 3 tasks | 23 files |
 | Phase 11 P02 | ~40min (continuation) | 4 tasks | 15 files |
 | Phase 13 P01 | 22min | 2 tasks | 7 files |
+| Phase 13 P02 | 14min | 3 tasks | 6 files |
