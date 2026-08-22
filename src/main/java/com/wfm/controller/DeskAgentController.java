@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -78,6 +79,15 @@ public class DeskAgentController {
                                                  @PathVariable UUID agentId,
                                                  @RequestBody SetContractedHoursRequest request) {
         return deskAgentService.setContractedHours(deskId, agentId, request.contractedHoursPerDay());
+    }
+
+    @PutMapping("/{agentId}/day-hours/{day}")
+    public DeskAgentResponse setDayHours(@PathVariable UUID deskId,
+                                          @PathVariable UUID agentId,
+                                          @PathVariable DayOfWeek day,
+                                          @RequestBody SetDayHoursRequest request) {
+        return deskAgentService.setDayHours(deskId, agentId, day,
+                request.hours(), request.dayOffType(), Boolean.TRUE.equals(request.clearRow()));
     }
 
     @PostMapping("/refresh")
