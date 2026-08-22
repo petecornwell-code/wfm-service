@@ -265,9 +265,10 @@ public class DeskAgentService {
                 agentDayHoursRepository.save(dayHours);
             }
         }
+        agentDayHoursRepository.flush();
 
-        // Read after the flush/writes above so the returned response reflects the seven rows
-        // just written, not the pre-write state.
+        // Read after the delete-and-recreate block and the flush above so the returned response
+        // reflects the seven rows just written, not the pre-write state.
         Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
