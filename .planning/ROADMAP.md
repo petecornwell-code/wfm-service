@@ -315,7 +315,7 @@ Plans:
 **Requirements**: none new — closes v1.2 audit gaps I-1/F-1 (and I-3, I-4) against existing MDL-02, UPL-03/04/05, UPL-09
 **Depends on:** Phases 9 and 10 (the per-day model and the parser that populates it)
 **Source:** `.planning/v1.2-MILESTONE-AUDIT.md` (2026-08-21, status `gaps_found`)
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans executed
 
 **Why (audit evidence, 2026-08-21):** Phase 9 made `agent_day_hours` authoritative and Phase 10's upload writes those rows, but the read path was never migrated. `DeskAgentService.toResponse` (`DeskAgentService.java:72-74`) computes effective hours as `getContractedHoursPerDay() ?: deskDefault` and never touches `AgentDayHoursRepository` — which is injected into the class but used only by the write path at `:210`. Meanwhile `DeskAssignmentUploadService.clearDesk` (`:561`) nulls that scalar on every re-import and never restores it. Net effect: after any enriched upload the roster (`frontend/src/pages/DeskAgents.tsx:362`) and the export (`DeskAgentExportService.java:57-58`) show a flat desk-default number unrelated to what was uploaded, and no component in `frontend/src` surfaces per-day hours, MANDATORY days or PTO markers at all. The solver is unaffected — it resolves correctly through `SolverService.resolveEffectiveHours`. This is a reporting/verification defect, not a scheduling-correctness one.
 
@@ -345,7 +345,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 13-04-PLAN.md — Per-cell combo UI and warning-guarded "Set all days to…" bulk action (wave 3)
+- [x] 13-04-PLAN.md — Per-cell combo UI and warning-guarded "Set all days to…" bulk action (wave 3)
 
 ---
 
