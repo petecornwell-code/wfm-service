@@ -4,12 +4,12 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 13
 current_phase_name: Per-Day Hours Visibility
-status: verifying
-stopped_at: Completed 13-04-PLAN.md
-last_updated: "2026-08-22T01:02:25.337Z"
-last_activity: 2026-08-21
-last_activity_desc: Phase 13 execution started
-state_head: ac1aa63bd80df983eaf4cf7982faf39d802a09f0
+status: gaps_found
+stopped_at: Phase 13 verified — gaps_found (50/58 must-haves), paused for gap closure
+last_updated: "2026-08-22T01:52:02.416Z"
+last_activity: 2026-08-22
+last_activity_desc: Phase 13 executed 4/4 plans, code-reviewed and verified — 2 UI gaps block the pass
+state_head: 80ec7f1
 progress:
   total_phases: 5
   completed_phases: 3
@@ -29,10 +29,14 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 
 ## Current Position
 
-Phase: 13 (Per-Day Hours Visibility) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-08-21 — Phase 13 execution started
+Phase: 13 (Per-Day Hours Visibility) — GAPS FOUND (paused)
+Plan: 4 of 4 executed
+Status: Verified `gaps_found` — 50/58 must-haves. 2 UI-SPEC truths failed (both one-line fixes in
+`frontend/src/pages/DeskAgents.tsx`). Backend 309 tests green on clean rebuild; frontend build clean.
+Code review: 0 Critical / 3 Warning / 2 Info. Phase NOT marked complete.
+Next: `/gsd-plan-phase 13 --gaps` → `/gsd-execute-phase 13 --gaps-only`.
+Handoff: `.planning/phases/13-per-day-hours-visibility/.continue-here.md`
+Last activity: 2026-08-22 — Phase 13 executed, reviewed and verified; paused at gap closure
 
 Progress: [████████████████████] 17/17 plans ([██████░░░░] 60%)
 
