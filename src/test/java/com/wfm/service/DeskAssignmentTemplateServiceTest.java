@@ -18,6 +18,7 @@ import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,8 +75,8 @@ class DeskAssignmentTemplateServiceTest {
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
             headers.add(EnrichedColumnLayout.dayHeader(day));
         }
-        headers.add("Specialty 1");
-        headers.add("Specialty 2");
+        headers.add(EnrichedColumnLayout.specialtyHeader(1));
+        headers.add(EnrichedColumnLayout.specialtyHeader(2));
         return headers;
     }
 
@@ -165,5 +166,14 @@ class DeskAssignmentTemplateServiceTest {
         Cell jobTitleCell = dataRow.getCell(3);
         assertThat(jobTitleCell.getCellType()).isEqualTo(CellType.STRING);
         assertThat(jobTitleCell.getStringCellValue()).isEqualTo("'=SUM(A1)");
+    }
+
+    @Test
+    void specialtyHeader_matchesTheDetectionRegex() {
+        for (int n : new int[] {1, 2, 9}) {
+            String header = EnrichedColumnLayout.specialtyHeader(n);
+            Optional<Integer> detected = EnrichedColumnLayout.specialtyIndex(EnrichedColumnLayout.normalize(header));
+            assertThat(detected).isEqualTo(Optional.of(n));
+        }
     }
 }
