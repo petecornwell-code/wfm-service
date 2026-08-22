@@ -106,9 +106,11 @@ export default function DeskAgents() {
   const [editPrimary, setEditPrimary] = useState('')
   const [editSecondary, setEditSecondary] = useState<string[]>([])
 
-  // Contracted hours edit
+  // Contracted hours edit — relocated into the expanded row as the "Set all days to…" bulk
+  // action (D-07); editHours is a string so the input can open blank (13-UI-SPEC.md E5 empty)
   const [editHoursAgentId, setEditHoursAgentId] = useState<string | null>(null)
-  const [editHours, setEditHours] = useState(8)
+  const [editHours, setEditHours] = useState('')
+  const [applyingBulk, setApplyingBulk] = useState(false)
 
   // Per-day hours expandable row (13-UI-SPEC.md D-01)
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null)
@@ -224,20 +226,30 @@ export default function DeskAgents() {
     }
   }
 
-  const startEditHours = (da: DeskAgent) => {
-    setEditHoursAgentId(da.id)
-    setEditHours(da.effectiveContractedHoursPerDay)
+  const startEditHours = (agentId: string) => {
+    setEditHoursAgentId(agentId)
+    setEditHours('')
   }
 
-  const saveHours = async () => {
+  const saveHours = async (da: DeskAgent) => {
     if (!deskId || !editHoursAgentId) return
+    const hours = Number(editHours)
+    if (editHours.trim() === '' || Number.isNaN(hours)) return
+    const labelledDayCount = DAY_ORDER.filter(d => da.dayHours[d].dayOffType !== null).length
+    if (labelledDayCount > 0) {
+      const confirmed = confirm(`This will overwrite ${labelledDayCount} day(s) currently marked MANDATORY or PTO with a single value. Continue?`)
+      if (!confirmed) return
+    }
+    setApplyingBulk(true)
     try {
-      const updated = await deskAgents.setContractedHours(deskId, editHoursAgentId, editHours)
-      setAgentList(agentList.map(da => da.id === editHoursAgentId ? updated : da))
+      const updated = await deskAgents.setContractedHours(deskId, editHoursAgentId, hours)
+      setAgentList(agentList.map(a => a.id === editHoursAgentId ? updated : a))
       setEditHoursAgentId(null)
       showToast('success', 'Contracted hours updated')
     } catch (err) {
       showToast('error', getErrorMessage(err))
+    } finally {
+      setApplyingBulk(false)
     }
   }
 
@@ -577,18 +589,47 @@ export default function DeskAgents() {
                       </div>
                     ))}
                   </div>
-                  {editHoursAgentId === da.id ? (
-                    <div style={{ display: 'flex', gap: '0.25rem' }}>
-                      <input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))}
-                        step="0.25" style={{ width: '60px' }} />
-                      <button className="primary" onClick={saveHours} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>OK</button>
-                      <button onClick={() => setEditHoursAgentId(null)} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>X</button>
-                    </div>
-                  ) : (
-                    <span onClick={() => startEditHours(da)} style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}>
-                      {da.effectiveContractedHoursPerDay}
-                    </span>
-                  )}
+                  <div style={{ marginTop: '12px' }}>
+                    {editHoursAgentId === da.id ? (
+                      <>
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '4px', padding: '0.5rem', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                          Set all days replaces all seven weekdays with this value and clears any MANDATORY or PTO labels.
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            value={editHours}
+                            onChange={e => setEditHours(e.target.value)}
+                            step="0.25"
+                            min="0"
+                            max="24"
+                            disabled={applyingBulk}
+                            placeholder="(type a number)"
+                            style={{ width: '80px' }}
+                          />
+                          <button
+                            className="primary"
+                            onClick={() => saveHours(da)}
+                            disabled={editHours.trim() === '' || applyingBulk}
+                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
+                          >
+                            {applyingBulk ? 'Applying...' : 'Apply'}
+                          </button>
+                          <button
+                            onClick={() => setEditHoursAgentId(null)}
+                            disabled={applyingBulk}
+                            style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <button onClick={() => startEditHours(da.id)} style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}>
+                        Set all days to…
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
