@@ -7,6 +7,8 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
+import com.wfm.util.EnrichedColumnLayout;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +28,7 @@ public class DeskAgentService {
     private final AgentExceptionRepository agentExceptionRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
+    private final ScheduleRepository scheduleRepository;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
@@ -33,7 +36,8 @@ public class DeskAgentService {
                             AgentPreferenceRepository agentPreferenceRepository,
                             AgentExceptionRepository agentExceptionRepository,
                             AgentDayOffRepository agentDayOffRepository,
-                            AgentDayHoursRepository agentDayHoursRepository) {
+                            AgentDayHoursRepository agentDayHoursRepository,
+                            ScheduleRepository scheduleRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
@@ -41,14 +45,38 @@ public class DeskAgentService {
         this.agentExceptionRepository = agentExceptionRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
+        this.scheduleRepository = scheduleRepository;
+    }
+
+    /**
+     * D-06 "not set" fallback: the desk's most-recently-created persisted Schedule's own
+     * default, any status (P-01). Never Desk.defaultContractedHoursPerDay — that fallback is
+     * the bug this phase closes. Falls back to the literal 8.00 (matching Schedule's own field
+     * default) when the desk has zero persisted schedules.
+     */
+    private BigDecimal resolveScheduleDefault(long tenantId, UUID deskId) {
+        List<Schedule> schedules = scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(
+                tenantId, deskId, PageRequest.of(0, 1));
+        if (schedules.isEmpty()) {
+            return new BigDecimal("8.00");
+        }
+        BigDecimal value = schedules.get(0).getDefaultContractedHoursPerDay();
+        return value != null ? value : new BigDecimal("8.00");
+    }
+
+    /** Single bulk per-desk fetch, grouped by agent then weekday — no N+1 (mirrors pendingByAgent). */
+    private Map<UUID, Map<DayOfWeek, AgentDayHours>> loadDayHoursByAgent(long tenantId, UUID deskId) {
+        List<AgentDayHours> rows = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        return rows.stream()
+                .collect(Collectors.groupingBy(
+                        h -> h.getAgent().getId(),
+                        Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h)));
     }
 
     @Transactional(readOnly = true)
     public List<DeskAgentResponse> listDeskAgentResponses(UUID deskId, String search, String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
-        BigDecimal deskDefault = deskRepository.findByIdAndTenantId(deskId, tenantId)
-                .map(Desk::getDefaultContractedHoursPerDay)
-                .orElse(new BigDecimal("8.00"));
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
 
         List<Agent> agents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
@@ -62,16 +90,32 @@ public class DeskAgentService {
                         d -> d.getAgent().getId(),
                         Collectors.mapping(AgentDayOff::getDate, Collectors.toList())));
 
+        Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
+
         return agents.stream()
-                .map(a -> toResponse(a, deskDefault,
+                .map(a -> toResponse(a, scheduleDefault,
+                        dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
                         pendingByAgent.getOrDefault(a.getId(), List.of())))
                 .toList();
     }
 
-    private DeskAgentResponse toResponse(Agent a, BigDecimal deskDefault, List<LocalDate> pendingPtoDates) {
+    private DeskAgentResponse toResponse(Agent a, BigDecimal scheduleDefault,
+                                          Map<DayOfWeek, AgentDayHours> dayRows,
+                                          List<LocalDate> pendingPtoDates) {
         Specialization ps = a.getPrimarySpecialization();
-        BigDecimal effective = a.getContractedHoursPerDay() != null
-                ? a.getContractedHoursPerDay() : deskDefault;
+
+        Map<DayOfWeek, DeskAgentResponse.DayHoursEntry> dayHours = new EnumMap<>(DayOfWeek.class);
+        BigDecimal maxEffective = null;
+        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+            AgentDayHours row = dayRows.get(day);
+            DeskAgentResponse.DayHoursEntry entry = row != null
+                    ? new DeskAgentResponse.DayHoursEntry(true, row.getHours(), row.getDayOffType(), row.getHours())
+                    : new DeskAgentResponse.DayHoursEntry(false, null, null, scheduleDefault);
+            dayHours.put(day, entry);
+            if (maxEffective == null || entry.effectiveHours().compareTo(maxEffective) > 0) {
+                maxEffective = entry.effectiveHours();
+            }
+        }
 
         return new DeskAgentResponse(
                 a.getId(),
@@ -85,10 +129,11 @@ public class DeskAgentService {
                         .map(s -> new DeskAgentResponse.SpecSummary(s.getId(), s.getName()))
                         .toList(),
                 a.getContractedHoursPerDay(),
-                effective,
+                BigDecimals.normalize(maxEffective),
                 a.getEmploymentType(),
                 pendingPtoDates.size(),
-                pendingPtoDates
+                pendingPtoDates,
+                dayHours
         );
     }
 
@@ -96,7 +141,8 @@ public class DeskAgentService {
     public List<DeskAgentResponse> assignAgents(UUID deskId, List<UUID> agentIds) {
         long tenantId = TenantContext.getTenantId();
 
-        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+        // Existence/authorization guard only — not a hours fallback (D-06 no longer reads this).
+        deskRepository.findByIdAndTenantId(deskId, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
 
         if (agentIds == null || agentIds.isEmpty()) {
@@ -121,8 +167,12 @@ public class DeskAgentService {
             assigned.add(agentRepository.save(agent));
         }
 
-        BigDecimal deskDefault = desk.getDefaultContractedHoursPerDay();
-        return assigned.stream().map(a -> toResponse(a, deskDefault, List.of())).toList();
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
+        return assigned.stream()
+                .map(a -> toResponse(a, scheduleDefault,
+                        dayHoursByAgent.getOrDefault(a.getId(), Map.of()), List.of()))
+                .toList();
     }
 
     @Transactional
@@ -149,9 +199,7 @@ public class DeskAgentService {
                                                  UUID primaryId, List<UUID> secondaryIds) {
         long tenantId = TenantContext.getTenantId();
 
-        BigDecimal deskDefault = deskRepository.findByIdAndTenantId(deskId, tenantId)
-                .map(Desk::getDefaultContractedHoursPerDay)
-                .orElse(new BigDecimal("8.00"));
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
 
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
@@ -177,16 +225,17 @@ public class DeskAgentService {
         }
 
         Agent saved = agentRepository.save(agent);
-        return toResponse(saved, deskDefault, List.of());
+        Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
+        return toResponse(saved, scheduleDefault, dayRows, List.of());
     }
 
     @Transactional
     public DeskAgentResponse setContractedHours(UUID deskId, UUID agentId, BigDecimal hours) {
         long tenantId = TenantContext.getTenantId();
 
-        BigDecimal deskDefault = deskRepository.findByIdAndTenantId(deskId, tenantId)
-                .map(Desk::getDefaultContractedHoursPerDay)
-                .orElse(new BigDecimal("8.00"));
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
 
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
@@ -216,6 +265,11 @@ public class DeskAgentService {
             }
         }
 
-        return toResponse(saved, deskDefault, List.of());
+        // Read after the flush/writes above so the returned response reflects the seven rows
+        // just written, not the pre-write state.
+        Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
+        return toResponse(saved, scheduleDefault, dayRows, List.of());
     }
 }

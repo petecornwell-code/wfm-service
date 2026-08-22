@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
@@ -6,8 +6,24 @@ import { showToast } from '../components/Toast'
 type SortField = 'firstName' | 'lastName'
 type SortDir = 'asc' | 'desc'
 
+const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const
+
 function getFirstName(name: string) { return name.split(' ')[0] ?? '' }
 function getLastName(name: string) { return name.split(' ').slice(1).join(' ') }
+
+/** Renders a resolved hours value with no trailing zeros, e.g. 8.00 -> "8", 7.50 -> "7.5". */
+function formatHours(n: number) {
+  return Number(n.toFixed(2)).toString()
+}
+
+/** Collapsed Hours/Day summary (13-UI-SPEC.md Section 1): a single value when the whole week
+ * matches, otherwise a min-max range. Never renders a MANDATORY/PTO marker. */
+function formatHoursSummary(da: DeskAgent) {
+  const values = DAY_ORDER.map(d => da.dayHours[d].effectiveHours)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  return min === max ? formatHours(min) : `${formatHours(min)}-${formatHours(max)}`
+}
 
 export default function DeskAgents() {
   const { deskId } = useParams<{ deskId: string }>()
@@ -40,6 +56,9 @@ export default function DeskAgents() {
   // Contracted hours edit
   const [editHoursAgentId, setEditHoursAgentId] = useState<string | null>(null)
   const [editHours, setEditHours] = useState(8)
+
+  // Per-day hours expandable row (13-UI-SPEC.md D-01)
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null)
 
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
@@ -305,7 +324,8 @@ export default function DeskAgents() {
         </thead>
         <tbody>
           {paginatedAgents.map(da => (
-            <tr key={da.id}>
+            <Fragment key={da.id}>
+            <tr>
               <td>{getFirstName(da.name)}</td>
               <td>{getLastName(da.name)}</td>
               <td>{da.bamboohrId}</td>
@@ -350,18 +370,12 @@ export default function DeskAgents() {
                 )}
               </td>
               <td>
-                {editHoursAgentId === da.id ? (
-                  <div style={{ display: 'flex', gap: '0.25rem' }}>
-                    <input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))}
-                      step="0.25" style={{ width: '60px' }} />
-                    <button className="primary" onClick={saveHours} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>OK</button>
-                    <button onClick={() => setEditHoursAgentId(null)} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>X</button>
-                  </div>
-                ) : (
-                  <span onClick={() => startEditHours(da)} style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}>
-                    {da.effectiveContractedHoursPerDay}
-                  </span>
-                )}
+                <span
+                  onClick={() => setExpandedAgentId(expandedAgentId === da.id ? null : da.id)}
+                  style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+                >
+                  {formatHoursSummary(da)}
+                </span>
               </td>
               <td>{da.active ? 'Yes' : 'No'}</td>
               <td style={{ fontSize: '0.8rem' }}>{da.lastRefreshedAt ? new Date(da.lastRefreshedAt).toLocaleDateString() : '—'}</td>
@@ -394,6 +408,29 @@ export default function DeskAgents() {
                 </div>
               </td>
             </tr>
+            {expandedAgentId === da.id && (
+              <tr>
+                <td colSpan={14} style={{ background: '#fff', padding: '0.75rem' }}>
+                  {/* 13-UI-SPEC.md Section 2 empty-state note and Section 3 seven-column
+                      weekday grid are added in Task 2. This scaffold relocates the existing
+                      inline hours editor here so it stays reachable (D-07) once the collapsed
+                      cell above only toggles expansion. */}
+                  {editHoursAgentId === da.id ? (
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      <input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))}
+                        step="0.25" style={{ width: '60px' }} />
+                      <button className="primary" onClick={saveHours} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>OK</button>
+                      <button onClick={() => setEditHoursAgentId(null)} style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}>X</button>
+                    </div>
+                  ) : (
+                    <span onClick={() => startEditHours(da)} style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}>
+                      {da.effectiveContractedHoursPerDay}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

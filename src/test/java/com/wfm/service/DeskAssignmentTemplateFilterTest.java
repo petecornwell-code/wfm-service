@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +64,7 @@ class DeskAssignmentTemplateFilterTest {
                 "Billing", jobTitle, active,
                 null, null, List.of(),
                 null, null, null,
-                0, List.of());
+                0, List.of(), Map.of());
     }
 
     /** BambooHR IDs of the data rows actually written to the sheet. */

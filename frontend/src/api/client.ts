@@ -293,7 +293,8 @@ export const exceptions = {
 export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number }
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
-export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[] }
+export interface DayHoursEntry { hasRow: boolean; hours: number | null; dayOffType: 'MANDATORY' | 'PTO' | null; effectiveHours: number }
+export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[]; dayHours: Record<string, DayHoursEntry> }
 export interface Specialization { id: string; name: string; color?: string }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }

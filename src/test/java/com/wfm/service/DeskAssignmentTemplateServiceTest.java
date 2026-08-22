@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,7 +66,7 @@ class DeskAssignmentTemplateServiceTest {
                 "Billing", jobTitle, true,
                 null, null, List.of(),
                 null, null, null,
-                0, List.of());
+                0, List.of(), Map.of());
     }
 
     private List<String> expectedHeaders() {
