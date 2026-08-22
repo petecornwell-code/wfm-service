@@ -151,6 +151,8 @@ export const deskAgents = {
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/specializations`, { method: 'PUT', body: JSON.stringify(data) }),
   setContractedHours: (deskId: string, agentId: string, hours: number) =>
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
+  setDayHours: (deskId: string, agentId: string, day: string, body: { hours?: number; dayOffType?: 'MANDATORY' | 'PTO'; clearRow?: boolean }) =>
+    request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/day-hours/${day}`, { method: 'PUT', body: JSON.stringify(body) }),
   refresh: (deskId: string) =>
     request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
   exportToExcel: (deskId: string) =>

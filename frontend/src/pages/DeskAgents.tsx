@@ -15,6 +15,20 @@ const DAY_LABELS: Record<(typeof DAY_ORDER)[number], string> = {
 function getFirstName(name: string) { return name.split(' ')[0] ?? '' }
 function getLastName(name: string) { return name.split(' ').slice(1).join(' ') }
 
+/** Capitalised weekday name for error copy, e.g. "WEDNESDAY" -> "Wednesday". */
+function capitalizeDay(day: string) {
+  return day.charAt(0) + day.slice(1).toLowerCase()
+}
+
+/** Seeds the per-cell editor from the entry's current state (13-UI-SPEC.md Section 3):
+ * empty when not set, the literal label when MANDATORY/PTO, otherwise the formatted number. */
+function seedValueForEntry(entry: DayHoursEntry): string {
+  if (entry.dayOffType === 'MANDATORY') return 'MANDATORY'
+  if (entry.dayOffType === 'PTO') return 'PTO'
+  if (entry.hasRow && entry.hours !== null) return formatHours(entry.hours)
+  return ''
+}
+
 /** Renders a resolved hours value with no trailing zeros, e.g. 8.00 -> "8", 7.50 -> "7.5". */
 function formatHours(n: number) {
   return Number(n.toFixed(2)).toString()
@@ -32,31 +46,32 @@ function formatHoursSummary(da: DeskAgent) {
 /** Per-day cell display (13-UI-SPEC.md Section 3, rules 1-5) — this branch order is
  * load-bearing (13-RESEARCH.md Pitfalls 1 and 2): a MANDATORY/PTO label always wins over the
  * stored hours value, and a stored 0.00 row is never conflated with "not set". */
-function DayCell({ entry }: { entry: DayHoursEntry }) {
+function DayCell({ entry, onClick }: { entry: DayHoursEntry; onClick: () => void }) {
   if (entry.dayOffType === 'MANDATORY') {
     return (
-      <span style={{ display: 'inline-block', background: '#e5e7eb', color: '#374151', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+      <span onClick={onClick} style={{ cursor: 'pointer', display: 'inline-block', background: '#e5e7eb', color: '#374151', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
         MAND
       </span>
     )
   }
   if (entry.dayOffType === 'PTO') {
     return (
-      <span style={{ display: 'inline-block', background: '#fef9c3', color: '#92400e', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
+      <span onClick={onClick} style={{ cursor: 'pointer', display: 'inline-block', background: '#fef9c3', color: '#92400e', padding: '4px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}>
         PTO
       </span>
     )
   }
   if (entry.hasRow && entry.hours === 0) {
-    return <span style={{ color: '#6b7280', fontSize: '0.85rem', fontWeight: 400 }}>0</span>
+    return <span onClick={onClick} style={{ cursor: 'pointer', color: '#6b7280', fontSize: '0.85rem', fontWeight: 400 }}>0</span>
   }
   if (entry.hasRow && entry.hours !== null) {
-    return <span style={{ fontSize: '0.85rem', fontWeight: 400 }}>{formatHours(entry.hours)}</span>
+    return <span onClick={onClick} style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 400 }}>{formatHours(entry.hours)}</span>
   }
   return (
     <span
+      onClick={onClick}
       title="Not set — using schedule default"
-      style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '0.85rem', fontWeight: 400 }}
+      style={{ cursor: 'pointer', color: '#9ca3af', fontStyle: 'italic', fontSize: '0.85rem', fontWeight: 400 }}
     >
       {formatHours(entry.effectiveHours)}
     </span>
@@ -97,6 +112,13 @@ export default function DeskAgents() {
 
   // Per-day hours expandable row (13-UI-SPEC.md D-01)
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null)
+
+  // Per-cell type-or-pick combo (13-UI-SPEC.md Section 3 / D-03/D-04/D-05)
+  const [editCell, setEditCell] = useState<{ agentId: string; day: string } | null>(null)
+  const [editCellValue, setEditCellValue] = useState('')
+  const [cellError, setCellError] = useState<string | null>(null)
+  const [savingCell, setSavingCell] = useState(false)
+  const cellEscapedRef = useRef(false)
 
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
@@ -219,6 +241,52 @@ export default function DeskAgents() {
     }
   }
 
+  const startEditCell = (da: DeskAgent, day: string) => {
+    setEditCell({ agentId: da.id, day })
+    setEditCellValue(seedValueForEntry(da.dayHours[day]))
+    setCellError(null)
+  }
+
+  const cancelEditCell = () => {
+    setEditCell(null)
+    setCellError(null)
+  }
+
+  const saveDayHours = async (da: DeskAgent, day: string) => {
+    if (!deskId) return
+    const raw = editCellValue.trim()
+    const upper = raw.toUpperCase()
+    let body: { hours?: number; dayOffType?: 'MANDATORY' | 'PTO'; clearRow?: boolean }
+    if (upper === 'PTO') {
+      body = { dayOffType: 'PTO' }
+    } else if (upper === 'MANDATORY') {
+      body = { dayOffType: 'MANDATORY' }
+    } else if (raw === '' || raw === 'Not set (default)') {
+      body = { clearRow: true }
+    } else {
+      const numeric = Number(raw)
+      if (Number.isNaN(numeric) || numeric < 0 || numeric > 24) {
+        setEditCellValue(seedValueForEntry(da.dayHours[day]))
+        setCellError('Enter a number from 0 to 24, or choose PTO / MANDATORY / Not set (default).')
+        return
+      }
+      body = { hours: numeric }
+    }
+    setCellError(null)
+    setSavingCell(true)
+    try {
+      const updated = await deskAgents.setDayHours(deskId, da.id, day, body)
+      setAgentList(agentList.map(a => a.id === da.id ? updated : a))
+      setEditCell(null)
+      showToast('success', 'Day hours updated')
+    } catch (err) {
+      showToast('error', `Couldn't save ${capitalizeDay(day)} — ${getErrorMessage(err)}`)
+      setEditCell(null)
+    } finally {
+      setSavingCell(false)
+    }
+  }
+
   const openDaysOff = async (agentId: string, agentName: string) => {
     try {
       const daysOff = await agentsApi.daysOff(agentId)
@@ -310,6 +378,11 @@ export default function DeskAgents() {
 
   return (
     <>
+      <datalist id="day-hours-options">
+        <option value="PTO" />
+        <option value="MANDATORY" />
+        <option value="Not set (default)" />
+      </datalist>
       <h1>Desk Agents</h1>
       <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="primary" onClick={handleRefresh} disabled={refreshing}>
@@ -464,7 +537,43 @@ export default function DeskAgents() {
                     {DAY_ORDER.map(d => (
                       <div key={d} style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{DAY_LABELS[d]}</div>
-                        <div><DayCell entry={da.dayHours[d]} /></div>
+                        <div>
+                          {editCell && editCell.agentId === da.id && editCell.day === d ? (
+                            <div style={{ textAlign: 'left' }}>
+                              <input
+                                type="text"
+                                list="day-hours-options"
+                                value={editCellValue}
+                                disabled={savingCell}
+                                placeholder="(type a number)"
+                                autoFocus
+                                onChange={e => setEditCellValue(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    e.currentTarget.blur()
+                                  } else if (e.key === 'Escape') {
+                                    cellEscapedRef.current = true
+                                    cancelEditCell()
+                                    e.currentTarget.blur()
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (cellEscapedRef.current) {
+                                    cellEscapedRef.current = false
+                                    return
+                                  }
+                                  saveDayHours(da, d)
+                                }}
+                                style={{ width: '90px', fontSize: '0.85rem' }}
+                              />
+                              {cellError && (
+                                <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '2px' }}>{cellError}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <DayCell entry={da.dayHours[d]} onClick={() => startEditCell(da, d)} />
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
