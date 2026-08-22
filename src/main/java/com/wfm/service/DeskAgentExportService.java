@@ -1,6 +1,8 @@
 package com.wfm.service;
 
 import com.wfm.dto.DeskAgentResponse;
+import com.wfm.dto.DeskAgentResponse.DayHoursEntry;
+import com.wfm.model.DayOffType;
 import com.wfm.util.EnrichedColumnLayout;
 import com.wfm.util.FormulaInjectionSanitizer;
 import org.apache.poi.ss.usermodel.*;
@@ -9,11 +11,16 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.DayOfWeek;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class DeskAgentExportService {
+
+    private static final int FIRST_DAY_COLUMN = 13;
 
     public byte[] exportDeskAgentsToExcel(List<DeskAgentResponse> agents) {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
@@ -22,20 +29,26 @@ public class DeskAgentExportService {
 
             // Shared identity columns (BambooHR ID, Email, Department, Job Title, Active) pull
             // their header text from EnrichedColumnLayout for round-trip symmetry with the
-            // upload/template shape (D-13). Export-only metadata columns stay hardcoded.
-            String[] columns = {
+            // upload/template shape (D-13). Export-only metadata columns stay hardcoded. The
+            // seven Mon-Sun columns (D-02) are appended programmatically from DAY_ORDER so no
+            // weekday name is ever a string literal in this file (I-4's drift class).
+            List<String> columns = new ArrayList<>(List.of(
                 "ID", "Desk ID", EnrichedColumnLayout.COL_BAMBOOHR_ID, "Name", EnrichedColumnLayout.COL_EMAIL,
                 EnrichedColumnLayout.COL_DEPARTMENT, EnrichedColumnLayout.COL_JOB_TITLE,
                 EnrichedColumnLayout.COL_ACTIVE, "Last Refreshed At",
                 "Primary Specialization", "Secondary Specializations",
-                "Contracted Hours Per Day", "Effective Contracted Hours Per Day",
-                EnrichedColumnLayout.COL_FIRST_NAME, EnrichedColumnLayout.COL_LAST_NAME
-            };
+                "Contracted Hours Per Day", "Effective Contracted Hours Per Day"
+            ));
+            for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+                columns.add(EnrichedColumnLayout.dayHeader(day));
+            }
+            columns.add(EnrichedColumnLayout.COL_FIRST_NAME);
+            columns.add(EnrichedColumnLayout.COL_LAST_NAME);
 
             Row header = sheet.createRow(0);
-            for (int i = 0; i < columns.length; i++) {
+            for (int i = 0; i < columns.size(); i++) {
                 Cell cell = header.createCell(i);
-                cell.setCellValue(columns[i]);
+                cell.setCellValue(columns.get(i));
                 cell.setCellStyle(headerStyle);
             }
 
@@ -56,11 +69,12 @@ public class DeskAgentExportService {
                 row.createCell(10).setCellValue(sanitize(formatSecondarySpecializations(agent.secondarySpecializations())));
                 row.createCell(11).setCellValue(agent.contractedHoursPerDay() != null ? agent.contractedHoursPerDay().doubleValue() : 0);
                 row.createCell(12).setCellValue(agent.effectiveContractedHoursPerDay() != null ? agent.effectiveContractedHoursPerDay().doubleValue() : 0);
-                row.createCell(13).setCellValue(sanitize(agent.firstName()));
-                row.createCell(14).setCellValue(sanitize(agent.lastName()));
+                writeDayCells(row, agent);
+                row.createCell(FIRST_DAY_COLUMN + 7).setCellValue(sanitize(agent.firstName()));
+                row.createCell(FIRST_DAY_COLUMN + 8).setCellValue(sanitize(agent.lastName()));
             }
 
-            for (int i = 0; i < columns.length; i++) {
+            for (int i = 0; i < columns.size(); i++) {
                 sheet.autoSizeColumn(i);
             }
 
@@ -69,6 +83,40 @@ public class DeskAgentExportService {
             return out.toByteArray();
         } catch (IOException e) {
             throw new RuntimeException("Failed to generate Excel export", e);
+        }
+    }
+
+    /**
+     * Writes the seven Mon-Sun columns (D-02), mirroring 13-UI-SPEC.md Section 3's display-mode
+     * branching order exactly (load-bearing per 13-RESEARCH.md Pitfalls 1/2 — a labelled day is
+     * stored as zero hours, so MANDATORY/PTO must be checked before any numeric read):
+     * 1. entry missing (defensive only — plan 13-01 guarantees all 7 keys) -> numeric 0
+     * 2. MANDATORY -> the string "MANDATORY"
+     * 3. PTO -> the string "PTO"
+     * 4. a stored row with no label -> its numeric hours, including an explicit 0
+     * 5. no stored row -> the resolved effective value, never blank (P-08) — a blank cell makes
+     *    {@code DeskAssignmentUploadService.parseDayCell} fail and the caller skip the whole row.
+     *
+     * These two keyword strings are produced by this class from an enum, never from operator
+     * input, so they deliberately bypass {@link #sanitize(String)} (T-13-10).
+     */
+    private void writeDayCells(Row row, DeskAgentResponse agent) {
+        Map<DayOfWeek, DayHoursEntry> dayHours = agent.dayHours();
+        DayOfWeek[] order = EnrichedColumnLayout.DAY_ORDER;
+        for (int i = 0; i < order.length; i++) {
+            DayHoursEntry entry = dayHours != null ? dayHours.get(order[i]) : null;
+            Cell cell = row.createCell(FIRST_DAY_COLUMN + i);
+            if (entry == null) {
+                cell.setCellValue(0);
+            } else if (entry.dayOffType() == DayOffType.MANDATORY) {
+                cell.setCellValue("MANDATORY");
+            } else if (entry.dayOffType() == DayOffType.PTO) {
+                cell.setCellValue("PTO");
+            } else if (entry.hasRow()) {
+                cell.setCellValue(entry.hours().doubleValue());
+            } else {
+                cell.setCellValue(entry.effectiveHours().doubleValue());
+            }
         }
     }
 
