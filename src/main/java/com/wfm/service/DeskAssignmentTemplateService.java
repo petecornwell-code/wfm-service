@@ -28,9 +28,6 @@ import java.util.List;
 @Service
 public class DeskAssignmentTemplateService {
 
-    private static final String SPECIALTY_1_HEADER = "Specialty 1";
-    private static final String SPECIALTY_2_HEADER = "Specialty 2";
-
     private final DeskRepository deskRepository;
     private final DeskAgentService deskAgentService;
     private final AgentEligibilityService agentEligibilityService;
@@ -119,8 +116,8 @@ public class DeskAssignmentTemplateService {
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
             headers.add(EnrichedColumnLayout.dayHeader(day));
         }
-        headers.add(SPECIALTY_1_HEADER);
-        headers.add(SPECIALTY_2_HEADER);
+        headers.add(EnrichedColumnLayout.specialtyHeader(1));
+        headers.add(EnrichedColumnLayout.specialtyHeader(2));
         return headers;
     }
 

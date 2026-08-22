@@ -48,6 +48,11 @@ public final class EnrichedColumnLayout {
         return name.charAt(0) + name.substring(1).toLowerCase();
     }
 
+    /** Specialty column header, e.g. 1 -> "Specialty 1". Round-trips through {@link #specialtyIndex}. */
+    public static String specialtyHeader(int index) {
+        return "Specialty " + index;
+    }
+
     /** The seven identity headers, in canonical order. */
     public static List<String> identityHeaders() {
         return List.of(COL_BAMBOOHR_ID, COL_FIRST_NAME, COL_LAST_NAME,
