@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Unified Agent Provisioning
 current_phase: 13
 current_phase_name: Per-Day Hours Visibility
-status: gaps_found
-stopped_at: Phase 13 verified — gaps_found (50/58 must-haves), paused for gap closure
-last_updated: "2026-08-24T12:30:45.707Z"
-last_activity: 2026-08-22
-last_activity_desc: Phase 13 executed 4/4 plans, code-reviewed and verified — 2 UI gaps block the pass
-state_head: f772bf1e36d9af128738893e74b7baa852e21dd0
+status: executing
+stopped_at: Completed 13-05-PLAN.md (gap closure)
+last_updated: "2026-08-24T12:37:28.332Z"
+last_activity: 2026-08-24
+last_activity_desc: Phase 13 execution started
+state_head: 974dc25e45674f18057630a4e5ad1a91f98ff83b
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
   percent: 60
 ---
 
@@ -29,14 +29,14 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 
 ## Current Position
 
-Phase: 13 (Per-Day Hours Visibility) — READY TO EXECUTE
-Plan: 4 of 4 executed
-Status: Verified `gaps_found` — 50/58 must-haves. 2 UI-SPEC truths failed (both one-line fixes in
+Phase: 13 (Per-Day Hours Visibility) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
 `frontend/src/pages/DeskAgents.tsx`). Backend 309 tests green on clean rebuild; frontend build clean.
 Code review: 0 Critical / 3 Warning / 2 Info. Phase NOT marked complete.
 Next: `/gsd-plan-phase 13 --gaps` → `/gsd-execute-phase 13 --gaps-only`.
 Handoff: `.planning/phases/13-per-day-hours-visibility/.continue-here.md`
-Last activity: 2026-08-22 — Phase 13 executed, reviewed and verified; paused at gap closure
+Last activity: 2026-08-24 — Phase 13 execution started
 
 Progress: [████████████████████] 17/17 plans ([██████░░░░] 60%)
 
@@ -144,6 +144,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 13]: Phase 13 Plan 03: adopted PLAN.md's P-08/P-09 planner decisions verbatim (unset weekday exports resolved effective value, never blank; 7 day columns inserted immediately after Effective Contracted Hours Per Day, shifting First/Last Name from indices 13/14 to 20/21)
 - [Phase 13]: Phase 13 Plan 04: adopted PLAN.md's P-10/P-11 planner decisions verbatim (client-side range-only validation, no quarter-hour gate; no frontend test framework introduced)
 - [Phase 13]: Phase 13 Plan 04: bulk-action editHours input opens blank (13-UI-SPEC.md E5) rather than pre-seeded with the agent's current effective hours; per-cell validation error text reuses the existing warning-amber #92400e instead of #ef4444, since the phase's color contract forbids destructive red for any new element
+- [Phase 13]: Phase 13 Plan 05: shared isEveryDayNotSet predicate drives both the collapsed cell's muted treatment and the expanded empty-state note (P-14); the bulk out-of-range guard runs strictly before confirm() and uses a truncated toast sentence, not an inline element (P-12/P-13); 13-04-PLAN.md's contradicting seed-value action prose was corrected with an inline 'corrected by 13-05' marker rather than a silent rewrite (P-15)
 
 ### Blockers/Concerns
 
@@ -156,8 +157,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-22T01:02:25.176Z
-Stopped at: Completed 13-04-PLAN.md
+Last session: 2026-08-24T12:37:28.164Z
+Stopped at: Completed 13-05-PLAN.md (gap closure)
 Resume file: None
 
 ## Operator Next Steps
@@ -178,3 +179,4 @@ Resume file: None
 | Phase 13 P02 | 14min | 3 tasks | 6 files |
 | Phase 13 P03 | 25min | 2 tasks | 5 files |
 | Phase 13 P04 | 8 min | 2 tasks | 2 files |
+| Phase 13 P05 | ~10 min | 3 tasks | 2 files |
