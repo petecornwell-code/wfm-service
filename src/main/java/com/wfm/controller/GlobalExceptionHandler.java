@@ -18,6 +18,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 
@@ -43,6 +44,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Malformed request body", List.of());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        // Required because handleUncaught below would otherwise return a 500 for a mistyped
+        // path segment (e.g. an unrecognised {day} value) -- Spring's enum path-variable
+        // converter throws this before any handler method runs (WR-02). The message names only
+        // the parameter declared in our own controller signature: it is not attacker-controlled,
+        // unlike the rejected token or the internal target type, neither of which is echoed
+        // (T-13-25/26).
+        return buildResponse(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                "Invalid value for path parameter '" + ex.getName() + "'", List.of());
     }
 
     @ExceptionHandler(PreSolveValidationException.class)
