@@ -5,16 +5,16 @@ milestone_name: Unified Agent Provisioning
 current_phase: 13
 current_phase_name: Per-Day Hours Visibility
 status: executing
-stopped_at: Completed 13-05-PLAN.md (gap closure)
-last_updated: "2026-08-24T12:37:28.332Z"
+stopped_at: Completed 13-06-PLAN.md (gap closure) -- phase 13 all 6 plans executed
+last_updated: "2026-08-24T12:56:27.543Z"
 last_activity: 2026-08-24
 last_activity_desc: Phase 13 execution started
-state_head: 974dc25e45674f18057630a4e5ad1a91f98ff83b
+state_head: 91b469e9ad66e75aece847257ef9dc47a0e922e7
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
   percent: 60
 ---
 
@@ -29,16 +29,17 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 
 ## Current Position
 
-Phase: 13 (Per-Day Hours Visibility) — EXECUTING
-Plan: 2 of 6
-Status: Ready to execute
-`frontend/src/pages/DeskAgents.tsx`). Backend 309 tests green on clean rebuild; frontend build clean.
-Code review: 0 Critical / 3 Warning / 2 Info. Phase NOT marked complete.
-Next: `/gsd-plan-phase 13 --gaps` → `/gsd-execute-phase 13 --gaps-only`.
-Handoff: `.planning/phases/13-per-day-hours-visibility/.continue-here.md`
-Last activity: 2026-08-24 — Phase 13 execution started
+Phase: 13 (Per-Day Hours Visibility) — GAP CLOSURE COMPLETE (6/6 plans)
+Plan: 6 of 6
+Status: All 6 plans executed (13-01..13-06); gap-closure plans 13-05/13-06 addressed the two FAILED
+UI truths, the WR-01/WR-02 code-review warnings, and both behavior_unverified_items from
+13-VERIFICATION.md. Backend 315 tests green (`./gradlew test --rerun-tasks`, up from 309 baseline);
+frontend build clean. Re-verification against 13-VERIFICATION.md's `gaps`/`behavior_unverified_items`
+not yet re-run — phase not yet formally re-verified/marked complete.
+Next: `/gsd-verify-work 13` to confirm the gap-closure plans resolved the prior `gaps_found` verdict.
+Last activity: 2026-08-24 — Phase 13 gap-closure execution (13-05, 13-06) complete
 
-Progress: [████████████████████] 17/17 plans ([██████░░░░] 60%)
+Progress: [████████████████████] 23/23 plans ([██████░░░░] 60%)
 
 ## Milestone v1.2 Roadmap
 
@@ -145,6 +146,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 13]: Phase 13 Plan 04: adopted PLAN.md's P-10/P-11 planner decisions verbatim (client-side range-only validation, no quarter-hour gate; no frontend test framework introduced)
 - [Phase 13]: Phase 13 Plan 04: bulk-action editHours input opens blank (13-UI-SPEC.md E5) rather than pre-seeded with the agent's current effective hours; per-cell validation error text reuses the existing warning-amber #92400e instead of #ef4444, since the phase's color contract forbids destructive red for any new element
 - [Phase 13]: Phase 13 Plan 05: shared isEveryDayNotSet predicate drives both the collapsed cell's muted treatment and the expanded empty-state note (P-14); the bulk out-of-range guard runs strictly before confirm() and uses a truncated toast sentence, not an inline element (P-12/P-13); 13-04-PLAN.md's contradicting seed-value action prose was corrected with an inline 'corrected by 13-05' marker rather than a silent rewrite (P-15)
+- [Phase 13]: Phase 13 Plan 06: adopted PLAN.md's P-16/P-17/P-18/P-19 planner decisions verbatim (MockitoSpyBean + Propagation.NOT_SUPPORTED + argument-matched stubbing for the rollback proof, no new dependency; WR-02 proof is a direct handler unit test, not a new MockMvc harness; bulk range message names the field; exactly one new exception type intercepted)
+- [Phase 13]: Phase 13 Plan 06: routed DeskAgentServiceBulkRollbackTest's @AfterEach cleanup through DeskAgentService.setContractedHours(..., null) rather than calling the @MockitoSpyBean-wrapped AgentDayHoursRepository.deleteByAgent_Id directly -- the spy's delegate does not carry Spring Data's self-transactional proxy behaviour, so a direct write with no ambient transaction throws TransactionRequiredException
 
 ### Blockers/Concerns
 
@@ -157,8 +160,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-24T12:37:28.164Z
-Stopped at: Completed 13-05-PLAN.md (gap closure)
+Last session: 2026-08-24T12:56:27.295Z
+Stopped at: Completed 13-06-PLAN.md (gap closure) -- phase 13 all 6 plans executed
 Resume file: None
 
 ## Operator Next Steps
@@ -180,3 +183,4 @@ Resume file: None
 | Phase 13 P03 | 25min | 2 tasks | 5 files |
 | Phase 13 P04 | 8 min | 2 tasks | 2 files |
 | Phase 13 P05 | ~10 min | 3 tasks | 2 files |
+| Phase 13 P06 | 14min | 3 tasks | 6 files |
