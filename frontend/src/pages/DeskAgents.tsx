@@ -243,6 +243,10 @@ export default function DeskAgents() {
     if (!deskId || !editHoursAgentId) return
     const hours = Number(editHours)
     if (editHours.trim() === '' || Number.isNaN(hours)) return
+    if (hours < 0 || hours > 24) {
+      showToast('error', 'Enter a number from 0 to 24.')
+      return
+    }
     const labelledDayCount = DAY_ORDER.filter(d => da.dayHours[d].dayOffType !== null).length
     if (labelledDayCount > 0) {
       const confirmed = confirm(`This will overwrite ${labelledDayCount} day(s) currently marked MANDATORY or PTO with a single value. Continue?`)
