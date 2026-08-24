@@ -43,6 +43,13 @@ function formatHoursSummary(da: DeskAgent) {
   return min === max ? formatHours(min) : `${formatHours(min)}-${formatHours(max)}`
 }
 
+/** True when none of the agent's seven weekdays has a stored agent_day_hours row — the shared
+ * predicate driving both the collapsed cell's muted treatment and the expanded row's empty-state
+ * note (13-UI-SPEC.md E1 empty). */
+function isEveryDayNotSet(da: DeskAgent): boolean {
+  return DAY_ORDER.every(d => !da.dayHours[d].hasRow)
+}
+
 /** Per-day cell display (13-UI-SPEC.md Section 3, rules 1-5) — this branch order is
  * load-bearing (13-RESEARCH.md Pitfalls 1 and 2): a MANDATORY/PTO label always wins over the
  * stored hours value, and a stored 0.00 row is never conflated with "not set". */
@@ -503,7 +510,14 @@ export default function DeskAgents() {
                   >
                     {expandedAgentId === da.id ? '▾' : '▸'}
                   </span>
-                  {formatHoursSummary(da)}
+                  <span
+                    style={isEveryDayNotSet(da)
+                      ? { color: '#9ca3af', fontStyle: 'italic' }
+                      : undefined}
+                    title={isEveryDayNotSet(da) ? 'Not set — using schedule default' : undefined}
+                  >
+                    {formatHoursSummary(da)}
+                  </span>
                 </span>
               </td>
               <td>{da.active ? 'Yes' : 'No'}</td>
@@ -540,7 +554,7 @@ export default function DeskAgents() {
             {expandedAgentId === da.id && (
               <tr>
                 <td colSpan={14} style={{ background: '#fff', padding: '0.75rem' }}>
-                  {DAY_ORDER.every(d => !da.dayHours[d].hasRow) && (
+                  {isEveryDayNotSet(da) && (
                     <div style={{ marginBottom: '16px', fontSize: '0.85rem' }}>
                       No per-day hours uploaded — every day shows the schedule default ({formatHours(da.dayHours[DAY_ORDER[0]].effectiveHours)}h).
                     </div>
