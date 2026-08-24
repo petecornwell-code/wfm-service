@@ -21,12 +21,13 @@ function capitalizeDay(day: string) {
 }
 
 /** Seeds the per-cell editor from the entry's current state (13-UI-SPEC.md Section 3):
- * empty when not set, the literal label when MANDATORY/PTO, otherwise the formatted number. */
+ * the literal 'Not set (default)' picklist entry when not set, the literal label when
+ * MANDATORY/PTO, otherwise the formatted number. */
 function seedValueForEntry(entry: DayHoursEntry): string {
   if (entry.dayOffType === 'MANDATORY') return 'MANDATORY'
   if (entry.dayOffType === 'PTO') return 'PTO'
   if (entry.hasRow && entry.hours !== null) return formatHours(entry.hours)
-  return ''
+  return 'Not set (default)'
 }
 
 /** Renders a resolved hours value with no trailing zeros, e.g. 8.00 -> "8", 7.50 -> "7.5". */
