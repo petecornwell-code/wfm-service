@@ -215,4 +215,52 @@ class DeskAgentServiceContractedHoursTest {
 
         assertThat(method.isAnnotationPresent(Transactional.class)).isTrue();
     }
+
+    @Test
+    void setContractedHours_above24_isRejectedAndPersistsNothing() {
+        assertThatThrownBy(() ->
+                deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("1000")))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
+    }
+
+    @Test
+    void setContractedHours_above24_leavesExistingRowsAndLabelsUntouched() {
+        deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("6"));
+
+        AgentDayHours saturday = agentDayHoursRepository
+                .findByAgent_IdAndDayOfWeek(agent.getId(), DayOfWeek.SATURDAY)
+                .orElseThrow();
+        saturday.setHours(BigDecimal.ZERO.setScale(2));
+        saturday.setDayOffType(DayOffType.MANDATORY);
+        agentDayHoursRepository.save(saturday);
+
+        assertThatThrownBy(() ->
+                deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("1000")))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        List<AgentDayHours> rows = agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId());
+        assertThat(rows).hasSize(7);
+        for (AgentDayHours row : rows) {
+            if (row.getDayOfWeek() == DayOfWeek.SATURDAY) {
+                assertThat(row.getHours()).isEqualByComparingTo(new BigDecimal("0.00"));
+                assertThat(row.getDayOffType()).isEqualTo(DayOffType.MANDATORY);
+            } else {
+                assertThat(row.getHours()).isEqualByComparingTo(new BigDecimal("6.00"));
+            }
+        }
+        assertThat(agentRepository.findById(agent.getId()).orElseThrow().getContractedHoursPerDay())
+                .isEqualByComparingTo(new BigDecimal("6.00"));
+    }
+
+    @Test
+    void setContractedHours_exactly24_isAccepted() {
+        deskAgentService.setContractedHours(desk.getId(), agent.getId(), new BigDecimal("24"));
+
+        List<AgentDayHours> rows = agentDayHoursRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId());
+        assertThat(rows).hasSize(7);
+        assertThat(rows).allSatisfy(row ->
+                assertThat(row.getHours()).isEqualByComparingTo(new BigDecimal("24.00")));
+    }
 }
