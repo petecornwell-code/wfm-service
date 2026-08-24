@@ -242,8 +242,11 @@ public class DeskAgentService {
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         BigDecimal normalized = BigDecimals.normalize(hours);
-        if (normalized != null && normalized.signum() < 0) {
-            throw new IllegalArgumentException("Contracted hours per day must not be negative");
+        // WR-01 alignment: mirror setDayHours' inclusive 0-24 reject-not-clamp bound so every
+        // write path into agent_day_hours obeys one rule, instead of only rejecting negatives.
+        if (normalized != null
+                && (normalized.signum() < 0 || normalized.compareTo(new BigDecimal("24")) > 0)) {
+            throw new IllegalArgumentException("Contracted hours per day must be between 0 and 24");
         }
         agent.setContractedHoursPerDay(normalized);
         Agent saved = agentRepository.save(agent);
