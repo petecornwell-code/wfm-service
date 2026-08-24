@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 7
 waived_count: 0
 fixed_count: 0
-total_count: 6
-last_updated: 2026-08-22T01:01:23.451Z
+total_count: 7
+last_updated: 2026-08-24T12:54:26.239Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,7 @@ last_updated: 2026-08-22T01:01:23.451Z
 | 4 | 13 | unrun-verify | src/main/java/com/wfm/controller/DeskAgentController.java |  | PUT .../day-hours/{day} behavioral acceptance criteria (200 with fresh body on valid hours, 400 not 500 on out-of-range hours) verified only via compileJava + grep, not an actual HTTP/integration test — no controller test file exists for DeskAgentController in this codebase | open |  | 2026-08-22T00:37:58.146Z |  |
 | 5 | 13 | unrun-verify | frontend/src/pages/DeskAgents.tsx |  | 13-04 Task 1 <human-check> per-cell combo walkthrough (typed number, PTO/MANDATORY pick, Not-set clear, out-of-range rejection, offline error revert, datalist overflow) not run — no live desk with an enriched upload available in this executor session | open |  | 2026-08-22T01:01:23.383Z |  |
 | 6 | 13 | unrun-verify | frontend/src/pages/DeskAgents.tsx |  | 13-04 Task 2 <human-check> bulk 'Set all days to…' walkthrough (no-dialog on unlabelled agent, accurate label-count confirm dialog, decline/accept paths, single-line layout) not run — no live desk with an enriched upload available in this executor session | open |  | 2026-08-22T01:01:23.451Z |  |
+| 7 | 13 | unrun-verify | src/main/java/com/wfm/controller/GlobalExceptionHandler.java |  | 13-06 Task 2 <human-check> HTTP-level walkthrough (malformed day-segment returns 400 not 500, valid/out-of-range day-hours paths unchanged, bulk contracted-hours 400 message, genuine 500 still generic) not run — no live backend available in this executor session; only the direct handler unit test (GlobalExceptionHandlerTest) proves the response the handler builds, not Spring's dispatch to it (P-17) | open |  | 2026-08-24T12:54:26.239Z |  |
 
 ````json
 [
@@ -94,6 +95,18 @@ last_updated: 2026-08-22T01:01:23.451Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-22T01:01:23.451Z",
+    "resolved_at": null
+  },
+  {
+    "id": 7,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/main/java/com/wfm/controller/GlobalExceptionHandler.java",
+    "line": null,
+    "description": "13-06 Task 2 <human-check> HTTP-level walkthrough (malformed day-segment returns 400 not 500, valid/out-of-range day-hours paths unchanged, bulk contracted-hours 400 message, genuine 500 still generic) not run — no live backend available in this executor session; only the direct handler unit test (GlobalExceptionHandlerTest) proves the response the handler builds, not Spring's dispatch to it (P-17)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-24T12:54:26.239Z",
     "resolved_at": null
   }
 ]
