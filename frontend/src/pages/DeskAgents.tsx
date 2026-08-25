@@ -137,6 +137,17 @@ export default function DeskAgents() {
   const [cellError, setCellError] = useState<string | null>(null)
   const [savingCell, setSavingCell] = useState(false)
   const cellEscapedRef = useRef(false)
+  /** True once the operator has actually typed or picked in the open cell editor.
+   * The editor opens EMPTY so the native <datalist> shows its full option list (a datalist
+   * filters its options against the input's current text, so a pre-seeded value collapses the
+   * list to the one self-matching entry). That makes "field is empty" ambiguous, because an
+   * empty field otherwise means clearRow. This flag disambiguates: empty + never-touched is an
+   * abandoned edit (restore, no write), empty + touched is a deliberate clear. Without it a
+   * stray click-then-click-away would silently delete the row. */
+  const cellDirtyRef = useRef(false)
+  /** The cell's value at the moment the editor opened — shown as placeholder ghost text so
+   * clearing the field for the dropdown's sake does not hide what is currently stored. */
+  const [editCellSeed, setEditCellSeed] = useState('')
 
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
@@ -275,7 +286,13 @@ export default function DeskAgents() {
 
   const startEditCell = (da: DeskAgent, day: string) => {
     setEditCell({ agentId: da.id, day })
-    setEditCellValue(seedValueForEntry(da.dayHours[day]))
+    // Open EMPTY, not seeded: a native <datalist> filters its options against the input's
+    // current text, so seeding the value collapsed the 100-entry picklist to the single
+    // self-matching option and nothing could be picked (G-13-DD). The current value moves to
+    // the placeholder so it is still visible.
+    setEditCellValue('')
+    setEditCellSeed(seedValueForEntry(da.dayHours[day]))
+    cellDirtyRef.current = false
     setCellError(null)
   }
 
@@ -286,6 +303,13 @@ export default function DeskAgents() {
 
   const saveDayHours = async (da: DeskAgent, day: string) => {
     if (!deskId) return
+    // Abandoned edit: the editor opens empty (see startEditCell), so an untouched blur must be a
+    // no-op, NOT a clearRow. Only an operator who actually typed can mean "delete this row".
+    if (!cellDirtyRef.current) {
+      setEditCell(null)
+      setCellError(null)
+      return
+    }
     const raw = editCellValue.trim()
     const upper = raw.toUpperCase()
     let body: { hours?: number; dayOffType?: 'MANDATORY' | 'PTO'; clearRow?: boolean }
@@ -298,7 +322,10 @@ export default function DeskAgents() {
     } else {
       const numeric = Number(raw)
       if (Number.isNaN(numeric) || numeric < 0 || numeric > 24) {
-        setEditCellValue(seedValueForEntry(da.dayHours[day]))
+        // Revert to empty rather than to the seed: the field must stay unfiltered so the
+        // picklist is still browsable while the operator corrects the rejected value.
+        setEditCellValue('')
+        cellDirtyRef.current = false
         setCellError('Enter a number from 0 to 24, or choose PTO / MANDATORY / Not set (default).')
         return
       }
@@ -585,9 +612,9 @@ export default function DeskAgents() {
                                 list="day-hours-options"
                                 value={editCellValue}
                                 disabled={savingCell}
-                                placeholder="(type a number)"
+                                placeholder={editCellSeed || '(type a number)'}
                                 autoFocus
-                                onChange={e => setEditCellValue(e.target.value)}
+                                onChange={e => { cellDirtyRef.current = true; setEditCellValue(e.target.value) }}
                                 onKeyDown={e => {
                                   if (e.key === 'Enter') {
                                     e.currentTarget.blur()

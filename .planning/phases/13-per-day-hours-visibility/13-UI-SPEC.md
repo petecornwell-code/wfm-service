@@ -213,7 +213,7 @@ project's zero-dependency convention. Resolution on blur/Enter:
 | A number, 0–24, quarter-hour step | `hours = value`, `dayOffType = null` |
 | `PTO` (case-insensitive) | `hours = 0.00`, `dayOffType = PTO` |
 | `MANDATORY` (case-insensitive) | `hours = 0.00`, `dayOffType = MANDATORY` |
-| `Not set (default)`, or the field cleared to empty | Deletes the row entirely (D-04: "selecting a value must be what creates a row" — clearing is the one path that does the opposite, by design) |
+| `Not set (default)`, or the field cleared to empty **after the operator has typed in it** | Deletes the row entirely (D-04: "selecting a value must be what creates a row" — clearing is the one path that does the opposite, by design). **Amended 2026-08-25:** since the editor now opens empty, "empty" alone no longer implies intent — a blur with no typing is an abandoned edit and performs no write at all. See the E4-empty amendment. |
 | Anything else | Reject client-side; revert the field to the last saved value; show the client-validation copy from the Copywriting Contract inline below the cell |
 
 Saving calls the new per-cell endpoint (D-05) and touches exactly one row. While the request is
@@ -340,12 +340,38 @@ honest-verifier behavior, not over-flagging.
 
 | Category | Status | Verification | Resolution / Reason |
 |----------|--------|--------------|---------------------|
-| empty | ✅ resolved | explicit | The "empty" value is the explicit `Not set (default)` datalist entry (D-04), never a blank or unstyled input |
+| empty | ✅ resolved | explicit | **AMENDED 2026-08-25 — see E4-empty amendment below.** The editor now opens with an EMPTY input whose `placeholder` carries the current value (`Not set (default)` for an unset day). Previously the input was pre-filled with that literal. |
 | loading | ✅ resolved | explicit | Input disables during the PUT and re-enables on response — matches the existing `saveHours`/`saveSpec` convention; no distinct spinner |
 | error | ✅ resolved | explicit | Client-side range check first ("Enter a number from 0 to 24, or choose PTO / MANDATORY / Not set (default)."); server rejection → `showToast('error', getErrorMessage(err))` as "Couldn't save {Weekday} — {reason}." |
 | partial | ✅ resolved | explicit | A row with `hours=0.00, dayOffType=null` renders as Explicit-zero `#6b7280`, visually distinct from Muted/not-set `#9ca3af` (13-RESEARCH.md Pitfalls 1 and 2) |
 | long-text | ✅ resolved | explicit | Free entry is numeric 0–24 and validated before submit; no operator-authored free text can reach the cell |
 | overflow | ✅ resolved | **backstop** | `Not set (default)` is wider than the weekday mini-column but renders in the browser's native `<datalist>` dropdown, which the cell width does not constrain — browser-dependent and visual |
+
+> **E4-empty amendment — 2026-08-25 (UAT, phase 13). Reverses part of gap 2.**
+>
+> **What changed.** The per-cell editor opens with an **empty** input. The value it used to be
+> seeded with is now the input's `placeholder`, so it remains visible as ghost text.
+>
+> **Why.** A native `<datalist>` filters its `<option>` set against the input's current text. With
+> the field pre-seeded, the picklist collapsed to the single self-matching entry and nothing could
+> be picked — including the 97 numeric options added the same day per the D-03 amendment. The seed
+> requirement and a browsable picklist are mutually exclusive with this control; the operator chose
+> browsable (gap G-13-DD, `13-UAT.md`).
+>
+> **Relationship to the original phase-13 gap 2.** `13-VERIFICATION.md` recorded, as a `status:
+> failed` gap, that `seedValueForEntry` returned `''` so the editor "opens blank". That was fixed in
+> `208d5c0` and human-verified as UAT test 2. This amendment **deliberately returns the field to
+> blank**, differing from the original defect in that the value is preserved as placeholder text
+> rather than lost, and `seedValueForEntry` is retained and still returns the `Not set (default)`
+> literal (it now feeds the placeholder). A future verifier must NOT treat the blank field as a
+> regression of gap 2 — it is this recorded decision. UAT test 2 requires re-verification against
+> the amended contract.
+>
+> **Safety constraint (load-bearing).** An empty field means `clearRow` — it deletes the row. With
+> the editor now opening empty, an untouched blur would silently delete data. A `cellDirtyRef` flag
+> gates this: `saveDayHours` returns early without any network call unless the operator actually
+> typed or picked. Empty + never-touched = abandoned edit (no write); empty + touched = deliberate
+> clear. Removing that guard reintroduces silent data loss on a stray click.
 
 ### E5 — Bulk "Set all days to…" action *(form, list-collection, interactive-control, static-content)*
 
