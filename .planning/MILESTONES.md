@@ -1,5 +1,67 @@
 # Milestones
 
+## v1.2 Unified Agent Provisioning (Shipped: 2026-08-25)
+
+**Phases completed:** 5 phases, 23 plans, 53 tasks
+**Timeline:** 2026-07-30 → 2026-08-25 (26 days, 252 commits)
+**Code:** 105 files changed, +10,233 / −857 (src/ + frontend/)
+**Requirements:** 19/19 checked off
+**Closeout type:** `override_closeout`
+**Known verification overrides:** 3 newly acknowledged, 0 carried forward from a prior close (see STATE.md Deferred Items)
+
+**Delivered.** Mon–Sun contracted hours became a first-class data model. An operator downloads a
+per-desk template, fills in seven day cells per agent (a number, `MANDATORY`, or `PTO`), uploads it,
+and the system syncs BambooHR, merges by explicit precedence, reports what came from where — and
+then shows the result back in the roster and the Excel export, resolved from the authoritative
+`agent_day_hours` model rather than the retired scalar.
+
+That last clause is the whole reason Phase 13 exists. The 2026-08-21 audit found the milestone had
+built the storage and the parser but never migrated the *display*, so an operator verifying their
+own upload saw a flat desk default. Phase 13 closed it.
+
+### Known Gaps
+
+Closed under override with these accepted, documented gaps. Full analysis in
+`.planning/milestones/v1.2-MILESTONE-AUDIT.md`.
+
+| ID | Severity | Gap |
+|----|----------|-----|
+| I-2 | high | Manual "Refresh from BambooHR" bypasses the Phase 11 merge engine entirely — overwrites spreadsheet-sourced identity data with no precedence rule and emits no merge report. Open across two consecutive audits; never in any phase's scope. Affects all seven MRG requirements in practice. |
+| MRG-02 | partial | The one MRG requirement whose wording is not scoped to the upload event, and therefore the one genuinely violated as written by the Refresh path. Root cause I-2. |
+| I-3 | medium | Bulk "Set all days to…" still deletes and recreates all seven rows with `dayOffType` unset, destroying MANDATORY/PTO labels. Mitigated by a `confirm()` naming the count at risk, and by a genuinely safe single-cell edit path — but the destructive write itself is unchanged. |
+| NEW-1 | warning | The legacy `contractedHoursPerDay` scalar is still exported as its own column and can silently disagree with the per-day columns after any single-cell edit. |
+| — | — | Phase 12 never reached `verification_status: passed` — deliberately withdrawn, not unverified. Phase 9 has no SECURITY.md. Phases 10 and 13 have `VALIDATION.md` at `status: draft`. |
+
+**Phase 12 (Atomic Shift Move) was withdrawn, not shipped.** All three plans executed, but the
+seeded benchmark put the move's effect (+0.25h median) inside the baseline's own 5.00h noise
+spread, and it was inert at realistic 130% over-allocation. Code fully reverted in `299c42c`; the
+planning artifacts are retained as the record. The goal is explicitly not claimed. Successor work
+(cross-agent seat displacement) is filed as a todo — the 130% data indicates seat capacity, not
+move granularity, is the binding constraint.
+
+**Key accomplishments:**
+
+- AgentNameSplitter utility implementing the D-06 first-whitespace split rule, plus Agent.firstName/lastName JPA columns, both proven by passing tests.
+- AgentDayHours JPA entity and tenant-scoped Spring Data repository establishing the D-09 per-day-hours storage contract, TDD RED/GREEN verified against H2.
+- Extracted `SolverService.resolveEffectiveHours` static resolver implementing exception-over-per-day-over-schedule-default precedence, threaded through all 3 former `getEffectiveHours` call sites, with a behaviour-equivalence unit test pinning Success Criterion 4.
+- BambooHR refresh and desk-upload now populate firstName/lastName via the shared AgentNameSplitter, and desk-clear deletes stale per-day-hours rows — keeping the new agent data model coherent across every live write-path, not just the one-time migration.
+- AgentResponse/DeskAgentResponse and the Excel export now surface firstName/lastName (D-08/D-12), and DeskAgentService.setContractedHours fans an operator hours edit out to all 7 agent_day_hours rows so the solver keeps honouring it post-migration (D-10).
+- V29 Flyway migration SQL written and committed (name-split backfill + agent_day_hours fan-out); plan is PAUSED at a mandatory manual data-integrity checkpoint that has not yet been run.
+- Nullable `day_off_type` column added to `agent_day_hours` (Flyway V30) plus a reflection-based structural test proving `BambooRefreshService` can never touch it — the refresh-safe storage foundation the Phase 10 parser (plan 03) writes MANDATORY/PTO into.
+- Shared `EnrichedColumnLayout` utility (identity headers, day headers, unbounded Specialty-N detection, normalize, retired-shape markers) that closes the D-13 header-drift design tension across parser/template/export.
+- Rewrote DeskAssignmentUploadService into a per-desk-sheet, EnrichedColumnLayout-driven parser: fractional-hours-safe day-cell parsing (hours/MANDATORY/PTO with non-silent >24 clamping), BambooHR-ID-only agent matching, unbounded Specialty N columns, and file-wide rejection of both retired upload shapes.
+- Pre-seeded per-desk `.xlsx` template download (one sheet per desk, roster identity filled, schedule blank) sharing `EnrichedColumnLayout` with the parser and export, with server-side formula-injection sanitization.
+- JUnit/Mockito/POI regression suite covering every rewritten-parser requirement (UPL-01..07), including the fractional-hours truncation regression and a reflection-based guard proving the parser can never delete BambooHR MANDATORY blocks
+- Extended the Client Management Upload Results modal to render the backend's per-sheet rollup, clamp warnings, and unmatched-sheet notices, and added a pre-seeded per-desk template download button.
+- Roster and its API now resolve every contracted-hours figure from `agent_day_hours` (schedule-default fallback, D-06), replacing the retired `Agent.contractedHoursPerDay`/`Desk.defaultContractedHoursPerDay` read path, and the roster UI gains a collapsed min-max summary plus an expandable per-weekday detail row with 5 distinct display states.
+- New `PUT .../day-hours/{day}` endpoint and `DeskAgentService.setDayHours` upsert a single `agent_day_hours` row at a time — provably leaving the other six untouched — closing audit finding I-3 by construction, while the surviving seven-row bulk fan-out (`setContractedHours`) is pinned as transactional and explicitly label-destructive.
+- The desk-agent Excel export now carries seven Mon–Sun columns resolved from `agent_day_hours` (not the retired scalar), and both specialty header strings in the upload template are sourced from a new `EnrichedColumnLayout.specialtyHeader(int)` factory instead of local literals.
+- Every weekday in the roster's expanded row is now directly editable through a native-datalist type-or-pick combo covering all five stored states, and the destructive seven-row fan-out survives only as an explicitly labelled "Set all days to…" bulk action that warns before overwriting any MANDATORY/PTO label.
+- Closed both `status: failed` UI-SPEC truths from 13-VERIFICATION.md — a shared `isEveryDayNotSet` predicate now mutes the collapsed roster cell when nothing was uploaded, `seedValueForEntry` now seeds the "Not set (default)" picklist literal instead of a blank input, and a client-side 0-24 range guard now blocks out-of-range bulk values before the destructive confirm() dialog.
+- Inclusive 0-24 upper bound on the bulk contracted-hours endpoint, a `MethodArgumentTypeMismatchException` handler for malformed path segments, and a `@MockitoSpyBean`-injected mid-loop failure test proving the bulk fan-out's transactional rollback.
+
+---
+
 ## v1.1 Schedule Quality & Reporting (Shipped: 2026-07-29)
 
 **Status:** ⚠ Closed early — re-scoped. 2 of 4 planned phases delivered.

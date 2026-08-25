@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Unified Agent Provisioning
-current_phase: 13
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 13 complete — all phases complete
-last_updated: "2026-08-25T16:07:41.141Z"
+last_updated: "2026-08-25T16:53:38.207Z"
 last_activity: 2026-08-25
-last_activity_desc: Phase 13 complete
-state_head: 67d6296906bfd349b9f02c555533d569a0570e4e
+last_activity_desc: Milestone v1.2 completed and archived
+state_head: d18f11cea0bc78b2d7c722aea031b784569d4200
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 23
   completed_plans: 23
   percent: 80
+current_phase: 13
 ---
 
 # Project State
@@ -28,17 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-21)
 
 ## Current Position
 
-Phase: 13
-Plan: Not started
-Status: All phases complete
-UI truths, the WR-01/WR-02 code-review warnings, and both behavior_unverified_items from
-13-VERIFICATION.md. Backend 315 tests green (`./gradlew test --rerun-tasks`, up from 309 baseline);
-frontend build clean. Re-verification against 13-VERIFICATION.md's `gaps`/`behavior_unverified_items`
-not yet re-run — phase not yet formally re-verified/marked complete.
-Next: `/gsd-verify-work 13` to confirm the gap-closure plans resolved the prior `gaps_found` verdict.
-Last activity: 2026-08-25 — Phase 13 complete
-
-Progress: [████████████████████] 23/23 plans ([██████░░░░] 60%)
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-25 — Milestone v1.2 completed and archived
 
 ## Milestone v1.2 Roadmap
 
@@ -65,6 +58,20 @@ Closed early on 2026-07-29 with **4 of 16 requirements shipped**. Phases 5–6 d
 Archives: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQUIREMENTS.md`, `.planning/milestones/v1.1-phases/`
 
 ## Deferred Items
+
+Items acknowledged and deferred at milestone close, most recent first:
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| integration | I-2 — manual "Refresh from BambooHR" bypasses the Phase 11 merge engine; overwrites spreadsheet identity data with no precedence rule and no merge report | Accepted as debt (high severity, open across two audits) | 2026-08-25 | v1.2 |
+| requirement | MRG-02 — precedence guarantee holds on the upload path only; violated as literally worded by the Refresh path (root cause I-2) | partial | 2026-08-25 | v1.2 |
+| integration | I-3 — bulk "Set all days" still destroys MANDATORY/PTO labels; mitigated by a confirm() warning, not fixed | MITIGATED | 2026-08-25 | v1.2 |
+| debt | NEW-1 — legacy contractedHoursPerDay scalar still exported as its own column; can silently disagree with per-day columns after a single-cell edit | Open | 2026-08-25 | v1.2 |
+| todos | 2026-07-30-blank-upload-template-one-sheet-per-desk.md | (presence-only) | 2026-08-25 | v1.2 |
+| todos | 2026-08-13-cross-agent-seat-displacement.md | (presence-only) | 2026-08-25 | v1.2 |
+| todos | 2026-08-14-terraform-db-password-drift.md | (presence-only) | 2026-08-25 | v1.2 |
+| nyquist | Phases 10 and 13 VALIDATION.md still status: draft — validate-phase never reconciled them | Open | 2026-08-25 | v1.2 |
+| security | Phase 9 has no SECURITY.md — /gsd-secure-phase 9 never ran | Open | 2026-08-25 | v1.2 |
 
 Items deferred at v1.1 milestone close on 2026-07-29:
 
@@ -165,8 +172,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- `/gsd-plan-phase 9` — Phase 9 has CONTEXT.md; ready to plan
-- Close the two remaining verification gaps: Phase 10 UAT (stalled at test 3 since 2026-08-12), Phases 9 and 12 have no VERIFICATION.md
+- Start the next milestone with /gsd-new-milestone
 
 ## Performance Metrics
 

@@ -12,11 +12,63 @@ Scheduling managers can produce optimised, constraint-aware agent schedules in m
 
 ## Current State
 
-**Shipped:** v1.1 Schedule Quality & Reporting — closed 2026-07-29 with 4 of 16 requirements delivered (Phases 5–6 of 8). The remaining 12 requirements are preserved in `.planning/ROADMAP.md` Backlog 999.4–999.6.
+**Shipped:** v1.2 Unified Agent Provisioning — closed 2026-08-25 with **19 of 19 requirements**
+delivered across Phases 9–13 (Phase 12 withdrawn). Archived to
+`.planning/milestones/v1.2-ROADMAP.md`.
 
-v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment type, job title, and — the significant one — each agent's fixed weekly working-days pattern (field 4517), which the solver honours as hard MANDATORY day-off blocks. It did **not** deliver the reporting, diagnostics, export, or solver-tuning surfaces that were the milestone's other half.
+v1.2 made **Mon–Sun contracted hours a first-class data model** and carried it all the way to the
+operator's eyes. An operator downloads a per-desk template, fills seven day cells per agent (a
+number, `MANDATORY`, or `PTO`), uploads it; the system syncs BambooHR, merges by explicit
+precedence, reports what came from where — and then shows the stored result back in the roster and
+the Excel export, resolved from the authoritative `agent_day_hours` model rather than the retired
+`Agent.contractedHoursPerDay` scalar.
 
-## Current Milestone: v1.2 Unified Agent Provisioning
+That last clause is why Phase 13 exists. The first milestone audit (2026-08-21) found v1.2 had
+built the storage and the parser but never migrated the *display*, so an operator verifying their
+own upload saw a flat desk default unrelated to what they submitted. Phase 13 closed it, along with
+the hardcoded specialty headers and the silent MANDATORY/PTO destruction on hours edits.
+
+**Closed under override, with known gaps.** The re-audit still returned `gaps_found`: the manual
+"Refresh from BambooHR" button bypasses the Phase 11 merge engine entirely (I-2, high) and has now
+survived two audits untouched. Carried to Backlog 999.9. See
+`.planning/milestones/v1.2-MILESTONE-AUDIT.md`.
+
+**Phase 12 (Atomic Shift Move) was withdrawn, not shipped** — the seeded benchmark put its effect
+inside the baseline's own noise, code reverted in `299c42c`, goal explicitly not claimed.
+
+<details>
+<summary>Previous state: v1.1 Schedule Quality & Reporting (closed 2026-07-29)</summary>
+
+Closed with 4 of 16 requirements delivered (Phases 5–6 of 8). The remaining 12 requirements are
+preserved in `.planning/ROADMAP.md` Backlog 999.4–999.6.
+
+v1.1 delivered the **agent-data foundation**: BambooHR supplies employment type, job title, and —
+the significant one — each agent's fixed weekly working-days pattern (field 4517), which the solver
+honours as hard MANDATORY day-off blocks. It did **not** deliver the reporting, diagnostics, export,
+or solver-tuning surfaces that were the milestone's other half.
+
+</details>
+
+## Next Milestone
+
+Not yet defined. Run `/gsd-new-milestone` to scope it.
+
+The strongest candidates, in rough order of how loudly they are asking:
+
+1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload path
+   but not on the Refresh button. High severity, two audits old, and cheap in at least one of its
+   three options.
+2. **Backlog 999.7 — rotate the BambooHR API key.** Exposed 2026-06-02, still valid, still in a
+   public repo. Accepted as risk twice now. This is the most serious open item in the project and it
+   is not a feature.
+3. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
+   utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
+4. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
+5. **Cross-agent seat displacement** — Phase 12's successor finding: at realistic over-allocation,
+   seat capacity rather than move granularity is what binds.
+
+<details>
+<summary>v1.2 Unified Agent Provisioning — original milestone scope (shipped 2026-08-25)</summary>
 
 **Goal:** One spreadsheet upload fully provisions an agent roster — identity, desk, specializations, working pattern, days off, and PTO — merged field-by-field with BambooHR as source of truth and the spreadsheet filling every gap.
 
@@ -46,7 +98,12 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 
 **Why this matters beyond data entry:** field 4517 is only ~24% parseable, and agents whose pattern cannot be parsed are excluded from solving via `workingDaysKnown`. Spreadsheet-supplied Mon–Sun days off fills that gap directly. The eligible agent pool could grow several-fold, which is a plausible root cause of the solver failing to find solutions on live desks.
 
-**Next milestone:** v1.1 backlog (999.4–999.7) remains deferred and untouched.
+**Outcome:** all 8 target features above shipped. The per-day model, the name split, the unbounded
+specialty parsing, the per-desk template, the merge engine and its report, and both retired shapes
+all landed. The one thing the original scope did not anticipate was that building the *model* and
+building the *view of the model* are separate jobs — hence Phase 13.
+
+</details>
 
 <details>
 <summary>v1.1 target features (original scope, for reference)</summary>
@@ -94,6 +151,20 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 - ✓ Merge report flags spreadsheet values overridden by BambooHR, surfacing source disagreement — v1.2 Phase 11 (MRG-05)
 - ✓ A spreadsheet-supplied working pattern makes a BambooHR-unknown agent solver-eligible, with a refresh downgrade guard — v1.2 Phase 11 (MRG-06)
 - ✓ BambooHR sync failure during upload aborts the whole upload with a clear operator message and zero partial writes — v1.2 Phase 11 (MRG-07)
+- ⚠ *Caveat on MRG-01…07:* all seven hold **on the upload path**. The manual "Refresh from BambooHR" button bypasses `AgentMergeService` entirely (audit finding I-2, open) — MRG-02 is the one whose wording is not upload-scoped and is therefore violated as literally written. → 999.9
+- ✓ Agent stores first name and last name as separate fields — v1.2 Phase 9 (MDL-01)
+- ✓ Per-day contracted hours replace the `contractedHoursPerDay` scalar; `AgentDayConfig` resolves effective hours per date — v1.2 Phase 9 (MDL-02)
+- ✓ Existing agents migrated without data loss — scalar became the per-day value, single `name` split into first/last (V29) — v1.2 Phase 9 (MDL-03)
+- ✓ One workbook, one worksheet per desk, provisioning agents by BambooHR ID with optional identity fields — v1.2 Phase 10 (UPL-01)
+- ✓ Unbounded `Specialty 1…N` column parsing; first non-blank is primary — v1.2 Phase 10 (UPL-02)
+- ✓ Mon–Sun day cells parsed as contracted hours, `0` marking a day not worked, blank invalid — v1.2 Phase 10 (UPL-03)
+- ✓ `MANDATORY` day cell marks a mandatory day off for that weekday — v1.2 Phase 10 (UPL-04)
+- ✓ `PTO` day cell marks recurring weekly PTO across the horizon — v1.2 Phase 10 (UPL-05)
+- ✓ Invalid rows skipped with per-row reasons; Upload Results shows per-sheet rollup, clamp warnings, unmatched-sheet notices — v1.2 Phase 10 (UPL-06)
+- ✓ Rows whose BambooHR ID is not found are rejected, never created — v1.2 Phase 10 (UPL-07)
+- ✓ Both the 6-column legacy shape and the flat enriched shape retired — v1.2 Phase 10 (UPL-08)
+- ✓ Pre-seeded per-desk template download; template, parser and export share one `EnrichedColumnLayout` definition — v1.2 Phase 10 + 13 (UPL-09; the specialty-header literals were the last holdout, closed by Phase 13)
+- ✓ Roster and Excel export resolve contracted hours from `agent_day_hours`, not the retired scalar; per-weekday values, `MANDATORY` and `PTO` visible in the UI — v1.2 Phase 13 (closes audit I-1/F-1)
 
 ### Active (carried to next milestone — see ROADMAP.md Backlog)
 
@@ -111,6 +182,11 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 - **⚠ BambooHR API key rotation and public-repo scrub** → 999.7 (security, unresolved)
 - **⚠ BambooHR field-4517 alias dependency** — emerged at Phase 11 (code review IN-03): the `/reports/custom` request asks for field id `4517` but the parser reads the key `customWorkingdays`. Without a tenant Field Alias the value is always null in production and MRG-03/MRG-06 silently never activate, with the unit suite still green. Operator confirmed the alias at UAT 2026-08-21; needs re-checking after any BambooHR account change.
 - **Cross-agent seat displacement** — emerged at Phase 12: seat capacity, not move selection, is the binding constraint at realistic over-allocation (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`)
+- **⚠ Merge precedence holds on the upload path only** (audit I-2) → 999.9. The manual "Refresh from BambooHR" button overwrites spreadsheet-sourced identity data with no precedence rule and no merge report. Open across two consecutive milestone audits; accepted as debt at v1.2 close.
+- **Bulk "Set all days to…" still destroys MANDATORY/PTO labels** (audit I-3, mitigated) → 999.9. A `confirm()` names the count at risk and a safe per-cell edit path now exists, but the destructive seven-row delete-and-recreate is unchanged.
+- **Legacy `contractedHoursPerDay` scalar still exported as its own column** (audit NEW-1) → 999.9. It can silently disagree with the per-day columns after any single-cell edit.
+- **Nyquist validation debt** — Phases 10 and 13 have `VALIDATION.md` at `status: draft`; validate-phase never reconciled them → 999.9
+- **Phase 9 never had a security review** — no `09-SECURITY.md` exists → 999.9
 
 ### Out of Scope
 
@@ -128,13 +204,18 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 **BambooHR:** Credentials stored in DB via Configuration UI (not env vars); `DelegatingBambooHRClient` falls back to mock when unconfigured
 **Solver:** Timefold OptaPlanner; constraints include staffing demand, specialization match, PTO/exceptions, contracted hours, bulk overallocation limits
 **Multi-tenant:** Tenant ID via JWT; all entities scoped by `tenant_id`
-**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ (schema at V28 after v1.1)
+**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ (schema at **V36** after v1.2 — V29 name-split + per-day fan-out, V30 `day_off_type`, V36 `working_days_source`)
+**Codebase after v1.2:** +10,233 / −857 across 105 files in `src/` and `frontend/` over 252 commits (2026-07-30 → 2026-08-25). Backend suite 315 tests green.
 **Agent eligibility for solving:** four filters — active status, desk assignment, schedulable job title, and `workingDaysKnown` (parseable BambooHR field 4517)
 
-**Known issues after v1.1:**
-- **⚠ Security:** the BambooHR API key exposed 2026-06-02 (`ad2bb…2be`) was never rotated and is still present in tracked planning docs in this **public** repo. Integration code has since deployed to the live environment. Tracked as Backlog 999.7.
-- **BambooHR field 4517 is sparsely populated** — ~45% company-wide, ~24% parseable. Unparseable agents are silently excluded from solving; the exclusion proportion on live desks was never measured. This may be why the solver struggles to find solutions on real desks.
+**Known issues after v1.2:**
+- **⚠ Security:** the BambooHR API key exposed 2026-06-02 (`ad2bb…2be`) was never rotated and is still present in tracked planning docs in this **public** repo. Integration code has since deployed to the live environment. Tracked as Backlog 999.7 — accepted as risk at two consecutive milestone closes and still unresolved.
+- **⚠ The "Refresh from BambooHR" button bypasses the merge engine** (audit I-2). It overwrites spreadsheet-sourced identity data with no precedence rule and emits no merge report. A normal operator action that silently discards the guarantees MRG-02/04/05 describe. Tracked as Backlog 999.9.
+- **⚠ BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517`; the parser reads the JSON key `customWorkingdays`. With no tenant Field Alias configured, the value is always null in production and MRG-03/MRG-06 never activate — while every unit test stays green, because the fixtures hand-construct `BambooEmployee`. Confirmed present by operator at Phase 11 UAT; re-check after any BambooHR account change.
+- **BambooHR field 4517 is sparsely populated** — ~45% company-wide, ~24% parseable. Mitigated but not eliminated by v1.2: a spreadsheet-supplied pattern now makes an agent solver-eligible (MRG-06). The exclusion proportion on live desks was never measured.
+- **Bulk "Set all days to…" destroys MANDATORY/PTO labels** (audit I-3). Warned via `confirm()`, not prevented. The per-cell edit path is safe.
 - Data-gap and outlier agents are surfaced only as CloudWatch `log.warn` lines — no operator UI.
+- The legacy `contractedHoursPerDay` scalar survives as a live multi-writer field and is still exported as its own column; it can disagree with the per-day columns after a single-cell edit (audit NEW-1).
 
 ## Constraints
 
@@ -166,6 +247,14 @@ v1.1 delivered the **agent-data foundation**: BambooHR now supplies employment t
 | Fresh BambooHR sync fetched *before* the upload transaction opens, not inside it (Phase 11) | Makes zero-write on sync failure structural rather than a caught-exception discipline: the fetch throws before `transactionTemplate.executeWithoutResult` is ever reached (MRG-07/T-11-01) | ✓ Good |
 | PTO/pattern arbitration runs at solve time, in-memory, re-derived per solve (Phase 11, D-10) | Operator-selected one-way door: no new storage, no `AgentDayOffRepository` in the upload path. Deterministic and reproducible from inputs | ⚠ Revisit — leaves no persisted audit of which recurring PTO facts a given solve suppressed (accepted risk R-11-02) |
 | `Agent.workingDaysSource` provenance marker (V36), defaulting to `BAMBOOHR` (Phase 11, D-15) | A BambooHR refresh must never reclaim ownership of a week an operator corrected via spreadsheet; the default keeps every existing agent's eligibility unchanged at deploy time | ✓ Good |
+| One polymorphic 7-column Mon–Sun day group instead of three ~21-column groups (Phase 10, revised 2026-07-31) | The day cell's *value* encodes status (number / `MANDATORY` / `PTO`), so the three concepts cannot contradict each other. Blank is invalid — an unfilled cell is an error, not a silent default | ✓ Good |
+| `EnrichedColumnLayout` as the single column-layout definition shared by template, parser and export (Phase 10, D-13) | Header drift between the three was the standing risk. Phase 13 had to finish the job — two specialty-header literals had survived in `DeskAssignmentTemplateService` (audit I-4) | ✓ Good — but only after Phase 13 closed the last holdout |
+| `Agent.contractedHoursPerDay` scalar kept as a live field after MDL-02/03 made it non-authoritative (Phase 9, D-05) | Deferred deliberately to avoid a wide refactor during the migration | ⚠ Revisit — this is the direct root cause of audit finding I-1 (readers were never migrated when the scalar stopped being the source of truth) and of NEW-1 (the scalar column can still disagree with the per-day columns) |
+| `setDayHours` edits exactly one weekday; the destructive seven-row fan-out survives only as an explicitly labelled bulk action (Phase 13) | Closes audit I-3 *by construction* for the common case rather than by discipline. The bulk path stays destructive by design (D-10) and warns instead | ⚠ Revisit — the warning is mitigation, not preservation; an operator who clicks through still loses labels |
+| The per-cell editor opens **empty** with the stored value as placeholder, guarded by `cellDirtyRef` (Phase 13, G-13-DD) | A seeded `<input>` collapses the native `<datalist>` to its single self-matching option, making the 100-entry picklist unreachable exactly when editing a cell that already has a value. The guard stops an untouched blur from firing `clearRow` | ✓ Good |
+| `Not set (default)` clipping at the 90px per-cell input accepted, not fixed (Phase 13, G-13-8) | Widening to ~140px would take the expanded grid ~678px → ~1028px and trade away verified E3 overflow behaviour; shortening the literal would change the string `saveDayHours` matches for `clearRow`. The entry stays selectable and unambiguous | ✓ Good — spec corrected to assert the clipping rather than deny it |
+| Phase 12 withdrawn rather than shipped or re-planned (2026-08-13 operator ruling) | The seeded 5×5 benchmark put the move's effect (+0.25h median) inside the baseline's own 5.00h noise spread, and it was inert at realistic 130% over-allocation. Keeping code that cannot be shown to help is worse than reverting it | ✓ Good — a phase goal explicitly not claimed is a healthier outcome than one quietly assumed |
+| v1.2 closed under `override_closeout` with I-2 accepted as debt (2026-08-25) | The milestone's own headline defect (I-1/F-1) was fixed and every requirement satisfied on the upload path. I-2 predates Phase 13's scope and was never assigned to any phase | ⚠ Revisit — carried to 999.9; two consecutive audits recorded it untouched, which is how gaps become permanent |
 
 ## Evolution
 
@@ -185,4 +274,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-21 after Phase 11 (BambooHR Merge Engine & Report) — MRG-01…07 validated*
+*Last updated: 2026-08-25 after the v1.2 Unified Agent Provisioning milestone — 19/19 requirements validated, closed under override with I-2 carried to Backlog 999.9*
