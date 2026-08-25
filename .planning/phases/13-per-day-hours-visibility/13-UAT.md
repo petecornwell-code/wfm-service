@@ -3,7 +3,7 @@ status: complete
 phase: 13-per-day-hours-visibility
 source: [13-VERIFICATION.md]
 started: 2026-08-24T13:15:24Z
-updated: 2026-08-25T14:56:37Z
+updated: 2026-08-25T15:45:00Z
 ---
 
 ## Current Test
@@ -201,33 +201,66 @@ note: |
   Data integrity re-checked after the deploy that landed mid-test: 196/196 rows
   present across all 28 agents, none lost.
 
-### 8. E4 overflow (backstop): the seeded 'Not set (default)' text in the browser's native datalist dropdown
-expected: Text is not clipped by the weekday mini-column width, since the datalist popup is not constrained by it
-why_human: insufficient_spec — abstain per honest-verifier contract
-result: issue
-reported: "text is clipped"
-severity: cosmetic
+### 8. E4 overflow (re-run vs amended spec): 'Not set (default)' clips at the 90px input width but stays selectable and unambiguous
+expected: |
+  Opening the per-cell editor shows the full datalist. The 'Not set (default)'
+  entry is visibly TRUNCATED (the popup renders at the input's 90px width — this
+  is now the asserted behaviour, not a defect). Despite the truncation the entry
+  is still selectable, and no other option in the list begins with 'Not set', so
+  which entry it is remains unambiguous.
+why_human: explicit (13-UI-SPEC.md E4 overflow, corrected 2026-08-25) — was `backstop`/insufficient_spec before the amendment; a verifier now ASSERTS the clipping rather than abstaining on it
+result: pass
 tested_against: https://d2bbtcc80peap7.cloudfront.net/desks/6170be17-3bee-41da-9d81-62ddd50c786f/agents (deploy 7fc7168)
 note: |
-  This is the FIRST time this test was genuinely observable. Before the G-13-DD
-  fix the editor opened seeded, which filtered 'Not set (default)' out of the
-  datalist entirely — so the text could never be seen, clipped or otherwise.
-  The fix made the full list render, and the clipping became visible.
+  Re-run 2026-08-25 against the AMENDED E4 overflow contract (13-UI-SPEC.md,
+  corrected by 19f8c5d). User confirmed the shipped behaviour: the entry is
+  truncated at the 90px input width, and is still selectable and unambiguous.
+  NO CODE CHANGED between the failing first run and this pass — what changed is
+  the contract being judged. The first run's report was correct and is preserved
+  verbatim below rather than overwritten; it is what caused the spec correction.
+  A reader who wants the defect history should read `superseded_run` and G-13-8,
+  not treat this `pass` as evidence the clipping was fixed. It was not fixed; it
+  was accepted, asserted, and then verified as asserted.
+superseded_run: |
+  FIRST RUN 2026-08-25 (deploy 7fc7168) — result: issue, severity: cosmetic,
+  reported verbatim: "text is clipped".
+  That verdict was judged against the PRE-amendment expectation, which read
+  "text is not clipped, since the datalist popup is not constrained by [the cell
+  width]". The report was correct and the SPEC was wrong: a native <datalist>
+  popup renders at its <input>'s width, fixed at 90px (DeskAgents.tsx:634), and
+  'Not set (default)' is 17 chars at 0.85rem. Commit 19f8c5d retracted the false
+  reasoning, moved the E4 overflow row backstop -> explicit, and recorded the
+  clipping as an accepted limitation of the native control (G-13-8, status_final:
+  accepted — both remedies judged worse than the defect).
+  This re-run therefore judges the SHIPPED contract, not the retracted one. Same
+  handling as test 2, which was superseded by the E4-empty amendment and re-verified
+  the same day. No code changed between the two runs.
+  This was also the first run in which the test was observable at all: before the
+  G-13-DD fix the editor opened seeded, which filtered 'Not set (default)' out of
+  the datalist entirely, so the text could never be seen — clipped or otherwise.
 
 ## Summary
 
 total: 8
-passed: 7
-issues: 1
+passed: 8
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
 
-# Test-result counts above reconcile to total (7 pass + 1 issue = 8).
+# READ THIS BEFORE READING "8 passed" AS "8 clean first-time passes".
+# Three of the eight passed only on a RE-RUN, and two of those re-runs judged an
+# AMENDED contract rather than the one originally written:
+#   test 2 — re-verified against the E4-EMPTY amendment (editor opens empty, not seeded)
+#   test 5 — initially skipped; re-run at the true worst case "0.25-23.75"
+#   test 8 — first run reported `issue` ("text is clipped") and that report is what
+#            forced the E4-OVERFLOW correction; re-run passed against the corrected
+#            contract with NO intervening code change. See its `superseded_run`.
 # The ## Gaps section carries THREE entries, which is not a mismatch:
 #   G-13-5  <- test 5 (raised by orchestrator during staging, not a user report;
 #                      test itself later re-run and PASSED). accepted.
-#   G-13-8  <- test 8 (the one result: issue). accepted.
+#   G-13-8  <- test 8's first run. Accepted, NOT fixed — the clipping still ships;
+#              it is now asserted by the spec instead of contradicted by it.
 #   G-13-DD <- reported during test 7 but not a verdict on test 7; fixed in code
 #              (7fc7168) and re-verified via test 2's re-run.
 # All three are dispositioned. None requires a gap-closure fix plan.
@@ -273,6 +306,14 @@ blocked: 0
     Functional impact is low: the entry remains selectable and nothing else in the
     list starts with 'Not set', so the truncated text is still unambiguous. Logged
     cosmetic on that basis. The spec-accuracy defect is the part worth fixing.
+  re_verified: |
+    2026-08-25 — test 8 re-run against the CORRECTED E4 overflow contract and passed.
+    To be explicit about what that pass does and does not mean: the clipping is still
+    present in the shipped build and no code was changed. The pass records that the
+    spec now describes reality (clipped, selectable, unambiguous) and that reality was
+    observed to match. This gap is closed by ACCEPTANCE + SPEC CORRECTION, not by a fix.
+    If the 90px per-cell input is ever widened, or the 'Not set (default)' literal
+    shortened, the E4 overflow row in 13-UI-SPEC.md must be revisited again.
 
 - gap_id: G-13-DD
   truth: "The per-cell combo's picklist is pickable — an operator can open the dropdown and choose a value (13-UI-SPEC.md D-03 amendment, 2026-08-25)"
