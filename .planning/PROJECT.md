@@ -90,18 +90,15 @@ shadow variable is the difference between a clean model and a solver thrashing b
 spaces. Timefold is pinned at **1.16.0** (`build.gradle:35`) — `AbstractMove.doMoveOnGenuineVariables`
 with framework-generated undo; the `Neighborhoods` API from 1.31.0 is unavailable.
 
-**Not in this milestone.** Backlog 999.4 (solver fairness), 999.7 (BambooHR key rotation) and 999.9
-(the v1.2 I-2 audit gap) all stay deferred. The remaining candidates, for the milestone after:
+**Not in this milestone.** Backlog 999.4 (solver fairness) and 999.9 (the v1.2 I-2 audit gap) stay
+deferred. The remaining candidates, for the milestone after:
 
 1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload path
    but not on the Refresh button. High severity, two audits old, and cheap in at least one of its
    three options.
-2. **Backlog 999.7 — rotate the BambooHR API key.** Exposed 2026-06-02, still valid, still in a
-   public repo. Accepted as risk twice now. This is the most serious open item in the project and it
-   is not a feature.
-3. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
+2. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
    utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
-4. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
+3. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
 
 <details>
 <summary>v1.2 Unified Agent Provisioning — original milestone scope (shipped 2026-08-25)</summary>
@@ -215,7 +212,6 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - Solver score breakdown + export (RPT-05, RPT-06) → 999.6
 - Solver constraint weight / time limit tuning UI (QUAL-05) → 999.6
 - **Operator-facing surface for data-gap and outlier agents** — currently CloudWatch logs only
-- **⚠ BambooHR API key rotation and public-repo scrub** → 999.7 (security, unresolved)
 - **⚠ BambooHR field-4517 alias dependency** — emerged at Phase 11 (code review IN-03): the `/reports/custom` request asks for field id `4517` but the parser reads the key `customWorkingdays`. Without a tenant Field Alias the value is always null in production and MRG-03/MRG-06 silently never activate, with the unit suite still green. Operator confirmed the alias at UAT 2026-08-21; needs re-checking after any BambooHR account change.
 - **Cross-agent seat displacement** — emerged at Phase 12: seat capacity, not move selection, is the binding constraint at realistic over-allocation (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`). **Likely absorbed by v1.3** — a shift-level model displaces a whole agent-day in one move, which is precisely what the slot model could not do
 - **⚠ Merge precedence holds on the upload path only** (audit I-2) → 999.9. The manual "Refresh from BambooHR" button overwrites spreadsheet-sourced identity data with no precedence rule and no merge report. Open across two consecutive milestone audits; accepted as debt at v1.2 close.
@@ -247,7 +243,6 @@ building the *view of the model* are separate jobs — hence Phase 13.
 **Known issues after v1.2:**
 - **⚠ An undocumented third attempt at schedule consistency was built and reverted 2026-08-19/20** — discovered 2026-08-25 during v1.3 architecture research; recorded in no planning document until now. Four feature commits, all ancestors of HEAD, all reverted: `7861b83` (preferred start time as an **anchor, not a floor** — fixing the defect that `honourPreferredStartTime` only penalises slots *before* the preference), `9f4a96f` (consistent break offset across an agent's week), `9207ceb` (consistent daily start with a solver-chosen anchor), `6fb78c7` (per-agent start and break-offset spread reporting — effectively the drift report). Two supporting perf commits shared one agent-day grouping across nine constraints. Reverted by `2da56fd`, `3aba7c6`, `65ccb34`, `ac395f2`, `b6188c8`, `12315ed`. **Why it was unwound is not recorded in any commit body and remains an open question** — the revert message explains only why the migration was retained. This is the closest prior art to v1.3 and must be understood before re-implementing: it is either a recoverable asset or a warning, and which one is not yet known.
 - **⚠ `V38__add_consistent_start_weight.sql` is an orphaned live migration.** Deliberately retained during the revert above because it had already been applied to dev and recorded in `flyway_schema_history` — deleting or editing it would fail Flyway validation and block all dev deploys. It adds `consistent_start_weight VARCHAR(50) NOT NULL DEFAULT '0hard/2soft'` to the constraint-weights table. Nothing reads it: the only reference anywhere in `src/` is the migration file itself. v1.3 should adopt this column rather than add a duplicate.
-- **⚠ Security:** the BambooHR API key exposed 2026-06-02 (`ad2bb…2be`) was never rotated and is still present in tracked planning docs in this **public** repo. Integration code has since deployed to the live environment. Tracked as Backlog 999.7 — accepted as risk at two consecutive milestone closes and still unresolved.
 - **⚠ The "Refresh from BambooHR" button bypasses the merge engine** (audit I-2). It overwrites spreadsheet-sourced identity data with no precedence rule and emits no merge report. A normal operator action that silently discards the guarantees MRG-02/04/05 describe. Tracked as Backlog 999.9.
 - **⚠ BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517`; the parser reads the JSON key `customWorkingdays`. With no tenant Field Alias configured, the value is always null in production and MRG-03/MRG-06 never activate — while every unit test stays green, because the fixtures hand-construct `BambooEmployee`. Confirmed present by operator at Phase 11 UAT; re-check after any BambooHR account change.
 - **BambooHR field 4517 is sparsely populated** — ~45% company-wide, ~24% parseable. Mitigated but not eliminated by v1.2: a spreadsheet-supplied pattern now makes an agent solver-eligible (MRG-06). The exclusion proportion on live desks was never measured.
@@ -281,7 +276,7 @@ building the *view of the model* are separate jobs — hence Phase 13.
 | PDF export via OpenPDF 3.0.4 | LGPL/MPL licensed; iText rejected as AGPL | — Pending (unbuilt) |
 | Fairness soft-score only; quadratic hours-consistency penalties | Hard fairness makes schedules infeasible; linear penalties create score traps | — Pending (unbuilt) |
 | Phase 6 narrowed to QUAL-01 only | Data foundation had to land before fairness/consistency constraints | ⚠ Revisit — QUAL-02/03 were never re-homed and nearly lost |
-| BambooHR key rotation gate bypassed | Operator directive 2026-07-29, accepted risk | ⚠ Revisit — still unresolved, key is public |
+| BambooHR key rotation gate bypassed | Operator directive 2026-07-29, accepted risk | — Operator-owned; removed from GSD tracking 2026-08-25 at operator request |
 | Fresh BambooHR sync fetched *before* the upload transaction opens, not inside it (Phase 11) | Makes zero-write on sync failure structural rather than a caught-exception discipline: the fetch throws before `transactionTemplate.executeWithoutResult` is ever reached (MRG-07/T-11-01) | ✓ Good |
 | PTO/pattern arbitration runs at solve time, in-memory, re-derived per solve (Phase 11, D-10) | Operator-selected one-way door: no new storage, no `AgentDayOffRepository` in the upload path. Deterministic and reproducible from inputs | ⚠ Revisit — leaves no persisted audit of which recurring PTO facts a given solve suppressed (accepted risk R-11-02) |
 | `Agent.workingDaysSource` provenance marker (V36), defaulting to `BAMBOOHR` (Phase 11, D-15) | A BambooHR refresh must never reclaim ownership of a week an operator corrected via spreadsheet; the default keeps every existing agent's eligibility unchanged at deploy time | ✓ Good |
