@@ -12,13 +12,16 @@ Phase numbering continues from **14**. Next Flyway migration is **V39** (schema 
 Three prior attempts at shift or consistency semantics exist in this codebase. Two were abandoned
 (`BreakAwareConstructionPhase`, now a no-op; Phase 12's Atomic Shift Move, withdrawn and reverted),
 and a third — four full-stack commits including 1,301 lines of tests — was built and reverted
-2026-08-19/20 with no recorded reason. See `.planning/research/SUMMARY.md` §"A Third, Previously
-Undocumented Prior Attempt" and PROJECT.md "Known issues after v1.2".
+2026-08-19/20. Git archaeology during roadmap creation confirmed this as speculative off-roadmap
+work built while blocked on UAT, then cleanly reverted as scope discipline — not a technical
+failure. See `.planning/research/SUMMARY.md` §"A Third, Previously Undocumented Prior Attempt" and
+`.planning/ROADMAP.md` Phase 17 Notes for what transfers, what needs rework, and what needs
+reformulation.
 
 The coupling mechanism was settled empirically by `.planning/research/SPIKE-COUPLING.md`:
 **a hard constraint, not a filtered value range.** A filtered value range compiles and runs clean
 under `FULL_ASSERT` while reporting infeasible schedules as `0hard/0soft` optimal. That finding is
-load-bearing for SHFT-03 and is not to be revisited without new evidence.
+load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evidence.
 
 ## v1.3 Requirements
 
@@ -106,7 +109,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | Shift-level skill or queue restriction | Contradicts ENVL-03 — specialization assignment deliberately stays inside the shift envelope |
 | Minimum/maximum staffing caps inside a shift template | Staffing demand is an already-solved subsystem; a second signal creates two sources of truth |
 | Predictive-scheduling compliance machinery | The researched fair-workweek laws are US state and municipal; this is a single EU/UK internal tenant |
-| Custom Timefold moves (atomic shift move or successor) | Phase 12 built exactly this and it was withdrawn. The coupling spike confirms a soft-quality plateau that a combined shift-plus-seats move would target — but reopening it needs its own evidence-led decision, not inheritance by assumption. See Risks below |
+| Custom Timefold moves (atomic shift move or successor) | Phase 12 built exactly this and it was withdrawn. The coupling spike confirms a soft-quality plateau that a combined shift-plus-seats move would target — but reopening it needs its own evidence-led decision, not inheritance by assumption. Operator ruling (2026-08-25): benchmark it in Phase 15, decide later — no remedy phase scoped into v1.3. See Risks below |
 | Timefold version bump | Research confirms 1.16.0 supplies every needed primitive; bumping crosses into 2.0 paid-tier risk for zero capability gain |
 | Retiring the slot model | Per-desk optionality is the whole pilot strategy — the fallback must remain |
 
@@ -114,31 +117,34 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 
 | Risk | Evidence | Consequence if ignored |
 |------|----------|------------------------|
-| **Soft-quality plateau** | The coupling spike found Option A sound on all 8 seeds but never reaching the known `0soft` optimum (settling `-10soft`/`-5soft`) — improving soft needs a shift and its seats to move together, which change-moves cannot do | The milestone ships a correct but mediocre optimiser. The obvious remedy is the custom move Phase 12 already failed at. XCUT-04's benchmark must measure this directly rather than discover it at UAT |
-| **Reverted third attempt, unexplained** | Four full-stack commits with 1,301 lines of tests, reverted within one minute on 2026-08-20, no reason in any commit body | Either an entire phase collapses into a repair job, or an unknown mistake is repeated blind. Must be resolved before the consistency constraint is planned |
-| **Solver-build failure invisible to tests** | Spike hit a hard solver-build error on adding a second `@PlanningEntity`; no solver-package test builds a solver | A `solverConfig.xml` regression reaches production. Covered by XCUT-03 |
-| **Envelope and contracted-hours constraints jointly unsatisfiable** | ARCHITECTURE.md §1 — a shift template whose duration mismatches an agent's effective hours makes both constraints impossible together, unfixable by solver time | A desk that solves today stops solving, for a reason no single constraint explains. Covered by SHLB-06 |
+| **Soft-quality plateau** | The coupling spike found Option A sound on all 8 seeds but never reaching the known `0soft` optimum (settling `-10soft`/`-5soft`) — improving soft needs a shift and its seats to move together, which change-moves cannot do | The milestone ships a correct but mediocre optimiser. The obvious remedy is the custom move Phase 12 already failed at. Phase 15's XCUT-04 benchmark measures this directly and reports it as a finding rather than discovering it at UAT — operator ruling: benchmark it, decide later, no remedy in v1.3 |
+| **Reverted third attempt, now investigated** | Four full-stack commits with 1,301 lines of tests, reverted within one minute on 2026-08-20 — confirmed by git archaeology (commit timestamps, timing relative to the Phase 11 pause) as speculative off-roadmap work reverted as scope discipline, not a technical failure. Limit of the claim: nobody recorded whether the constraints actually worked — "removed for scope" is well-supported, "it worked" is not established | Treated as candidate salvage material in Phase 17 (transfers as-is / transfers with rework / needs reformulation), not a standalone investigation phase — see ROADMAP.md Phase 17 Notes |
+| **Solver-build failure invisible to tests** | Spike hit a hard solver-build error on adding a second `@PlanningEntity`; no solver-package test builds a solver | A `solverConfig.xml` regression reaches production. Covered by XCUT-03, gating Phase 15 |
+| **Envelope and contracted-hours constraints jointly unsatisfiable** | ARCHITECTURE.md §1 — a shift template whose duration mismatches an agent's effective hours makes both constraints impossible together, unfixable by solver time | A desk that solves today stops solving, for a reason no single constraint explains. Covered by SHLB-06 (Phase 14) and effective-hours value-range filtering (Phase 15) |
 | **`nullable=true` deprecated** | Spike verified against the 1.16.0 JAR: `@Deprecated(forRemoval=true, since="1.8.0")`, superseded by `allowsUnassigned()`. `AgentAssignment` uses it today | Not urgent at 1.16.0, but any future bump breaks it. Worth noting, not worth fixing now |
 
 ## Traceability
 
-Populated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHLB-01…06 | TBD | Pending |
-| MODE-01…05 | TBD | Pending |
-| ENVL-01…07 | TBD | Pending |
-| USHF-01…06 | TBD | Pending |
-| CONS-01…06 | TBD | Pending |
-| DRFT-01…04 | TBD | Pending |
-| XCUT-01…05 | All phases | Pending |
+| SHLB-01…06 | Phase 14 | Pending |
+| MODE-01…05 | Phase 14 | Pending |
+| ENVL-01…07 | Phase 15 | Pending |
+| USHF-01…06 | Phase 16 | Pending |
+| CONS-01…06 | Phase 17 | Pending |
+| DRFT-01…04 | Phase 17 | Pending |
+| XCUT-01 (display verification) | Phases 14, 15, 16, 17 | Pending |
+| XCUT-02 (every write path) | Phases 16, 17 | Pending |
+| XCUT-03 (solverConfig.xml build test) | Phase 15 | Pending |
+| XCUT-04 (seeded A/B benchmark) | Phases 15, 17 | Pending |
+| XCUT-05 (constraint classification) | Phases 14, 15 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 34 total (6 SHLB, 5 MODE, 7 ENVL, 6 USHF, 6 CONS, 4 DRFT)
-- Cross-cutting: 5 XCUT (apply to all phases)
-- Mapped to phases: 0 ⚠ (roadmap not yet created)
+- v1.3 requirements: 34 total (6 SHLB, 5 MODE, 7 ENVL, 6 USHF, 6 CONS, 4 DRFT) — **34/34 mapped ✓**
+- Cross-cutting: 5 XCUT (apply to all phases they concern) — **5/5 mapped ✓**
+- No orphaned requirements.
 
 ---
 *Requirements defined: 2026-08-25*
+*Roadmap created: 2026-08-25 — see `.planning/ROADMAP.md` Phases 14–17*
 *Research: `.planning/research/SUMMARY.md`, `.planning/research/SPIKE-COUPLING.md`*
