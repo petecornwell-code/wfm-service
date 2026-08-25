@@ -306,9 +306,36 @@ honest-verifier behavior, not over-flagging.
 | error | ✅ resolved | explicit | Roster GET failure is unchanged existing behavior — `loadAgents()` catch → `showToast('error')`; no per-cell error state |
 | populated | ✅ resolved | explicit | Single value when all 7 effective hours are equal; `min-max` range (e.g. `12-24`) when they differ; never renders `MAND`/`PTO` (Section 1) |
 | partial | ✅ resolved | explicit | Unset days resolve to the schedule default *before* min/max is computed, so the summary always spans all 7 values |
-| overflow | ✅ resolved | **backstop** | Range output caps at ~7 chars (`12-24` worst case) inside the existing dense 13-column row — provable only by viewing the rendered table |
+| overflow | ✅ resolved | **explicit** | **CORRECTED 2026-08-25.** Range output reaches **10 chars** (`0.25-23.75` worst case), not the ~7 originally stated. Verified to fit the dense 13-column row without wrap or horizontal-scroll regression (UAT test 5, observed on the deployed build) — so the row is now `explicit`, not a backstop. |
 | zero-one-many | ⊘ dismissed | — | Weekdays are a fixed set of 7; the zero/one/many axis cannot vary and no copy pluralizes |
-| long-text | ✅ resolved | explicit | Numeric closed vocabulary ≤5 chars; truncation impossible |
+| long-text | ✅ resolved | explicit | **CORRECTED 2026-08-25 — the original claim was false.** The vocabulary is numeric and closed, but **not ≤5 chars**: the `min-max` branch reaches 10 (`0.25-23.75`). See the E1-width correction below. Truncation does not occur, but that is a verified layout property, not a consequence of a 5-character bound. |
+
+> **E1-width correction — 2026-08-25 (UAT, phase 13). Two claims were arithmetically wrong.**
+>
+> **What was claimed.** `long-text`: "Numeric closed vocabulary ≤5 chars; truncation impossible."
+> `overflow`: "Range output caps at ~7 chars (`12-24` worst case)."
+>
+> **What is actually true.** `formatHoursSummary` renders `${formatHours(min)}-${formatHours(max)}`,
+> and `formatHours` is `Number(n.toFixed(2)).toString()` — up to two decimal places. With hours
+> bounded to 0–24, the widest legal output is **`0.25-23.75`, 10 characters** — double the ≤5 claim
+> and well past the ~7 cap. (The cited `12-24` worst case is itself 5 characters, not 7, so that row
+> was internally inconsistent too.) Reproduced on the deployed build with in-range values through
+> the supported endpoint, no bypass.
+>
+> **Why the ≤5 claim looked safe.** It holds only for the `min === max` single-value branch, where
+> the widest output is `23.75`. Nobody applied it to the range branch, which is the common case —
+> 27 of 28 agents on the dev desk render a range.
+>
+> **Do not credit the 0–24 bound with fixing this.** `13-VERIFICATION.md` moved this truth out of
+> `coincidental_reliance_items` on the strength of `ab0af9d`'s inclusive 0–24 range check. That
+> reclassification is unsound: the bound constrains *values*, not *range width*. `0.25-23.75`
+> satisfies the bound and still doubles the character budget. The two are independent.
+>
+> **Disposition: ACCEPTED, corrected not fixed** (operator decision, 2026-08-25). UAT test 5 verified
+> at the true worst case that the 10-character summary fits the dense 13-column row with no wrap and
+> no horizontal-scroll regression. The *behaviour* was always fine; only the stated bound was wrong.
+> Both rows move `backstop`/false-premise → `explicit`, recording the real width and the real
+> evidence.
 
 ### E2 — Expand/collapse chevron toggle *(list-collection, media, interactive-control, static-content)*
 

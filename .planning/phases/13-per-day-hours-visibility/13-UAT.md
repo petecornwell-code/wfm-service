@@ -3,7 +3,7 @@ status: complete
 phase: 13-per-day-hours-visibility
 source: [13-VERIFICATION.md]
 started: 2026-08-24T13:15:24Z
-updated: 2026-08-25T14:37:56Z
+updated: 2026-08-25T14:56:37Z
 ---
 
 ## Current Test
@@ -65,7 +65,7 @@ note: |
   rather than opening blank.
   Agent restored to its pre-test profile immediately afterwards.
 
-  *** SUPERSEDED 2026-08-25 — RE-VERIFICATION REQUIRED ***
+  *** SUPERSEDED 2026-08-25, THEN RE-VERIFIED THE SAME DAY ***
   This pass was judged against the pre-amendment contract, where the editor opened
   PRE-FILLED with 'Not set (default)'. Resolving gap G-13-DD deliberately changed
   that: the editor now opens EMPTY with the value as placeholder ghost text, because
@@ -73,6 +73,17 @@ note: |
   unusable. The seed-value half of this test therefore no longer describes shipped
   behaviour. The five-state-distinctness half is unaffected and still holds.
   Re-verify against 13-UI-SPEC.md's E4-empty amendment.
+
+  RE-VERIFIED 2026-08-25 against the amended contract (deploy 7fc7168). Confirmed:
+  editor opens EMPTY with the current value as placeholder ghost text; the full
+  100-entry picklist is browsable with PTO / MANDATORY / Not set (default) first;
+  and — the safety-critical path — clicking away without typing leaves the value
+  unchanged, so the cellDirtyRef guard holds.
+  That last confirmation also retro-resolves the Saturday-row question below: with
+  the guard demonstrably working, the single row lost during the test 7/8 session
+  is attributable to 'Not set (default)' being selected while its clipping was
+  inspected, which is the designed clearRow path, not data loss. Row was restored;
+  desk returned to 196/196.
 
 ### 3. Live-desk walkthrough of the bulk "Set all days to…" range guard and confirmation dialog
 expected: 1000/-1 rejected via toast before confirm()/network; 24 and 0 accepted; label-count confirm() fires only when >=1 weekday carries MANDATORY/PTO
@@ -122,13 +133,14 @@ correction: |
 ### 5. E1 overflow (backstop): the collapsed summary's range output still fits the existing dense 13-column row after the muted-colour change
 expected: No wrap, no horizontal-scroll regression at the widest range value
 why_human: insufficient_spec — visual layout claim, abstain per honest-verifier contract
-result: skipped
-reason: |
-  Layout not judged — user redirected to a dropdown change request mid-test and
-  then chose to skip. The widest case WAS staged and is reproducible: setting any
-  agent's MON=0.25 and SUN=23.75 renders the collapsed summary as "0.25-23.75".
-  NOT judged: whether that wraps, squeezes neighbouring columns, or introduces a
-  horizontal scrollbar in the dense 13-column row. Genuinely unknown, not passing.
+result: pass
+tested_against: https://d2bbtcc80peap7.cloudfront.net/desks/6170be17-3bee-41da-9d81-62ddd50c786f/agents (deploy 7fc7168)
+re_run: |
+  Initially SKIPPED (user redirected mid-test). Re-run 2026-08-25 at the true worst
+  case: Adaeze staged MON=0.25, all other days 23.75, rendering the collapsed
+  summary "0.25-23.75" — 10 characters, the widest legal output. User confirmed no
+  wrap, no column squeeze, no horizontal-scroll regression in the 13-column row.
+  The LAYOUT is fine; the stated 5-character BOUND was still wrong (see finding).
 finding: |
   Independently verified while staging this test (NOT a user report): the E1 truth
   recorded in 13-UI-SPEC.md / 13-VERIFICATION.md claims the collapsed summary is
@@ -205,11 +217,20 @@ note: |
 ## Summary
 
 total: 8
-passed: 6
-issues: 2
+passed: 7
+issues: 1
 pending: 0
-skipped: 1
+skipped: 0
 blocked: 0
+
+# Test-result counts above reconcile to total (7 pass + 1 issue = 8).
+# The ## Gaps section carries THREE entries, which is not a mismatch:
+#   G-13-5  <- test 5 (raised by orchestrator during staging, not a user report;
+#                      test itself later re-run and PASSED). accepted.
+#   G-13-8  <- test 8 (the one result: issue). accepted.
+#   G-13-DD <- reported during test 7 but not a verdict on test 7; fixed in code
+#              (7fc7168) and re-verified via test 2's re-run.
+# All three are dispositioned. None requires a gap-closure fix plan.
 
 ## Gaps
 
