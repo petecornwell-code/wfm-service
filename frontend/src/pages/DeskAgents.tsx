@@ -35,6 +35,14 @@ function formatHours(n: number) {
   return Number(n.toFixed(2)).toString()
 }
 
+/** Selectable numeric picklist entries: every quarter-hour step from 0 to 24 inclusive (97 values),
+ * matching the 0-24 quarter-hour rule the per-cell editor already validates against
+ * (13-UI-SPEC.md Section 3). Formatted through formatHours so a seeded cell value is always
+ * character-identical to its dropdown entry — otherwise the browser would show no selected match
+ * when re-opening an already-set cell. Listed AFTER the three label entries so PTO / MANDATORY /
+ * Not set (default) stay at the top of the dropdown (13-UI-SPEC.md E4 empty). */
+const HOUR_OPTIONS: string[] = Array.from({ length: 97 }, (_, i) => formatHours(i * 0.25))
+
 /** Collapsed Hours/Day summary (13-UI-SPEC.md Section 1): a single value when the whole week
  * matches, otherwise a min-max range. Never renders a MANDATORY/PTO marker. */
 function formatHoursSummary(da: DeskAgent) {
@@ -406,6 +414,7 @@ export default function DeskAgents() {
         <option value="PTO" />
         <option value="MANDATORY" />
         <option value="Not set (default)" />
+        {HOUR_OPTIONS.map(h => <option key={h} value={h} />)}
       </datalist>
       <h1>Desk Agents</h1>
       <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>

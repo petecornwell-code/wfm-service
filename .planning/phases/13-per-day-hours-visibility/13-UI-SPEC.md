@@ -122,7 +122,7 @@ Supporting copy (not template rows, but load-bearing — the planner/executor ne
 | Control | Copy |
 |---------|------|
 | Weekday header abbreviations | `Mon` `Tue` `Wed` `Thu` `Fri` `Sat` `Sun` |
-| Combobox picklist entries (per D-03's mockup, verbatim) | `(type a number)` *(placeholder, not a selectable literal)*, `PTO`, `MANDATORY`, `Not set (default)` |
+| Combobox picklist entries | `(type a number)` *(placeholder, not a selectable literal)*, `PTO`, `MANDATORY`, `Not set (default)`, then all 97 quarter-hour values `0`…`24` — **amended 2026-08-25, see D-03 amendment below** |
 | MANDATORY badge text | `MAND` (4-letter abbreviation — matches the accepted mockup's `MAND` literally, keeps the mini-column narrow) |
 | PTO badge text | `PTO` |
 | Expand/collapse toggle | icon-only chevron (`▸` collapsed / `▾` expanded), `aria-label="Expand hours detail for {agentName}"` / `"Collapse hours detail"` — no visible text label, matching the file's existing icon-glyph convention (`↑`/`↓` sort arrows) |
@@ -192,11 +192,21 @@ as `{ agentId, day } | null` rather than a new per-cell state variable per cell)
 **Edit mode — the D-03 "type-or-pick combo," concrete control (zero new dependencies):**
 
 A native `<input type="text" list="day-hours-options">` bound to a `<datalist>` containing the
-picklist entries `PTO`, `MANDATORY`, `Not set (default)` (`(type a number)` is the input's
-`placeholder`, not a selectable option — it cannot be a literal `<option>` since typing anything
-resolves it away). This is HTML5's built-in "type or pick" affordance and requires no new
-component library, satisfying both D-03's literal requirement and the project's zero-dependency
-convention. Resolution on blur/Enter:
+picklist entries `PTO`, `MANDATORY`, `Not set (default)`, **followed by all 97 quarter-hour values
+`0`…`24`** (`(type a number)` is the input's `placeholder`, not a selectable option — it cannot be
+a literal `<option>` since typing anything resolves it away). This is HTML5's built-in "type or
+pick" affordance and requires no new component library, satisfying both D-03's requirement and the
+project's zero-dependency convention. Resolution on blur/Enter:
+
+> **D-03 amendment — 2026-08-25 (UAT, phase 13).** D-03's mockup originally specified the three
+> label entries *verbatim*, with numbers typed rather than picked. During UAT the operator asked
+> for the numeric range to be selectable too. The datalist now also carries every quarter-hour
+> value from `0` to `24` inclusive (97 options), generated through `formatHours` so a seeded cell
+> value is always character-identical to its option (otherwise re-opening an already-set cell
+> shows no selected match). **Ordering is load-bearing:** the three label entries stay FIRST so
+> the E4 "empty" affordance (`Not set (default)` immediately visible) is not buried under 97
+> numeric rows. Typing is unaffected — free numeric entry and the 0–24 client-side validation are
+> unchanged; this only adds a pick affordance for values that were always legal.
 
 | Typed/picked value | Resolves to |
 |---|---|

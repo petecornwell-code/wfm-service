@@ -60,6 +60,16 @@ schema, the parser, or the solver.
   and the existing inline editor already uses `step="0.25"`. An integer list could not display an
   agent whose upload set `7.5`.
   — **Reversibility:** reversible — control shape only; the stored values are unchanged.
+  — **AMENDED 2026-08-25 (UAT, phase 13):** the picklist now ALSO carries every quarter-hour value
+  from `0` to `24` inclusive (97 options), so the numeric range is pickable and not only typeable.
+  Requested by the operator during UAT of the deployed build. This does **not** reverse D-03's
+  original reasoning: what D-03 rejected was a *plain integer* dropdown, on the evidence that it
+  could not represent `7.5`. A quarter-hour list resolves that exact objection rather than
+  reintroducing it — `7.5` is present, as is every value the parser's `setScale(2, HALF_UP)` can
+  produce at quarter-hour granularity. Typing is unchanged; this only adds a pick affordance for
+  values that were already legal. Ordering is load-bearing: `PTO`, `MANDATORY` and `Not set
+  (default)` remain FIRST so D-04's five-state affordance is not buried under 97 numeric rows.
+  Still reversible — control shape only, stored values unchanged.
 
 - **D-04:** The combo must expose **five distinct states**, because the model distinguishes them:
   a number (worked), `0` (explicitly not worked), `MANDATORY` (contractual day off), `PTO`
