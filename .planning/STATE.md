@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
 status: executing
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-08-25T23:35:58.606Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-08-25T23:50:03.115Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: d12f0c625b4ade79505c289510c0c94dfd6e642d
+state_head: 9b6a4f9c03a35661b314cb6a349c8ddf7264f023
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 ## Current Position
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 14 execution started
 
@@ -197,6 +197,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 13]: Phase 13 Plan 06: routed DeskAgentServiceBulkRollbackTest's @AfterEach cleanup through DeskAgentService.setContractedHours(..., null) rather than calling the @MockitoSpyBean-wrapped AgentDayHoursRepository.deleteByAgent_Id directly -- the spy's delegate does not carry Spring Data's self-transactional proxy behaviour, so a direct write with no ambient transaction throws TransactionRequiredException
 - [Phase 14]: Phase 14 Plan 01 checkpoint: D-11 non-overlap invariant enforced app-level in ShiftTemplateService (not DB EXCLUDE constraint); unique key (tenant_id, desk_id, name, effective_from)
 - [Phase 14]: Phase 14 Plan 01: exported DAY_ORDER/DAY_LABELS from DeskAgents.tsx (Rule 3 fix) so ShiftLibrary.tsx could import rather than re-declare weekday constants
+- [Phase 14]: Phase 14 Plan 02: Both reflection derivations (annotation-value set, builder-method count) confirmed 19 constraints and agreed with each other -- ARCHITECTURE.md's stale 18 corroborated as wrong, ROADMAP's 19 confirmed
+- [Phase 14]: Phase 14 Plan 02: honourPreferredStartTime and honourPreferredBreakTime tagged OPEN_RESOLVE_IN_PHASE_15 with owner 'Phase 15 -- Shift Envelope & Coupling', per D-15's requirement that an explicit open row with a named owner IS a classification
+- [Phase 14]: Phase 14 Plan 02: MODE_GATED left with zero rows by design -- the four break constraints are tagged NEEDS_SHIFT_VARIANT, not MODE_GATED, since actual gating is Phase 15's ENVL-05 work
 
 ### Blockers/Concerns
 
@@ -210,8 +213,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-25T23:35:58.597Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-08-25T23:50:03.105Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -235,3 +238,4 @@ Resume file: None
 | Phase 13 P05 | ~10 min | 3 tasks | 2 files |
 | Phase 13 P06 | 14min | 3 tasks | 6 files |
 | Phase 14 P01 | 23min | 2 tasks | 14 files |
+| Phase 14 P02 | 25min | 2 tasks | 3 files |

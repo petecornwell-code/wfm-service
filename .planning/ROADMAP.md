@@ -112,13 +112,13 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: 1/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+**Plans**: 2/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
 **Wave 1**
 
 - [x] 14-01-PLAN.md — Tracer: end-to-end "create and see one shift template" through migration, entity, repository, service, controller, API client and a new Shift Library page (SHLB-01, MODE-01)
-- [ ] 14-02-PLAN.md — XCUT-05 constraint classification with a code-derived completeness test, plus MODE-05's structural proof that no production solver file changed (MODE-05)
+- [x] 14-02-PLAN.md — XCUT-05 constraint classification with a code-derived completeness test, plus MODE-05's structural proof that no production solver file changed (MODE-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
