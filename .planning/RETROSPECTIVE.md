@@ -53,15 +53,145 @@ The substantial piece was making the solver's `MANDATORY` day-off path real. It 
 
 ---
 
+## Milestone: v1.2 — Unified Agent Provisioning
+
+**Closed:** 2026-08-25 (`override_closeout`)
+**Phases:** 4 delivered, 1 withdrawn | **Plans:** 23 | **Requirements:** 19 of 19 (100%)
+**Timeline:** 2026-07-30 → 2026-08-25 (26 days, 252 commits, 105 files, +10,233/−857 LOC)
+
+### What Was Built
+
+Mon–Sun contracted hours became a first-class data model, and — after a second attempt — actually
+visible. An operator downloads a per-desk template, fills seven day cells per agent (a number,
+`MANDATORY`, or `PTO`), uploads it; the system syncs BambooHR, merges field-by-field with explicit
+precedence, reports what came from where, and shows the stored result back in the roster and the
+Excel export.
+
+Phase 9 built the storage (`agent_day_hours`, name split, V29 migration). Phase 10 rewrote the
+parser around one polymorphic 7-column day group and one shared `EnrichedColumnLayout`. Phase 11
+built the merge engine and its report. Phase 12 was withdrawn. **Phase 13 existed only because the
+first milestone audit caught that nobody had migrated the read path** — the roster still showed a
+desk default unrelated to what had just been uploaded.
+
+### What Worked
+
+- **The milestone audit caught what four phase verifications missed.** Phases 9, 10 and 11 each
+  verified `passed` in isolation, and each was correct. The defect lived in the seam: Phase 9 made
+  `agent_day_hours` authoritative, Phase 10's upload nulled the old scalar, and nothing ever
+  repointed `DeskAgentService.toResponse`. Per-phase verification structurally cannot see this.
+- **Staging data to make a test observable, rather than declaring it unobservable.** Phase 13's UAT
+  repeatedly hit states the dev dataset could not produce — all 28 agents had full row sets, so the
+  "not set" branch rendered for nobody; 2 of 5 display states had no representative cell anywhere in
+  196 cells. Each was staged through the supported endpoint, verified by API read-back, blast radius
+  checked, and restored afterward.
+- **Refusing bundle-string presence as proof of render.** The UAT notes record this explicitly:
+  finding `#9ca3af` and `'Not set (default)'` in the shipped JS was *not* accepted as evidence the
+  muted branch rendered. That distinction is what made test 1's first run a recorded PARTIAL instead
+  of a false pass.
+- **Verifying documentation claims against arithmetic and observation.** Two claims that had
+  survived every prior review were false: E1's "at most 5 characters" (the `min-max` branch reaches
+  10 — `0.25-23.75`), and E4's "the datalist popup is not constrained by the cell width" (a native
+  `<datalist>` renders at its input's width, which is fixed at 90px). Both were load-bearing
+  resolutions of design contracts.
+- **Withdrawing Phase 12 instead of shipping it.** Three plans executed, benchmark run, effect
+  measured at +0.25h median against a 5.00h baseline spread — inside its own noise. Code reverted,
+  goal explicitly not claimed, artifacts kept as the record.
+
+### What Was Inefficient
+
+- **Building a data model without building the view of it.** The single largest cost of the
+  milestone was Phase 13: six plans, a full gap-closure round, and two UAT sessions, entirely to
+  make already-stored data visible. "Store it" and "show it" were treated as one requirement (MDL-02)
+  and delivered as one — but only the first half.
+- **A claim that cannot be observed cannot be falsified.** E4's clipping assertion was wrong from
+  the day it was written and survived because the editor opened pre-seeded, which filtered the
+  offending entry out of the dropdown entirely. Fixing an unrelated defect (G-13-DD) made the list
+  render, and the false claim became visible immediately. Design contracts resolved on reasoning
+  about browser behaviour, with no observation, are unfalsifiable until something else changes.
+- **Fixing one gap opened another.** Phase 13's gap-closure seeded the editor with the current value
+  (closing gap 2), which collapsed the native `<datalist>` to a single self-matching option and made
+  the 97-entry picklist unreachable — in exactly the case it existed for. The fix reversed part of an
+  earlier fix. Neither was wrong in isolation; the interaction was never modelled.
+- **I-2 was deferred as "a scoping decision, not a defect" and then not decided.** The 2026-08-21
+  audit framed it that way, legitimately. It was still open, still undecided, and still untouched at
+  the 2026-08-25 re-audit, and shipped as accepted debt. A deferral that is never revisited is
+  indistinguishable from a decision not to fix.
+- **Security review ran only because milestone close forced it.** Phase 13's `/gsd-secure-phase`
+  never ran during the phase; it was discovered as a blocking `verify:post` gate afterward. Phase 9
+  still has no SECURITY.md at all.
+
+### Patterns Established
+
+- **`EnrichedColumnLayout` as the single column-layout definition** shared by template, parser and
+  export — including `specialtyHeader(int)` / `specialtyIndex()` as a round-tripping pair.
+- **Single-row upsert over delete-and-recreate for per-entity edits.** `setDayHours` writes exactly
+  one weekday, provably leaving the other six untouched; the destructive seven-row fan-out survives
+  only as an explicitly labelled bulk action behind a `confirm()`.
+- **Tenant/desk resolution before any un-scoped repository call.** `findByIdAndTenantIdAndDeskId(...)
+  .orElseThrow()` runs first, with an inline comment stating why the ordering is load-bearing.
+- **Range guards positioned before destructive work, pinned by an ordering assertion.** The 0–24
+  check sits before `setContractedHoursPerDay` and before `deleteByAgent_Id`, and a test proves rows
+  and labels survive a rejection.
+- **Preserving superseded verdicts rather than overwriting them.** When an amended contract turns a
+  failing test into a passing one, the original report stays in the file with an explanation. A
+  `pass` earned by changing the spec and a `pass` earned by fixing the code are different results,
+  and the file should not let a reader confuse them.
+
+### Key Lessons
+
+1. **"Store X" and "show X" are two requirements.** MDL-02 was satisfiable, and was satisfied, with
+   the operator unable to see any of it. Where a requirement exists so a human can verify something,
+   the verification surface belongs in the requirement.
+2. **A requirement verified `passed` in one phase can be violated by a second entry point in
+   another.** This happened twice — I-1 (the read path) and I-2 (the Refresh button). The pattern to
+   watch for is a guarantee implemented at one call site while the underlying field or table has
+   multiple writers.
+3. **Prose in a plan is a claim, not evidence.** Three separate false statements shipped inside
+   design contracts and verification reports this milestone, each surviving review because it sounded
+   like reasoning. Two were arithmetic errors; one was an assumption about browser behaviour that a
+   ten-second test would have refuted.
+4. **A deferral needs a destination *and* a decision date.** v1.1's lesson was the first half. I-2
+   had a destination — it was written down, twice — and still went nowhere, because nothing forced a
+   verdict.
+5. **Run the retroactive gates during the phase, not at the boundary.** Security review, Nyquist
+   validation and UAT all surfaced as blockers at close. Two phases still carry `VALIDATION.md` at
+   `status: draft`, and Phase 9 has never had a security review at all.
+
+### Cost Observations
+
+- Model profile: planner `opus`, checker/auditor/integration-checker `sonnet`
+- 23 plans across 5 phases; Phase 13 alone was 6 plans (26% of the milestone) for zero new
+  requirements — pure closure of an integration gap the audit found
+- Phase 12 cost 3 plans and produced no shipped code, by design — the benchmark was the deliverable
+- Notable: the two most valuable findings of the milestone (I-1 and the E1/E4 false claims) came from
+  adversarial re-derivation — the milestone audit and UAT staging — not from any phase's own
+  verification of itself
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Requirements shipped | Phases delivered | Closed |
 |---|---|---|---|
 | v1.0 AWS Deployment | partial (IAM-blocked) | 1 of 4 complete, 2 partial | 2026-04-21 |
 | v1.1 Schedule Quality & Reporting | 4 of 16 (25%) | 2 of 4 | 2026-07-29 |
+| v1.2 Unified Agent Provisioning | 19 of 19 (100%) | 4 of 5 (1 withdrawn) | 2026-08-25 (override) |
 
 **Recurring themes:**
 
-- **Both milestones closed with roughly half their phases undelivered.** v1.0 on an external blocker (IAM permissions), v1.1 on internal scope discovery. Milestone scoping has consistently been more ambitious than the evidence available at planning time supported.
-- **Blockers identified early are accepted and carried rather than resolved.** The IAM blocker has persisted across two milestones (999.1–999.3). The BambooHR key exposure is on the same trajectory. Both are gated on a single operator action outside the workflow.
-- **Investigation consistently changes the requirement.** In both milestones, the work as specified differed materially from the work as built once real systems were probed. Front-loading a discovery spike before committing roadmap scope would likely have produced more accurate milestones.
+- **v1.2 broke the scoping pattern; the other patterns held.** The first two milestones closed with
+  roughly half their phases undelivered. v1.2 shipped every requirement — but needed a sixth-of-a-
+  milestone closure phase to do it, and still closed under override. Tighter scope (19 requirements,
+  26 days) produced a materially better outcome than v1.1's 16-requirement, 83-day sprawl.
+- **Blockers identified early are still accepted and carried rather than resolved.** The IAM blocker
+  has now persisted across three milestones (999.1–999.3). The BambooHR key exposure has been
+  accepted at two consecutive closes and is still live in a public repo. I-2 joins them this
+  milestone. **Every one of these was correctly identified, correctly documented, and not fixed** —
+  the process reliably produces accurate records of things that do not get done.
+- **Investigation consistently changes the requirement** — v1.0 and v1.1 through probing live
+  systems, v1.2 through auditing its own claims. In every milestone so far, the work as specified
+  differed materially from the work as built.
+- **Adversarial verification finds what self-verification cannot.** v1.1's verifier caught a test
+  exercising a hand-copied replica. v1.2's audit caught a cross-phase seam four phase verifications
+  passed over, and its UAT caught two false claims inside design contracts. The consistent signal is
+  that a reviewer trying to *refute* finds things a reviewer confirming does not.
