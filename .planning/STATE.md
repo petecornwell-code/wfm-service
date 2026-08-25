@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
 status: executing
-stopped_at: Phase 14 UI-SPEC approved
-last_updated: "2026-08-25T23:11:52.970Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-08-25T23:35:58.606Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: 856dfeb3827f003fdc605b3e02ead6c512f9995d
+state_head: d12f0c625b4ade79505c289510c0c94dfd6e642d
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 ## Current Position
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 14
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-08-25 — Phase 14 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -195,6 +195,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 13]: Phase 13 Plan 05: shared isEveryDayNotSet predicate drives both the collapsed cell's muted treatment and the expanded empty-state note (P-14); the bulk out-of-range guard runs strictly before confirm() and uses a truncated toast sentence, not an inline element (P-12/P-13); 13-04-PLAN.md's contradicting seed-value action prose was corrected with an inline 'corrected by 13-05' marker rather than a silent rewrite (P-15)
 - [Phase 13]: Phase 13 Plan 06: adopted PLAN.md's P-16/P-17/P-18/P-19 planner decisions verbatim (MockitoSpyBean + Propagation.NOT_SUPPORTED + argument-matched stubbing for the rollback proof, no new dependency; WR-02 proof is a direct handler unit test, not a new MockMvc harness; bulk range message names the field; exactly one new exception type intercepted)
 - [Phase 13]: Phase 13 Plan 06: routed DeskAgentServiceBulkRollbackTest's @AfterEach cleanup through DeskAgentService.setContractedHours(..., null) rather than calling the @MockitoSpyBean-wrapped AgentDayHoursRepository.deleteByAgent_Id directly -- the spy's delegate does not carry Spring Data's self-transactional proxy behaviour, so a direct write with no ambient transaction throws TransactionRequiredException
+- [Phase 14]: Phase 14 Plan 01 checkpoint: D-11 non-overlap invariant enforced app-level in ShiftTemplateService (not DB EXCLUDE constraint); unique key (tenant_id, desk_id, name, effective_from)
+- [Phase 14]: Phase 14 Plan 01: exported DAY_ORDER/DAY_LABELS from DeskAgents.tsx (Rule 3 fix) so ShiftLibrary.tsx could import rather than re-declare weekday constants
 
 ### Blockers/Concerns
 
@@ -208,9 +210,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-25T22:30:47.497Z
-Stopped at: Phase 14 UI-SPEC approved
-Resume file: .planning/phases/14-shift-library-scheduling-mode/14-UI-SPEC.md
+Last session: 2026-08-25T23:35:58.597Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -232,3 +234,4 @@ Resume file: .planning/phases/14-shift-library-scheduling-mode/14-UI-SPEC.md
 | Phase 13 P04 | 8 min | 2 tasks | 2 files |
 | Phase 13 P05 | ~10 min | 3 tasks | 2 files |
 | Phase 13 P06 | 14min | 3 tasks | 6 files |
+| Phase 14 P01 | 23min | 2 tasks | 14 files |

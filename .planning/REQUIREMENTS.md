@@ -36,7 +36,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 
 ### Scheduling Mode (MODE)
 
-- [ ] **MODE-01**: Each desk is either shift-scheduled or slot-scheduled, and existing desks default to slot-scheduled with no behaviour change
+- [x] **MODE-01**: Each desk is either shift-scheduled or slot-scheduled, and existing desks default to slot-scheduled with no behaviour change
 - [ ] **MODE-02**: Operator can switch a desk to shift-scheduled mode from the desk configuration UI
 - [ ] **MODE-03**: Switching a desk to shift-scheduled mode is refused, with a message naming the uncovered demand windows, when its shift library cannot cover that desk's demand (SHLB-05)
 - [ ] **MODE-04**: Switching a desk's mode does not alter or invalidate any already-accepted schedule for that desk
@@ -140,6 +140,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | XCUT-05 (constraint classification) | Phases 14, 15 | Pending |
 
 **Coverage:**
+
 - v1.3 requirements: 34 total (6 SHLB, 5 MODE, 7 ENVL, 6 USHF, 6 CONS, 4 DRFT) — **34/34 mapped ✓**
 - Cross-cutting: 5 XCUT (apply to all phases they concern) — **5/5 mapped ✓**
 - No orphaned requirements.
