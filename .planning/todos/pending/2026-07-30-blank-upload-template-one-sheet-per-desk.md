@@ -4,8 +4,13 @@ title: Provide a blank upload template spreadsheet, one sheet per desk
 area: upload
 resolves_phase: 10
 files:
+
   - src/main/java/com/wfm/service/DeskAssignmentUploadService.java
   - src/main/java/com/wfm/service/DeskAgentExportService.java
+
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-08-25
 ---
 
 ## Request (Pete, 2026-07-30, during Phase 9 execution)
@@ -25,10 +30,13 @@ Two related asks for the enriched-upload flow (Phase 10 scope, "Enriched Upload 
 The current Phase 10 goal says operators upload **"one extended spreadsheet"** with a
 single per-row shape, and `DeskAssignmentUploadService` detects one enriched-16-col
 sheet. "One sheet per desk" changes the workbook structure the parser must accept:
+
 - Does the parser iterate every sheet and use the **sheet name as the desk**, dropping
   the per-row `Desk` column? Or keep the Desk column and treat sheets as cosmetic?
+
 - Blank-template generation and the upload parser must agree on the exact header row
   and sheet layout (single source of truth for column order).
+
 - Excel export (`DeskAgentExportService`, touched in Phase 9 plan 09-05) may want the
   same per-desk-sheet layout for round-trip symmetry — decide whether export and
   template share a workbook builder.

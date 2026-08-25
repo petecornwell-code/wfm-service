@@ -2,16 +2,27 @@
 created: 2026-08-13T00:00:00Z
 title: Cross-agent seat displacement for the atomic shift move
 area: solver
+
 # resolves_phase intentionally unset: this is follow-up work Phase 12 does NOT
+
 # resolve — it is what Phase 12's benchmark proved is still missing. Setting it
+
 # to 12 would make close_phase_todos auto-sweep this into completed/ the moment
+
 # Phase 12 is marked complete, silently losing it. Set it to the phase that
+
 # actually takes this on, once that phase exists.
+
 raised_during_phase: 12
 files:
+
   - src/main/java/com/wfm/solver/AtomicShiftMoveFactory.java
   - src/main/java/com/wfm/solver/AssignSeatMove.java
   - src/main/java/com/wfm/solver/ShiftWindowFinder.java
+
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-08-25
 ---
 
 ## Origin (Phase 12 Plan 03, operator checkpoint, 2026-08-13)
@@ -24,8 +35,10 @@ own pass/fail thresholds and the operator ruled:
 - **Threshold 1 (must-pass, median-vs-spread hours assigned): FAILED.** With-move median hours
   assigned (79.50h) exceeds baseline median (79.25h) by only 0.25h, against a 5.00h baseline
   min/max spread — well inside the existing noisy band, not a real effect.
+
 - The move itself is correct and is being kept (improves hard score, composes with change/swap,
   no score corruption) — this follow-up is not about a bug in 12-01/12-02.
+
 - The phase goal ("agents reach more contracted hours") is **not** claimed as achieved by Phase 12
   and remains open.
 
@@ -54,15 +67,19 @@ window). This is the capability `12-RESEARCH.md` Open Question 1/2 and `12-02-SU
 Stubs" section both named as deliberately deferred pending this measurement.
 
 Needs before planning:
+
 - Confirm this is scoped as its own phase (do not fold into an in-flight v1.2 phase) — it changes
   move semantics and score-corruption risk surface (undo correctness under displacement is a new
   correctness question `AtomicShiftMoveFullAssertTest`-style coverage will need to re-prove).
   A named displacement move is a `costly`/architectural decision, not a `reversible` one — treat
   it as Rule 4 (ask), not an auto-fix, when planning starts.
+
   - Fairness/priority rule for *which* agent gets displaced (avoid thrashing — two agents
     endlessly displacing each other's seats).
+
   - Whether displacement needs its own opt-in threshold-tuning knob or should always be part of the
     default union move selector once implemented.
+
   - Re-run the same seeded 5x5 (400% reference) plus 130% conservative-variant benchmark harness
     from `AtomicShiftMoveBenchmarkTest` against the new move, since that is the only evidence
     format this phase has established as trustworthy (step-count-terminated, not wall-clock).

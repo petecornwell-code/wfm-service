@@ -2,13 +2,21 @@
 created: 2026-08-14T00:00:00Z
 title: Terraform state diverges from live RDS password and publicly_accessible
 area: infra
+
 # resolves_phase intentionally unset: no phase currently owns this. Set it to the
+
 # phase that actually takes it on, so close_phase_todos does not sweep it away first.
+
 raised_during_phase: 12
 files:
+
   - infra/rds.tf
   - infra/main.tf
+
 severity: latent — no current impact, fails silently when triggered
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-08-25
 ---
 
 ## What is drifted (as of 2026-08-14)
@@ -85,9 +93,11 @@ is healthy. This note exists so the drift is discoverable rather than surprising
    a strong password and writes it to RDS *and* a new secret version in one apply, so all
    three agree by construction. Requires an ECS redeploy to pick up the new secret, and
    the same apply closes `publicly_accessible`. Cleanest.
+
 2. **Reconcile by hand** — set RDS back to the value currently in Secrets Manager. Restores
    the invariant without a password change, but leaves Terraform state still holding the
    April value, so the drift is only half fixed.
+
 3. **Stop Terraform owning the password** — switch to `manage_master_user_password` (RDS-
    managed rotation in Secrets Manager) and drop `random_password.db`. Removes the class of
    bug entirely rather than resetting this instance of it.
