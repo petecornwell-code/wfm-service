@@ -49,11 +49,49 @@ or solver-tuning surfaces that were the milestone's other half.
 
 </details>
 
-## Next Milestone
+## Current Milestone: v1.3 Shift-Based Scheduling & Consistency
 
-Not yet defined. Run `/gsd-new-milestone` to scope it.
+**Goal:** An agent works a recognisable, repeating shift — not a slot pattern the optimiser
+reassembles from scratch every week.
 
-The strongest candidates, in rough order of how loudly they are asking:
+**Target features:**
+
+- **Desk shift library** — each desk defines its allowed shifts (e.g. `08:00–17:00, 8h + 1h break`).
+  The solver picks one per agent-day from that library instead of composing a day out of ~36
+  independent slot decisions.
+- **Shift as an availability envelope** — a new planning unit fixing *when* an agent is present and
+  where their break falls. Seat/specialization assignment stays per-slot *inside* the envelope, so an
+  agent can still change specialization mid-day.
+- **Stored usual shift per agent, per weekday** — the target the solver aims at. Ana can be `S1`
+  Mon–Thu and `S2` Fri, matching the existing per-weekday `agent_day_hours` model.
+- **Two population paths** — a Usual Shift column in the per-desk upload template *and* inline
+  editing in the roster UI, mirroring exactly what v1.2 built for contracted hours.
+- **Consistency constraint** — soft penalty on distance from the agent's usual shift, with an
+  operator-configurable tolerance band and weight per desk.
+- **Per-desk mode switch** — a desk is either shift-scheduled or slot-scheduled. Pilot on one desk
+  without touching the rest; keeps a fallback if it underperforms live.
+- **Contiguity by construction** — fragmented days become impossible on shift-scheduled desks,
+  rather than being penalised after the fact.
+- **Drift report** — a panel naming which agents broke their usual shift, when, and by how much.
+
+**Why this shape.** Two prior attempts to get shift semantics onto the slot model were abandoned:
+`BreakAwareConstructionPhase` is a documented no-op (a 6-pass pre-assignment pipeline removed for
+losing quality at each backtrack-free step), and Phase 12's Atomic Shift Move was withdrawn and
+reverted (`299c42c`) at +0.25h median against a 5.00h noise spread. Phase 12's own conclusion — that
+seat capacity and cross-agent displacement bind at realistic over-allocation, not move granularity —
+is what a shift model addresses natively. This milestone is the third option, and the one those two
+were reaching for.
+
+**Central architectural question for research.** Because specialization can vary within a shift, the
+shift does **not** replace `AgentAssignment` — it constrains it. That leaves two coupled planning
+variables that must agree, with nothing structurally preventing the solver placing an agent in a
+seat outside their shift. Whether that coupling is a hard constraint, a filtered value range, or a
+shadow variable is the difference between a clean model and a solver thrashing between two search
+spaces. Timefold is pinned at **1.16.0** (`build.gradle:35`) — `AbstractMove.doMoveOnGenuineVariables`
+with framework-generated undo; the `Neighborhoods` API from 1.31.0 is unavailable.
+
+**Not in this milestone.** Backlog 999.4 (solver fairness), 999.7 (BambooHR key rotation) and 999.9
+(the v1.2 I-2 audit gap) all stay deferred. The remaining candidates, for the milestone after:
 
 1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload path
    but not on the Refresh button. High severity, two audits old, and cheap in at least one of its
@@ -64,8 +102,6 @@ The strongest candidates, in rough order of how loudly they are asking:
 3. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
    utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
 4. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
-5. **Cross-agent seat displacement** — Phase 12's successor finding: at realistic over-allocation,
-   seat capacity rather than move granularity is what binds.
 
 <details>
 <summary>v1.2 Unified Agent Provisioning — original milestone scope (shipped 2026-08-25)</summary>
@@ -181,7 +217,7 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - **Operator-facing surface for data-gap and outlier agents** — currently CloudWatch logs only
 - **⚠ BambooHR API key rotation and public-repo scrub** → 999.7 (security, unresolved)
 - **⚠ BambooHR field-4517 alias dependency** — emerged at Phase 11 (code review IN-03): the `/reports/custom` request asks for field id `4517` but the parser reads the key `customWorkingdays`. Without a tenant Field Alias the value is always null in production and MRG-03/MRG-06 silently never activate, with the unit suite still green. Operator confirmed the alias at UAT 2026-08-21; needs re-checking after any BambooHR account change.
-- **Cross-agent seat displacement** — emerged at Phase 12: seat capacity, not move selection, is the binding constraint at realistic over-allocation (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`)
+- **Cross-agent seat displacement** — emerged at Phase 12: seat capacity, not move selection, is the binding constraint at realistic over-allocation (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`). **Likely absorbed by v1.3** — a shift-level model displaces a whole agent-day in one move, which is precisely what the slot model could not do
 - **⚠ Merge precedence holds on the upload path only** (audit I-2) → 999.9. The manual "Refresh from BambooHR" button overwrites spreadsheet-sourced identity data with no precedence rule and no merge report. Open across two consecutive milestone audits; accepted as debt at v1.2 close.
 - **Bulk "Set all days to…" still destroys MANDATORY/PTO labels** (audit I-3, mitigated) → 999.9. A `confirm()` names the count at risk and a safe per-cell edit path now exists, but the destructive seven-row delete-and-recreate is unchanged.
 - **Legacy `contractedHoursPerDay` scalar still exported as its own column** (audit NEW-1) → 999.9. It can silently disagree with the per-day columns after any single-cell edit.
@@ -274,4 +310,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-25 after the v1.2 Unified Agent Provisioning milestone — 19/19 requirements validated, closed under override with I-2 carried to Backlog 999.9*
+*Last updated: 2026-08-25 at the start of milestone v1.3 Shift-Based Scheduling & Consistency — scoped to shift-level modelling only; 999.4 / 999.7 / 999.9 remain deferred*

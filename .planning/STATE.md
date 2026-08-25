@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Unified Agent Provisioning
-status: Awaiting next milestone
-stopped_at: Phase 13 complete — all phases complete
-last_updated: "2026-08-25T16:53:38.207Z"
+milestone: v1.3
+milestone_name: Shift-Based Scheduling & Consistency
+status: planning
+last_updated: "2026-08-25T17:18:42.851Z"
 last_activity: 2026-08-25
-last_activity_desc: Milestone v1.2 completed and archived
-state_head: d18f11cea0bc78b2d7c722aea031b784569d4200
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 23
-  completed_plans: 23
-  percent: 80
-current_phase: 13
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 
 ## Current Position
 
-Phase: Milestone v1.2 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-25 — Milestone v1.2 completed and archived
+Status: Defining requirements
+Last activity: 2026-08-25 — Milestone v1.3 started
 
 ## Milestone v1.2 Outcome
 
