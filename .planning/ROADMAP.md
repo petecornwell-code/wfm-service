@@ -63,16 +63,19 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md` · Audit: `.planning/milest
 reassembles from scratch every week.
 
 **Settled before phase planning began (do not re-open):**
+
 - **Coupling mechanism:** `SPIKE-COUPLING.md` resolved the research disagreement empirically — two
   independent `@PlanningEntity` classes coupled by a `ConstraintStream` hard constraint (Option A) is
   sound on 8/8 seeds; a filtered value range (Option C) compiles and passes `FULL_ASSERT` clean while
   reporting infeasible schedules as `0hard/0soft` optimal. This is a hard constraint, not a live
   question, for Phase 15.
+
 - **The reverted third attempt:** four full-stack commits (`7861b83`, `9207ceb`, `9f4a96f`, `6fb78c7`),
   1,928 insertions including 1,301 lines of tests, built 2026-08-19/20 and reverted within one minute
   — confirmed as speculative off-roadmap work built while blocked on UAT, cleanly reverted as scope
   discipline, not a technical failure. Treated as candidate salvage material inside Phase 17, not as a
   standalone investigation phase.
+
 - **Soft-quality plateau:** the coupling spike found Option A sound but never reaching the known
   `0soft` optimum on its toy fixture (settling `-10soft`/`-5soft`). Operator ruling: ship the sound
   model, measure the real gap at realistic scale in Phase 15's benchmark, and report it as a finding —
@@ -94,6 +97,7 @@ solver.
 **Requirements**: SHLB-01, SHLB-02, SHLB-03, SHLB-04, SHLB-05, SHLB-06, MODE-01, MODE-02, MODE-03, MODE-04, MODE-05
 
 **Success Criteria** (what must be TRUE):
+
 1. Operator can create, edit, and retire per-desk shift templates — each with a start time, end time, break placement rule, valid weekdays, and an effective date range — without corrupting schedules that already reference a retired template, and every template is visible in the desk's shift-library admin view. (SHLB-01, SHLB-02, SHLB-03, SHLB-04, XCUT-01)
 2. At shift-template definition time, the operator sees which of the desk's staffing-demand windows no combination of library shifts can cover, and which shift templates cannot match any agent's effective contracted hours for a valid weekday — reported before a solve is ever attempted, not discovered by one. (SHLB-05, SHLB-06)
 3. Every existing desk defaults to slot-scheduled with zero behaviour change; an operator can switch a desk to shift-scheduled mode from desk configuration, and the switch is refused with the specific uncovered demand windows named when the library can't cover demand. (MODE-01, MODE-02, MODE-03)
@@ -101,6 +105,7 @@ solver.
 5. Every one of the 19 existing solver constraints is classified mode-agnostic, mode-gated, or needing-a-shift-mode-variant in a table produced as a deliverable of this phase — analysis starts here since the mode concept now exists, even though the four break constraints it identifies aren't actually mode-gated until Phase 15. (XCUT-05, partial)
 
 **Notes:**
+
 - This phase touches no solver code. `ShiftTemplate` is a plain problem fact, a structural sibling of `Specialization` (desk-scoped list, separate table, `desk_id` FK — not nested inside `Desk`).
 - Next Flyway migration is **V39**; this phase needs at minimum a `shift_template` table and a `desk.scheduling_mode` column (`SLOT`/`SHIFT`, default `SLOT`) — exact migration numbering is a plan-time decision, confirmed against the actual latest-applied version before writing, not assumed from this document.
 - SHLB-05's coverage validator and MODE-03's refusal message are the same check reused twice — build it once (extending `runPreSolveValidation`'s existing `ErrorDetail` pattern) and call it from both the shift-library editor and the mode-switch endpoint.
@@ -110,11 +115,25 @@ solver.
 **Plans**: 6 plans (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
+**Wave 1**
+
 - [ ] 14-01-PLAN.md — Tracer: end-to-end "create and see one shift template" through migration, entity, repository, service, controller, API client and a new Shift Library page (SHLB-01, MODE-01)
 - [ ] 14-02-PLAN.md — XCUT-05 constraint classification with a code-derived completeness test, plus MODE-05's structural proof that no production solver file changed (MODE-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 14-03-PLAN.md — Template lifecycle: full save-time validation, the D-02 grid check, edit and retire, era identity and non-overlap, era-aware list ordering (SHLB-01…04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 14-04-PLAN.md — The shared coverage / grid / contracted-hours validator and its read-only report endpoint — D-08's one implementation, two callers (SHLB-05, SHLB-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 14-05-PLAN.md — Scheduling-mode switch: the 409 in-flight guard, the MODE-03 coverage gate, the single-column write proving MODE-04 (MODE-02, MODE-03, MODE-04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 14-06-PLAN.md — Operator surface: shift-library editor, coverage panel, SHLB-06 advisory, mode toggle, and the read-only mode column in Desk Management (SHLB-01…04, MODE-02, XCUT-01)
 
 **UI hint**: yes
@@ -128,6 +147,7 @@ not assumed, with its effect on schedule quality measured honestly rather than d
 **Requirements**: ENVL-01, ENVL-02, ENVL-03, ENVL-04, ENVL-05, ENVL-06, ENVL-07
 
 **Success Criteria** (what must be TRUE):
+
 1. On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from the desk's library, via a new `AgentShiftAssignment` planning entity, visible in the roster and accepted-schedule view; an agent's specialization can still vary between timeslots inside that shift. (ENVL-01, ENVL-03, XCUT-01)
 2. An agent is never seated in a timeslot outside their assigned shift's envelope — enforced as a hard constraint (`shiftEnvelopeCompliance`), and confirmed by an independent ground-truth check that walks the solved schedule outside the score director, not by trusting the reported score alone. (ENVL-02, ENVL-07)
 3. An agent's working day is contiguous apart from their break; break placement comes from the shift template as a structural attribute rather than from the four emergent break constraints, which are mode-gated off for shift-scheduled desks and provably unchanged (same test suite, still green) for slot-scheduled desks — completing Phase 14's classification table. (ENVL-04, ENVL-05, XCUT-05)
@@ -135,6 +155,7 @@ not assumed, with its effect on schedule quality measured honestly rather than d
 5. A seeded, step-count-terminated A/B benchmark — median and full min/max spread reported, threshold pre-committed before the run — measures the shift model's schedule-quality effect against the slot model at realistic (~130%) over-allocation, and explicitly states the soft-score plateau (shift and seats must move together; a plain change-move neighbourhood only moves one at a time) as a measured finding, not a discovery left for UAT. (XCUT-04)
 
 **Notes:**
+
 - **The coupling mechanism is settled, not re-litigated here.** `SPIKE-COUPLING.md` demonstrated Option A (two independent `@PlanningEntity` classes, coupled by a `ConstraintStream` hard constraint) sound on 8/8 seeds, and Option C (a filtered value range reading the shift's genuine planning variable) empirically unsound — it compiled, ran clean under `FULL_ASSERT`, and reported `0hard/0soft` while 9–14 of 24 seats sat outside their agent's envelope. Build Option A. A `SelectionFilter` layered on top of the hard constraint, as a pure search-efficiency tune, remains a legitimate later optimisation once Option A's own baseline is measured — not a replacement for the constraint.
 - **Operator ruling on the soft-quality plateau (settled, not a phase to plan around):** ship the sound model as-is. Do not scope a custom-move remedy into this phase or this milestone — the spike's 24-entity toy fixture may overstate the real-scale gap, and Phase 12 already failed once by committing to a remedy before measuring. This phase's job is to measure the real gap honestly (success criterion 5) and report it, not to close it.
 - Break-as-structural-attribute and value-range filtering of shift choice by `AgentDayConfig.effectiveHours` belong in this phase, not a separate one — without the `effectiveHours` filtering, a shift template whose net duration doesn't match an agent-day's contracted hours makes `shiftEnvelopeCompliance` and the existing `contractedHoursOver`/`Under` constraints jointly unsatisfiable, unfixable by any amount of solver time (ARCHITECTURE.md §1).
@@ -153,6 +174,7 @@ or inline roster editing, and visible everywhere agent scheduling data is displa
 **Requirements**: USHF-01, USHF-02, USHF-03, USHF-04, USHF-05, USHF-06
 
 **Success Criteria** (what must be TRUE):
+
 1. Each agent can have a stored usual shift per weekday, referencing a valid, active shift template from their own desk's library; an agent with no stored usual shift is scheduled without penalty rather than being nudged toward an arbitrary default. (USHF-01, USHF-04)
 2. Operator can set usual shifts in bulk via a column in the per-desk upload template, resolved through the same shared `EnrichedColumnLayout` definition the parser and export already use — not a second, parallel column-layout source of truth. (USHF-02)
 3. Operator can set and correct an agent's usual shift inline in the roster, through a single choke-point write method every caller goes through, mirroring `DeskAgentService.setDayHours`'s narrowly-scoped, single-weekday-edit shape rather than each caller writing the entity directly. (USHF-03)
@@ -160,6 +182,7 @@ or inline roster editing, and visible everywhere agent scheduling data is displa
 5. A stored usual shift is visible everywhere agent scheduling data is displayed, including the roster and the Excel export — end-to-end traced (store → roster → export), not accepted on the strength of "the model is done." (USHF-06, XCUT-01)
 
 **Notes:**
+
 - `AgentUsualShift` is a new table (`agent_id, day_of_week, shift_template_id`, unique `(agent_id, day_of_week)`) modelled directly on `AgentDayHours`'s shape — not an extension of `AgentPreference`. The resolution service is a near-copy of `SolverService.resolvePreferences`'s standing-vs-weekly precedence shape, reading a different source table; do not conflate the two concepts (a preference is a free-form wish, a usual shift is a catalog-valued target with referential integrity to the shift library).
 - This is this milestone's own named-risk repeat of v1.2's audit finding I-2 (a guarantee holding on the upload path only, discovered broken on Refresh two audits later) and I-1 (model built, view never migrated, costing Phase 13). Both are explicit success criteria here (4 and 5), not left implicit.
 - The solver must never let solving overwrite the stored usual-shift *target* — only the *solved* shift assignment (`AgentShiftAssignment.shift`, Phase 15) is solver output. Keep target and result as distinct fields from day one, the same way `AgentDayHours` (contracted target) and `AgentAssignment` (solved seat) are already distinct today.
@@ -178,6 +201,7 @@ which agents drifted from their usual shift, on which dates, and by how much.
 **Requirements**: CONS-01, CONS-02, CONS-03, CONS-04, CONS-05, CONS-06, DRFT-01, DRFT-02, DRFT-03, DRFT-04
 
 **Success Criteria** (what must be TRUE):
+
 1. The solver is penalised as a soft constraint — never able to make an otherwise-feasible schedule infeasible — for assigning an agent a shift that differs from their stored usual shift for that weekday, using a **target-deviation** formulation (every day compared against the stored target) rather than the reverted attempt's spread-based one; a solve never overwrites the stored usual-shift target itself. (CONS-01, CONS-04, XCUT-02)
 2. Operator can configure, per desk, a tolerance band within which deviation carries zero penalty (a genuine dead zone, not a taper) and a consistency penalty weight — both validated via `SolutionManager.explain()`'s constraint-match breakdown against the existing soft-constraint hierarchy before a default ships. (CONS-02, CONS-03)
 3. Where the consistency constraint scores two shifts equally, the agent's recorded `AgentPreference` start time decides between them, and the precedence between usual shift and preference is documented and observable — not implicit in relative constraint weights a reader would have to reverse-engineer. (CONS-05, CONS-06)
@@ -185,6 +209,7 @@ which agents drifted from their usual shift, on which dates, and by how much.
 5. Operator can see which shift templates are most over-subscribed as agents' usual shifts, making the consistency-versus-fairness tension visible — deliberately without building any mitigation for it (fairness/rebalancing is out of scope, tracked at Backlog 999.4). A seeded A/B benchmark confirms the consistency constraint's weight doesn't regress coverage/break quality before it ships a default. (DRFT-04, XCUT-04)
 
 **Notes — candidate salvage from the reverted third attempt (`7861b83`, `9207ceb`, `9f4a96f`, `6fb78c7`, all confirmed reverted 2026-08-20, cause confirmed unrelated to code correctness — speculative off-roadmap work reverted as scope discipline):**
+
 - **Transfers as-is:** `7861b83` (preferred start time as an anchor rather than a floor) is a straight bug fix to the existing `honourPreferredStartTime` constraint, independent of shift architecture — apply it directly as part of CONS-05/CONS-06's precedence work.
 - **Transfers with rework:** the `ConstraintWeights` → DTO → service → `ConstraintWeightsPage.tsx` plumbing (relevant to CONS-02/CONS-03's per-desk weight/tolerance config) and the spread-report API + UI shape (relevant to DRFT-01/DRFT-03's report surface) are reusable scaffolding — rework the underlying calculation, not the plumbing shape.
 - **Needs reformulation, do not resurrect verbatim:** the abandoned constraint itself was **spread-based** (penalised only by an agent's two extreme days across the week) — its own javadoc names the flaw: "the search sees a plateau, not a gradient." This milestone's **target-deviation** formulation (every day compared against a stored target) does not share that flaw and is what criterion 1 requires.
