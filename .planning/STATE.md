@@ -21,10 +21,10 @@ current_phase: 13
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-21)
+See: .planning/PROJECT.md (updated 2026-08-25)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 13 — Per-Day Hours Visibility
+**Current focus:** Planning next milestone — v1.2 shipped 2026-08-25 under override closeout. Strongest candidates: Backlog 999.9 (close audit gap I-2), 999.7 (rotate the exposed BambooHR key), 999.5/999.6 (the reporting half v1.1 never built).
 
 ## Current Position
 
@@ -33,16 +33,21 @@ Plan: —
 Status: Awaiting next milestone
 Last activity: 2026-08-25 — Milestone v1.2 completed and archived
 
-## Milestone v1.2 Roadmap
+## Milestone v1.2 Outcome
 
-18/18 requirements mapped across 3 phases, plus Phase 12 added mid-milestone. See `.planning/ROADMAP.md` for full detail.
+Shipped 2026-08-25 with **19/19 requirements** across 5 phases (Phase 12 withdrawn, Phase 13 added
+mid-milestone as audit closure). Closed under `override_closeout` — see Deferred Items below.
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | **Complete (6/6 plans)** — verified 4/4 must-haves 2026-08-21 |
-| 10 | Enriched Upload Parsing | UPL-01–UPL-08 | **Complete (6/6 plans)** — verified + UAT 8/8 + SECURITY threats_open:0 2026-08-21 |
-| 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | **Complete (2/2 plans)** — verified + UAT passed 2026-08-21 |
-| 12 | Atomic Shift Move | (added mid-milestone) | **WITHDRAWN** — goal not achieved, code reverted (`299c42c`); see 12-VERIFICATION.md |
+| 9 | Agent Data Model Foundation | MDL-01, MDL-02, MDL-03 | **Complete (6/6 plans)** — verified 4/4 must-haves 2026-08-21. No SECURITY.md |
+| 10 | Enriched Upload Parsing | UPL-01–UPL-09 | **Complete (6/6 plans)** — verified + UAT 8/8 + SECURITY threats_open:0 2026-08-21 |
+| 11 | BambooHR Merge Engine & Report | MRG-01–MRG-07 | **Complete (2/2 plans)** — verified + UAT passed 2026-08-21. ⚠ Guarantees hold on the upload path only (I-2) |
+| 12 | Atomic Shift Move | (added mid-milestone, none mapped) | **WITHDRAWN** — goal not achieved, code reverted (`299c42c`); see archived 12-VERIFICATION.md |
+| 13 | Per-Day Hours Visibility | (none new — closes audit I-1/I-3/I-4/F-1) | **Complete (6/6 plans)** — verified 54/58 + UAT 8/8 + SECURITY 29/29 threats closed 2026-08-25 |
+
+Archives: `.planning/milestones/v1.2-ROADMAP.md`, `.planning/milestones/v1.2-REQUIREMENTS.md`,
+`.planning/milestones/v1.2-MILESTONE-AUDIT.md`, `.planning/milestones/v1.2-phases/`
 
 ## Milestone v1.1 Outcome
 
