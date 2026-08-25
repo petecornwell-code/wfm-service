@@ -107,7 +107,16 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: TBD
+**Plans**: 6 plans (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+
+Plans:
+- [ ] 14-01-PLAN.md — Tracer: end-to-end "create and see one shift template" through migration, entity, repository, service, controller, API client and a new Shift Library page (SHLB-01, MODE-01)
+- [ ] 14-02-PLAN.md — XCUT-05 constraint classification with a code-derived completeness test, plus MODE-05's structural proof that no production solver file changed (MODE-05)
+- [ ] 14-03-PLAN.md — Template lifecycle: full save-time validation, the D-02 grid check, edit and retire, era identity and non-overlap, era-aware list ordering (SHLB-01…04)
+- [ ] 14-04-PLAN.md — The shared coverage / grid / contracted-hours validator and its read-only report endpoint — D-08's one implementation, two callers (SHLB-05, SHLB-06)
+- [ ] 14-05-PLAN.md — Scheduling-mode switch: the 409 in-flight guard, the MODE-03 coverage gate, the single-column write proving MODE-04 (MODE-02, MODE-03, MODE-04)
+- [ ] 14-06-PLAN.md — Operator surface: shift-library editor, coverage panel, SHLB-06 advisory, mode toggle, and the read-only mode column in Desk Management (SHLB-01…04, MODE-02, XCUT-01)
+
 **UI hint**: yes
 
 ### Phase 15: Shift Envelope & Coupling
