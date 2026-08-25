@@ -345,7 +345,37 @@ honest-verifier behavior, not over-flagging.
 | error | ✅ resolved | explicit | Client-side range check first ("Enter a number from 0 to 24, or choose PTO / MANDATORY / Not set (default)."); server rejection → `showToast('error', getErrorMessage(err))` as "Couldn't save {Weekday} — {reason}." |
 | partial | ✅ resolved | explicit | A row with `hours=0.00, dayOffType=null` renders as Explicit-zero `#6b7280`, visually distinct from Muted/not-set `#9ca3af` (13-RESEARCH.md Pitfalls 1 and 2) |
 | long-text | ✅ resolved | explicit | Free entry is numeric 0–24 and validated before submit; no operator-authored free text can reach the cell |
-| overflow | ✅ resolved | **backstop** | `Not set (default)` is wider than the weekday mini-column but renders in the browser's native `<datalist>` dropdown, which the cell width does not constrain — browser-dependent and visual |
+| overflow | ✅ resolved | **explicit** | **CORRECTED 2026-08-25 — the original reasoning was disproven by observation; see the E4-overflow correction below.** `Not set (default)` IS clipped by the weekday mini-column. A native `<datalist>` popup renders at the width of its `<input>`, which is fixed at `90px`. Accepted as a recorded limitation of the native control, not fixed. |
+
+> **E4-overflow correction — 2026-08-25 (UAT, phase 13). The original reasoning was false.**
+>
+> **What was claimed.** This row was resolved as a `backstop` on the reasoning that `Not set
+> (default)` "renders in the browser's native `<datalist>` dropdown, which the cell width does not
+> constrain."
+>
+> **What is actually true.** A native `<datalist>` popup is rendered at the width of its `<input>`.
+> That input is fixed at `width: '90px'` (`DeskAgents.tsx`, per-cell editor). `Not set (default)` is
+> 17 characters at `0.85rem` — roughly 144px of text plus chrome against 90px available — so it
+> **is** clipped. Observed directly on the deployed build during UAT test 8; the popup is
+> width-constrained by the cell after all.
+>
+> **Why the error survived to here.** The claim was unobservable until 2026-08-25. While the editor
+> opened pre-seeded, the datalist filtered `Not set (default)` out of the rendered list entirely, so
+> the text could never be seen — clipped or otherwise. Fixing G-13-DD (editor opens empty) made the
+> full list render, which exposed this. A backstop that cannot be observed cannot be falsified, and
+> this one was resolved on an untested assumption about browser behaviour.
+>
+> **Disposition: ACCEPTED, not fixed** (operator decision, 2026-08-25). The entry remains selectable
+> and no other option begins with "Not set", so the truncation is unambiguous and the functional
+> impact is nil. The two available remedies were both judged worse than the defect:
+> - *Widen the input to ~140px* — would take the expanded 7-day grid from ~678px to ~1028px,
+>   trading away the E3 overflow behaviour that UAT test 7 verified at 90px×7.
+> - *Shorten the literal* — `Not set (default)` is the exact string `saveDayHours` matches to
+>   trigger `clearRow`, and is the literal that phase-13 gap 2 was raised to restore. Changing it
+>   ripples into D-04 and re-opens closed ground.
+>
+> **Status change:** this row moves from `backstop` to `explicit` — the behaviour is now directly
+> observed and recorded, so a future verifier should assert the clipping exists rather than abstain.
 
 > **E4-empty amendment — 2026-08-25 (UAT, phase 13). Reverses part of gap 2.**
 >

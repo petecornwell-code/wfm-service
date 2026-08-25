@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 13-per-day-hours-visibility
 source: [13-VERIFICATION.md]
 started: 2026-08-24T13:15:24Z
-updated: 2026-08-25T14:06:16Z
+updated: 2026-08-25T14:37:56Z
 ---
 
 ## Current Test
 
-number: 7
-name: 'E3 overflow (backstop): horizontal-scroll behaviour of the expanded 7-day grid'
-expected: |
-  No layout break at the widest content
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -174,23 +170,88 @@ caveat: |
 ### 7. E3 overflow (backstop): horizontal-scroll behaviour of the expanded 7-day grid
 expected: No layout break at the widest content
 why_human: insufficient_spec — abstain per honest-verifier contract
-result: [pending]
+result: pass
+tested_against: https://d2bbtcc80peap7.cloudfront.net/desks/6170be17-3bee-41da-9d81-62ddd50c786f/agents (deploy 7fc7168)
+note: |
+  Judged at the genuine worst case: agent Adaeze Dawari staged with 23.75 in all
+  seven weekday cells (7x HTTP 200, API-verified). 23.75 is 5 characters — wider
+  than the MAND (4) and PTO (3) badges — so this is the widest content the 7-day
+  mini-column grid can hold.
+  Confirms the E3 overflow claim that the expanded row 'adds no new columns (D-01)
+  and inherits the existing 13-column table's horizontal-scroll behavior
+  unmodified'.
+  Interaction note: a uniform week hits formatHoursSummary's min===max branch, so
+  the collapsed summary stayed a short "23.75" (5 chars) even with every expanded
+  cell at max width. E1-collapsed and E3-expanded overflow peak under OPPOSITE
+  conditions — E1 needs a varying week (the 0.25-23.75 range of skipped test 5),
+  E3 needs a uniform wide one — so they cannot be exercised by the same data and
+  are correctly separate tests.
+  Data integrity re-checked after the deploy that landed mid-test: 196/196 rows
+  present across all 28 agents, none lost.
 
 ### 8. E4 overflow (backstop): the seeded 'Not set (default)' text in the browser's native datalist dropdown
 expected: Text is not clipped by the weekday mini-column width, since the datalist popup is not constrained by it
 why_human: insufficient_spec — abstain per honest-verifier contract
-result: [pending]
+result: issue
+reported: "text is clipped"
+severity: cosmetic
+tested_against: https://d2bbtcc80peap7.cloudfront.net/desks/6170be17-3bee-41da-9d81-62ddd50c786f/agents (deploy 7fc7168)
+note: |
+  This is the FIRST time this test was genuinely observable. Before the G-13-DD
+  fix the editor opened seeded, which filtered 'Not set (default)' out of the
+  datalist entirely — so the text could never be seen, clipped or otherwise.
+  The fix made the full list render, and the clipping became visible.
 
 ## Summary
 
 total: 8
-passed: 5
-issues: 1
-pending: 2
+passed: 6
+issues: 2
+pending: 0
 skipped: 1
 blocked: 0
 
 ## Gaps
+
+- gap_id: G-13-8
+  truth: "E4 overflow: 'Not set (default)' is not clipped by the weekday mini-column width, because the native datalist popup is not constrained by it (13-UI-SPEC.md E4)"
+  status: failed
+  reason: "User reported: text is clipped"
+  severity: cosmetic
+  test: 8
+  root_cause: |
+    The E4 overflow row's STATED REASONING is factually wrong, and that is the
+    substantive finding here — not the pixels. It asserts the popup 'is not
+    constrained by' the cell width. In practice a native <datalist> popup is
+    rendered at the width of its <input>, and that input is fixed at 90px
+    (DeskAgents.tsx:634, `style={{ width: '90px', fontSize: '0.85rem' }}`).
+    'Not set (default)' is 17 characters at 0.85rem and does not fit in 90px, so
+    it truncates. The backstop was resolved on an assumption about browser
+    behaviour that does not hold.
+  artifacts:
+    - path: "frontend/src/pages/DeskAgents.tsx"
+      issue: "Per-cell editor input fixed at width:90px (line 634); the native datalist popup inherits that width and clips the 17-character 'Not set (default)' entry."
+    - path: ".planning/phases/13-per-day-hours-visibility/13-UI-SPEC.md"
+      issue: "E4 overflow row resolves the backstop with the reasoning 'the datalist popup is not constrained by [the cell width]', which is disproven by observation."
+  missing:
+    - "Correct the E4 overflow reasoning in 13-UI-SPEC.md — the popup IS width-constrained by the input."
+    - "Decide the remedy: widen the per-cell input (trades against E3 expanded-row width, which test 7 passed at 90px x7), shorten the picklist literal (ripples into D-04 and the gap-2 fix), or accept the clipping as a recorded native-control limitation."
+  status_final: accepted
+  resolved: |
+    ACCEPTED 2026-08-25 (operator decision) — clipping is NOT fixed; the false
+    reasoning IS corrected. 13-UI-SPEC.md's E4 overflow row now states that the
+    native datalist popup renders at its input's width (90px) and therefore does
+    clip the 17-character literal, and the row moves backstop -> explicit so a
+    future verifier asserts the clipping rather than abstaining on it.
+    Both alternative remedies were judged worse than the defect: widening the input
+    to ~140px would take the expanded grid ~678px -> ~1028px and trade away the E3
+    overflow behaviour test 7 just verified; shortening the literal would change the
+    exact string saveDayHours matches for clearRow and re-open phase-13 gap 2.
+    No code change. No re-deploy required.
+  note: |
+    Functional impact is low: the entry remains selectable and nothing else in the
+    list starts with 'Not set', so the truncated text is still unambiguous. Logged
+    cosmetic on that basis. The spec-accuracy defect is the part worth fixing.
 
 - gap_id: G-13-DD
   truth: "The per-cell combo's picklist is pickable — an operator can open the dropdown and choose a value (13-UI-SPEC.md D-03 amendment, 2026-08-25)"
