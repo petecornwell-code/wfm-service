@@ -25,6 +25,10 @@ public class Desk {
     @Column(name = "default_contracted_hours_per_day", precision = 5, scale = 2)
     private BigDecimal defaultContractedHoursPerDay = new BigDecimal("8.00");
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scheduling_mode", nullable = false, length = 10)
+    private SchedulingMode schedulingMode = SchedulingMode.SLOT;
+
     public Desk() {}
 
     public UUID getId() { return id; }
@@ -43,4 +47,7 @@ public class Desk {
     public void setDefaultContractedHoursPerDay(BigDecimal defaultContractedHoursPerDay) {
         this.defaultContractedHoursPerDay = defaultContractedHoursPerDay;
     }
+
+    public SchedulingMode getSchedulingMode() { return schedulingMode; }
+    public void setSchedulingMode(SchedulingMode schedulingMode) { this.schedulingMode = schedulingMode; }
 }

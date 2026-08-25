@@ -6,9 +6,9 @@ import { showToast } from '../components/Toast'
 type SortField = 'firstName' | 'lastName'
 type SortDir = 'asc' | 'desc'
 
-const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const
+export const DAY_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const
 
-const DAY_LABELS: Record<(typeof DAY_ORDER)[number], string> = {
+export const DAY_LABELS: Record<(typeof DAY_ORDER)[number], string> = {
   MONDAY: 'Mon', TUESDAY: 'Tue', WEDNESDAY: 'Wed', THURSDAY: 'Thu', FRIDAY: 'Fri', SATURDAY: 'Sat', SUNDAY: 'Sun',
 }
 

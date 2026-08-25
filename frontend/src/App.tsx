@@ -5,6 +5,7 @@ import { ToastContainer } from './components/Toast'
 import DeskSelector from './pages/DeskSelector'
 import DeskManagement from './pages/DeskManagement'
 import Specializations from './pages/Specializations'
+import ShiftLibrary from './pages/ShiftLibrary'
 import DeskAgents from './pages/DeskAgents'
 import AgentPreferences from './pages/AgentPreferences'
 import AgentExceptions from './pages/AgentExceptions'
@@ -38,6 +39,7 @@ function DeskLayout() {
           <Link to={`/desks/${deskId}/schedule-setup`} className={isActive('schedule-setup') ? 'active' : ''}>Schedule Setup</Link>
           <Link to={`/desks/${deskId}/agents`} className={isActive('/agents') && !isActive('preferences') && !isActive('exceptions') ? 'active' : ''}>Desk Agents</Link>
           <Link to={`/desks/${deskId}/specializations`} className={isActive('specializations') ? 'active' : ''}>Specializations</Link>
+          <Link to={`/desks/${deskId}/shift-library`} className={isActive('shift-library') ? 'active' : ''}>Shift Library</Link>
           <Link to={`/desks/${deskId}/staffing`} className={isActive('staffing') ? 'active' : ''}>Staffing Requirements</Link>
           <Link to={`/desks/${deskId}/constraint-weights`} className={isActive('constraint-weights') ? 'active' : ''}>Constraint Weights</Link>
         </nav>
@@ -50,6 +52,7 @@ function DeskLayout() {
           <Route path="agents/:agentId/preferences" element={<AgentPreferences />} />
           <Route path="agents/:agentId/exceptions" element={<AgentExceptions />} />
           <Route path="specializations" element={<Specializations />} />
+          <Route path="shift-library" element={<ShiftLibrary />} />
           <Route path="staffing" element={<StaffingRequirements />} />
           <Route path="constraint-weights" element={<ConstraintWeightsPage />} />
           <Route path="schedules/:scheduleId" element={<ScheduleResults />} />
