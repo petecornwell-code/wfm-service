@@ -2,9 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
+current_phase: 14
+current_phase_name: not yet planned
 status: planning
-last_updated: "2026-08-25T18:00:00.000Z"
+stopped_at: Phase 14 context gathered
+last_updated: "2026-08-25T22:12:13.480Z"
 last_activity: 2026-08-25
+last_activity_desc: ROADMAP.md and REQUIREMENTS.md traceability written for v1.3
+state_head: 9927528caf3eb39104c0990bf7ae3953047baf1d
 progress:
   total_phases: 4
   completed_phases: 0
@@ -46,13 +51,16 @@ granularity per config.json. Full detail: `.planning/ROADMAP.md` Phase Details.
 
 **Two decisions this roadmap treats as settled, not re-opened as phases** (both resolved during
 v1.3 research, before roadmap creation):
+
 - **Coupling mechanism** — `SPIKE-COUPLING.md` empirically settled a hard-constraint coupling (Option
   A) over a filtered value range (Option C): Option C compiled and passed `FULL_ASSERT` clean while
   reporting infeasible schedules as `0hard/0soft` optimal on 8/8 seeds. Phase 15 builds Option A.
+
 - **Reverted third attempt** (`7861b83`/`9207ceb`/`9f4a96f`/`6fb78c7`, reverted 2026-08-20) — confirmed
   by git archaeology as speculative off-roadmap work reverted as scope discipline, not a technical
   failure. Treated as candidate salvage material inside Phase 17 (see ROADMAP.md Phase 17 Notes), not
   a standalone investigation phase.
+
 - **Soft-quality plateau** — operator ruling: ship the sound (Option A) model, measure the real gap at
   realistic scale in Phase 15's XCUT-04 benchmark, report as a finding. No custom-move remedy phase
   scoped into v1.3.
@@ -200,9 +208,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-25T18:00:00.000Z
-Stopped at: v1.3 ROADMAP.md created (Phases 14–17) — awaiting user approval, then Phase 14 planning
-Resume file: None
+Last session: 2026-08-25T22:12:13.469Z
+Stopped at: Phase 14 context gathered
+Resume file: .planning/phases/14-shift-library-scheduling-mode/14-CONTEXT.md
 
 ## Operator Next Steps
 
