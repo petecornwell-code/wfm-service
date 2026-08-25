@@ -1,202 +1,159 @@
-# Technology Stack — v1.1 Additions
+# Stack Research
 
-**Project:** WFM Service v1.1 Schedule Quality & Reporting
-**Researched:** 2026-05-07
-**Scope:** Incremental additions to existing Spring Boot 3.4.2 + Timefold Solver 1.16.0 + React 19 + Vite stack
+**Domain:** Adding a second, coupled planning dimension (shift envelope) to an existing Timefold Solver 1.16.0 constraint-satisfaction model
+**Researched:** 2026-08-25
+**Confidence:** MEDIUM overall (see per-claim notes — Context7 was unavailable in this session; all API claims are corroborated across the official `docs.timefold.ai` version-specific pages, the `TimefoldAI/timefold-solver` GitHub release notes for v1.16.0, and the official upgrade guide's 1.15.0→1.16.0 section, but the seam classified them LOW/web-tier rather than curated-docs-tier because they were fetched via WebSearch/WebFetch, not the Context7 MCP tool. Treat as MEDIUM: multiple independent official sources agree, but re-verify the exact annotation signatures against the vendored `timefold-solver-core-1.16.0.jar` Javadoc before writing code.)
 
----
+## Headline Verdict
 
-## What Already Exists (Do Not Re-research)
+**The 1.16.0 pin survives this milestone. No version bump is required or justified.**
 
-| Layer | Current |
-|-------|---------|
-| Backend framework | Spring Boot 3.4.2, Java 21 |
-| Solver | Timefold Solver 1.16.0 (BOM) |
-| Excel I/O | Apache POI 5.3.0 (poi-ooxml) |
-| Frontend | React 19, Vite 6, react-router-dom 7 |
-| DB | PostgreSQL 16 via Spring Data JPA + Flyway |
-| Infra | ECS Fargate, RDS, CloudFront/S3 |
+Everything this milestone needs — a second `@PlanningEntity` class, a second genuine `@PlanningVariable`, solution-level and entity-level `@ValueRangeProvider`, class-based `@ShadowVariable`/`VariableListener`, difficulty/strength comparators — has existed since Timefold's earliest public docs (0.8.x, 2023) and is unchanged through the 1.15.0→1.16.0 upgrade notes and beyond. Nothing in the target feature list requires `@PlanningListVariable`, chained variables, custom `Move` classes, the `Neighborhoods` API (1.31.0+), or declarative shadow variables (`@ShadowSources`, still PREVIEW as late as 1.25.0). Do not reach for any of those four — see "What NOT to Use" below.
 
----
+## Recommended Stack
 
-## New Dependencies Needed for v1.1
+### Core Technologies (already present — no additions)
 
-### Frontend: Charting (Coverage Report + Agent Utilization Report)
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `ai.timefold.solver:timefold-solver-bom` | **1.16.0 (unchanged)** | Solver core, pinned per `build.gradle:35` | Every primitive this milestone needs predates 1.16.0; bumping buys nothing and crosses into the 2.0 paid-tier risk the pin exists to avoid |
+| `ai.timefold.solver:timefold-solver-spring-boot-starter` | 1.16.0 | Spring Boot autoconfig for `SolverManager` | Already wired into `SolverService` |
+| `ai.timefold.solver:timefold-solver-jpa` | 1.16.0 | JPA integration (`HardSoftScoreConverter` used on `Schedule.score`) | Already the mechanism reconciling the dual JPA-`@Entity`/Timefold-`@PlanningEntity` role on `AgentAssignment`; the new shift entity should follow the identical pattern rather than introduce a second convention |
 
-**Add: `recharts` 3.8.x**
+### New Domain Classes Needed (modelling only — zero new dependencies)
+
+| Class | Kind | Purpose |
+|-------|------|---------|
+| `Shift` | JPA `@Entity`, plain problem fact (**not** a `@PlanningEntity`) | Per-desk shift definition: name, `startTime`/`endTime`, break offset/duration, optional weekday applicability. Modelled exactly like `Specialization`/`Agent` today — a fact the solver reads, never mutates. |
+| `ShiftAssignment` (name TBD by phase planner) | JPA `@Entity` **and** `@PlanningEntity` (dual role, mirroring `AgentAssignment`) | One row per (agent, date) on a shift-scheduled desk. Carries `@PlanningVariable(valueRangeProviderRefs = "shiftRange", nullable = true) Shift shift` — `nullable = true` mirrors `AgentAssignment.agent`'s existing pattern and gives "no shift chosen" a natural meaning (day off). |
+| `AgentUsualShift` (name TBD) | JPA `@Entity`, plain problem fact | (agent, weekday) → target `Shift`. Loaded as a `@ProblemFactCollectionProperty` list on `Schedule`, exactly parallel to the existing `AgentDayConfig` list. Feeds the soft consistency constraint; not a planning entity itself. |
+
+None of this requires a new Gradle dependency. It is domain classes plus `ConstraintStream` logic against the solver already on the classpath.
+
+### Supporting Libraries
+
+*(No additions.)* Apache POI 5.3.0 already handles the per-desk upload template (add a "Usual Shift" column to the existing `EnrichedColumnLayout`, following the Phase 10 pattern — do not introduce a second column-layout mechanism). Flyway already handles schema evolution (expect new migrations for `shift`, `shift_assignment`, `agent_usual_shift` tables and a `desk.scheduling_mode` column — table design is an ARCHITECTURE-level decision, not a stack addition). React/the existing frontend stack is unaffected at the library level; the drift report and Usual Shift inline editor are new UI surfaces built with what's already there.
+
+### Development Tools
+
+*(No additions.)* `timefold-solver-test` is already a test dependency and is the correct tool for constraint-stream unit tests on the new coupling constraints (`ConstraintVerifier`), same as existing tests presumably exercise `ScheduleConstraintProvider`.
+
+## Installation
+
+No `build.gradle` changes required for this milestone's Timefold surface. If a `desk.scheduling_mode` enum or similar needs Jackson/JPA converter support, that's standard Spring Boot/Hibernate already on the classpath — no new dependency.
 
 ```bash
-npm install recharts
+# Nothing to install for the solver model itself.
+# Only additions are Flyway migration files and Java/React source — no new packages.
 ```
 
-- Version: 3.8.1 (latest stable as of March 2025; confirm via `npm install recharts@latest`)
-- React 19 peer dependency declared as `^19.0.0` in recharts 3.x — compatible with this project's React 19
-- Chart types needed: stacked `BarChart` (demand vs coverage per timeslot), `ComposedChart` (bar + line overlay), `AreaChart` (utilization trends)
-- `ResponsiveContainer` wraps all charts for CloudFront SPA layout without fixed widths
-- `stackId` prop on `Bar` components handles the demand/supply overlay directly
+## Question-by-Question Findings
 
-Why recharts over alternatives:
-- Nivo has richer customization but 10x fewer weekly downloads and heavier canvas/SVG hybrid overhead not needed here
-- Victory has strong accessibility but sparse chart types and lower community velocity
-- Recharts is declarative React components over D3, composable, tree-shakeable; 50M+ weekly npm downloads; actively maintained
+### 1–2. What primitives exist, and at what version did each land?
 
-**Do NOT add** `chart.js` or `react-chartjs-2` — imperative API, harder to compose with React state, and recharts covers all required chart types.
+| Primitive | Package (verify exact FQN against local Javadoc) | Landed | Available at 1.16.0? | Needed for this milestone? |
+|---|---|---|---|---|
+| Multiple `@PlanningEntity` classes in one `@PlanningSolution` | `ai.timefold.solver.core.api.domain.entity.PlanningEntity`, `ai.timefold.solver.core.api.domain.solution.PlanningEntityCollectionProperty` | 0.8.x docs and earlier (OptaPlanner-era) | **YES** | **YES — this is the core recommended shape** (see below) |
+| `@ShadowVariable` + class-based `VariableListener` | `ai.timefold.solver.core.api.domain.variable.ShadowVariable`, `...VariableListener` | 0.8.x docs (already shown as the modern replacement for the older `@CustomShadowVariable`) | **YES** | Optional, not required for the primary design (see §3 below) |
+| `@PiggybackShadowVariable`, `@InverseRelationShadowVariable`, `@AnchorShadowVariable` | same package | 0.8.x docs | **YES** | Not needed — no chaining in this design |
+| `@PlanningListVariable` | `ai.timefold.solver.core.api.domain.variable.PlanningListVariable` | 0.8.x docs (list variables are mature, not new) | **YES, but wrong tool** | **NO — do not use** (see "What NOT to Use") |
+| `@PreviousElementShadowVariable` / `@NextElementShadowVariable` | same package | 0.8.x docs | YES | Not needed (only relevant to list variables) |
+| Chained variables (`@AnchorShadowVariable` + `previousStandstill`-style pattern) | same package | 0.8.x docs, pre-dates list variables | YES, but **legacy** — Timefold's own docs position list variables as the modern replacement for new designs | **NO — do not use** |
+| `@ValueRangeProvider` — solution-level | `ai.timefold.solver.core.api.domain.valuerange.ValueRangeProvider` | 0.8.x docs | YES | **YES — for the shift catalogue** (`shiftRange`, already-used pattern: see `Schedule.agents`/`agentRange`) |
+| `@ValueRangeProvider` — entity-level (method on the `@PlanningEntity`, may read other variables' current state on that instance) | same annotation, placed on an instance method of the entity class | 0.8.x docs | YES | Optional refinement (weekday-filtered shift range) — see §3 |
+| `@PlanningPin` | `ai.timefold.solver.core.api.domain.variable.PlanningPin` | Pre-1.16 (OptaPlanner-era; deprecated `pinningFilter` attribute is the older mechanism it replaced) | YES | **NOT needed this milestone** — no continuous/real-time replanning requirement in scope; the per-desk mode switch is a config flag, not a pinning problem |
+| Difficulty comparator (`difficultyComparatorClass` on `@PlanningEntity`) | same package as `PlanningEntity` | Pre-1.16 | YES — **already in production use** (`AgentAssignmentDifficultyComparator`, `src/main/java/com/wfm/solver/AgentAssignmentDifficultyComparator.java`) | Recommended for the new `ShiftAssignment` entity too, same pattern |
+| Strength comparator (`strengthComparatorClass`/`strengthWeightFactoryClass` on `@PlanningVariable`) | same vintage | Pre-1.16 | YES | Optional — could order shift construction by e.g. shift length, not required for MVP |
+| Custom `Move` with framework-generated undo (`AbstractMove.doMoveOnGenuineVariables`) | `ai.timefold.solver.core.impl.heuristic.selector.move.generic.AbstractMove` (impl package — not public API) | **Landed exactly at 1.16.0** per GitHub release notes ("developers no longer need to implement undo moves… deprecated for future removal") | YES, and this is the specific 1.16.0 feature PROJECT.md already anchors the pin to | **Not needed for this milestone** — no custom `Move` is proposed (see below) |
+| `Neighborhoods` custom-move API | — | **1.31.0** | **NO** | Not needed; confirms the pin holds |
+| Declarative shadow variables (`@ShadowSources`, supplier-based) | new package, still evolving | Introduced as a **PREVIEW** feature sometime after 1.16.0 (still PREVIEW as of 1.25.0 per `TimefoldAI/timefold-solver` discussion #1837/#1569, "Full Support" tracked separately as issue #1519) | **NO — not stable at any version this project could reach without moving off the 1.x line, and still not GA even well past 1.16.0** | Not needed — classic `@ShadowVariable` covers everything this milestone could want from shadow state |
 
----
+### 3. Does anything force a version bump?
 
-### Backend: PDF Export (Schedule Export Improvements)
+**No.** Cross-checked explicitly: the official upgrade guide's version-by-version changelog shows nothing touching `PlanningEntity`, `PlanningVariable`, `PlanningListVariable`, `ShadowVariable`, or `ValueRangeProvider` semantics in the 1.16.0→1.19.0 window (the only changes at 1.16.0 are the undo-move simplification, JSpecify null annotations, and a `ScoreAnalysis` fetch-policy behavior change; 1.19.0 changed two unrelated internal-API signatures). The one genuinely new 1.16.0-era capability — auto-generated undo for custom moves — is not something this milestone needs to invoke, because the recommended design (below) uses zero custom `Move` classes. If a later milestone wants an atomic "swap this agent's whole shift" move (the kind of thing Phase 12's withdrawn Atomic Shift Move was reaching for), that's still buildable at 1.16.0 using `AbstractMove.doMoveOnGenuineVariables` — the exact API PROJECT.md already names — with **no bump required for that either**. The only thing that *would* force a bump is the `Neighborhoods` API (1.31.0) or declarative shadow variables reaching GA (version unknown, still preview past 1.25.0), and neither is proposed here.
 
-**Add: `openpdf` 3.0.4**
+### Recommended shape for the "two coupled planning variables" problem
 
-```gradle
-implementation 'com.github.librepdf:openpdf:3.0.4'
-```
+This is the load-bearing design decision for the milestone, so stating it plainly:
 
-- License: LGPL/MPL — no AGPL exposure, safe for internal commercial product without source disclosure
-- iText 7/8 is AGPL — requires either buying a commercial license or open-sourcing the product; reject it
-- OpenPDF is a maintained fork of iText 4, API is nearly identical, drop-in for basic PDF table generation
-- Handles: page layout, tables, cell padding/borders, fonts, headers/footers — sufficient for schedule + utilization reports
-- Released 2026-05-01 (3.0.4), active maintenance confirmed
-- Artifact coordinates changed in 3.x: `com.github.librepdf:openpdf:3.0.4` (groupId unchanged, package renamed to `org.openpdf` internally)
+**Use two independent `@PlanningEntity` classes joined by `ConstraintStream` hard constraints — not a shadow variable, not a filtered entity-level value range, not a custom move.**
 
-Why not Apache FOP: FOP targets XSL-FO templating, overly complex for tabular schedule output.
-Why not Jasper Reports: Too heavy, requires report design files, overkill for this use case.
+1. `ShiftAssignment` gets its own genuine `@PlanningVariable Shift shift`, value range = the desk's shift library (`@ValueRangeProvider(id = "shiftRange")` on `Schedule`, same pattern as the existing `agentRange`).
+2. `AgentAssignment` keeps its existing genuine `@PlanningVariable Agent agent`, completely unchanged.
+3. In `ScheduleConstraintProvider`, add hard constraints that **join** `AgentAssignment` (non-null `agent`) to `ShiftAssignment` on `(agentId, date)` — the codebase already has static `AGENT_ID`/`DATE` lambda instances for exactly this kind of join (see the block comment at the top of `ScheduleConstraintProvider.java` explaining why shared lambda *instances* matter for node-sharing performance) — and penalize:
+   - the assignment's timeslot falling outside `[shift.startTime, shift.endTime)`, and
+   - the assignment's timeslot falling inside the shift's break window.
+4. This is exactly the same `ConstraintStream`/`Joiners`/`ConstraintCollectors` machinery already used throughout the existing constraint provider. Zero new Timefold primitives.
 
----
+**Why not the alternatives:**
+- *Entity-level filtered `ValueRangeProvider` on `AgentAssignment.agent`* — technically legal (entity-level ranges can read sibling state), but the wrong tool here: the envelope constrains "is the chosen agent's own shift-day covering this slot," which is a property of the (assignment, chosen-agent) pair, not something that can be pre-filtered into the candidate-agent list without first knowing which agent you're evaluating — it inverts the dependency. A hard-constraint join evaluates the actual combination directly and cheaply.
+- *A `@ShadowVariable` propagating the chosen `Shift` onto each `AgentAssignment`* — possible (a `VariableListener` sourced from `ShiftAssignment.shift`, keyed by (agent, date)), and could be used later purely as a **read-time cache** if constraint-join cost ever becomes a measured bottleneck, but it adds a `VariableListener` and its invalidation-order complexity for a benefit the existing `Joiners.equal`-based group-join already gets close to for free. Don't reach for it until profiling says otherwise — this project already has one documented case (the `AGENT_ID`/`DATE` lambda-hoisting comment) of fixing constraint performance by restructuring the constraint stream rather than adding solver machinery; follow that precedent.
+- *A custom `Move` that atomically swaps shift + all affected seat assignments* — this is what Phase 12's withdrawn Atomic Shift Move was reaching for and it was reverted for showing no measurable benefit over the baseline at realistic over-allocation. Nothing in this milestone's target feature list requires it. If a future milestone wants it, it's still available at 1.16.0 via `AbstractMove.doMoveOnGenuineVariables`, but don't build it speculatively.
+- **Contiguity "by construction"** falls directly out of step 3 above — the milestone claims fragmented shift-days become structurally impossible on shift-scheduled desks. There is no special Timefold "contiguity" primitive at 1.16.0 (or at any version) to reach for; it's an emergent property of the envelope hard-constraint, not an API.
 
-### Backend: Apache POI Upgrade (Excel Export Improvements)
+### 4. New libraries needed?
 
-**Upgrade: `poi-ooxml` from 5.3.0 to 5.5.1**
+**No.** Every question above resolves to "already on the classpath, use it differently." Resist the urge to add anything — this is domain modelling against a solver that's already present. Specifically **not needed**: any Timefold module beyond `-core`/`-spring-boot-starter`/`-jpa` (already present), no new POI features, no new Flyway plugin, no new frontend charting/scheduling library for the drift report (a table is sufficient; if a visual timeline is wanted later, that's a FEATURES/UI decision, not a stack one).
 
-```gradle
-implementation 'org.apache.poi:poi-ooxml:5.5.1'
-```
+### 5. Do existing Flyway/JPA/POI/React choices constrain the shift model?
 
-- Released 2025-11-30; fixes CVEs and upgrades BouncyCastle/other transitive deps
-- Required for improved conditional formatting (color-scale highlighting of coverage gaps in exported Excel), named styles, and reliable cell formula evaluation
-- `SheetConditionalFormatting` + `XSSFConditionalFormattingRule` enable gap-highlighting without manual cell color logic
-- `XSSFColor` and `XSSFCellStyle` API stable across 5.x — no migration required
-- The existing `FteSpreadsheetGenerator` utility and `preferences.xlsx` read path continue to work unchanged
+**Yes, three concrete consequences:**
 
----
+1. **Dual JPA-`@Entity`/`@PlanningEntity` role must be replicated carefully for `ShiftAssignment`, following the existing discipline exactly.** `SolverService.startSolve` is `@Transactional(readOnly = true)` specifically so "all data is loaded in a single read and the persistence context closes… detaching all entities" (see the method's own doc comment, `SolverService.java:101-106`) before the solver ever touches them. This is what makes it safe for `AgentAssignment` to carry both `@Id`/`@ManyToOne` JPA annotations and `@PlanningVariable`/`@PlanningId` Timefold annotations — Timefold's default `FieldAccessingSolutionCloner` clones plain detached POJOs, never Hibernate-managed proxies. **Any new relation on `ShiftAssignment` (`shift`, `agent`) must be pre-fetched or explicitly initialized before the read-only transaction closes**, exactly as `SolverService` already does for `detachedAgents` (`SolverService.java:263-314`) — a lazy `@ManyToOne` touched after detachment will throw `LazyInitializationException` the first time a constraint stream navigates `.getShift()`.
+2. **`Schedule` is already desk-scoped** (`deskId` field) and already carries a `@ValueRangeProvider(id = "agentRange")` list plus multiple `@ProblemFactCollectionProperty` lists of different types alongside a single `@PlanningEntityCollectionProperty List<AgentAssignment>`. Adding a second `@PlanningEntityCollectionProperty List<ShiftAssignment> shiftAssignments` field is additive and follows an established pattern in this exact class — no structural surprise for JPA (mark it `@Transient`, same as every other solver-only collection on `Schedule` already is).
+3. **Per-desk mode switch means shift-scheduled-desk collections must degrade gracefully to empty on slot-scheduled desks**, and vice versa. `Schedule` already has several `@ProblemFactCollectionProperty` lists that are legitimately empty for some desks (e.g. `agentPreferences`, `agentExceptions`) and the constraint provider already tolerates that. The new coupling constraints (step 3 in the recommended shape above) should be written to no-op cleanly when `shiftAssignments` is empty — don't special-case "slot mode" with an `if` in `SolverService`; let an empty collection do the work, consistent with how the rest of `Schedule`'s optional fact lists already behave.
 
-### Backend: Timefold Solver Upgrade (Score Breakdown + Quality Tuning)
-
-**Upgrade: Timefold BOM from 1.16.0 to 1.33.0**
-
-```gradle
-implementation platform('ai.timefold.solver:timefold-solver-bom:1.33.0')
-```
-
-**Critical licensing fact:**
-- In Timefold Solver 1.x (all versions through 1.33): `ScoreAnalysis`, `SolutionManager.analyze()`, constraint justifications are **included in the free Apache 2.0 open-source edition**
-- In Timefold Solver 2.0+: explainability features moved to the paid "Plus" edition
-- **Do NOT upgrade to 2.0** — this project uses score explanation for the "solver score breakdown" feature; staying on 1.33 (last 1.x LTS) retains free access
-
-1.33.0 is a pure bugfix/maintenance release over 1.16.0:
-- Fixes null value handling in sortable value ranges (relevant to preference handling)
-- Fixes list unassign move generation fairness (relevant to shift balance constraints)
-- Fixes lock release in event consumption
-- No API changes to constraint-defining code or Spring Boot auto-configuration
-
-**ScoreAnalysis API available via existing `timefold-solver-spring-boot-starter`** — no additional dependency needed:
-
-```java
-@Autowired
-SolutionManager<Schedule, HardSoftScore> solutionManager;
-
-// In a REST endpoint:
-ScoreAnalysis<HardSoftScore> analysis = solutionManager.analyze(schedule);
-// analysis.constraintMap() → per-constraint score contributions
-// analysis.summarize() → human-readable breakdown for logging
-// Serializes to JSON automatically via Spring Boot's Jackson integration
-```
-
-For large schedules prefer `ScoreAnalysisFetchPolicy.FETCH_MATCH_COUNT` over default `FETCH_ALL` to avoid serializing every individual match.
-
----
-
-### Backend: No New Dependencies Needed for These Features
-
-**Solver fairness / balance constraints:** Implement as new Constraint Stream methods in the existing `ScheduleConstraintProvider`. No library addition. Pattern: `penalize()` with `HardSoftScore.ofSoft(...)` on imbalance between agents' assigned hours.
-
-**Consistent hours constraints:** Same pattern — additional `@ConstraintConfiguration` fields on `ScheduleConstraintConfiguration` (if using that pattern) or direct constraint weights.
-
-**Preference satisfaction tracking:** A computed field on the solution returned from the solver — count of satisfied vs total preferences — no additional library.
-
-**PTO sync diagnostic:** Spring Data JPA query methods against existing `PtoRecord`/`Exception` entities. New REST endpoints on existing `@RestController`. No library addition.
-
-**Agent desk bulk upload:** Apache POI already in project. Add new endpoint + service class reading the uploaded `.xlsx` using `WorkbookFactory.create(inputStream)`. No library addition.
-
----
-
-### Frontend: No New Framework Needed
-
-**Coverage/utilization report UI:** Built with recharts (above) + existing React Router routes. No state management library needed — data fetched per-page via `fetch()` from Spring Boot REST endpoints, stored in `useState`/`useEffect`. Project is too small to justify Redux or Zustand.
-
-**Schedule export trigger:** A download button calling a Spring Boot `/export/excel` or `/export/pdf` endpoint via `window.open()` or `fetch` with blob response. No frontend library needed.
-
----
-
-## Summary of Changes to Build Files
-
-### `build.gradle` additions
-
-```gradle
-// Upgrade Timefold BOM (line 36):
-implementation platform('ai.timefold.solver:timefold-solver-bom:1.33.0')
-
-// Upgrade Apache POI (line 42):
-implementation 'org.apache.poi:poi-ooxml:5.5.1'
-
-// Add OpenPDF for PDF export:
-implementation 'com.github.librepdf:openpdf:3.0.4'
-```
-
-### `frontend/package.json` addition
-
-```json
-"recharts": "^3.8.1"
-```
-
----
+POI and React are not meaningfully constrained — the Usual Shift column is one more polymorphic-style column in the existing `EnrichedColumnLayout` shared definition (the Phase 10/13 pattern this project already fought to establish and closed the last holdout on — reuse it, don't fork a second layout definition), and the drift report is a new read surface, not a new library.
 
 ## Alternatives Considered
 
-| Category | Recommended | Rejected | Reason |
-|----------|-------------|----------|--------|
-| React charting | recharts 3.8 | nivo | Lower downloads, heavier; overkill |
-| React charting | recharts 3.8 | chart.js / react-chartjs-2 | Imperative API, poor React composition |
-| PDF generation | OpenPDF 3.0.4 | iText 7/8 | AGPL licensing forces source disclosure or paid license |
-| PDF generation | OpenPDF 3.0.4 | Jasper Reports | Heavy, needs design files, not worth it |
-| PDF generation | OpenPDF 3.0.4 | Apache FOP | XSL-FO templating, wrong tool for tables |
-| Timefold version | 1.33.0 (1.x LTS) | 2.0 | ScoreAnalysis moves to paid Plus in 2.0 |
-| Frontend state | None (useState) | Redux/Zustand | Unjustified complexity for per-page report data |
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| Two independent `@PlanningEntity` classes joined via `ConstraintStream` | `@PlanningListVariable` modelling a shift as an ordered list of its constituent slots | Wrong abstraction — list variables model *sequence/order* (which visit comes after which); the shift/seat relationship here is *containment* (which seat-slots fall inside which time envelope), and specialization can still vary per slot inside the envelope. Forcing this into a list variable would also drag in `@PreviousElementShadowVariable`/`@NextElementShadowVariable` machinery for no purpose. |
+| Hard-constraint join for envelope enforcement | `@ShadowVariable`-propagated "effective shift" on `AgentAssignment` | Adds a `VariableListener` and invalidation-order surface area for a cost the existing group-join pattern already amortizes; defer until profiling shows the join is the bottleneck |
+| Hard-constraint join | Chained variables / `@AnchorShadowVariable` | Legacy mechanism Timefold's own docs position as superseded by list variables for new work; doesn't fit this shape any better than list variables do, and drags in even more shadow-variable surface area |
+| Stay at 1.16.0 | Bump to 1.31.0+ for `Neighborhoods` custom-move API | Nothing in scope needs custom moves at all, let alone the newer API for them; a bump crosses into paid-tier risk the pin exists specifically to avoid |
 
----
+## What NOT to Use
 
-## Confidence
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `@PlanningListVariable` for the shift/seat relationship | Models ordered sequences, not time-envelope containment; wrong fit even though it's available at 1.16.0 | Two independent `@PlanningEntity` classes + `ConstraintStream` join |
+| Chained variables (`@AnchorShadowVariable` + standstill pattern) | Legacy pre-list-variable mechanism, same wrong fit as above, plus more moving parts | Same as above |
+| Declarative shadow variables (`@ShadowSources`) | Still PREVIEW well past 1.16.0 (unclear GA version); not usable without risking instability even if a version bump were on the table | Classic `@ShadowVariable(variableListenerClass=..., sourceVariableName=...)` — but see below, prefer not needing shadow variables at all for v1 |
+| A custom `Move` class for atomic shift+seat swaps, built speculatively | Exactly what Phase 12's withdrawn Atomic Shift Move attempted; reverted for no measurable benefit at realistic over-allocation. Nothing in this milestone's scope requires it | Plain genuine-variable moves via the two-entity model; revisit only if profiling after shipping shows a concrete need |
+| Bumping past 1.16.0 for any reason tied to this milestone | Crosses into `Neighborhoods`/2.0-paid-tier territory the pin was specifically set to avoid, for zero capability gain — every primitive needed here predates 1.16.0 | Stay pinned at 1.16.0 |
+| An entity-level filtered `@ValueRangeProvider` restricting `AgentAssignment.agent` by shift coverage | Inverts the actual dependency (need to know the chosen agent before you can check their shift), awkward and slower than a direct join | Hard-constraint join in `ScheduleConstraintProvider` |
 
-| Area | Confidence | Basis |
-|------|------------|-------|
-| recharts version + React 19 compat | HIGH | GitHub peerDependencies confirmed `^19.0.0`, issue #4558 closed, v3.8.1 release verified |
-| OpenPDF version + license | HIGH | Official GitHub releases page, LGPL/MPL license confirmed |
-| Apache POI 5.5.1 | HIGH | Official poi.apache.org download page |
-| Timefold 1.33 ScoreAnalysis in open source | HIGH | Blog post + docs + community discussion cross-confirmed; 2.0 pays-wall announcement explicitly states 1.x remains free |
-| Timefold 2.0 avoidance rationale | HIGH | Official 2.0 release blog explicitly names ScoreAnalysis as Plus feature |
-| No additional frontend state library needed | MEDIUM | Based on project scope; could revisit if report state grows complex |
+## Stack Patterns by Variant
 
----
+**If a later milestone wants live re-planning that must not disturb already-published shift-days:**
+- Use `@PlanningPin` on `ShiftAssignment` (available since well before 1.16.0, unused today)
+- Because it's the standard mechanism for "don't move entities the operator has already locked in," and needs no new dependency
+
+**If constraint-join cost on the (agent, date) grain is later measured to be a real bottleneck (not assumed — measured, the way Phase 12's benchmark discipline already established for this codebase):**
+- Add a `@ShadowVariable`-propagated back-reference from `AgentAssignment` to its `ShiftAssignment`
+- Because it turns a composite `(agentId, date)` join into a direct reference read, at the cost of one `VariableListener`
+
+## Version Compatibility
+
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| `ai.timefold.solver:timefold-solver-bom:1.16.0` | Every primitive in this document | Confirmed via official upgrade guide's 1.15.0→1.16.0 and 1.16.0→1.19.0 sections — no breaking or additive changes to any of `PlanningEntity`/`PlanningVariable`/`PlanningListVariable`/`ShadowVariable`/`ValueRangeProvider` in that window |
+| Existing `AgentAssignmentDifficultyComparator` pattern | New `ShiftAssignment` entity | Same `difficultyComparatorClass` mechanism, no version sensitivity |
+| `timefold-solver-jpa` score converters | `Schedule.score` only today | Confirms the JPA-integration module is already in play for exactly the dual-role problem a new planning entity will re-encounter; no new converter needed unless `ShiftAssignment` gets its own persisted score-like field (not proposed) |
 
 ## Sources
 
-- [Recharts npm page](https://www.npmjs.com/package/recharts)
-- [Recharts React 19 peer dependency discussion](https://github.com/recharts/recharts/discussions/5701)
-- [Recharts 3.0 migration guide](https://github.com/recharts/recharts/wiki/3.0-migration-guide)
-- [OpenPDF GitHub releases](https://github.com/LibrePDF/OpenPDF/releases)
-- [Apache POI download page](https://poi.apache.org/download.html)
-- [Timefold Solver 1.4.0 explainable score announcement](https://timefold.ai/blog/timefold-solver-1-4-brings-explainable-score)
-- [Timefold Solver 2.0 release (Plus edition announcement)](https://timefold.ai/blog/timefold-solver-2.0-release)
-- [Timefold understanding-the-score docs](https://docs.timefold.ai/timefold-solver/latest/constraints-and-score/understanding-the-score)
-- [iText AGPL licensing](https://itextpdf.com/en/products/itext-7/itext-7-core)
-- [Best React chart libraries 2025 — LogRocket](https://blog.logrocket.com/best-react-chart-libraries-2025/)
+- `docs.timefold.ai/timefold-solver/0.8.x/shadow-variable/shadow-variable` — confirmed `@ShadowVariable`, `@PiggybackShadowVariable`, `@InverseRelationShadowVariable`, `@AnchorShadowVariable`, `@PreviousElementShadowVariable`, `@NextElementShadowVariable` all present at the earliest publicly documented version — LOW/web-tier per the research seam (WebFetch, not Context7), cross-checked against a second independent WebSearch pass, treat as MEDIUM in practice
+- `docs.timefold.ai/timefold-solver/1.x/upgrading-timefold-solver/upgrade-to-latest-version` — version-by-version changelog, confirmed exact 1.16.0 changes (auto-generated undo moves, JSpecify, `ConstraintAnalysis.matchCount()`) and confirmed no changes to the domain-modelling annotations through 1.19.0 — LOW/web-tier, official source
+- `github.com/TimefoldAI/timefold-solver/releases/tag/v1.16.0` — official release notes, corroborates the upgrade guide — LOW/web-tier, official source
+- `timefold.ai/blog/mixed-models-timefold-solver` — official Timefold blog confirming the multi-entity/mixed-variable-type modelling pattern with code examples — LOW/web-tier
+- `github.com/TimefoldAI/timefold-solver` discussions #1837, #1569, issue #1519 — confirms declarative shadow variables (`@ShadowSources`) remained PREVIEW-status past 1.25.0 — LOW/web-tier, but consistent across three independent GitHub threads
+- Local: `build.gradle:35` (pin verified directly), `AgentAssignment.java`, `Schedule.java`, `AgentAssignmentDifficultyComparator.java`, `ScheduleConstraintProvider.java` (header comment on lambda-instance node sharing), `SolverService.java:101-314` (detached-entity transaction discipline) — HIGH confidence, read directly from the repository
+
+**Gap:** Context7 was not invoked this session (no `mcp__context7__*` tool calls were made — the environment's available tool list for this run did not surface it as callable). All Timefold API claims above rest on official `docs.timefold.ai` and `github.com/TimefoldAI` pages fetched via WebFetch/WebSearch, cross-checked against each other and against the version-specific docs URLs (`/0.8.x/`, `/1.x/`) rather than a single "latest" page. Recommend a phase planner do one direct Javadoc check against the vendored `timefold-solver-core-1.16.0.jar` for exact annotation attribute names (`sourceVariableName` vs `sourceVariableNames`, etc.) before writing the constraint-provider code, since attribute-name-level precision was not independently confirmed against version-pinned Javadoc in this pass.
+
+---
+*Stack research for: shift-level scheduling as a second planning dimension in Timefold 1.16.0*
+*Researched: 2026-08-25*
