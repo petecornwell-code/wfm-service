@@ -1,7 +1,7 @@
 ---
 phase: 13-per-day-hours-visibility
 verified: 2026-08-24T13:15:24Z
-status: human_needed
+status: passed
 score: 54/58 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,34 +9,43 @@ re_verification:
   previous_status: gaps_found
   previous_score: 50/58
   gaps_closed:
+
     - "E1 empty: zero agent_day_hours rows renders the single resolved schedule default in the Muted/not-set colour, never blank (13-UI-SPEC.md E1) — closed by 8f4f528"
     - "E4 empty: the 'empty' value is the explicit 'Not set (default)' picklist entry, never a blank or unstyled input (13-UI-SPEC.md E4) — closed by 208d5c0"
   gaps_remaining: []
   regressions: []
 behavior_unverified_items: [] # both closed by dcc6e06 (see disposition below) — kept empty per contract; prior items detailed in Goal Achievement
-coincidental_reliance_items: [] # the E1 long-text reliance is now hardened/declared, not coincidental — see disposition below
+coincidental_reliance_items: [] # empty because the E1 no-truncation property is now DIRECTLY OBSERVED (UAT test 5, at the worst case "0.25-23.75"), not because it was "hardened" — that earlier reasoning was RETRACTED 2026-08-25, see Summary item 3 and gap G-13-5
 human_verification:
+
   - test: "Live-desk visual walkthrough of the collapsed summary muted colour and tooltip"
     expected: "Zero-row agent renders light-grey italic with 'Not set — using schedule default' tooltip; any agent with >=1 stored row renders in default body colour with no tooltip"
     why_human: "Visual colour/tooltip rendering in a real browser against real data — WINDOWS.md item 1"
+
   - test: "Live-desk walkthrough of the per-cell editor seeding the 'Not set (default)' literal and the expanded 7-day grid's five display states"
     expected: "Clicking a not-set cell opens the editor pre-filled with 'Not set (default)'; all 5 weekday states (MAND, PTO, explicit-zero, worked, not-set) are visually distinct"
     why_human: "Requires a live DB/BambooHR-configured environment — WINDOWS.md items 2 and 5"
+
   - test: "Live-desk walkthrough of the bulk 'Set all days to…' range guard and confirmation dialog"
     expected: "1000/-1 rejected via toast before confirm()/network; 24 and 0 accepted; label-count confirm() fires only when >=1 weekday carries MANDATORY/PTO"
     why_human: "End-to-end browser behaviour with no frontend test framework in this repo — WINDOWS.md item 6"
+
   - test: "PUT .../day-hours/{day} HTTP-level dispatch for a malformed {day} segment"
     expected: "400 (not 500), body names only the 'day' parameter, no rejected token or internal type leaked; valid/out-of-range day-hours paths and the bulk contracted-hours 400 message all unchanged; a genuine unexpected failure still returns 500"
     why_human: "No @WebMvcTest/MockMvc harness exists for DeskAgentController in this codebase, so Spring's actual dispatch to GlobalExceptionHandler.handleTypeMismatch for a real HTTP request is unit-tested but not integration-tested — WINDOWS.md item 7 (P-17 residual gap, declared not discovered)"
+
   - test: "E1 overflow (backstop): the collapsed summary's range output still fits the existing dense 13-column row after the muted-colour change"
     expected: "No wrap, no horizontal-scroll regression at the widest range value"
     why_human: "insufficient_spec — visual layout claim, abstain per honest-verifier contract"
+
   - test: "E3 populated (backstop): mixed-state weekday row rendering matches the CONTEXT.md mockup"
     expected: "All 5 states visually distinct in the expanded grid"
     why_human: "insufficient_spec — abstain per honest-verifier contract"
+
   - test: "E3 overflow (backstop): horizontal-scroll behaviour of the expanded 7-day grid"
     expected: "No layout break at the widest content"
     why_human: "insufficient_spec — abstain per honest-verifier contract"
+
   - test: "E4 overflow (backstop): the seeded 'Not set (default)' text in the browser's native datalist dropdown"
     expected: "Text is not clipped by the weekday mini-column width, since the datalist popup is not constrained by it"
     why_human: "insufficient_spec — abstain per honest-verifier contract"
@@ -81,13 +90,34 @@ closed by a SUMMARY.md.**
    `6.00`. This is exactly the kind of behavioral evidence a state-transition/rollback truth requires
    (Step 3/Step 7b) — presence of `@Transactional` was never sufficient, and now isn't relied on.
 
-3. **The `coincidental_reliance_items` entry (E1 long-text bound) — HARDENED, no longer coincidental.**
-   `DeskAgentService.setContractedHours` (lines 244-249) now rejects the same inclusive `0–24` range
-   `setDayHours` already enforced, closing the gap that let an unbounded bulk value reach the DB and
-   (hypothetically) break the collapsed summary's 5-character assumption. The precondition the E1
-   long-text truth depends on is now a declared, code-enforced invariant on both write paths into
-   `agent_day_hours`, not an implicit assumption that happened to hold — so this is reclassified out
-   of `coincidental_reliance_items` rather than merely re-flagged.
+3. ~~**The `coincidental_reliance_items` entry (E1 long-text bound) — HARDENED, no longer coincidental.**~~
+   **RETRACTED 2026-08-25 during UAT (gap G-13-5). The reasoning below was unsound and the conclusion
+   it reached was wrong. Kept visible rather than deleted, because the shape of the error is worth
+   preserving.**
+
+   > *Original text:* `DeskAgentService.setContractedHours` (lines 244-249) now rejects the same
+   > inclusive `0–24` range `setDayHours` already enforced, closing the gap that let an unbounded bulk
+   > value reach the DB and (hypothetically) break the collapsed summary's 5-character assumption. The
+   > precondition the E1 long-text truth depends on is now a declared, code-enforced invariant on both
+   > write paths into `agent_day_hours`, not an implicit assumption that happened to hold — so this is
+   > reclassified out of `coincidental_reliance_items` rather than merely re-flagged.
+
+   **Why it is wrong.** The `0–24` bound constrains individual **values**; the E1 claim is about the
+   **width of the rendered string**. Those are different quantities, and hardening the first does
+   nothing for the second. `formatHoursSummary` renders `min-max`, so a pair of entirely legal in-range
+   two-decimal values yields `0.25-23.75` — **10 characters, double the asserted 5-character bound.**
+   Demonstrated on the live deployment using only in-range values through the supported endpoint (no
+   bypass). The `≤5 chars` claim only ever held for the `min === max` single-value branch.
+
+   **What actually holds.** The layout is fine — UAT test 5 was re-run at exactly this worst case
+   (`0.25-23.75`) and the operator confirmed no wrap, no column squeeze, and no horizontal-scroll
+   regression in the 13-column row. So the *truth* "the collapsed summary does not truncate" survives;
+   the *stated reason* for it does not. It is a verified layout property, not a consequence of a
+   character bound. `13-UI-SPEC.md` E1 was corrected accordingly in `b0da4e5`.
+
+   **Classification.** Whether this belongs back in `coincidental_reliance_items` is moot: the
+   no-truncation property is now directly verified by observation rather than inferred from a bound, so
+   it no longer *relies* on anything coincidental. It is recorded here as a corrected claim.
 
 **Everything else from the prior pass was spot-checked for regression** (the untouched read path,
 export path, and column-layout single-sourcing) — no file outside the six the gap-closure commits
@@ -119,7 +149,7 @@ four still-open `unrun-verify` items in `.planning/WINDOWS.md` (1, 2, 5, 6) plus
 | 10 | E1 error: existing `loadAgents` catch → `showToast('error')`, no per-cell error state | ✓ VERIFIED (regression-checked) | Unchanged |
 | 11 | E1 populated: single value or min-max range, never MAND/PTO | ✓ VERIFIED (regression-checked) | `formatHoursSummary` itself untouched — plan 13-05 explicitly did not touch it |
 | 12 | E1 partial: unset days resolve to default before min/max | ✓ VERIFIED (regression-checked) | Unchanged |
-| 13 | E1 long-text: numeric closed vocabulary, ≤5 chars, no truncation | ✓ VERIFIED — **now hardened, not coincidental** | See Summary item 3: `setContractedHours` now enforces the same 0-24 bound as `setDayHours` (`DeskAgentService.java:244-249`), confirmed by direct read and passing `setContractedHours_above24_isRejectedAndPersistsNothing`/`setContractedHours_exactly24_isAccepted` |
+| 13 | ~~E1 long-text: numeric closed vocabulary, ≤5 chars, no truncation~~ → **corrected:** numeric closed vocabulary, **up to 10 chars** (`min-max` branch), no truncation | ✓ VERIFIED — **by observation, not by the bound** | **The ≤5-char half of this truth was FALSE and is retracted** (G-13-5; see Summary item 3). `formatHoursSummary` renders `min-max`, reaching 10 chars at `0.25-23.75` from legal in-range values. The surviving no-truncation claim is verified by UAT test 5, re-run at exactly that worst case: no wrap, no squeeze, no scroll regression. The 0-24 bound is real but irrelevant here — it constrains values, not range width. |
 | 14 | Expandable row, no new top-level column | ✓ VERIFIED (regression-checked) | `colSpan={14}` unchanged |
 | 15 | E2 empty: chevron renders even with zero rows | ✓ VERIFIED (regression-checked) | Unchanged |
 | 16 | E2 loading: no secondary fetch, no spinner on toggle | ✓ VERIFIED (regression-checked) | Unchanged |
@@ -338,5 +368,36 @@ independently re-run tests.
 
 ---
 
-_Verified: 2026-08-24T13:15:24Z_
-_Verifier: Claude (gsd-verifier)_
+## Human Verification Closure — 2026-08-25
+
+`status` advanced `human_needed → passed`. All 8 `human_verification` items above were executed
+against the live deployment and recorded in `13-UAT.md`: **8/8 passed, 0 open issues.**
+
+**What the human round actually found.** It was not a rubber stamp — it falsified two documented
+claims and one shipped interaction:
+
+| Gap | Severity | Origin | Disposition |
+|-----|----------|--------|-------------|
+| G-13-DD | major | Reported by operator during test 7 | **Fixed in code** (`7fc7168`) — the per-cell editor seeded its value, which collapsed the native `datalist` to a single self-matching option and made the 97-entry picklist unreachable. Editor now opens empty with the value as placeholder, guarded by `cellDirtyRef` so an untouched blur never fires `clearRow`. Re-verified via test 2. |
+| G-13-8 | cosmetic | Reported by operator during test 8 | **Accepted, not fixed** (`19f8c5d`). `Not set (default)` IS clipped — a native `datalist` popup renders at its input's width (90px), the opposite of what E4 asserted. Both remedies were judged worse than the defect. The false reasoning was corrected and the row moved `backstop → explicit`. |
+| G-13-5 | minor | Found by orchestrator while staging test 5 | **Documentation corrected** (`b0da4e5` + this file). The E1 `≤5 characters` bound was arithmetically false; the real ceiling is 10. See Summary item 3, retracted above. |
+
+**Two tests passed only against amended contracts** — test 2 (E4-empty amendment) and test 8 (E4-overflow
+amendment). Neither pass indicates the originally-specified behaviour was achieved; in both cases the
+spec was corrected to match observed reality and then re-verified. Test 8 in particular passed with **no
+intervening code change** — the clipping still ships. `13-UAT.md`'s `superseded_run` block preserves the
+original failing report verbatim.
+
+**Security.** `13-SECURITY.md` created the same day: 29/29 threats closed, `threats_open: 0`, all three
+`high`-severity items (T-13-01, T-13-05, T-13-24) verified mitigated in code with executed regression
+tests.
+
+**Residual, unchanged by this round.** The 5 open `.planning/WINDOWS.md` `unrun-verify` items still
+require a live BambooHR-configured desk or an HTTP integration harness this codebase lacks — except
+item 7 (P-17), which UAT test 4 **closed** by proving Spring's dispatch to `handleTypeMismatch`
+end-to-end through CloudFront → ALB → ECS.
+
+---
+
+_Verified: 2026-08-24T13:15:24Z (automated) · 2026-08-25 (human verification closure)_
+_Verifier: Claude (gsd-verifier); human round via /gsd-verify-work 13_
