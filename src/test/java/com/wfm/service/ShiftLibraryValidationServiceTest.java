@@ -586,6 +586,98 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.unsatisfiableWeekdays()).containsExactly("MONDAY", "TUESDAY");
     }
 
+    // ---------- Capacity shortfall advisory (D-03 residual risk, Task 3) ----------
+
+    @Test
+    void validate_allBlankCapacities_noAdvisory() {
+        UUID deskId = saveDesk(TENANT_A);
+        // saveTemplate's own band is created with a blank (null) capacity by construction.
+        saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_capacityAtOrAboveHeadcount_noAdvisory() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 2);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_capacityBelowHeadcount_producesOneAdvisoryNamingAllFour() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 1);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).hasSize(1);
+        ShiftLibraryValidationResponse.CapacityAdvisory advisory = response.capacityAdvisories().get(0);
+        assertThat(advisory.templateId()).isEqualTo(template.getId());
+        assertThat(advisory.templateName()).isEqualTo("S1");
+        assertThat(advisory.weekday()).isEqualTo(DayOfWeek.MONDAY);
+        assertThat(advisory.capacityTotal()).isEqualTo(1);
+        assertThat(advisory.admissibleHeadcount()).isEqualTo(2);
+        assertThat(advisory.message()).isEqualTo(
+                "Shift template 'S1' has total break-band capacity 1 on Monday, but 2 agent(s) "
+                        + "could be scheduled on it that day. Increase capacity or add a band before solving.");
+    }
+
+    @Test
+    void validate_mixedBlankAndSetCapacity_clearsTheWholeTemplate() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 1);
+        addBand(template, 300, 60, null); // blank band -> unlimited, clears the whole template
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_retiredTemplateWithShortfall_excludedFromCapacityAdvisories() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31));
+        addBand(template, 240, 60, 1);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
     // ---------- Controller (Task 2) ----------
 
     @Test

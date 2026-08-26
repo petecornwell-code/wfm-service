@@ -14,10 +14,10 @@ import java.util.UUID;
 /**
  * A desk-scoped shift definition (SHLB-01..03) — start/end envelope, N break bands (D-01, a
  * child table read through {@link com.wfm.repository.ShiftTemplateBreakBandRepository} — this
- * entity intentionally has no {@code @OneToMany} collection, see V40's migration header comment
- * for why), the weekdays it applies to, and the effective date range that is the template's
- * ENTIRE lifecycle mechanism (D-10). There is deliberately no is_active/enabled/retired column
- * here — see V39's migration header comment for why.
+ * entity intentionally declares no parent-side collection mapping to that table, see V40's
+ * migration header comment for why), the weekdays it applies to, and the effective date range
+ * that is the template's ENTIRE lifecycle mechanism (D-10). There is deliberately no
+ * is_active/enabled/retired column here — see V39's migration header comment for why.
  */
 @Entity
 @Table(name = "shift_template", uniqueConstraints = @UniqueConstraint(

@@ -9,9 +9,9 @@ import java.util.UUID;
  * One break band on a {@link ShiftTemplate} (D-01) -- one of N possible break placements the
  * solver may assign an agent to on a given day, replacing Phase 14's single
  * break_offset_minutes/break_duration_minutes pair. A flat child row FK'd to its parent (P-01),
- * mirroring {@link AgentDayHours}'s shape: tenant-scoped, no {@code @OneToMany} collection on
- * {@code ShiftTemplate} -- {@code grep -rl "OneToMany" src/main/java/com/wfm/model/} returns zero
- * files, so this codebase never maps a parent-side collection; callers load bands through {@link
+ * mirroring {@link AgentDayHours}'s shape: tenant-scoped, with no parent-side collection mapping
+ * declared on {@code ShiftTemplate} -- this codebase never maps a parent-side collection for any
+ * child-owns-the-FK relationship, so callers load bands through {@link
  * com.wfm.repository.ShiftTemplateBreakBandRepository} instead.
  *
  * <p>{@code capacity} is a hard cap only when set; {@code null} means unlimited (D-03).

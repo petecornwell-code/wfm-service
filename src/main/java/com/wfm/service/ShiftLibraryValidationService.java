@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftLibraryValidationResponse;
+import com.wfm.dto.ShiftLibraryValidationResponse.CapacityAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.HoursAdvisory;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
@@ -98,9 +99,11 @@ public class ShiftLibraryValidationService {
         List<HoursAdvisory> hoursAdvisories = findHoursAdvisories(templates, bandsByTemplateId, hoursByWeekday);
         List<String> unsatisfiableWeekdays =
                 findUnsatisfiableWeekdays(templates, bandsByTemplateId, demand, hoursByWeekday);
+        List<CapacityAdvisory> capacityAdvisories =
+                findCapacityAdvisories(templates, bandsByTemplateId, hoursByWeekday);
 
-        return new ShiftLibraryValidationResponse(
-                hasLiveDemand, uncoveredWindows, misalignedTemplates, hoursAdvisories, unsatisfiableWeekdays);
+        return new ShiftLibraryValidationResponse(hasLiveDemand, uncoveredWindows, misalignedTemplates,
+                hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories);
     }
 
     /** D-08 bulk load: one query for every template's bands per {@link #validate} call. */
@@ -352,6 +355,59 @@ public class ShiftLibraryValidationService {
             return List.of(template.getNetHours(0));
         }
         return bands.stream().map(b -> template.getNetHours(b.getDurationMinutes())).toList();
+    }
+
+    // --- Capacity shortfall advisory (D-03 residual risk, Task 3, P-06) ---
+
+    /**
+     * Blank/null capacity on ANY band of a template means that band alone admits an unlimited
+     * number of agents, so the template as a whole has no shortfall by construction — "every
+     * band blank" and "some bands blank" both clear. Only when every band on the template
+     * carries an explicit capacity does the sum become a real cap, compared against the count of
+     * agents whose {@code AgentDayHours} value for that weekday matches at least one band's net
+     * duration exactly — the same admissibility filter the solver's value range will apply
+     * (D-04), so this counts exactly the agent-days that could land on this template.
+     */
+    private List<CapacityAdvisory> findCapacityAdvisories(List<ShiftTemplate> templates,
+                                                            Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                                            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+        List<CapacityAdvisory> advisories = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        for (ShiftTemplate template : templates) {
+            if (template.getEffectiveTo() != null && template.getEffectiveTo().isBefore(today)) {
+                continue; // retired
+            }
+            List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+            if (bands.isEmpty() || bands.stream().anyMatch(b -> b.getCapacity() == null)) {
+                continue; // unlimited by construction
+            }
+            int capacityTotal = bands.stream().mapToInt(ShiftTemplateBreakBand::getCapacity).sum();
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
+            for (DayOfWeek weekday : template.getValidWeekdays()) {
+                List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
+                long admissibleHeadcount = candidates.stream()
+                        .filter(h -> hourMatchesAnyBand(h, bandNetHours))
+                        .count();
+                if (capacityTotal < admissibleHeadcount) {
+                    advisories.add(new CapacityAdvisory(template.getId(), template.getName(), weekday,
+                            capacityTotal, admissibleHeadcount,
+                            capacityShortfallMessage(template.getName(), weekday, capacityTotal, admissibleHeadcount)));
+                }
+            }
+        }
+        return advisories;
+    }
+
+    private static boolean hourMatchesAnyBand(BigDecimal hours, List<BigDecimal> bandNetHours) {
+        BigDecimal normalized = BigDecimals.normalize(hours);
+        return bandNetHours.stream().anyMatch(net -> BigDecimals.normalize(net).compareTo(normalized) == 0);
+    }
+
+    private static String capacityShortfallMessage(String templateName, DayOfWeek weekday, int capacityTotal,
+                                                     long admissibleHeadcount) {
+        return "Shift template '" + templateName + "' has total break-band capacity " + capacityTotal
+                + " on " + formatWeekday(weekday.name()) + ", but " + admissibleHeadcount
+                + " agent(s) could be scheduled on it that day. Increase capacity or add a band before solving.";
     }
 
     private static boolean anyHoursMatch(List<BigDecimal> candidateHours, BigDecimal netHours) {
