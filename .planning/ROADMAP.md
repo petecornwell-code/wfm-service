@@ -144,11 +144,11 @@ Plans:
 that desk's library and never seats them outside it — a coupling proven sound against a real fixture,
 not assumed, with its effect on schedule quality measured honestly rather than discovered at UAT.
 **Depends on**: Phase 14 (needs a valid `ShiftTemplate` FK target and the `scheduling_mode` field to gate on)
-**Requirements**: ENVL-01, ENVL-02, ENVL-03, ENVL-04, ENVL-05, ENVL-06, ENVL-07, ENVL-08, ENVL-09
+**Requirements**: ENVL-01, ENVL-02, ENVL-03, ENVL-04, ENVL-05, ENVL-06, ENVL-07, ENVL-08, ENVL-09, ENVL-10
 
 **Success Criteria** (what must be TRUE):
 
-1. On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from the desk's library, via a new `AgentShiftAssignment` planning entity, visible in the roster and accepted-schedule view; an agent's specialization can still vary between timeslots inside that shift. (ENVL-01, ENVL-03, XCUT-01)
+1. On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from the desk's library, via a new `AgentShiftAssignment` planning entity, visible in the roster and accepted-schedule view; an agent's specialization can still vary between timeslots inside that shift. The Agent Allocation view groups agents under their assigned shift — each group naming the shift and its headcount — rather than listing every agent flat, so a shift-mode solve can be sanity-checked by eye; a slot-scheduled desk renders exactly as it does today. (ENVL-01, ENVL-03, ENVL-10, XCUT-01)
 2. An agent is never seated in a timeslot outside their assigned shift's envelope — enforced as a hard constraint (`shiftEnvelopeCompliance`), and confirmed by an independent ground-truth check that walks the solved schedule outside the score director, not by trusting the reported score alone. (ENVL-02, ENVL-07)
 3. An agent's working day is contiguous apart from their break; break placement comes from the shift template as a structural attribute rather than from the four emergent break constraints, which are mode-gated off for shift-scheduled desks and provably unchanged (same test suite, still green) for slot-scheduled desks — completing Phase 14's classification table. (ENVL-04, ENVL-05, XCUT-05)
 4. Agents sharing a shift do not all break at once: a shift template carries one or more **break bands** (offset plus capacity), band choice is a planning variable resolved per agent-day inside the assigned shift, and the previously inert `Break clustering` constraint is given a real body that penalises agents-on-break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents. Demonstrated on a fixture where a single-band library measurably starves a mid-shift timeslot and a multi-band library does not. (ENVL-08, ENVL-09)
