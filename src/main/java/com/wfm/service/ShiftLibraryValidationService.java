@@ -39,10 +39,15 @@ import com.wfm.util.BigDecimals;
  * <p>Every read is scoped through {@link TenantContext} — no method here accepts a caller-supplied
  * tenant (T-14-15).
  *
- * <p><b>Task 1 note:</b> this class is adapted here mechanically to read bands through {@link
- * ShiftTemplateBreakBandRepository} instead of Phase 14's scalar break fields, taking only the
- * first (lowest-offset) band per template so this task's own behaviour is unchanged. The any-band
- * generalisation (D-02) is Task 2's own reviewable change.
+ * <p><b>D-02 (Task 2):</b> {@link #covers} is any-band coverage — a demand window is covered when
+ * at least one of the template's bands leaves it worked. A template with zero bands covers every
+ * window inside its envelope (Phase 14's zero-duration behaviour); a template with exactly one
+ * band produces the byte-identical verdict Phase 14's single offset produced, because the
+ * any-band quantifier over a one-element set is the element itself. {@code covers} and the
+ * package-visible {@link Window} record are public/package-visible respectively (P-03) so plan
+ * 15-02's {@code ShiftLibraryGenerationService} reuses this predicate instead of reimplementing
+ * it. Bands are loaded once per {@link #validate} call through the bulk repository method rather
+ * than per template inside a loop.
  */
 @Service
 public class ShiftLibraryValidationService {
@@ -77,6 +82,7 @@ public class ShiftLibraryValidationService {
         long tenantId = TenantContext.getTenantId();
 
         List<ShiftTemplate> templates = shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsByTemplateId(tenantId, templates);
 
         // Only rows with requiredFTEs > 0 count as demand — a zero-FTE row is not demand.
         List<StaffingRequirement> demand = staffingRequirementRepository.findAllLiveByDesk(tenantId, deskId)
@@ -85,15 +91,28 @@ public class ShiftLibraryValidationService {
                 .toList();
         boolean hasLiveDemand = !demand.isEmpty();
 
-        List<String> uncoveredWindows = findUncoveredWindows(templates, demand);
-        List<String> misalignedTemplates = findMisalignedTemplates(deskId, templates);
+        List<String> uncoveredWindows = findUncoveredWindows(templates, bandsByTemplateId, demand);
+        List<String> misalignedTemplates = findMisalignedTemplates(deskId, templates, bandsByTemplateId);
 
         Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = loadHoursByWeekday(tenantId, deskId);
-        List<HoursAdvisory> hoursAdvisories = findHoursAdvisories(templates, hoursByWeekday);
-        List<String> unsatisfiableWeekdays = findUnsatisfiableWeekdays(templates, demand, hoursByWeekday);
+        List<HoursAdvisory> hoursAdvisories = findHoursAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+        List<String> unsatisfiableWeekdays =
+                findUnsatisfiableWeekdays(templates, bandsByTemplateId, demand, hoursByWeekday);
 
         return new ShiftLibraryValidationResponse(
                 hasLiveDemand, uncoveredWindows, misalignedTemplates, hoursAdvisories, unsatisfiableWeekdays);
+    }
+
+    /** D-08 bulk load: one query for every template's bands per {@link #validate} call. */
+    private Map<UUID, List<ShiftTemplateBreakBand>> loadBandsByTemplateId(long tenantId, List<ShiftTemplate> templates) {
+        if (templates.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> templateIds = templates.stream().map(ShiftTemplate::getId).toList();
+        return shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdInOrderByOffsetMinutesAsc(tenantId, templateIds)
+                .stream()
+                .collect(Collectors.groupingBy(band -> band.getShiftTemplate().getId()));
     }
 
     /**
@@ -150,7 +169,9 @@ public class ShiftLibraryValidationService {
 
     // --- Structural coverage (D-04) ---
 
-    private List<String> findUncoveredWindows(List<ShiftTemplate> templates, List<StaffingRequirement> demand) {
+    private List<String> findUncoveredWindows(List<ShiftTemplate> templates,
+                                               Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                               List<StaffingRequirement> demand) {
         List<Window> windows = demand.stream()
                 .map(sr -> new Window(sr.getTimeslot().getDate(),
                         sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime()))
@@ -160,7 +181,8 @@ public class ShiftLibraryValidationService {
 
         List<String> uncovered = new ArrayList<>();
         for (Window window : windows) {
-            boolean covered = templates.stream().anyMatch(t -> covers(t, window));
+            boolean covered = templates.stream().anyMatch(t ->
+                    covers(t, bandsByTemplateId.getOrDefault(t.getId(), List.of()), window));
             if (!covered) {
                 uncovered.add(window.date() + " " + window.startTime() + "-" + window.endTime());
             }
@@ -168,7 +190,15 @@ public class ShiftLibraryValidationService {
         return uncovered;
     }
 
-    private boolean covers(ShiftTemplate template, Window window) {
+    /**
+     * D-02: any-band coverage. A window is covered when the template's weekday set contains the
+     * window's day, the window falls inside the template's effective range, the window sits
+     * inside the envelope, and at least one band leaves that window worked (a band whose duration
+     * is zero, or a template with no bands at all, never blocks a window — "zero bands = no
+     * break"). Public + package-visible {@link Window} (P-03) so plan 15-02's generation service
+     * reuses this predicate rather than reimplementing it.
+     */
+    public static boolean covers(ShiftTemplate template, List<ShiftTemplateBreakBand> bands, Window window) {
         if (!template.getValidWeekdays().contains(window.date().getDayOfWeek())) {
             return false;
         }
@@ -178,16 +208,18 @@ public class ShiftLibraryValidationService {
         if (window.startTime().isBefore(template.getStartTime()) || window.endTime().isAfter(template.getEndTime())) {
             return false;
         }
-        ShiftTemplateBreakBand band = firstBand(template);
-        if (band != null && band.getDurationMinutes() > 0) {
+        if (bands == null || bands.isEmpty()) {
+            return true;
+        }
+        return bands.stream().anyMatch(band -> {
+            if (band.getDurationMinutes() <= 0) {
+                return true;
+            }
             LocalTime breakStart = band.getBreakStartTime(template);
             LocalTime breakEnd = band.getBreakEndTime(template);
             boolean overlapsBreak = window.startTime().isBefore(breakEnd) && window.endTime().isAfter(breakStart);
-            if (overlapsBreak) {
-                return false;
-            }
-        }
-        return true;
+            return !overlapsBreak;
+        });
     }
 
     private static boolean withinEffectiveRange(ShiftTemplate template, LocalDate date) {
@@ -199,7 +231,8 @@ public class ShiftLibraryValidationService {
 
     // --- Grid re-check (D-02) ---
 
-    private List<String> findMisalignedTemplates(UUID deskId, List<ShiftTemplate> templates) {
+    private List<String> findMisalignedTemplates(UUID deskId, List<ShiftTemplate> templates,
+                                                  Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId) {
         List<String> misaligned = new ArrayList<>();
         Optional<TimeslotBoundsResponse> bounds = timeslotGeneratorService.getLiveBounds(deskId);
         if (bounds.isEmpty()) {
@@ -210,22 +243,35 @@ public class ShiftLibraryValidationService {
             if (template.getEffectiveTo() != null && template.getEffectiveTo().isBefore(today)) {
                 continue; // retired — cannot be scheduled again, its alignment is moot
             }
-            if (!isTemplateAligned(template, bounds.get())) {
+            List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+            if (!isTemplateAligned(template, bands, bounds.get())) {
                 misaligned.add(template.getName() + " (" + template.getEffectiveFrom() + ")");
             }
         }
         return misaligned;
     }
 
-    private boolean isTemplateAligned(ShiftTemplate template, TimeslotBoundsResponse bounds) {
+    /** D-02: every band whose duration is non-zero must also have an aligned break start/end. */
+    private static boolean isTemplateAligned(ShiftTemplate template, List<ShiftTemplateBreakBand> bands,
+                                              TimeslotBoundsResponse bounds) {
         boolean aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getStartTime())
                 && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getEndTime());
-        ShiftTemplateBreakBand band = firstBand(template);
-        if (aligned && band != null && band.getDurationMinutes() > 0) {
-            aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), band.getBreakStartTime(template))
-                    && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), band.getBreakEndTime(template));
+        if (!aligned || bands == null) {
+            return aligned;
         }
-        return aligned;
+        for (ShiftTemplateBreakBand band : bands) {
+            if (band.getDurationMinutes() <= 0) {
+                continue;
+            }
+            boolean bandAligned = ShiftTemplateService.isAligned(
+                    bounds.startTime(), bounds.incrementMinutes(), band.getBreakStartTime(template))
+                    && ShiftTemplateService.isAligned(
+                            bounds.startTime(), bounds.incrementMinutes(), band.getBreakEndTime(template));
+            if (!bandAligned) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // --- Hours match (D-06/D-07) ---
@@ -236,23 +282,36 @@ public class ShiftLibraryValidationService {
                 AgentDayHours::getDayOfWeek, Collectors.mapping(AgentDayHours::getHours, Collectors.toList())));
     }
 
+    /**
+     * D-02: a template is hours-satisfiable/advisory-free on a weekday when AT LEAST ONE of its
+     * bands yields a net duration some agent's contracted hours on that weekday matches exactly
+     * (the any-band quantifier mirrors {@link #covers}). A one-band (or zero-band) template's
+     * {@code bandNetHours} list has exactly one element, so this is byte-identical to Phase 14's
+     * single-offset verdict for that case.
+     */
     private List<HoursAdvisory> findHoursAdvisories(List<ShiftTemplate> templates,
+                                                      Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
                                                       Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
         List<HoursAdvisory> advisories = new ArrayList<>();
         for (ShiftTemplate template : templates) {
-            BigDecimal netHours = template.getNetHours(firstBandDurationMinutes(template));
+            List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
             for (DayOfWeek weekday : template.getValidWeekdays()) {
                 List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
-                if (!anyHoursMatch(candidates, netHours)) {
-                    advisories.add(new HoursAdvisory(template.getId(), template.getName(), weekday, netHours,
-                            advisoryMessage(netHours, weekday)));
+                boolean anyBandMatches = bandNetHours.stream().anyMatch(net -> anyHoursMatch(candidates, net));
+                if (!anyBandMatches) {
+                    BigDecimal reportedNetHours = bandNetHours.get(0);
+                    advisories.add(new HoursAdvisory(template.getId(), template.getName(), weekday, reportedNetHours,
+                            advisoryMessage(reportedNetHours, weekday)));
                 }
             }
         }
         return advisories;
     }
 
-    private List<String> findUnsatisfiableWeekdays(List<ShiftTemplate> templates, List<StaffingRequirement> demand,
+    private List<String> findUnsatisfiableWeekdays(List<ShiftTemplate> templates,
+                                                     Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                                     List<StaffingRequirement> demand,
                                                      Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
         Map<DayOfWeek, List<LocalDate>> demandDatesByWeekday = demand.stream()
                 .map(sr -> sr.getTimeslot().getDate())
@@ -265,11 +324,17 @@ public class ShiftLibraryValidationService {
             if (demandedDates == null) {
                 continue;
             }
-            boolean satisfiable = templates.stream().anyMatch(t ->
-                    t.getValidWeekdays().contains(weekday)
-                            && demandedDates.stream().anyMatch(d -> withinEffectiveRange(t, d))
-                            && anyHoursMatch(hoursByWeekday.getOrDefault(weekday, List.of()),
-                                    t.getNetHours(firstBandDurationMinutes(t))));
+            List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
+            boolean satisfiable = templates.stream().anyMatch(t -> {
+                if (!t.getValidWeekdays().contains(weekday)) {
+                    return false;
+                }
+                if (demandedDates.stream().noneMatch(d -> withinEffectiveRange(t, d))) {
+                    return false;
+                }
+                List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(t.getId(), List.of());
+                return netHoursForBands(t, bands).stream().anyMatch(net -> anyHoursMatch(candidates, net));
+            });
             if (!satisfiable) {
                 unsatisfiable.add(weekday.name());
             }
@@ -277,16 +342,16 @@ public class ShiftLibraryValidationService {
         return unsatisfiable;
     }
 
-    /** The template's lowest-offset band, or {@code null} when it has none ("no break"). */
-    private ShiftTemplateBreakBand firstBand(ShiftTemplate template) {
-        List<ShiftTemplateBreakBand> bands = shiftTemplateBreakBandRepository
-                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(template.getTenantId(), template.getId());
-        return bands.isEmpty() ? null : bands.get(0);
-    }
-
-    private int firstBandDurationMinutes(ShiftTemplate template) {
-        ShiftTemplateBreakBand band = firstBand(template);
-        return band == null ? 0 : band.getDurationMinutes();
+    /**
+     * One net-hours value per band, or a single full-envelope value when the template has no
+     * bands (P-02: "zero bands = no break"). A one-band template's list always has exactly one
+     * element, matching Phase 14's single-scalar shape exactly.
+     */
+    private static List<BigDecimal> netHoursForBands(ShiftTemplate template, List<ShiftTemplateBreakBand> bands) {
+        if (bands.isEmpty()) {
+            return List.of(template.getNetHours(0));
+        }
+        return bands.stream().map(b -> template.getNetHours(b.getDurationMinutes())).toList();
     }
 
     private static boolean anyHoursMatch(List<BigDecimal> candidateHours, BigDecimal netHours) {
@@ -309,5 +374,6 @@ public class ShiftLibraryValidationService {
         return weekdayName.charAt(0) + weekdayName.substring(1).toLowerCase();
     }
 
-    private record Window(LocalDate date, LocalTime startTime, LocalTime endTime) {}
+    /** Package-visible (not private) so plan 15-02's generation service can call {@link #covers}. */
+    record Window(LocalDate date, LocalTime startTime, LocalTime endTime) {}
 }

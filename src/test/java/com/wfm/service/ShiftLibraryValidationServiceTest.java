@@ -240,6 +240,69 @@ class ShiftLibraryValidationServiceTest {
         assertThat(combinedResponse.uncoveredWindows()).isEmpty();
     }
 
+    // ---------- Any-band coverage (D-02, Task 2) ----------
+
+    @Test
+    void validate_twoBandTemplate_selfCoversItsOwnBreakHour() {
+        // D-02's worked example: 08:00-17:00 template with bands at offsets 240 and 300, both 60
+        // minutes -- the 12:00-13:00 window is covered because band B (13:00-14:00 break) leaves
+        // it worked, even though band A's own break (12:00-13:00) does not.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 300, 60, null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(12, 0), LocalTime.of(12, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+    }
+
+    @Test
+    void validate_touchingBands_secondBandCoversWhereFirstDoesNot() {
+        // Band A break 12:00-13:00 (offset 240), band B break 13:00-14:00 (offset 300) touch
+        // exactly at 13:00 -- two distinct legal bands, not a duplicate (P-05). Band A leaves
+        // 13:00-13:30 worked even though it sits inside band B's own break window.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 300, 60, null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(13, 0), LocalTime.of(13, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+    }
+
+    @Test
+    void validate_oneBandTemplate_matchesPreMigrationSingleOffsetInvariant() {
+        // D-02: a one-band template's coverage, misalignment, hours-advisory and
+        // unsatisfiable-weekday verdicts are byte-identical to Phase 14's single-offset
+        // predecessor for the exact same fixture asserted pre-migration in this suite.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(12, 0), LocalTime.of(12, 30), 1, null);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).containsExactly("2026-01-05 12:00-12:30");
+        assertThat(response.misalignedTemplates()).isEmpty();
+        assertThat(response.hoursAdvisories()).noneMatch(a -> a.templateId().equals(template.getId()));
+        assertThat(response.unsatisfiableWeekdays()).isEmpty();
+    }
+
     @Test
     void validate_zeroDurationBreak_neverExcludesAnySlot() {
         UUID deskId = saveDesk(TENANT_A);
