@@ -8,6 +8,7 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,11 +33,14 @@ public class ShiftTemplateService {
 
     private final ShiftTemplateRepository shiftTemplateRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
+    private final DeskRepository deskRepository;
 
     public ShiftTemplateService(ShiftTemplateRepository shiftTemplateRepository,
-                                 TimeslotGeneratorService timeslotGeneratorService) {
+                                 TimeslotGeneratorService timeslotGeneratorService,
+                                 DeskRepository deskRepository) {
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
+        this.deskRepository = deskRepository;
     }
 
     /**
@@ -56,6 +60,8 @@ public class ShiftTemplateService {
     @Transactional
     public ShiftTemplate createShiftTemplate(UUID deskId, ShiftTemplateRequest request) {
         long tenantId = TenantContext.getTenantId();
+        deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
         validate(tenantId, deskId, request, null);
 
         ShiftTemplate template = new ShiftTemplate();
