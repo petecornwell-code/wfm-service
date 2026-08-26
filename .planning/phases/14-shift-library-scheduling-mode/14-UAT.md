@@ -3,7 +3,7 @@ status: testing
 phase: 14-shift-library-scheduling-mode
 source: 14-01-SUMMARY.md, 14-02-SUMMARY.md, 14-03-SUMMARY.md, 14-04-SUMMARY.md, 14-05-SUMMARY.md, 14-06-SUMMARY.md
 started: 2026-08-25T00:00:00Z
-updated: 2026-08-26T14:00:00Z
+updated: 2026-08-26T14:30:00Z
 ---
 
 ## Current Test
@@ -13,17 +13,18 @@ name: Coverage panel names specific uncovered demand windows
 expected: |
   With seeded staffing demand and a partial shift library, the Coverage panel lists the
   specific uncovered `(date, timeslot)` windows by name — not a generic validation message.
-awaiting: BLOCKED — tests 2-9 all require a running backend, and the application cannot
-  start against Postgres until the test-1 blocker (valid_weekdays CHAR(7) vs varchar(7)
-  schema-validation failure) is fixed.
+awaiting: user response
 
 ## Tests
 
 ### 1. V39 migration applies cleanly to live Postgres
 expected: Flyway migrates to version 39 without error; `\d shift_template` shows eleven columns and the `(tenant_id, desk_id, name, effective_from)` unique constraint; `SELECT DISTINCT scheduling_mode FROM desk;` returns only `SLOT`
-result: issue
-reported: "Ran by Claude on live Postgres 18.4. The migration itself applies cleanly — Flyway logged `Migrating schema \"public\" to version \"39 - add shift template and scheduling mode\"` and `Successfully applied 38 migrations ... now at version v39`; `\\d shift_template` showed all eleven columns and the `shift_template_tenant_id_desk_id_name_effective_from_key` UNIQUE constraint; three pre-seeded desks all backfilled to `SLOT` and `SELECT DISTINCT scheduling_mode FROM desk` returned only `SLOT`. BUT the application then FAILS TO START: Hibernate `ddl-auto: validate` aborts with `Schema-validation: wrong column type encountered in column [valid_weekdays] in table [shift_template]; found [bpchar (Types#CHAR)], but expecting [varchar(7) (Types#VARCHAR)]`. V39 declares `valid_weekdays CHAR(7)` (Postgres bpchar) while `ShiftTemplate.validWeekdaysMask` is a String with `@Column(length = 7)` (varchar). Boot fails, `BUILD FAILED`, no server. This blocks tests 2-9."
-severity: blocker
+result: pass
+resolved_by: "fix(14) 9a98029 — V39 now declares valid_weekdays VARCHAR(7)"
+retest: "Re-run end-to-end on live Postgres 18.4 after the fix. Staged a scratch DB to V38, seeded three desks, applied V39: all eleven columns present with valid_weekdays as `character varying(7)`, UNIQUE (tenant_id, desk_id, name, effective_from) present, all three pre-existing desks backfilled so `SELECT DISTINCT scheduling_mode FROM desk` returned only SLOT. Then booted the real application against a fresh empty DB and let Flyway drive: `Migrating schema \"public\" to version \"39 - add shift template and scheduling mode\"` -> `Successfully applied 38 migrations ... now at version v39`, Tomcat started, /actuator/health returned UP with db UP (so Hibernate ddl-auto=validate passed). Live round trip through the fixed column: POST /api/v1/desks returned schedulingMode SLOT; POST .../shift-templates with validWeekdays MON-FRI persisted and read back identically, with the raw column holding '1111100' as character varying, length 7. Incidentally confirmed the WR-03 fix — netHours came back as 7.50 at scale 2."
+prior_result: issue
+prior_reported: "Ran by Claude on live Postgres 18.4. The migration itself applies cleanly — Flyway logged `Migrating schema \"public\" to version \"39 - add shift template and scheduling mode\"` and `Successfully applied 38 migrations ... now at version v39`; `\\d shift_template` showed all eleven columns and the `shift_template_tenant_id_desk_id_name_effective_from_key` UNIQUE constraint; three pre-seeded desks all backfilled to `SLOT` and `SELECT DISTINCT scheduling_mode FROM desk` returned only `SLOT`. BUT the application then FAILS TO START: Hibernate `ddl-auto: validate` aborts with `Schema-validation: wrong column type encountered in column [valid_weekdays] in table [shift_template]; found [bpchar (Types#CHAR)], but expecting [varchar(7) (Types#VARCHAR)]`. V39 declares `valid_weekdays CHAR(7)` (Postgres bpchar) while `ShiftTemplate.validWeekdaysMask` is a String with `@Column(length = 7)` (varchar). Boot fails, `BUILD FAILED`, no server. This blocks tests 2-9."
+prior_severity: blocker
 verified_by: claude-automated
 note: This is the phase's single most load-bearing unverified item. `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop`, so `./gradlew test` never executes V39 — a fully green 402-test suite says nothing about whether this migration applies. The SQL was reviewed line-by-line and the code reviewer independently confirmed the DDL and the `ShiftTemplate` entity mapping agree on every column, type, nullability and constraint, but syntactic soundness is not a confirmed `flyway migrate`.
 note_outcome: The concern this note raised was justified, and the review claim it cites was wrong. The DDL and the entity mapping do NOT agree on `valid_weekdays` — CHAR(7) vs varchar(7). Because the test profile disables Flyway and uses H2 `create-drop`, Hibernate builds the test schema from the entity and the migration is never exercised, so no test in the 402-test suite could have caught this.
@@ -65,8 +66,8 @@ note: These are the plan's own six `verification: backstop` truths. No frontend 
 ## Summary
 
 total: 9
-passed: 0
-issues: 1
+passed: 1
+issues: 0
 pending: 8
 skipped: 0
 blocked: 0
@@ -77,7 +78,9 @@ blocked: 0
 
 - gap_id: G-14-1
   truth: "V39 migration applies cleanly to live Postgres and the application starts against the migrated schema"
-  status: failed
+  status: resolved
+  resolved_by: "fix(14) 9a98029"
+  resolved_at: 2026-08-26
   reason: "User reported: migration applies and backfills correctly, but the app then fails to boot — Hibernate ddl-auto=validate rejects shift_template.valid_weekdays: V39 declares CHAR(7) (bpchar) while ShiftTemplate.validWeekdaysMask maps to varchar(7)."
   severity: blocker
   test: 1
