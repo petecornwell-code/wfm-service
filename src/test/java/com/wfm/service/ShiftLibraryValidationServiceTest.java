@@ -360,6 +360,20 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.misalignedTemplates()).isEmpty();
     }
 
+    @Test
+    void validate_retiredTemplateOffGrid_excludedFromMisalignedTemplates() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "S1", LocalTime.of(8, 15), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.misalignedTemplates()).isEmpty();
+    }
+
     // ---------- Hours match (D-06/D-07) ----------
 
     @Test

@@ -347,6 +347,14 @@ class ShiftTemplateServiceTest {
                 .isInstanceOf(EntityNotFoundException.class);
     }
 
+    @Test
+    void create_crossTenantDeskId_throwsEntityNotFound() {
+        UUID deskId = saveDesk(TENANT_B);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 1, 1), null)))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
     // ---------- Era-aware ordering (P-14) ----------
 
     @Test
