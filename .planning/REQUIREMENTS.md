@@ -31,8 +31,8 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **SHLB-02**: Operator can set which weekdays each shift template is valid on
 - [x] **SHLB-03**: Operator can give each shift template an effective date range, so a desk's shift set can change without rewriting history
 - [x] **SHLB-04**: Operator can edit and retire shift templates without corrupting schedules that already reference them
-- [ ] **SHLB-05**: The system validates a desk's shift library against that desk's staffing demand curve and reports which demand windows no combination of library shifts can cover
-- [ ] **SHLB-06**: A shift template whose net working duration cannot match any agent's effective contracted hours for a valid weekday is reported to the operator at definition time, not discovered at solve time
+- [x] **SHLB-05**: The system validates a desk's shift library against that desk's staffing demand curve and reports which demand windows no combination of library shifts can cover
+- [x] **SHLB-06**: A shift template whose net working duration cannot match any agent's effective contracted hours for a valid weekday is reported to the operator at definition time, not discovered at solve time
 
 ### Scheduling Mode (MODE)
 

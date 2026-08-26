@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
 status: executing
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-08-26T00:23:41.220Z"
+stopped_at: Completed 14-04-PLAN.md
+last_updated: "2026-08-26T00:55:39.776Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: 65a2ef5c80818ed758d706891fb3a5b0400db9fc
+state_head: 0e9c65bf33cb331eba55ebfcbd23c6c825e15133
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 ## Current Position
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 14 execution started
 
@@ -203,6 +203,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 14]: [Phase 14]: Phase 14 Plan 03: full ShiftTemplateService validation (name/time/break/weekday/effective-range), D-02 grid alignment via TimeslotGeneratorService.getLiveBounds, and D-11 identity+non-overlap invariants implemented behind one shared validate(...) path used by both create and updateShiftTemplate (T-14-11)
 - [Phase 14]: [Phase 14]: Phase 14 Plan 03: updateShiftTemplate is the sole edit/retire mechanism (P-11) -- setting effectiveTo retires a template; no delete or retire method exists on ShiftTemplateService or ShiftTemplateController
 - [Phase 14]: [Phase 14]: Phase 14 Plan 03: eraStatus (CURRENT/UPCOMING/PAST) computed server-side in ShiftTemplateController.toResponse (P-13); list order is name-ascending then effectiveFrom-descending, applied in ShiftTemplateService.listShiftTemplates (P-14)
+- [Phase 14]: Phase 14 Plan 04: ShiftLibraryValidationService is one computation (D-08) shared by validate() (non-throwing report) and requireShiftModeReady() (refusal) — structural single-template envelope coverage over live demand only (D-04/D-05), D-02 grid re-check via ShiftTemplateService.isAligned, exact-equality D-06/D-07 hours match via BigDecimals.normalize+compareTo with no tolerance, fatal case only when a demanded weekday has no workable (template, agent) pair at all. StaffingRequirementRepository.findAllLiveByDesk added (P-16) since open-ended template effective ranges cannot be expressed by the existing date-ranged query.
 
 ### Blockers/Concerns
 
@@ -216,8 +217,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-26T00:23:41.210Z
-Stopped at: Completed 14-03-PLAN.md
+Last session: 2026-08-26T00:55:39.767Z
+Stopped at: Completed 14-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -243,3 +244,4 @@ Resume file: None
 | Phase 14 P01 | 23min | 2 tasks | 14 files |
 | Phase 14 P02 | 25min | 2 tasks | 3 files |
 | Phase 14 P03 | 24min | 2 tasks | 5 files |
+| Phase 14 P04 | 30min | 2 tasks | 5 files |

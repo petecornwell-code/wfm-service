@@ -112,7 +112,7 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: 3/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+**Plans**: 4/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
 **Wave 1**
@@ -126,7 +126,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 14-04-PLAN.md — The shared coverage / grid / contracted-hours validator and its read-only report endpoint — D-08's one implementation, two callers (SHLB-05, SHLB-06)
+- [x] 14-04-PLAN.md — The shared coverage / grid / contracted-hours validator and its read-only report endpoint — D-08's one implementation, two callers (SHLB-05, SHLB-06)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
