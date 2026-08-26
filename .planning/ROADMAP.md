@@ -112,7 +112,7 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: 5/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+**Plans**: 6/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
 **Wave 1**
@@ -134,7 +134,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 14-06-PLAN.md — Operator surface: shift-library editor, coverage panel, SHLB-06 advisory, mode toggle, and the read-only mode column in Desk Management (SHLB-01…04, MODE-02, XCUT-01)
+- [x] 14-06-PLAN.md — Operator surface: shift-library editor, coverage panel, SHLB-06 advisory, mode toggle, and the read-only mode column in Desk Management (SHLB-01…04, MODE-02, XCUT-01)
 
 **UI hint**: yes
 

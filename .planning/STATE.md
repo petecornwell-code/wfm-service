@@ -4,17 +4,17 @@ milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
-status: executing
-stopped_at: Completed 14-05-PLAN.md
-last_updated: "2026-08-26T01:19:41.148Z"
+status: verifying
+stopped_at: Completed 14-06-PLAN.md (Phase 14 complete, 6/6 plans)
+last_updated: "2026-08-26T01:42:11.352Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: 6872988ea5bbfd332d18ca25b8daa0ce378a11d8
+state_head: 4c527441d36a7fb47b11b82b969db7042ec6410a
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-25 — Phase 14 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -207,6 +207,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 14]: Phase 14 Plan 05: P-21 adopted verbatim — D-13's 409 is ConflictException reading InMemoryScheduleStore.getByDeskId, not a new RefreshInProgressException/ConcurrentHashMap pair; zero new exception class, zero new map, zero new handler mapping
 - [Phase 14]: Phase 14 Plan 05: P-22 adopted verbatim — the RUNNING-solve 409 guard applies symmetrically to both switch directions, while the coverage gate (requireShiftModeReady) applies only SLOT-to-SHIFT; D-12's 'ungated' refers to the coverage validation only, not the in-flight guard
 - [Phase 14]: Phase 14 Plan 05: switchSchedulingMode writes exactly one column (desk.scheduling_mode); MODE-04 proven field-by-field across a SLOT-SHIFT-SLOT round trip against an ACCEPTED Schedule plus its snapshot Timeslot/StaffingRequirement rows and untouched live rows
+- [Phase 14]: [Phase 14] Phase 14 Plan 06: era legibility split across two cells (Current badge in Name cell, Upcoming/Past muted text beside Effective range dates); mode-switch 400 refusal updates Coverage panel directly from err.details rather than a second GET; SHLB-06's second toast reuses the existing 'warning' toast type
 
 ### Blockers/Concerns
 
@@ -220,8 +221,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-26T01:19:41.139Z
-Stopped at: Completed 14-05-PLAN.md
+Last session: 2026-08-26T01:42:11.341Z
+Stopped at: Completed 14-06-PLAN.md (Phase 14 complete, 6/6 plans)
 Resume file: None
 
 ## Operator Next Steps
@@ -249,3 +250,4 @@ Resume file: None
 | Phase 14 P03 | 24min | 2 tasks | 5 files |
 | Phase 14 P04 | 30min | 2 tasks | 5 files |
 | Phase 14 P05 | 22min | 2 tasks | 5 files |
+| Phase 14 P06 | 25min | 3 tasks | 3 files |
