@@ -364,14 +364,13 @@ export default function ShiftLibrary() {
         const refusalWindowMessages = err.details.filter(d => d.field === 'coverage').map(d => d.message)
         const gridMessages = err.details.filter(d => d.field === 'grid').map(d => d.message)
         const hoursMessage = err.details.find(d => d.field === 'contractedHours')?.message ?? null
-        setValidation(prev => (prev
-          ? {
-              ...prev,
-              hasLiveDemand: demandMessage === null,
-              uncoveredWindows: refusalWindowMessages.length > 0 ? refusalWindowMessages : prev.uncoveredWindows,
-              misalignedTemplates: gridMessages.length > 0 ? gridMessages : prev.misalignedTemplates,
-            }
-          : prev))
+        setValidation(prev => ({
+          hasLiveDemand: demandMessage === null,
+          uncoveredWindows: refusalWindowMessages.length > 0 ? refusalWindowMessages : (prev?.uncoveredWindows ?? []),
+          misalignedTemplates: gridMessages.length > 0 ? gridMessages : (prev?.misalignedTemplates ?? []),
+          hoursAdvisories: prev?.hoursAdvisories ?? [],
+          unsatisfiableWeekdays: prev?.unsatisfiableWeekdays ?? [],
+        }))
         setModeSwitchHoursError(hoursMessage)
         if (demandMessage) showToast('error', demandMessage)
       } else if (err instanceof ApiRequestError && err.status === 409) {
