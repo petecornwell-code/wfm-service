@@ -64,6 +64,14 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
     List<StaffingRequirement> findLiveByDeskAndDateRange(
             long tenantId, UUID deskId, LocalDate from, LocalDate to);
 
+    // --- Unpaginated, unfiltered live read (P-16) — a template's effective_to may be null
+    // (open-ended), so the union of every template's effective range is unbounded and the
+    // date-ranged variant above cannot express it. Does not fetch sr.specialization: the shift
+    // library validator only reads sr.timeslot and sr.requiredFTEs.
+    @Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t " +
+           "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL")
+    List<StaffingRequirement> findAllLiveByDesk(long tenantId, UUID deskId);
+
     @Modifying
     @Query("DELETE FROM StaffingRequirement sr WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId " +
            "AND sr.scheduleId IS NULL AND sr.timeslot.id IN " +
