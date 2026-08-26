@@ -1,10 +1,11 @@
 ---
 phase: 15
 slug: shift-envelope-breaks-library-generation
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-08-26
+reviewed_at: 2026-08-26
 ---
 
 # Phase 15 — UI Design Contract
@@ -157,6 +158,19 @@ a "new element" this ruling governs — it predates Phase 15.
 ---
 
 ## Component Specifications
+
+### Focal points (one per surface)
+
+Added at checker request (Dimension 2 FLAG) so the executor reads visual priority off a stated rule
+rather than inferring it from the colour and spacing sections.
+
+| Surface | Primary visual anchor | Why |
+|---|---|---|
+| Shift Library page, toolbar | The existing accent **`Add Shift Template`** button | It is the page's one accent element and stays the page's entry action. `Suggest a Library` sits beside it deliberately *un*-accented — a suggestion is an assist, not the primary way to build a library, and giving it accent weight would imply generation is the expected path. |
+| Break band editor (inside the template form) | The **band row list** as a block, not any single control | The form already has its own primary action (`Save`); the band list is a field group within it. `+ Add Break Band` is a nested sub-action and stays plain, per the accent-narrow ruling. |
+| Suggested Library draft panel | The **dashed container with its `Draft` badge** | The single most important thing an operator must read here is "this is not saved yet." The container edge and badge carry that, ahead of any row content or per-row control. |
+| Agent Allocation, shift-scheduled | The **group header bar** (shift name + headcount) | The whole point of ENVL-10 is that a solve is sanity-checkable by eye; the header bar is what makes the grouping legible at a glance, so it outranks the per-agent rows beneath it. |
+| Agent Allocation, slot-scheduled | **Unchanged — no focal point is introduced** | Any new anchor on this branch would itself be a regression. |
 
 ### 1. Break band editor (replaces Phase 14's single break-offset fields) — D-01, D-03, D-08
 
@@ -328,9 +342,18 @@ table this page renders today.
 > Empty-state and error-state COPY live in `## Copywriting Contract` above — this section covers
 > state coverage and REFERENCES those rows rather than restating the copy (de-dup).
 
-**Probe run:** 5 elements, 30 applicable considerations.
-**Resolved: 30 / 30** — 19 `verification: explicit`, 7 `verification: backstop`, 4 dismissed with
+**Probe run:** 5 elements, **39** applicable considerations (38 proposed by
+`ui-consideration-probe.cjs`, plus one `long-text` row retained on E4 that the engine did not
+propose but which is genuinely applicable — shift template names are operator-authored).
+**Resolved: 39 / 39** — 29 `verification: explicit`, 7 `verification: backstop`, 3 dismissed with
 reason, 0 unresolved.
+
+> **Reconciliation note (orchestrator, Step 9.5).** The authoring pass recorded 30 rows; the probe
+> engine proposed 38. The 10-row gap was on E2 (`loading`, `error`, `partial`, `long-text`),
+> E4 (`loading`, `error`), and E5 (`empty`, `loading`, `error`, `partial`) — all surfaces where the
+> state is inherited from an already-loaded page rather than owned by the new element, which is
+> exactly the class of row a prose derivation silently drops. They are filled in below rather than
+> left implicit: an inherited state is still a stated truth, not an absent one.
 
 **Backstop rationale (unchanged from Phase 13/14):** this repo has no frontend test framework at all
 (reconfirmed this session against `frontend/package.json`), so purely visual claims cannot be proven
@@ -355,9 +378,13 @@ evidence is wired.
 | Category | Status | Verification | Resolution / Reason |
 |----------|--------|--------------|---------------------|
 | empty | ✅ resolved | explicit | Zero bands → "No break" muted text, never a blank cell (Component Specifications §2) |
+| loading | ✅ resolved | explicit | The Break column has no independent fetch — it renders from the template list the page has already loaded, so the page's existing list-loading state is the only loading state. No per-cell skeleton |
+| error | ✅ resolved | explicit | Band data arrives with its template; a fetch failure is handled by the page's existing list-level error path. There is no per-cell error state, and a template that failed to load has no row at all rather than a broken cell |
+| partial | ✅ resolved | explicit | Not reachable: `offset` and `duration` are NOT NULL per band, and a blank `capacity` is a meaningful value (unlimited), not missing data. A band row is therefore always complete or absent |
 | populated | ✅ resolved | explicit | One band → unchanged Phase 14 rendering; N bands → one line per band, offset-ascending (Component Specifications §2) |
 | overflow | 🧪 backstop | backstop | Whether many stacked band lines inside one table cell still reads cleanly at realistic row heights is a visual density claim |
 | zero-one-many | ✅ resolved | explicit | All three counts have an explicit, distinct rendering rule (Component Specifications §2) |
+| long-text | ⊘ dismissed | — | Cell contents are computed clock ranges and counts only — never operator-authored free text. The template *name* lives in a different column, already covered by Phase 14's contract |
 
 ### E3 — Suggested Library draft panel *(list-collection, interactive-control)*
 
@@ -377,6 +404,8 @@ evidence is wired.
 | Category | Status | Verification | Resolution / Reason |
 |----------|--------|--------------|---------------------|
 | empty | ✅ resolved | explicit | A shift-scheduled date with zero agents scheduled falls through to the page's existing "No agent allocation data available" message — unchanged, since grouping only applies once entries exist |
+| loading | ✅ resolved | explicit | Grouping is a pure client-side transform of schedule detail the page has already fetched — it adds no request, so the tab's existing loading state is the only one. No group-level skeleton |
+| error | ✅ resolved | explicit | Grouping never errors: an entry whose shift descriptor is absent or unresolvable falls into the "No shift assigned" bucket rather than throwing or rendering an error row. A failed schedule fetch is handled by the page's existing error path before this tab renders at all |
 | populated | 🧪 backstop | backstop | "Group header bars read as clearly distinct from the existing per-date `<h4>` heading and from each other at a realistic group count" is a visual hierarchy claim, unverifiable without a frontend test harness |
 | partial | ✅ resolved | explicit | The `null`/"No shift assigned" bucket handles the case where some but not all agents on a date carry a resolved shift — sorted last, muted, not amber (Component Specifications §4) |
 | overflow | 🧪 backstop | backstop | Many distinct shift groups on one date (more templates than the worked examples imply) is a scroll/density visual claim |
@@ -388,8 +417,12 @@ evidence is wired.
 | Category | Status | Verification | Resolution / Reason |
 |----------|--------|--------------|---------------------|
 | populated | ✅ resolved | explicit | The hard constraint itself: `schedulingMode !== 'SHIFT'` renders the exact pre-existing table, no new code path executed, verified by the branch being the very first statement in the per-date block (Component Specifications §4) |
-| overflow | ⊘ dismissed | — | Unchanged existing behaviour — not a new consideration this phase introduces |
-| zero-one-many | ⊘ dismissed | — | Unchanged existing behaviour — not a new consideration this phase introduces |
+| empty | ✅ resolved | explicit | Identical to today — the pre-existing "No agent allocation data available" message. The guarantee for every row in this table is the same single truth: **no new branch executes on a slot-scheduled desk**, so every state is by construction the one that shipped before this phase |
+| loading | ✅ resolved | explicit | Identical to today — the tab's existing loading state, reached without entering any Phase 15 code path |
+| error | ✅ resolved | explicit | Identical to today — the page's existing error path, reached without entering any Phase 15 code path |
+| partial | ✅ resolved | explicit | Identical to today — partial schedule data renders exactly as it did before this phase; the shift descriptor is never read on this branch |
+| overflow | ✅ resolved | explicit | Identical to today — same container, same scroll behaviour, no new wrapper element introduced on this branch |
+| zero-one-many | ✅ resolved | explicit | Identical to today — no grouping, no headers, no singular/plural copy change on this branch |
 
 <!-- Status vocabulary (locked by probe-core projectTruths):
      ✅ covered   → a plain truth string lifted into must_haves.truths
