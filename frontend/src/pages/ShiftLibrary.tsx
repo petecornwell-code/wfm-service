@@ -355,15 +355,25 @@ export default function ShiftLibrary() {
     } catch (err) {
       setDesk(d => (d ? { ...d, schedulingMode: previous } : d))
       if (err instanceof ApiRequestError && err.status === 400) {
-        // A coverage/hours refusal — update the Coverage panel in place from the error's own
-        // details array (the named windows that caused the refusal), never a duplicate error
-        // surface elsewhere on the page.
+        // A coverage/hours/demand/grid refusal — update the Coverage panel in place from the
+        // error's own details array (the named windows/templates that caused the refusal),
+        // never a duplicate error surface elsewhere on the page. `hasLiveDemand` is derived
+        // from whether a `demand`-field detail is present, rather than forced true, so a
+        // "no demand loaded" refusal doesn't render a false "all covered" success state.
+        const demandMessage = err.details.find(d => d.field === 'demand')?.message ?? null
         const refusalWindowMessages = err.details.filter(d => d.field === 'coverage').map(d => d.message)
+        const gridMessages = err.details.filter(d => d.field === 'grid').map(d => d.message)
         const hoursMessage = err.details.find(d => d.field === 'contractedHours')?.message ?? null
         setValidation(prev => (prev
-          ? { ...prev, hasLiveDemand: true, uncoveredWindows: refusalWindowMessages.length > 0 ? refusalWindowMessages : prev.uncoveredWindows }
+          ? {
+              ...prev,
+              hasLiveDemand: demandMessage === null,
+              uncoveredWindows: refusalWindowMessages.length > 0 ? refusalWindowMessages : prev.uncoveredWindows,
+              misalignedTemplates: gridMessages.length > 0 ? gridMessages : prev.misalignedTemplates,
+            }
           : prev))
         setModeSwitchHoursError(hoursMessage)
+        if (demandMessage) showToast('error', demandMessage)
       } else if (err instanceof ApiRequestError && err.status === 409) {
         // D-13: an in-flight solve — a one-line fact, the right size for a toast.
         showToast('error', getErrorMessage(err))
