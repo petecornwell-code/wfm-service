@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { shiftTemplates as shiftTemplatesApi, type ShiftTemplate, type ShiftTemplateBody, ApiRequestError, getErrorMessage } from '../api/client'
+import {
+  shiftTemplates as shiftTemplatesApi,
+  shiftLibrary as shiftLibraryApi,
+  type ShiftTemplate,
+  type ShiftTemplateBody,
+  type ShiftLibraryValidation,
+  ApiRequestError,
+  getErrorMessage,
+} from '../api/client'
 import { showToast } from '../components/Toast'
 import { DAY_ORDER, DAY_LABELS } from './DeskAgents'
 
@@ -76,8 +84,49 @@ function formToBody(f: TemplateFormState): ShiftTemplateBody {
 }
 
 const fieldErrorStyle = { fontSize: '0.75rem', color: '#92400e', marginTop: '2px' }
+const amberPanelStyle = { background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '0.75rem' }
 
-const COLUMN_COUNT = 6 // Name, Start–End, Break, Weekdays, Effective range, Actions
+const COLUMN_COUNT = 7 // Name, Start–End, Break, Weekdays, Effective range, Hours match, Actions
+
+// The coverage panel (D-04/D-05/D-08 — one implementation, two callers). Every verdict is read
+// from the response and rendered; none is recomputed from templates/timeslots in the browser.
+function CoveragePanel({ validation }: { validation: ShiftLibraryValidation | null }) {
+  if (!validation) return null
+
+  if (!validation.hasLiveDemand) {
+    return (
+      <div style={amberPanelStyle}>
+        This desk has no staffing demand loaded. Upload staffing requirements before switching to shift-scheduled mode.
+      </div>
+    )
+  }
+
+  const hasProblems = validation.uncoveredWindows.length > 0 || validation.misalignedTemplates.length > 0
+  if (hasProblems) {
+    return (
+      <div style={amberPanelStyle}>
+        {validation.uncoveredWindows.length > 0 && (
+          <>
+            <div style={{ fontWeight: 600 }}>{validation.uncoveredWindows.length} demand window(s) have no covering shift template:</div>
+            <ul style={{ maxHeight: '220px', overflowY: 'auto', margin: '4px 0 0', paddingLeft: '1.25rem' }}>
+              {validation.uncoveredWindows.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </>
+        )}
+        {validation.misalignedTemplates.length > 0 && (
+          <div style={{ marginTop: validation.uncoveredWindows.length > 0 ? '8px' : 0 }}>
+            <div style={{ fontWeight: 600 }}>Misaligned templates:</div>
+            <ul style={{ margin: '4px 0 0', paddingLeft: '1.25rem' }}>
+              {validation.misalignedTemplates.map((m, i) => <li key={i}>{m}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return <p>✓ All staffing-demand windows are covered by the current shift library.</p>
+}
 
 export default function ShiftLibrary() {
   const { deskId } = useParams<{ deskId: string }>()
@@ -94,13 +143,33 @@ export default function ShiftLibrary() {
   const [retiringId, setRetiringId] = useState<string | null>(null)
   const [retireDate, setRetireDate] = useState(todayIso())
 
+  const [validation, setValidation] = useState<ShiftLibraryValidation | null>(null)
+
   useEffect(() => {
     if (!deskId) return
     shiftTemplatesApi.list(deskId)
       .then(setTemplates)
       .catch(err => showToast('error', getErrorMessage(err)))
       .finally(() => setLoading(false))
+    fetchValidation()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deskId])
+
+  // Re-fetched after every successful create/update/retire and after every mode-switch attempt
+  // (SHLB-05 "reported at definition time," D-08's one-validator-two-callers). No independent
+  // loading state — the panel re-renders synchronously off the response the caller already awaits.
+  // On failure the panel keeps its last-known state rather than clearing to blank.
+  const fetchValidation = async (): Promise<ShiftLibraryValidation | null> => {
+    if (!deskId) return null
+    try {
+      const result = await shiftLibraryApi.validation(deskId)
+      setValidation(result)
+      return result
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+      return null
+    }
+  }
 
   const clearFieldError = (field: string) => {
     setFieldErrors(fe => {
@@ -148,6 +217,14 @@ export default function ShiftLibrary() {
     setForm(emptyForm())
   }
 
+  // The save's own success toast fires unconditionally; a second amber toast (P-28) fires only
+  // if the refetched report additionally flags the just-saved template with an hours advisory —
+  // two separate facts with two separate lifetimes, not one qualified success message.
+  const toastAdvisoryIfAny = (report: ShiftLibraryValidation | null, templateId: string) => {
+    const advisory = report?.hoursAdvisories.find(a => a.templateId === templateId)
+    if (advisory) showToast('warning', advisory.message)
+  }
+
   const handleCreate = async () => {
     if (!deskId || !form.name.trim() || !form.startTime || !form.endTime) return
     setSubmitting(true)
@@ -158,6 +235,8 @@ export default function ShiftLibrary() {
       setFieldErrors({})
       setForm(emptyForm())
       showToast('success', 'Shift template created')
+      const report = await fetchValidation()
+      toastAdvisoryIfAny(report, created.id)
     } catch (err) {
       applyErrorResponse(err)
     } finally {
@@ -197,6 +276,8 @@ export default function ShiftLibrary() {
       setEditingId(null)
       setFieldErrors({})
       showToast('success', 'Shift template updated')
+      const report = await fetchValidation()
+      toastAdvisoryIfAny(report, updated.id)
     } catch (err) {
       applyErrorResponse(err)
     } finally {
@@ -233,6 +314,7 @@ export default function ShiftLibrary() {
       setTemplates(templates.map(x => (x.id === t.id ? updated : x)))
       setRetiringId(null)
       showToast('success', 'Shift template retired')
+      await fetchValidation()
     } catch (err) {
       showToast('error', getErrorMessage(err))
     } finally {
@@ -355,6 +437,7 @@ export default function ShiftLibrary() {
               <th>Break</th>
               <th>Weekdays</th>
               <th>Effective range</th>
+              <th>Hours match</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -407,6 +490,15 @@ export default function ShiftLibrary() {
                     )}
                   </td>
                   <td>
+                    {(() => {
+                      // A clean row adds no colour role (no checkmark, no green) — the glyph
+                      // renders only when the report flags this template. Verdict read from the
+                      // response, never recomputed from the row's own duration in the browser.
+                      const advisory = validation?.hoursAdvisories.find(a => a.templateId === t.id)
+                      return advisory ? <span title={advisory.message}>⚠</span> : null
+                    })()}
+                  </td>
+                  <td>
                     {retiringId === t.id ? (
                       <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                         <label style={{ fontSize: '0.8rem' }}>
@@ -429,6 +521,11 @@ export default function ShiftLibrary() {
           </tbody>
         </table>
       )}
+
+      <div style={{ margin: '16px 0' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Coverage</h3>
+        <CoveragePanel validation={validation} />
+      </div>
     </>
   )
 }

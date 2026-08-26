@@ -196,6 +196,11 @@ export const shiftTemplates = {
     request<ShiftTemplate>(`/desks/${deskId}/shift-templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 }
 
+// --- Shift Library Validation ---
+export const shiftLibrary = {
+  validation: (deskId: string) => request<ShiftLibraryValidation>(`/desks/${deskId}/shift-library/validation`),
+}
+
 // --- Timeslots ---
 export const timeslots = {
   list: (deskId: string, from: string, to: string) =>
@@ -309,6 +314,8 @@ export interface DeskAgent { id: string; deskId: string; bamboohrId: string; nam
 export interface Specialization { id: string; name: string; color?: string }
 export interface ShiftTemplate { id: string; name: string; startTime: string; endTime: string; breakOffsetMinutes: number; breakDurationMinutes: number; breakStartTime: string; breakEndTime: string; netHours: number; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null; eraStatus: 'CURRENT' | 'UPCOMING' | 'PAST' }
 export interface ShiftTemplateBody { name: string; startTime: string; endTime: string; breakOffsetMinutes: number; breakDurationMinutes: number; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null }
+export interface HoursAdvisory { templateId: string; templateName: string; weekday: string; netHours: number; message: string }
+export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[] }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
 export interface TimeslotBounds { periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
