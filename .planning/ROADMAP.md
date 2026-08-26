@@ -174,7 +174,26 @@ composing one by hand.
 
 **Research needed at plan time**: Yes — the coupling *mechanism* is settled (see Notes), but the exact `ConstructionHeuristicPhaseConfig`/`QueuedEntityPlacerConfig`/`EntitySelectorConfig` XML nesting for two sequential CH phases is only MEDIUM confidence per ARCHITECTURE.md, and the spike found the `EntitySelectorConfig` needs both `entityClass` and `id` set or the mimic-selector reference resolves to the wrong entity. Verify against a fixture before writing the real `solverConfig.xml`.
 
-**Plans**: TBD
+**Plans**: 8 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Break bands become the template's break: V40 migration, `ShiftTemplateBreakBand`, any-band `covers()`, capacity advisory, migration-vs-entity guard (wave 1)
+- [ ] 15-02-PLAN.md — SHLB-07 suggested shift library: stateless generation endpoint, set cover, D-12 partial coverage and refusal (wave 2)
+- [ ] 15-03-PLAN.md — Shift envelope entity, two explicitly-scoped CH phases, `shiftEnvelopeCompliance`, and the build-a-solver test (wave 2)
+- [ ] 15-04-PLAN.md — ENVL-07 ground-truth walker outside the score director, plus the disagreement proof (wave 3)
+- [ ] 15-05-PLAN.md — Shift Library UI: repeatable break-band editor and Suggested Library draft panel (wave 3)
+- [ ] 15-06-PLAN.md — Band capacity hard cap, real `Break clustering` body, mode-gating six constraints, XCUT-05 closed (wave 4)
+- [ ] 15-07-PLAN.md — Accept-time shift snapshot (D-07) and shift-grouped Agent Allocation (wave 4)
+- [ ] 15-08-PLAN.md — Seeded A/B benchmark, CH-ordering arm, and `15-BENCHMARK.md` (wave 5)
+
+**Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
+first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the
+phase" does **not**: D-01 drops `shift_template.break_offset_minutes`/`break_duration_minutes`, so
+the band schema — migration, entity, editor and the `covers()` generalisation — lands *inside* the
+generation slice, and only the solver-side `(template, band)` value range and the ENVL-09 clustering
+constraint follow with the envelope work. Generating against columns dropped later in the same phase
+would mean building it twice.
+
 **UI hint**: yes
 
 ### Phase 16: Usual Shift Storage
