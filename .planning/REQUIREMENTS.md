@@ -51,6 +51,8 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [ ] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
 - [ ] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
 - [ ] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
+- [ ] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
+- [ ] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
 
 ### Usual Shift (USHF)
 
@@ -129,7 +131,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 |-------------|-------|--------|
 | SHLB-01…06 | Phase 14 | Pending |
 | MODE-01…05 | Phase 14 | Pending |
-| ENVL-01…07 | Phase 15 | Pending |
+| ENVL-01…09 | Phase 15 | Pending |
 | USHF-01…06 | Phase 16 | Pending |
 | CONS-01…06 | Phase 17 | Pending |
 | DRFT-01…04 | Phase 17 | Pending |
