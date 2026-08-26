@@ -3,9 +3,11 @@ import { useParams } from 'react-router-dom'
 import {
   shiftTemplates as shiftTemplatesApi,
   shiftLibrary as shiftLibraryApi,
+  desks,
   type ShiftTemplate,
   type ShiftTemplateBody,
   type ShiftLibraryValidation,
+  type Desk,
   ApiRequestError,
   getErrorMessage,
 } from '../api/client'
@@ -90,7 +92,10 @@ const COLUMN_COUNT = 7 // Name, Start–End, Break, Weekdays, Effective range, H
 
 // The coverage panel (D-04/D-05/D-08 — one implementation, two callers). Every verdict is read
 // from the response and rendered; none is recomputed from templates/timeslots in the browser.
-function CoveragePanel({ validation }: { validation: ShiftLibraryValidation | null }) {
+// `extraLine` carries the mode-switch's own 400 refusal's contractedHours detail message (Task 3
+// §5) — the single fatal-weekday sentence, rendered as its own line rather than a duplicate
+// error surface elsewhere on the page.
+function CoveragePanel({ validation, extraLine }: { validation: ShiftLibraryValidation | null; extraLine?: string | null }) {
   if (!validation) return null
 
   if (!validation.hasLiveDemand) {
@@ -101,7 +106,7 @@ function CoveragePanel({ validation }: { validation: ShiftLibraryValidation | nu
     )
   }
 
-  const hasProblems = validation.uncoveredWindows.length > 0 || validation.misalignedTemplates.length > 0
+  const hasProblems = validation.uncoveredWindows.length > 0 || validation.misalignedTemplates.length > 0 || !!extraLine
   if (hasProblems) {
     return (
       <div style={amberPanelStyle}>
@@ -119,6 +124,11 @@ function CoveragePanel({ validation }: { validation: ShiftLibraryValidation | nu
             <ul style={{ margin: '4px 0 0', paddingLeft: '1.25rem' }}>
               {validation.misalignedTemplates.map((m, i) => <li key={i}>{m}</li>)}
             </ul>
+          </div>
+        )}
+        {extraLine && (
+          <div style={{ marginTop: (validation.uncoveredWindows.length > 0 || validation.misalignedTemplates.length > 0) ? '8px' : 0 }}>
+            {extraLine}
           </div>
         )}
       </div>
@@ -144,6 +154,10 @@ export default function ShiftLibrary() {
   const [retireDate, setRetireDate] = useState(todayIso())
 
   const [validation, setValidation] = useState<ShiftLibraryValidation | null>(null)
+  const [modeSwitchHoursError, setModeSwitchHoursError] = useState<string | null>(null)
+
+  const [desk, setDesk] = useState<Desk | null>(null)
+  const [switchingMode, setSwitchingMode] = useState(false)
 
   useEffect(() => {
     if (!deskId) return
@@ -152,6 +166,7 @@ export default function ShiftLibrary() {
       .catch(err => showToast('error', getErrorMessage(err)))
       .finally(() => setLoading(false))
     fetchValidation()
+    desks.get(deskId).then(setDesk).catch(err => showToast('error', getErrorMessage(err)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deskId])
 
@@ -164,6 +179,7 @@ export default function ShiftLibrary() {
     try {
       const result = await shiftLibraryApi.validation(deskId)
       setValidation(result)
+      setModeSwitchHoursError(null)
       return result
     } catch (err) {
       showToast('error', getErrorMessage(err))
@@ -319,6 +335,43 @@ export default function ShiftLibrary() {
       showToast('error', getErrorMessage(err))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Scheduling Mode toggle (D-12/D-13). Optimistic-with-revert (P-30): the selection updates
+  // immediately and both options disable for the duration of the request; on any error the
+  // selection snaps back to the server's last known value. No native confirmation dialog in
+  // either direction — Shift-to-Slot is unconditional and takes the identical code path, no
+  // extra step.
+  const handleModeSwitch = async (target: 'SLOT' | 'SHIFT') => {
+    if (!deskId || !desk || switchingMode || desk.schedulingMode === target) return
+    const previous = desk.schedulingMode
+    setSwitchingMode(true)
+    setDesk({ ...desk, schedulingMode: target })
+    try {
+      const updated = await desks.setSchedulingMode(deskId, target)
+      setDesk(updated)
+      await fetchValidation()
+    } catch (err) {
+      setDesk(d => (d ? { ...d, schedulingMode: previous } : d))
+      if (err instanceof ApiRequestError && err.status === 400) {
+        // A coverage/hours refusal — update the Coverage panel in place from the error's own
+        // details array (the named windows that caused the refusal), never a duplicate error
+        // surface elsewhere on the page.
+        const refusalWindowMessages = err.details.filter(d => d.field === 'coverage').map(d => d.message)
+        const hoursMessage = err.details.find(d => d.field === 'contractedHours')?.message ?? null
+        setValidation(prev => (prev
+          ? { ...prev, hasLiveDemand: true, uncoveredWindows: refusalWindowMessages.length > 0 ? refusalWindowMessages : prev.uncoveredWindows }
+          : prev))
+        setModeSwitchHoursError(hoursMessage)
+      } else if (err instanceof ApiRequestError && err.status === 409) {
+        // D-13: an in-flight solve — a one-line fact, the right size for a toast.
+        showToast('error', getErrorMessage(err))
+      } else {
+        showToast('error', getErrorMessage(err))
+      }
+    } finally {
+      setSwitchingMode(false)
     }
   }
 
@@ -524,7 +577,33 @@ export default function ShiftLibrary() {
 
       <div style={{ margin: '16px 0' }}>
         <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Coverage</h3>
-        <CoveragePanel validation={validation} />
+        <CoveragePanel validation={validation} extraLine={modeSwitchHoursError} />
+      </div>
+
+      <div style={{ margin: '16px 0' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Scheduling Mode</h3>
+        {desk && (
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button
+              onClick={() => handleModeSwitch('SLOT')}
+              disabled={switchingMode}
+              style={desk.schedulingMode === 'SLOT'
+                ? { background: '#3b82f6', color: '#fff', border: '1px solid #3b82f6' }
+                : { background: '#fff', color: '#111827', border: '1px solid #d1d5db' }}
+            >
+              Slot-scheduled
+            </button>
+            <button
+              onClick={() => handleModeSwitch('SHIFT')}
+              disabled={switchingMode}
+              style={desk.schedulingMode === 'SHIFT'
+                ? { background: '#3b82f6', color: '#fff', border: '1px solid #3b82f6' }
+                : { background: '#fff', color: '#111827', border: '1px solid #d1d5db' }}
+            >
+              Shift-scheduled
+            </button>
+          </div>
+        )}
       </div>
     </>
   )

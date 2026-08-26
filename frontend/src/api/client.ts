@@ -101,6 +101,8 @@ export const desks = {
   get: (id: string) => request<Desk>(`/desks/${id}`),
   update: (id: string, data: Partial<CreateDeskRequest>) => request<Desk>(`/desks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => request<void>(`/desks/${id}`, { method: 'DELETE' }),
+  setSchedulingMode: (id: string, mode: 'SLOT' | 'SHIFT') =>
+    request<Desk>(`/desks/${id}/scheduling-mode`, { method: 'PUT', body: JSON.stringify({ mode }) }),
 }
 
 // --- Agents (tenant-level) ---
@@ -306,7 +308,7 @@ export const exceptions = {
 }
 
 // --- Types ---
-export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number }
+export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number; schedulingMode: 'SLOT' | 'SHIFT' }
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
 export interface DayHoursEntry { hasRow: boolean; hours: number | null; dayOffType: 'MANDATORY' | 'PTO' | null; effectiveHours: number }
