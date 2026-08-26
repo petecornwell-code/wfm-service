@@ -3,12 +3,15 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftTemplateRequest;
+import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,8 +21,10 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -32,13 +37,16 @@ import java.util.UUID;
 public class ShiftTemplateService {
 
     private final ShiftTemplateRepository shiftTemplateRepository;
+    private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
     private final DeskRepository deskRepository;
 
     public ShiftTemplateService(ShiftTemplateRepository shiftTemplateRepository,
+                                 ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
                                  TimeslotGeneratorService timeslotGeneratorService,
                                  DeskRepository deskRepository) {
         this.shiftTemplateRepository = shiftTemplateRepository;
+        this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
         this.deskRepository = deskRepository;
     }
@@ -67,8 +75,13 @@ public class ShiftTemplateService {
         ShiftTemplate template = new ShiftTemplate();
         template.setTenantId(tenantId);
         template.setDeskId(deskId);
-        applyFields(template, request);
-        return shiftTemplateRepository.save(template);
+        applyScalarFields(template, request);
+        // The template must exist (and hold a generated id) before its bands can be persisted --
+        // GenerationType.UUID assigns the id in-memory at save()/persist() time, so it is already
+        // populated on the object save() returns.
+        ShiftTemplate saved = shiftTemplateRepository.save(template);
+        replaceBands(saved, request);
+        return saved;
     }
 
     /**
@@ -84,28 +97,52 @@ public class ShiftTemplateService {
                 .orElseThrow(() -> new EntityNotFoundException("ShiftTemplate", id));
 
         validate(tenantId, deskId, request, id);
-        applyFields(template, request);
-        return shiftTemplateRepository.save(template);
+        applyScalarFields(template, request);
+        ShiftTemplate saved = shiftTemplateRepository.save(template);
+        replaceBands(saved, request);
+        return saved;
     }
 
-    private void applyFields(ShiftTemplate template, ShiftTemplateRequest request) {
+    private void applyScalarFields(ShiftTemplate template, ShiftTemplateRequest request) {
         template.setName(request.name());
         template.setStartTime(request.startTime());
         template.setEndTime(request.endTime());
-        template.setBreakOffsetMinutes(request.breakOffsetMinutes() != null ? request.breakOffsetMinutes() : 0);
-        template.setBreakDurationMinutes(request.breakDurationMinutes() != null ? request.breakDurationMinutes() : 0);
         template.setValidWeekdays(request.validWeekdays());
         template.setEffectiveFrom(request.effectiveFrom());
         template.setEffectiveTo(request.effectiveTo());
     }
 
     /**
+     * Replaces the template's bands wholesale on every save (delete-then-recreate) — a request
+     * that omits a band means that band is gone, matching every other whole-collection edit in
+     * this codebase. {@code flush()} after the loop makes read-after-write ordering deterministic
+     * rather than relying on Hibernate auto-flush — the same fix Phase 13 Plan 02 needed for
+     * {@code setContractedHours}.
+     */
+    private void replaceBands(ShiftTemplate template, ShiftTemplateRequest request) {
+        shiftTemplateBreakBandRepository.deleteByShiftTemplate_Id(template.getId());
+        List<BreakBandRequest> bands = request.bands();
+        if (bands != null) {
+            for (BreakBandRequest band : bands) {
+                ShiftTemplateBreakBand entity = new ShiftTemplateBreakBand();
+                entity.setTenantId(template.getTenantId());
+                entity.setShiftTemplate(template);
+                entity.setOffsetMinutes(band.offsetMinutes() != null ? band.offsetMinutes() : 0);
+                entity.setDurationMinutes(band.durationMinutes() != null ? band.durationMinutes() : 0);
+                entity.setCapacity(band.capacity());
+                shiftTemplateBreakBandRepository.save(entity);
+            }
+        }
+        shiftTemplateBreakBandRepository.flush();
+    }
+
+    /**
      * Shared validation for create and update (T-14-11) so the two entry points cannot drift.
      * {@code excludeId} is null on create; on update it is the row's own id, so a row never
-     * collides with itself. Order: name present, times present and ordered, break within the
-     * envelope, weekday set non-empty, effective range present and ordered, grid alignment,
-     * identity uniqueness, same-name range non-overlap — the first failure an operator sees is
-     * the most basic one.
+     * collides with itself. Order: name present, times present and ordered, band checks (P-01/
+     * P-04/P-05, replacing Phase 14's scalar break checks in the same slot), weekday set
+     * non-empty, effective range present and ordered, grid alignment, identity uniqueness,
+     * same-name range non-overlap — the first failure an operator sees is the most basic one.
      */
     private void validate(long tenantId, UUID deskId, ShiftTemplateRequest request, UUID excludeId) {
         if (request.name() == null || request.name().isBlank()) {
@@ -116,15 +153,8 @@ public class ShiftTemplateService {
             throw new IllegalArgumentException("Shift template end time must be after its start time");
         }
 
-        int breakOffsetMinutes = request.breakOffsetMinutes() != null ? request.breakOffsetMinutes() : 0;
-        int breakDurationMinutes = request.breakDurationMinutes() != null ? request.breakDurationMinutes() : 0;
-        if (breakOffsetMinutes < 0 || breakDurationMinutes < 0) {
-            throw new IllegalArgumentException("Shift template break offset and duration cannot be negative");
-        }
         long envelopeMinutes = ChronoUnit.MINUTES.between(request.startTime(), request.endTime());
-        if (breakOffsetMinutes + breakDurationMinutes > envelopeMinutes) {
-            throw new IllegalArgumentException("Shift template break must finish before the shift ends");
-        }
+        validateBands(request.bands(), envelopeMinutes);
 
         if (request.validWeekdays() == null || request.validWeekdays().isEmpty()) {
             throw new IllegalArgumentException("A shift template must be valid on at least one weekday");
@@ -138,19 +168,52 @@ public class ShiftTemplateService {
                     "Shift template effective to date cannot be before its effective from date");
         }
 
-        validateGridAlignment(deskId, request, breakOffsetMinutes, breakDurationMinutes);
+        validateGridAlignment(deskId, request);
         validateIdentityAndNonOverlap(tenantId, deskId, request, excludeId);
     }
 
     /**
-     * D-02: template start, end, and (when non-zero-duration) break boundaries must land on the
-     * desk's current live timeslot grid. P-10: when the desk has no live timeslots yet, {@link
-     * TimeslotGeneratorService#getLiveBounds} returns {@link Optional#empty()} and the check is
-     * skipped entirely — there is nothing to align to, and failing the save would make the
-     * library unbuildable before a schedule period is generated.
+     * A null or empty band list is legal and means no break (P-01 "zero bands = no break").
+     * Per band, in order: non-negative offset/duration, envelope containment (reusing the
+     * existing break-overrun message), capacity at least 1 when supplied (P-04), then duplicate
+     * (offset, duration) pair detection across the whole list (P-05) — bands whose break windows
+     * merely touch are distinct and legal, since a touching pair never shares both values.
      */
-    private void validateGridAlignment(UUID deskId, ShiftTemplateRequest request,
-                                        int breakOffsetMinutes, int breakDurationMinutes) {
+    private void validateBands(List<BreakBandRequest> bands, long envelopeMinutes) {
+        if (bands == null || bands.isEmpty()) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (BreakBandRequest band : bands) {
+            int offsetMinutes = band.offsetMinutes() != null ? band.offsetMinutes() : 0;
+            int durationMinutes = band.durationMinutes() != null ? band.durationMinutes() : 0;
+            if (offsetMinutes < 0 || durationMinutes < 0) {
+                throw new IllegalArgumentException("Shift template break offset and duration cannot be negative");
+            }
+            if (offsetMinutes + durationMinutes > envelopeMinutes) {
+                throw new IllegalArgumentException("Shift template break must finish before the shift ends");
+            }
+            if (band.capacity() != null && band.capacity() < 1) {
+                throw new IllegalArgumentException(
+                        "Break band capacity must be at least 1 (band at offset " + offsetMinutes + " minutes)");
+            }
+            String key = offsetMinutes + ":" + durationMinutes;
+            if (!seen.add(key)) {
+                throw new IllegalArgumentException(
+                        "Duplicate break band at offset " + offsetMinutes + " minutes with duration "
+                                + durationMinutes + " minutes");
+            }
+        }
+    }
+
+    /**
+     * D-02: template start, end, and (for each band whose duration is non-zero) that band's own
+     * break boundaries must land on the desk's current live timeslot grid. P-10: when the desk
+     * has no live timeslots yet, {@link TimeslotGeneratorService#getLiveBounds} returns {@link
+     * Optional#empty()} and the check is skipped entirely — there is nothing to align to, and
+     * failing the save would make the library unbuildable before a schedule period is generated.
+     */
+    private void validateGridAlignment(UUID deskId, ShiftTemplateRequest request) {
         Optional<TimeslotBoundsResponse> boundsOpt = timeslotGeneratorService.getLiveBounds(deskId);
         if (boundsOpt.isEmpty()) {
             return;
@@ -160,11 +223,20 @@ public class ShiftTemplateService {
         List<ErrorDetail> details = new ArrayList<>();
         addIfMisaligned(details, "startTime", request.startTime(), bounds);
         addIfMisaligned(details, "endTime", request.endTime(), bounds);
-        if (breakDurationMinutes > 0) {
-            LocalTime breakStart = request.startTime().plusMinutes(breakOffsetMinutes);
-            LocalTime breakEnd = breakStart.plusMinutes(breakDurationMinutes);
-            addIfMisaligned(details, "breakStartTime", breakStart, bounds);
-            addIfMisaligned(details, "breakEndTime", breakEnd, bounds);
+        List<BreakBandRequest> bands = request.bands();
+        if (bands != null) {
+            for (int i = 0; i < bands.size(); i++) {
+                BreakBandRequest band = bands.get(i);
+                int offsetMinutes = band.offsetMinutes() != null ? band.offsetMinutes() : 0;
+                int durationMinutes = band.durationMinutes() != null ? band.durationMinutes() : 0;
+                if (durationMinutes <= 0) {
+                    continue;
+                }
+                LocalTime breakStart = request.startTime().plusMinutes(offsetMinutes);
+                LocalTime breakEnd = breakStart.plusMinutes(durationMinutes);
+                addIfMisaligned(details, "bands[" + i + "].breakStartTime", breakStart, bounds);
+                addIfMisaligned(details, "bands[" + i + "].breakEndTime", breakEnd, bounds);
+            }
         }
         if (!details.isEmpty()) {
             throw new PreSolveValidationException(

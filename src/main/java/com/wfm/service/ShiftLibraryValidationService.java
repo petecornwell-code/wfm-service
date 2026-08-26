@@ -8,8 +8,10 @@ import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.repository.AgentDayHoursRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,11 @@ import com.wfm.util.BigDecimals;
  *
  * <p>Every read is scoped through {@link TenantContext} — no method here accepts a caller-supplied
  * tenant (T-14-15).
+ *
+ * <p><b>Task 1 note:</b> this class is adapted here mechanically to read bands through {@link
+ * ShiftTemplateBreakBandRepository} instead of Phase 14's scalar break fields, taking only the
+ * first (lowest-offset) band per template so this task's own behaviour is unchanged. The any-band
+ * generalisation (D-02) is Task 2's own reviewable change.
  */
 @Service
 public class ShiftLibraryValidationService {
@@ -45,15 +52,18 @@ public class ShiftLibraryValidationService {
                     + "switching to shift-scheduled mode.";
 
     private final ShiftTemplateRepository shiftTemplateRepository;
+    private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
 
     public ShiftLibraryValidationService(ShiftTemplateRepository shiftTemplateRepository,
+                                          ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
                                           StaffingRequirementRepository staffingRequirementRepository,
                                           AgentDayHoursRepository agentDayHoursRepository,
                                           TimeslotGeneratorService timeslotGeneratorService) {
         this.shiftTemplateRepository = shiftTemplateRepository;
+        this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
@@ -158,7 +168,7 @@ public class ShiftLibraryValidationService {
         return uncovered;
     }
 
-    private static boolean covers(ShiftTemplate template, Window window) {
+    private boolean covers(ShiftTemplate template, Window window) {
         if (!template.getValidWeekdays().contains(window.date().getDayOfWeek())) {
             return false;
         }
@@ -168,9 +178,10 @@ public class ShiftLibraryValidationService {
         if (window.startTime().isBefore(template.getStartTime()) || window.endTime().isAfter(template.getEndTime())) {
             return false;
         }
-        if (template.getBreakDurationMinutes() > 0) {
-            LocalTime breakStart = template.getBreakStartTime();
-            LocalTime breakEnd = template.getBreakEndTime();
+        ShiftTemplateBreakBand band = firstBand(template);
+        if (band != null && band.getDurationMinutes() > 0) {
+            LocalTime breakStart = band.getBreakStartTime(template);
+            LocalTime breakEnd = band.getBreakEndTime(template);
             boolean overlapsBreak = window.startTime().isBefore(breakEnd) && window.endTime().isAfter(breakStart);
             if (overlapsBreak) {
                 return false;
@@ -206,12 +217,13 @@ public class ShiftLibraryValidationService {
         return misaligned;
     }
 
-    private static boolean isTemplateAligned(ShiftTemplate template, TimeslotBoundsResponse bounds) {
+    private boolean isTemplateAligned(ShiftTemplate template, TimeslotBoundsResponse bounds) {
         boolean aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getStartTime())
                 && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getEndTime());
-        if (aligned && template.getBreakDurationMinutes() > 0) {
-            aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getBreakStartTime())
-                    && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getBreakEndTime());
+        ShiftTemplateBreakBand band = firstBand(template);
+        if (aligned && band != null && band.getDurationMinutes() > 0) {
+            aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), band.getBreakStartTime(template))
+                    && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), band.getBreakEndTime(template));
         }
         return aligned;
     }
@@ -228,7 +240,7 @@ public class ShiftLibraryValidationService {
                                                       Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
         List<HoursAdvisory> advisories = new ArrayList<>();
         for (ShiftTemplate template : templates) {
-            BigDecimal netHours = template.getNetHours();
+            BigDecimal netHours = template.getNetHours(firstBandDurationMinutes(template));
             for (DayOfWeek weekday : template.getValidWeekdays()) {
                 List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
                 if (!anyHoursMatch(candidates, netHours)) {
@@ -256,12 +268,25 @@ public class ShiftLibraryValidationService {
             boolean satisfiable = templates.stream().anyMatch(t ->
                     t.getValidWeekdays().contains(weekday)
                             && demandedDates.stream().anyMatch(d -> withinEffectiveRange(t, d))
-                            && anyHoursMatch(hoursByWeekday.getOrDefault(weekday, List.of()), t.getNetHours()));
+                            && anyHoursMatch(hoursByWeekday.getOrDefault(weekday, List.of()),
+                                    t.getNetHours(firstBandDurationMinutes(t))));
             if (!satisfiable) {
                 unsatisfiable.add(weekday.name());
             }
         }
         return unsatisfiable;
+    }
+
+    /** The template's lowest-offset band, or {@code null} when it has none ("no break"). */
+    private ShiftTemplateBreakBand firstBand(ShiftTemplate template) {
+        List<ShiftTemplateBreakBand> bands = shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(template.getTenantId(), template.getId());
+        return bands.isEmpty() ? null : bands.get(0);
+    }
+
+    private int firstBandDurationMinutes(ShiftTemplate template) {
+        ShiftTemplateBreakBand band = firstBand(template);
+        return band == null ? 0 : band.getDurationMinutes();
     }
 
     private static boolean anyHoursMatch(List<BigDecimal> candidateHours, BigDecimal netHours) {

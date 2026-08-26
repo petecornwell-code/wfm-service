@@ -12,10 +12,12 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * A desk-scoped shift definition (SHLB-01..03) — start/end envelope, a fixed break offset from
- * shift start (D-01, zero solver freedom), the weekdays it applies to, and the effective date
- * range that is the template's ENTIRE lifecycle mechanism (D-10). There is deliberately no
- * is_active/enabled/retired column here — see V39's migration header comment for why.
+ * A desk-scoped shift definition (SHLB-01..03) — start/end envelope, N break bands (D-01, a
+ * child table read through {@link com.wfm.repository.ShiftTemplateBreakBandRepository} — this
+ * entity intentionally has no {@code @OneToMany} collection, see V40's migration header comment
+ * for why), the weekdays it applies to, and the effective date range that is the template's
+ * ENTIRE lifecycle mechanism (D-10). There is deliberately no is_active/enabled/retired column
+ * here — see V39's migration header comment for why.
  */
 @Entity
 @Table(name = "shift_template", uniqueConstraints = @UniqueConstraint(
@@ -40,12 +42,6 @@ public class ShiftTemplate {
 
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
-
-    @Column(name = "break_offset_minutes", nullable = false)
-    private int breakOffsetMinutes;
-
-    @Column(name = "break_duration_minutes", nullable = false)
-    private int breakDurationMinutes;
 
     /**
      * Fixed-position 7-character mask, index 0 = MONDAY .. index 6 = SUNDAY, '1' = valid day,
@@ -80,12 +76,6 @@ public class ShiftTemplate {
 
     public LocalTime getEndTime() { return endTime; }
     public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
-
-    public int getBreakOffsetMinutes() { return breakOffsetMinutes; }
-    public void setBreakOffsetMinutes(int breakOffsetMinutes) { this.breakOffsetMinutes = breakOffsetMinutes; }
-
-    public int getBreakDurationMinutes() { return breakDurationMinutes; }
-    public void setBreakDurationMinutes(int breakDurationMinutes) { this.breakDurationMinutes = breakDurationMinutes; }
 
     public String getValidWeekdaysMask() { return validWeekdaysMask; }
     public void setValidWeekdaysMask(String validWeekdaysMask) { this.validWeekdaysMask = validWeekdaysMask; }
@@ -127,28 +117,16 @@ public class ShiftTemplate {
         this.validWeekdaysMask = mask.toString();
     }
 
-    /** Break start = shift start + offset (D-01). */
-    @Transient
-    public LocalTime getBreakStartTime() {
-        return startTime == null ? null : startTime.plusMinutes(breakOffsetMinutes);
-    }
-
-    /** Break end = break start + duration (D-01). */
-    @Transient
-    public LocalTime getBreakEndTime() {
-        LocalTime breakStart = getBreakStartTime();
-        return breakStart == null ? null : breakStart.plusMinutes(breakDurationMinutes);
-    }
-
     /**
-     * Net working duration = envelope duration minus the break, in hours. Rounded directly to
-     * scale 2 in a single step (D-07's exact-equality comparisons all normalize to scale 2
-     * anyway) — a scale-4 intermediate followed by a second round to scale 2 is a latent
-     * double-rounding hazard for grid increments not evenly divisible into whole cents of an
-     * hour.
+     * Net working duration = envelope duration minus the supplied band's break duration, in
+     * hours (P-02: band-parameterised — a template with zero bands passes 0 here and its net
+     * hours equal its full envelope). Rounded directly to scale 2 in a single step (D-07's
+     * exact-equality comparisons all normalize to scale 2 anyway) — a scale-4 intermediate
+     * followed by a second round to scale 2 is a latent double-rounding hazard for grid
+     * increments not evenly divisible into whole cents of an hour.
      */
     @Transient
-    public BigDecimal getNetHours() {
+    public BigDecimal getNetHours(int breakDurationMinutes) {
         if (startTime == null || endTime == null) {
             return null;
         }

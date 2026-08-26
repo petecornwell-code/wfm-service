@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.controller.ShiftTemplateController;
 import com.wfm.dto.ShiftTemplateRequest;
+import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.dto.ShiftTemplateResponse;
 import com.wfm.model.Desk;
 import com.wfm.model.SchedulingMode;
@@ -30,6 +31,11 @@ import static org.assertj.core.api.Assertions.*;
  * (14-01-PLAN.md P-04 — this codebase has no MockMvc harness). Written RED-first per the plan's
  * tdd="true" flag: every method below must fail against a controller/service/repository/entity
  * that does not yet exist, then pass once the tracer slice is implemented.
+ *
+ * <p>Updated by Phase 15 Plan 01 (D-01): the tracer's break assertions now go through the band
+ * list rather than the retired scalar break fields — this file is not itself a Phase 15 target
+ * file, but it breaks to compile the moment ShiftTemplateRequest/Response change shape, so it is
+ * mechanically ported here (Rule 1/3) alongside the rest of the promotion.
  */
 @DataJpaTest
 @Import({ShiftTemplateService.class, ShiftTemplateController.class, TimeslotGeneratorService.class})
@@ -59,7 +65,8 @@ class ShiftTemplateTracerTest {
     void createAndList_returnsSubmittedTemplate() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest request = new ShiftTemplateRequest(
-                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         controller.createShiftTemplate(deskId, request);
@@ -78,21 +85,24 @@ class ShiftTemplateTracerTest {
         // D-01's worked example: 08:00-17:00, offset 240 (break at 12:00), duration 60 -> net 8h.
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest request = new ShiftTemplateRequest(
-                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         ShiftTemplateResponse response = controller.createShiftTemplate(deskId, request).getBody();
 
-        assertThat(response.breakStartTime()).isEqualTo(LocalTime.of(12, 0));
-        assertThat(response.breakEndTime()).isEqualTo(LocalTime.of(13, 0));
-        assertThat(response.netHours()).isEqualByComparingTo(new BigDecimal("8.00"));
+        assertThat(response.bands()).hasSize(1);
+        assertThat(response.bands().get(0).breakStartTime()).isEqualTo(LocalTime.of(12, 0));
+        assertThat(response.bands().get(0).breakEndTime()).isEqualTo(LocalTime.of(13, 0));
+        assertThat(response.bands().get(0).netHours()).isEqualByComparingTo(new BigDecimal("8.00"));
     }
 
     @Test
     void create_validWeekdaysReturnedInMondayFirstOrder() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest request = new ShiftTemplateRequest(
-                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY),
                 LocalDate.of(2026, 1, 1), null);
 
@@ -103,16 +113,15 @@ class ShiftTemplateTracerTest {
     }
 
     @Test
-    void create_zeroDurationBreak_netHoursEqualsFullEnvelope() {
+    void create_zeroBands_netHoursEqualsFullEnvelope() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest request = new ShiftTemplateRequest(
-                "S1", LocalTime.of(8, 0), LocalTime.of(12, 0), 120, 0,
+                "S1", LocalTime.of(8, 0), LocalTime.of(12, 0), List.of(),
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         ShiftTemplateResponse response = controller.createShiftTemplate(deskId, request).getBody();
 
-        assertThat(response.netHours()).isEqualByComparingTo(new BigDecimal("4.00"));
-        assertThat(response.breakStartTime()).isEqualTo(response.breakEndTime());
+        assertThat(response.bands()).isEmpty();
     }
 
     @Test
@@ -128,7 +137,8 @@ class ShiftTemplateTracerTest {
     void list_crossTenant_returnsEmpty() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest request = new ShiftTemplateRequest(
-                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                "S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
         controller.createShiftTemplate(deskId, request);
 

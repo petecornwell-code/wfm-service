@@ -9,12 +9,14 @@ import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
@@ -61,6 +63,9 @@ class ShiftLibraryValidationServiceTest {
 
     @Autowired
     private ShiftTemplateRepository shiftTemplateRepository;
+
+    @Autowired
+    private ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
 
     @Autowired
     private StaffingRequirementRepository staffingRequirementRepository;
@@ -381,7 +386,7 @@ class ShiftLibraryValidationServiceTest {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
-        assertThat(template.getNetHours()).isEqualByComparingTo("8.00");
+        assertThat(template.getNetHours(60)).isEqualByComparingTo("8.00");
         Agent agent = saveAgent(TENANT_A, deskId, "A1");
         saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("8.00"));
 
@@ -559,6 +564,12 @@ class ShiftLibraryValidationServiceTest {
         return deskRepository.save(desk).getId();
     }
 
+    /**
+     * D-01 note: this helper's signature is kept identical to Phase 14's scalar-field version so
+     * every pre-existing test body below is untouched (mechanical port) -- a duration > 0 becomes
+     * exactly one persisted band, mirroring V40's own migration fan-out rule (a zero duration
+     * yields zero bands, "no break").
+     */
     private ShiftTemplate saveTemplate(UUID deskId, String name, LocalTime start, LocalTime end,
                                         int breakOffsetMinutes, int breakDurationMinutes,
                                         Set<DayOfWeek> weekdays, LocalDate effectiveFrom, LocalDate effectiveTo) {
@@ -568,12 +579,25 @@ class ShiftLibraryValidationServiceTest {
         template.setName(name);
         template.setStartTime(start);
         template.setEndTime(end);
-        template.setBreakOffsetMinutes(breakOffsetMinutes);
-        template.setBreakDurationMinutes(breakDurationMinutes);
         template.setValidWeekdays(weekdays);
         template.setEffectiveFrom(effectiveFrom);
         template.setEffectiveTo(effectiveTo);
-        return shiftTemplateRepository.save(template);
+        ShiftTemplate saved = shiftTemplateRepository.save(template);
+        if (breakDurationMinutes > 0) {
+            addBand(saved, breakOffsetMinutes, breakDurationMinutes, null);
+        }
+        return saved;
+    }
+
+    private ShiftTemplateBreakBand addBand(ShiftTemplate template, int offsetMinutes, int durationMinutes,
+                                            Integer capacity) {
+        ShiftTemplateBreakBand band = new ShiftTemplateBreakBand();
+        band.setTenantId(TENANT_A);
+        band.setShiftTemplate(template);
+        band.setOffsetMinutes(offsetMinutes);
+        band.setDurationMinutes(durationMinutes);
+        band.setCapacity(capacity);
+        return shiftTemplateBreakBandRepository.save(band);
     }
 
     private Specialization saveSpecialization(long tenantId, UUID deskId, String name) {
