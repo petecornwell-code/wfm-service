@@ -189,6 +189,11 @@ public class ShiftTemplateService {
      * copies.
      */
     static boolean isAligned(LocalTime gridStart, int incrementMinutes, LocalTime candidate) {
+        if (incrementMinutes <= 0) {
+            // A non-positive increment cannot define a grid to align to — treat this the same as
+            // "no live bounds" (skip the check) rather than dividing by zero/negative below.
+            return true;
+        }
         long diffMinutes = ChronoUnit.MINUTES.between(gridStart, candidate);
         return diffMinutes >= 0 && diffMinutes % incrementMinutes == 0;
     }
