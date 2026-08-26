@@ -419,6 +419,11 @@ export default function ShiftLibrary() {
         <div>
           <label style={{ fontSize: '0.8rem' }}>
             Break duration (minutes){' '}
+            {/* Clearing 'breakEndTime' (not a duration-keyed field) is deliberate: changing the
+                duration moves where breakEndTime lands, so any stale breakEndTime error is now
+                invalid. There is no server-side 'breakDurationMinutes' field key today (negative
+                and envelope checks throw IllegalArgumentException, which carries no details), but
+                if one is ever added, clear it here too so it isn't silently left stale. */}
             <input type="number" min="0" value={f.breakDurationMinutes} onChange={e => { setF(prev => ({ ...prev, breakDurationMinutes: e.target.value })); clearFieldError('breakEndTime') }} style={{ width: '80px' }} />
           </label>
           {fieldErrors.breakEndTime && <div style={fieldErrorStyle}>{fieldErrors.breakEndTime}</div>}
