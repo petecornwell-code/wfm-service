@@ -112,7 +112,7 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: 4/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+**Plans**: 5/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
 **Wave 1**
@@ -130,7 +130,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 14-05-PLAN.md — Scheduling-mode switch: the 409 in-flight guard, the MODE-03 coverage gate, the single-column write proving MODE-04 (MODE-02, MODE-03, MODE-04)
+- [x] 14-05-PLAN.md — Scheduling-mode switch: the 409 in-flight guard, the MODE-03 coverage gate, the single-column write proving MODE-04 (MODE-02, MODE-03, MODE-04)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 

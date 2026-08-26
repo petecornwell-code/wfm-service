@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
 status: executing
-stopped_at: Completed 14-04-PLAN.md
-last_updated: "2026-08-26T00:55:39.776Z"
+stopped_at: Completed 14-05-PLAN.md
+last_updated: "2026-08-26T01:19:41.148Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: 0e9c65bf33cb331eba55ebfcbd23c6c825e15133
+state_head: 6872988ea5bbfd332d18ca25b8daa0ce378a11d8
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 ## Current Position
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 14 execution started
 
@@ -204,6 +204,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 14]: [Phase 14]: Phase 14 Plan 03: updateShiftTemplate is the sole edit/retire mechanism (P-11) -- setting effectiveTo retires a template; no delete or retire method exists on ShiftTemplateService or ShiftTemplateController
 - [Phase 14]: [Phase 14]: Phase 14 Plan 03: eraStatus (CURRENT/UPCOMING/PAST) computed server-side in ShiftTemplateController.toResponse (P-13); list order is name-ascending then effectiveFrom-descending, applied in ShiftTemplateService.listShiftTemplates (P-14)
 - [Phase 14]: Phase 14 Plan 04: ShiftLibraryValidationService is one computation (D-08) shared by validate() (non-throwing report) and requireShiftModeReady() (refusal) — structural single-template envelope coverage over live demand only (D-04/D-05), D-02 grid re-check via ShiftTemplateService.isAligned, exact-equality D-06/D-07 hours match via BigDecimals.normalize+compareTo with no tolerance, fatal case only when a demanded weekday has no workable (template, agent) pair at all. StaffingRequirementRepository.findAllLiveByDesk added (P-16) since open-ended template effective ranges cannot be expressed by the existing date-ranged query.
+- [Phase 14]: Phase 14 Plan 05: P-21 adopted verbatim — D-13's 409 is ConflictException reading InMemoryScheduleStore.getByDeskId, not a new RefreshInProgressException/ConcurrentHashMap pair; zero new exception class, zero new map, zero new handler mapping
+- [Phase 14]: Phase 14 Plan 05: P-22 adopted verbatim — the RUNNING-solve 409 guard applies symmetrically to both switch directions, while the coverage gate (requireShiftModeReady) applies only SLOT-to-SHIFT; D-12's 'ungated' refers to the coverage validation only, not the in-flight guard
+- [Phase 14]: Phase 14 Plan 05: switchSchedulingMode writes exactly one column (desk.scheduling_mode); MODE-04 proven field-by-field across a SLOT-SHIFT-SLOT round trip against an ACCEPTED Schedule plus its snapshot Timeslot/StaffingRequirement rows and untouched live rows
 
 ### Blockers/Concerns
 
@@ -217,8 +220,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-26T00:55:39.767Z
-Stopped at: Completed 14-04-PLAN.md
+Last session: 2026-08-26T01:19:41.139Z
+Stopped at: Completed 14-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -245,3 +248,4 @@ Resume file: None
 | Phase 14 P02 | 25min | 2 tasks | 3 files |
 | Phase 14 P03 | 24min | 2 tasks | 5 files |
 | Phase 14 P04 | 30min | 2 tasks | 5 files |
+| Phase 14 P05 | 22min | 2 tasks | 5 files |
