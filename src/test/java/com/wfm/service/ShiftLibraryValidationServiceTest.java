@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.controller.ShiftLibraryValidationController;
 import com.wfm.dto.ShiftLibraryValidationResponse;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
@@ -48,12 +49,15 @@ import static org.mockito.Mockito.when;
  * under H2, so it is supplied here as a {@code @MockitoBean} and stubbed per test.
  */
 @DataJpaTest
-@Import(ShiftLibraryValidationService.class)
+@Import({ShiftLibraryValidationService.class, ShiftLibraryValidationController.class})
 @ActiveProfiles("test")
 class ShiftLibraryValidationServiceTest {
 
     @Autowired
     private ShiftLibraryValidationService service;
+
+    @Autowired
+    private ShiftLibraryValidationController controller;
 
     @Autowired
     private ShiftTemplateRepository shiftTemplateRepository;
@@ -498,6 +502,20 @@ class ShiftLibraryValidationServiceTest {
         ShiftLibraryValidationResponse response = service.validate(deskId);
 
         assertThat(response.unsatisfiableWeekdays()).containsExactly("MONDAY", "TUESDAY");
+    }
+
+    // ---------- Controller (Task 2) ----------
+
+    @Test
+    void controller_uncoveredWindow_returnsReportInsteadOfThrowing() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = controller.validateShiftLibrary(deskId);
+
+        assertThat(response.uncoveredWindows()).containsExactly("2026-01-05 09:00-09:30");
     }
 
     // ---------- Tenancy ----------
