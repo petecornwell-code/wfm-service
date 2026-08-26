@@ -2,6 +2,7 @@ package com.wfm.controller;
 
 import com.wfm.dto.DeskRequest;
 import com.wfm.dto.DeskResponse;
+import com.wfm.dto.SchedulingModeRequest;
 import com.wfm.model.Desk;
 import com.wfm.service.DeskService;
 import org.springframework.http.HttpStatus;
@@ -51,8 +52,13 @@ public class DeskController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{deskId}/scheduling-mode")
+    public DeskResponse switchSchedulingMode(@PathVariable UUID deskId, @RequestBody SchedulingModeRequest request) {
+        return toResponse(deskService.switchSchedulingMode(deskId, request.mode()));
+    }
+
     private DeskResponse toResponse(Desk desk) {
         return new DeskResponse(desk.getId(), desk.getName(), desk.getDescription(),
-                desk.getDefaultContractedHoursPerDay());
+                desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode());
     }
 }

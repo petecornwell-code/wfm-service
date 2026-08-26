@@ -1,7 +1,10 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.controller.DeskController;
+import com.wfm.dto.DeskResponse;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
+import com.wfm.dto.SchedulingModeRequest;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
@@ -51,12 +54,15 @@ import static org.mockito.Mockito.verify;
  * Uses H2 via @DataJpaTest, mirroring JobTitleConfigServiceTest's shape.
  */
 @DataJpaTest
-@Import({DeskService.class, InMemoryScheduleStore.class})
+@Import({DeskService.class, InMemoryScheduleStore.class, DeskController.class})
 @ActiveProfiles("test")
 class DeskServiceSchedulingModeTest {
 
     @Autowired
     private DeskService deskService;
+
+    @Autowired
+    private DeskController deskController;
 
     @Autowired
     private DeskRepository deskRepository;
@@ -155,6 +161,30 @@ class DeskServiceSchedulingModeTest {
 
         assertThat(result.getSchedulingMode()).isEqualTo(SchedulingMode.SHIFT);
         verify(shiftLibraryValidationService, never()).requireShiftModeReady(any());
+    }
+
+    // --- Controller: mode-switch endpoint and desk responses carry schedulingMode (XCUT-01) ---
+
+    @Test
+    void controller_switchSchedulingMode_shiftOnPassingDesk_returnsResponseWithShiftMode() {
+        Desk desk = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        DeskResponse response = deskController.switchSchedulingMode(desk.getId(),
+                new SchedulingModeRequest(SchedulingMode.SHIFT));
+
+        assertThat(response.schedulingMode()).isEqualTo(SchedulingMode.SHIFT);
+    }
+
+    @Test
+    void controller_listDesks_responsesCarrySchedulingModeForEveryDesk() {
+        saveDesk(TENANT_A, SchedulingMode.SLOT);
+        saveDesk(TENANT_A, SchedulingMode.SHIFT);
+
+        List<DeskResponse> responses = deskController.listDesks();
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses).extracting(DeskResponse::schedulingMode)
+                .containsExactlyInAnyOrder(SchedulingMode.SLOT, SchedulingMode.SHIFT);
     }
 
     // --- Refusals ---
