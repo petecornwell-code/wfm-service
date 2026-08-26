@@ -40,7 +40,13 @@ CREATE TABLE shift_template (
     end_time TIME NOT NULL,
     break_offset_minutes INTEGER NOT NULL DEFAULT 0,
     break_duration_minutes INTEGER NOT NULL DEFAULT 0,
-    valid_weekdays CHAR(7) NOT NULL,
+    -- VARCHAR(7), not CHAR(7): `ShiftTemplate.validWeekdaysMask` is a String with
+    -- @Column(length = 7), which Hibernate maps to varchar(7). Postgres reports CHAR(7) as
+    -- `bpchar`, so under `ddl-auto: validate` the application aborted at startup with
+    -- "wrong column type encountered in column [valid_weekdays] ... found [bpchar
+    -- (Types#CHAR)], but expecting [varchar(7) (Types#VARCHAR)]" (UAT G-14-1). The mask is
+    -- always written as exactly 7 characters, so CHAR's blank-padding bought nothing.
+    valid_weekdays VARCHAR(7) NOT NULL,
     effective_from DATE NOT NULL,
     effective_to DATE,
     UNIQUE (tenant_id, desk_id, name, effective_from)
