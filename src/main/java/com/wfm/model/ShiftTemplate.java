@@ -1,6 +1,5 @@
 package com.wfm.model;
 
-import com.wfm.util.BigDecimals;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -141,7 +140,13 @@ public class ShiftTemplate {
         return breakStart == null ? null : breakStart.plusMinutes(breakDurationMinutes);
     }
 
-    /** Net working duration = envelope duration minus the break, in hours. */
+    /**
+     * Net working duration = envelope duration minus the break, in hours. Rounded directly to
+     * scale 2 in a single step (D-07's exact-equality comparisons all normalize to scale 2
+     * anyway) — a scale-4 intermediate followed by a second round to scale 2 is a latent
+     * double-rounding hazard for grid increments not evenly divisible into whole cents of an
+     * hour.
+     */
     @Transient
     public BigDecimal getNetHours() {
         if (startTime == null || endTime == null) {
@@ -149,7 +154,6 @@ public class ShiftTemplate {
         }
         long totalMinutes = Duration.between(startTime, endTime).toMinutes();
         long netMinutes = totalMinutes - breakDurationMinutes;
-        BigDecimal hours = BigDecimal.valueOf(netMinutes).divide(BigDecimal.valueOf(60), 4, java.math.RoundingMode.HALF_UP);
-        return BigDecimals.normalize(hours);
+        return BigDecimal.valueOf(netMinutes).divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
     }
 }
