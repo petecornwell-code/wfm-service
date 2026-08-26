@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 14
 current_phase_name: Shift Library & Scheduling Mode
 status: executing
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-08-25T23:50:03.115Z"
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-08-26T00:23:41.220Z"
 last_activity: 2026-08-25
 last_activity_desc: Phase 14 execution started
-state_head: 9b6a4f9c03a35661b314cb6a349c8ddf7264f023
+state_head: 65a2ef5c80818ed758d706891fb3a5b0400db9fc
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-25)
 ## Current Position
 
 Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-08-25 — Phase 14 execution started
 
@@ -200,6 +200,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 14]: Phase 14 Plan 02: Both reflection derivations (annotation-value set, builder-method count) confirmed 19 constraints and agreed with each other -- ARCHITECTURE.md's stale 18 corroborated as wrong, ROADMAP's 19 confirmed
 - [Phase 14]: Phase 14 Plan 02: honourPreferredStartTime and honourPreferredBreakTime tagged OPEN_RESOLVE_IN_PHASE_15 with owner 'Phase 15 -- Shift Envelope & Coupling', per D-15's requirement that an explicit open row with a named owner IS a classification
 - [Phase 14]: Phase 14 Plan 02: MODE_GATED left with zero rows by design -- the four break constraints are tagged NEEDS_SHIFT_VARIANT, not MODE_GATED, since actual gating is Phase 15's ENVL-05 work
+- [Phase 14]: [Phase 14]: Phase 14 Plan 03: full ShiftTemplateService validation (name/time/break/weekday/effective-range), D-02 grid alignment via TimeslotGeneratorService.getLiveBounds, and D-11 identity+non-overlap invariants implemented behind one shared validate(...) path used by both create and updateShiftTemplate (T-14-11)
+- [Phase 14]: [Phase 14]: Phase 14 Plan 03: updateShiftTemplate is the sole edit/retire mechanism (P-11) -- setting effectiveTo retires a template; no delete or retire method exists on ShiftTemplateService or ShiftTemplateController
+- [Phase 14]: [Phase 14]: Phase 14 Plan 03: eraStatus (CURRENT/UPCOMING/PAST) computed server-side in ShiftTemplateController.toResponse (P-13); list order is name-ascending then effectiveFrom-descending, applied in ShiftTemplateService.listShiftTemplates (P-14)
 
 ### Blockers/Concerns
 
@@ -213,8 +216,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-25T23:50:03.105Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-08-26T00:23:41.210Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -239,3 +242,4 @@ Resume file: None
 | Phase 13 P06 | 14min | 3 tasks | 6 files |
 | Phase 14 P01 | 23min | 2 tasks | 14 files |
 | Phase 14 P02 | 25min | 2 tasks | 3 files |
+| Phase 14 P03 | 24min | 2 tasks | 5 files |

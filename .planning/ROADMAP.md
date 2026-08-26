@@ -112,7 +112,7 @@ solver.
 
 **Research needed at plan time**: No — shift-library CRUD mirrors `Specialization`'s existing desk-scoped list pattern; the mode switch mirrors `minimumStaffing`'s existing configuration-driven toggle pattern. Both are proven in-codebase patterns (SUMMARY.md §Research Flags).
 
-**Plans**: 2/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
+**Plans**: 3/6 plans executed (5 waves; tracer-first, one `blocking-human` decision gate on the one-way D-11 migration)
 
 Plans:
 **Wave 1**
@@ -122,7 +122,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 14-03-PLAN.md — Template lifecycle: full save-time validation, the D-02 grid check, edit and retire, era identity and non-overlap, era-aware list ordering (SHLB-01…04)
+- [x] 14-03-PLAN.md — Template lifecycle: full save-time validation, the D-02 grid check, edit and retire, era identity and non-overlap, era-aware list ordering (SHLB-01…04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
