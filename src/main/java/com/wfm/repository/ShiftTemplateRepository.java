@@ -20,5 +20,7 @@ public interface ShiftTemplateRepository extends JpaRepository<ShiftTemplate, UU
 
     List<ShiftTemplate> findByTenantIdAndDeskIdAndName(long tenantId, UUID deskId, String name);
 
-    void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
+    // No deleteByTenantIdAndDeskId here (unlike this repository's desk-scoped siblings):
+    // shift_template's FK is ON DELETE CASCADE at the DB level, so DeskService.deleteDesk
+    // relies on the cascade rather than an explicit repository call. See the comment there.
 }

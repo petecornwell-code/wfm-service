@@ -153,6 +153,8 @@ public class DeskService {
         }
         specializationRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
         constraintWeightsRepository.deleteByTenantIdAndDeskId(tenantId, deskId);
+        // Note: shift_template is deliberately NOT cleaned up here — its FK is ON DELETE
+        // CASCADE at the DB level (see V39), unlike every other desk-scoped table above.
 
         // Remove any in-memory schedule for this desk
         inMemoryScheduleStore.getByDeskId(deskId).ifPresent(s -> inMemoryScheduleStore.remove(s.getId()));

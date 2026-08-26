@@ -207,8 +207,10 @@ public class ShiftTemplateService {
                 .filter(t -> excludeId == null || !t.getId().equals(excludeId))
                 .toList();
 
-        boolean identityCollision = others.stream()
-                .anyMatch(t -> t.getEffectiveFrom().equals(request.effectiveFrom()));
+        boolean identityCollision = excludeId == null
+                ? shiftTemplateRepository.existsByTenantIdAndDeskIdAndNameAndEffectiveFrom(
+                        tenantId, deskId, request.name(), request.effectiveFrom())
+                : others.stream().anyMatch(t -> t.getEffectiveFrom().equals(request.effectiveFrom()));
         if (identityCollision) {
             throw new ConflictException("A shift template named '" + request.name()
                     + "' already starts on " + request.effectiveFrom() + " for this desk");
