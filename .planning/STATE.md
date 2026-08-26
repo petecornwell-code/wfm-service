@@ -2,39 +2,39 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
-current_phase: 14
-current_phase_name: Shift Library & Scheduling Mode
-status: verifying
-stopped_at: Completed 14-06-PLAN.md (Phase 14 complete, 6/6 plans)
-last_updated: "2026-08-26T01:42:11.352Z"
-last_activity: 2026-08-25
-last_activity_desc: Phase 14 execution started
-state_head: 4c527441d36a7fb47b11b82b969db7042ec6410a
+current_phase: 15
+current_phase_name: Shift Envelope, Breaks & Library Generation
+status: planning
+stopped_at: Phase 14 complete, ready to plan Phase 15
+last_updated: "2026-08-26T17:28:59.363Z"
+last_activity: 2026-08-26
+last_activity_desc: Phase 14 complete, transitioned to Phase 15
+state_head: 9571547f22a69c0e6876828f5140fc816949ec70
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
   completed_plans: 6
-  percent: 0
+  percent: 25
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-25)
+See: .planning/PROJECT.md (updated 2026-08-26)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 14 — Shift Library & Scheduling Mode
+**Current focus:** Phase 15 — Shift Envelope, Breaks & Library Generation
 
 ## Current Position
 
-Phase: 14 (Shift Library & Scheduling Mode) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-08-25 — Phase 14 execution started
+Phase: 15 — Shift Envelope, Breaks & Library Generation
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-26 — Phase 14 complete, transitioned to Phase 15
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██▌░░░░░░░] 25% (1/4 phases — Phase 14 complete, 6/6 plans)
 
 ## Milestone v1.3 Roadmap
 
@@ -150,6 +150,11 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **[v1.3 research]** Coupling mechanism settled empirically by `SPIKE-COUPLING.md`: two independent `@PlanningEntity` classes coupled by a `ConstraintStream` hard constraint (Option A), not a filtered value range (Option C is unsound — reports `0hard/0soft` on schedules with 9–14/24 seats outside their agent's envelope, on 8/8 seeds, undetected by `FULL_ASSERT`). Load-bearing for Phase 15; not to be revisited without new evidence.
 - **[v1.3 research]** Next Flyway migration is **V39** (schema head is V38, not V36 as previously recorded — corrected in PROJECT.md 2026-08-25). `V38__add_consistent_start_weight.sql` is applied on dev and inert; Phase 17 should adopt this existing column rather than add a colliding duplicate.
 - **[v1.3 research]** The reverted third attempt (`7861b83`/`9207ceb`/`9f4a96f`/`6fb78c7`) is confirmed speculative off-roadmap work reverted as scope discipline, not a technical failure — see ROADMAP.md Phase 17 Notes for what transfers as-is, what transfers with rework, and what needs reformulation (the abandoned spread-based penalty is not to be resurrected; v1.3 uses target-deviation).
+- **[Phase 14]** D-08 — the coverage validator has **one implementation, two callers**: the read-only `GET /shift-library/validation` report and the `PUT /scheduling-mode` refusal. The report an operator reads and the refusal that blocks them can never disagree. Verified at UAT: report named 4 uncovered windows, refusal named the same 4 verbatim. Phase 15's SHLB-07 library generation must derive from this same predicate, not a second implementation.
+- **[Phase 14]** D-12 — `SHIFT → SLOT` is unconditional with **no confirmation dialog**; `switchSchedulingMode` only validates when the target is `SHIFT`. A dialog was rejected deliberately, citing audit I-3 (a `confirm()` on a non-destructive action trains operators to click through the ones that matter).
+- **[Phase 14]** D-06 — contracted-hours mismatch is **advisory on save, blocking only at the mode switch**. Operators build libraries incrementally, so a hard block at save time would make the intermediate states unreachable.
+- **[Phase 14]** Shift templates have **no delete endpoint** — retirement is an effective-date range edit (T-14-14), so no request can destroy a row an accepted schedule's snapshot lineage or Phase 15/16 FKs would need. Era identity is `(tenant_id, desk_id, name, effective_from)` unique **plus** a service-level same-name non-overlap check; the unique key alone permits overlapping ranges.
+- **[Phase 14]** Shift-template times must align to the desk's timeslot grid (D-02, `ShiftTemplateService.validateGridAlignment`) — a hard 400 on start, end, break-start and break-end. This is a separate rule from the hours advisory and fires first.
 - **[v1.3 research]** Operator ruling on the soft-quality plateau: ship the sound Option A model; Phase 15's XCUT-04 benchmark measures the real gap at realistic scale and reports it as a finding. No custom-move remedy phase scoped into v1.3 — Phase 12 already failed once by committing to a remedy before measuring.
 - Timefold pinned at 1.16.0 (`build.gradle:35`) — `ScoreAnalysis` moves to paid tier in 2.0; custom moves at this version use `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, and the `Neighborhoods` custom-move API introduced at 1.31.0 is not available
 - PDF export must use OpenPDF 3.0.4 (LGPL/MPL) — iText rejected (AGPL)
@@ -213,7 +218,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 - BambooHR credential rotation was removed from GSD tracking on 2026-08-25 at operator request; ownership sits with the operator outside this planning system.
 - **[v1.3] Soft-quality plateau, measure not remedy.** `SPIKE-COUPLING.md` found the sound Option A coupling never reaches the known `0soft` optimum on its toy fixture (settles `-10soft`/`-5soft`). Operator ruling: Phase 15's XCUT-04 benchmark must measure this at realistic scale and report it honestly — no custom-move remedy is scoped into v1.3. If the real-scale gap turns out to matter, that is a future milestone's evidence-led decision, not an assumption to inherit.
-- **[v1.3] Migration numbering.** Next Flyway migration is V39 (schema head V38, corrected from a stale V36 in PROJECT.md during v1.3 research). Confirm the actual latest-applied version before each phase's migration, per the project's own recorded discipline (V30 was confirmed against V29 the same way at Phase 10).
+- **[v1.3] Migration numbering.** V39 is now applied (Phase 14) — next migration is **V40**. Confirm the actual latest-applied version before each phase's migration, per the project's own recorded discipline (V30 was confirmed against V29 the same way at Phase 10).
+- **⚠ [Phase 14] No test executes the real Flyway migrations.** `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2, so the test schema is built from the entities and migration SQL never runs. V39 shipped declaring `valid_weekdays CHAR(7)` against an entity mapped to `varchar(7)`: the migration applied cleanly and the app then failed to boot under `ddl-auto=validate`, with all 402 tests green. Fixed in place (`9a98029`, UAT gap G-14-1) but the blind spot is unchanged — future migration-vs-entity drift surfaces at first startup, not in CI. Wants a Testcontainers-backed boot test.
+- **[Phase 14] Pre-existing defect, unrelated to Phase 14.** `GET /api/v1/agents` returns 500 (`function lower(bytea) does not exist`). Observed during Phase 14 UAT on the deployed dev environment; not a Phase 14 file and not tracked as a Phase 14 gap. The desk-scoped `GET /desks/{id}/agents` path is unaffected.
 - **Solver data quality — mitigated by Phase 11 (2026-08-21).** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values were excluded from solving via `Agent.workingDaysKnown`. MRG-06 shipped: a spreadsheet-supplied pattern now sets `Agent.workingDaysSource=SPREADSHEET` (V36) and makes the agent solver-eligible, with `BambooRefreshService.shouldDowngradeWorkingDaysKnown` preventing a later refresh from reclaiming it. Residual risk: the field-4517 alias dependency below.
 - **⚠ [Phase 11] BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517` but the parser reads back the JSON key `customWorkingdays`. If the tenant has no Field Alias configured, the value is always null in production and MRG-03 window arbitration + MRG-06 gap-fill/replace reporting never activate — while every unit test still passes, because the fixtures hand-construct `BambooEmployee`. Confirmed by operator at UAT 2026-08-21 (test 5); re-check after any BambooHR account change. Origin: code review IN-03.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
@@ -221,14 +228,14 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-26T01:42:11.341Z
-Stopped at: Completed 14-06-PLAN.md (Phase 14 complete, 6/6 plans)
+Last session: 2026-08-26T17:29:00Z
+Stopped at: Phase 14 complete (UAT 9/9 passed, security verified, threats_open 0), ready to plan Phase 15
 Resume file: None
 
 ## Operator Next Steps
 
-- Review and approve the v1.3 roadmap in `.planning/ROADMAP.md`
-- Plan Phase 14 with `/gsd-plan-phase 14`
+- Discuss Phase 15 with `/gsd-discuss-phase 15` — no CONTEXT.md exists yet
+- Consider a Testcontainers-backed migration boot test — Phase 14's G-14-1 showed the suite cannot catch migration-vs-entity drift
 
 ## Performance Metrics
 

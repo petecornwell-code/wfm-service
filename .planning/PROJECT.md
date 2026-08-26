@@ -198,6 +198,11 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ Both the 6-column legacy shape and the flat enriched shape retired — v1.2 Phase 10 (UPL-08)
 - ✓ Pre-seeded per-desk template download; template, parser and export share one `EnrichedColumnLayout` definition — v1.2 Phase 10 + 13 (UPL-09; the specialty-header literals were the last holdout, closed by Phase 13)
 - ✓ Roster and Excel export resolve contracted hours from `agent_day_hours`, not the retired scalar; per-weekday values, `MANDATORY` and `PTO` visible in the UI — v1.2 Phase 13 (closes audit I-1/F-1)
+- ✓ Per-desk shift library: templates with start/end time, break placement rule, valid weekdays and an effective date range, editable and retirable without corrupting schedules that reference them — v1.3 Phase 14 (SHLB-01…04)
+- ✓ Shift library validated against real demand at definition time: uncovered `(date, timeslot)` windows named specifically, and templates whose net duration matches no agent's effective contracted hours flagged as an advisory — v1.3 Phase 14 (SHLB-05, SHLB-06)
+- ✓ Per-desk `SLOT`/`SHIFT` scheduling mode; every existing desk backfilled to `SLOT` with zero behaviour change, switch refused with the same named uncovered windows the report shows, and refused with a readable 409 during an in-flight solve without stopping it — v1.3 Phase 14 (MODE-01…03)
+- ✓ Mode switching never alters an already-accepted schedule, and no production solver file changed — proven structurally, not asserted — v1.3 Phase 14 (MODE-04, MODE-05)
+- ✓ All 19 existing solver constraints classified mode-agnostic / mode-gated / needs-shift-variant, with a reflection-derived completeness test that cannot be silenced by editing a count — v1.3 Phase 14 (XCUT-05, partial; mode-gating lands in Phase 15)
 
 ### Active (carried to next milestone — see ROADMAP.md Backlog)
 
@@ -217,6 +222,7 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - **⚠ Merge precedence holds on the upload path only** (audit I-2) → 999.9. The manual "Refresh from BambooHR" button overwrites spreadsheet-sourced identity data with no precedence rule and no merge report. Open across two consecutive milestone audits; accepted as debt at v1.2 close.
 - **Bulk "Set all days to…" still destroys MANDATORY/PTO labels** (audit I-3, mitigated) → 999.9. A `confirm()` names the count at risk and a safe per-cell edit path now exists, but the destructive seven-row delete-and-recreate is unchanged.
 - **Legacy `contractedHoursPerDay` scalar still exported as its own column** (audit NEW-1) → 999.9. It can silently disagree with the per-day columns after any single-cell edit.
+- **⚠ No test executes the real Flyway migrations** — emerged at Phase 14 (UAT gap G-14-1). `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2, so the test schema is built from the entities and migration SQL is never run. V39 shipped with `valid_weekdays CHAR(7)` against an entity mapping of `varchar(7)`; the migration applied cleanly and the application then failed to boot under `ddl-auto=validate` — with a fully green 402-test suite. Fixed in place (`9a98029`), but the blind spot is unchanged: any future migration-vs-entity drift will surface at first startup, not in CI. Wants a Testcontainers-backed boot test that runs the real migrations.
 - **Nyquist validation debt** — Phases 10 and 13 have `VALIDATION.md` at `status: draft`; validate-phase never reconciled them → 999.9
 - **Phase 9 never had a security review** — no `09-SECURITY.md` exists → 999.9
 
@@ -288,6 +294,12 @@ building the *view of the model* are separate jobs — hence Phase 13.
 | `Not set (default)` clipping at the 90px per-cell input accepted, not fixed (Phase 13, G-13-8) | Widening to ~140px would take the expanded grid ~678px → ~1028px and trade away verified E3 overflow behaviour; shortening the literal would change the string `saveDayHours` matches for `clearRow`. The entry stays selectable and unambiguous | ✓ Good — spec corrected to assert the clipping rather than deny it |
 | Phase 12 withdrawn rather than shipped or re-planned (2026-08-13 operator ruling) | The seeded 5×5 benchmark put the move's effect (+0.25h median) inside the baseline's own 5.00h noise spread, and it was inert at realistic 130% over-allocation. Keeping code that cannot be shown to help is worse than reverting it | ✓ Good — a phase goal explicitly not claimed is a healthier outcome than one quietly assumed |
 | v1.2 closed under `override_closeout` with I-2 accepted as debt (2026-08-25) | The milestone's own headline defect (I-1/F-1) was fixed and every requirement satisfied on the upload path. I-2 predates Phase 13's scope and was never assigned to any phase | ⚠ Revisit — carried to 999.9; two consecutive audits recorded it untouched, which is how gaps become permanent |
+| One coverage validator, two callers — the shift-library report endpoint and the mode-switch refusal (Phase 14, D-08) | The report an operator reads and the refusal that blocks them can never disagree, because they are the same computation. Verified at UAT: the report named four uncovered windows and the refusal named the same four verbatim | ✓ Good |
+| `SHIFT → SLOT` is unconditional, with no confirmation dialog (Phase 14, D-12) | A dialog was rejected deliberately, citing audit I-3 — a confirm() that fires on a *non-destructive* action trains operators to click through the ones that matter. `switchSchedulingMode` only validates when the target is `SHIFT` | ✓ Good |
+| Mode switch during a RUNNING solve refuses rather than terminating the solve (Phase 14, T-14-22) | Discarding minutes of solver work on a click that doesn't look destructive is a self-inflicted availability loss — and `STOPPED` is a legitimate accept state, so the loss wouldn't even read as one | ✓ Good |
+| Shift templates have no delete endpoint; retirement is an effective-date range edit (Phase 14, T-14-14) | No request can destroy a row an accepted schedule's snapshot lineage or Phase 15/16's future FKs would need | ✓ Good |
+| Contracted-hours mismatch is advisory on save, blocking only at the mode switch (Phase 14, D-06) | Operators build libraries incrementally; a hard block at save time would make the intermediate states unreachable. The fatal case is still caught before it can reach the solver | ✓ Good |
+| V39 edited in place to fix G-14-1 rather than superseded by a V40 (2026-08-26) | V39 was unreleased, so the forward-only rule was not yet engaged; a corrective V40 would have permanently encoded a type mismatch that no environment had consumed | ✓ Good — but see the migration-coverage gap it exposed |
 
 ## Evolution
 
@@ -307,4 +319,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-25 at the start of milestone v1.3 Shift-Based Scheduling & Consistency — scoped to shift-level modelling only; 999.4 / 999.7 / 999.9 remain deferred*
+*Last updated: 2026-08-26 after Phase 14 (Shift Library & Scheduling Mode) — SHLB-01…06 and MODE-01…05 validated; 999.4 / 999.7 / 999.9 remain deferred*

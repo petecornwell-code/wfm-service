@@ -131,9 +131,9 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHLB-01…06 | Phase 14 | Pending |
+| SHLB-01…06 | Phase 14 | Complete (2026-08-26) |
 | SHLB-07 | Phase 15 | Pending |
-| MODE-01…05 | Phase 14 | Pending |
+| MODE-01…05 | Phase 14 | Complete (2026-08-26) |
 | ENVL-01…10 | Phase 15 | Pending |
 | USHF-01…06 | Phase 16 | Pending |
 | CONS-01…06 | Phase 17 | Pending |
@@ -142,7 +142,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | XCUT-02 (every write path) | Phases 16, 17 | Pending |
 | XCUT-03 (solverConfig.xml build test) | Phase 15 | Pending |
 | XCUT-04 (seeded A/B benchmark) | Phases 15, 17 | Pending |
-| XCUT-05 (constraint classification) | Phases 14, 15 | Pending |
+| XCUT-05 (constraint classification) | Phases 14, 15 | Partial — Phase 14 classification delivered (`XCUT-05-constraint-classification.md`); Phase 15 mode-gating outstanding |
 
 **Coverage:**
 
