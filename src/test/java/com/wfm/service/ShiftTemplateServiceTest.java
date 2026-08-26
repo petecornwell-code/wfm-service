@@ -1,8 +1,10 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.controller.ShiftTemplateController;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftTemplateRequest;
+import com.wfm.dto.ShiftTemplateResponse;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
@@ -24,6 +26,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -33,18 +36,22 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Full validation, identity, non-overlap, grid-alignment and retirement coverage for
- * ShiftTemplateService (14-03). TimeslotGeneratorService.getLiveBounds runs a Postgres-only
- * native query (EXTRACT(EPOCH FROM ...)) that cannot execute under H2, so it is supplied here
- * as a @MockitoBean and stubbed per test rather than the real bean.
+ * Full validation, identity, non-overlap, grid-alignment, retirement, ordering and eraStatus
+ * coverage for ShiftTemplateService/ShiftTemplateController (14-03). TimeslotGeneratorService
+ * .getLiveBounds runs a Postgres-only native query (EXTRACT(EPOCH FROM ...)) that cannot execute
+ * under H2, so it is supplied here as a @MockitoBean and stubbed per test rather than the real
+ * bean.
  */
 @DataJpaTest
-@Import(ShiftTemplateService.class)
+@Import({ShiftTemplateService.class, ShiftTemplateController.class})
 @ActiveProfiles("test")
 class ShiftTemplateServiceTest {
 
     @Autowired
     private ShiftTemplateService service;
+
+    @Autowired
+    private ShiftTemplateController controller;
 
     @Autowired
     private ShiftTemplateRepository shiftTemplateRepository;
@@ -338,6 +345,106 @@ class ShiftTemplateServiceTest {
         assertThatThrownBy(() -> service.updateShiftTemplate(deskId, created.getId(),
                 request("S1", LocalDate.of(2026, 1, 1), null)))
                 .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    // ---------- Era-aware ordering (P-14) ----------
+
+    @Test
+    void list_ordersByNameAscendingThenEffectiveFromDescending() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate s2 = service.createShiftTemplate(deskId, request("S2", LocalDate.of(2026, 1, 1), null));
+        ShiftTemplate s1Old = service.createShiftTemplate(deskId,
+                request("S1", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)));
+        ShiftTemplate s1New = service.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 7, 1), null));
+
+        List<ShiftTemplate> result = service.listShiftTemplates(deskId);
+
+        assertThat(result).extracting(ShiftTemplate::getId)
+                .containsExactly(s1New.getId(), s1Old.getId(), s2.getId());
+    }
+
+    @Test
+    void list_twoCallsSameSequence() {
+        UUID deskId = saveDesk(TENANT_A);
+        service.createShiftTemplate(deskId, request("S2", LocalDate.of(2026, 1, 1), null));
+        service.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)));
+        service.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 7, 1), null));
+
+        List<UUID> first = service.listShiftTemplates(deskId).stream().map(ShiftTemplate::getId).toList();
+        List<UUID> second = service.listShiftTemplates(deskId).stream().map(ShiftTemplate::getId).toList();
+
+        assertThat(first).containsExactlyElementsOf(second);
+    }
+
+    // ---------- eraStatus (P-13) ----------
+
+    @Test
+    void eraStatus_current_forRangeCoveringToday() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateRequest req = request("S1", LocalDate.now().minusDays(10), LocalDate.now().plusDays(10));
+
+        ShiftTemplateResponse response = controller.createShiftTemplate(deskId, req).getBody();
+
+        assertThat(response.eraStatus()).isEqualTo("CURRENT");
+    }
+
+    @Test
+    void eraStatus_upcoming_forFutureEffectiveFrom() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateRequest req = request("S1", LocalDate.now().plusDays(5), null);
+
+        ShiftTemplateResponse response = controller.createShiftTemplate(deskId, req).getBody();
+
+        assertThat(response.eraStatus()).isEqualTo("UPCOMING");
+    }
+
+    @Test
+    void eraStatus_past_forExpiredRange() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateRequest req = request("S1", LocalDate.now().minusDays(30), LocalDate.now().minusDays(10));
+
+        ShiftTemplateResponse response = controller.createShiftTemplate(deskId, req).getBody();
+
+        assertThat(response.eraStatus()).isEqualTo("PAST");
+    }
+
+    @Test
+    void eraStatus_openEndedRange_isCurrentAndNeverExpires() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateRequest req = request("S1", LocalDate.now().minusDays(1), null);
+
+        ShiftTemplateResponse response = controller.createShiftTemplate(deskId, req).getBody();
+
+        assertThat(response.eraStatus()).isEqualTo("CURRENT");
+    }
+
+    @Test
+    void eraStatus_exactlyOneCurrentAcrossErasForGivenDay() {
+        UUID deskId = saveDesk(TENANT_A);
+        controller.createShiftTemplate(deskId,
+                request("S1", LocalDate.now().minusDays(30), LocalDate.now().minusDays(1)));
+        controller.createShiftTemplate(deskId, request("S1", LocalDate.now(), null));
+
+        List<ShiftTemplateResponse> result = controller.listShiftTemplates(deskId);
+
+        assertThat(result).filteredOn(r -> "CURRENT".equals(r.eraStatus())).hasSize(1);
+    }
+
+    // ---------- Update endpoint ----------
+
+    @Test
+    void controllerUpdate_returnsUpdatedResponse_andListReflectsChange() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateResponse created =
+                controller.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 1, 1), null)).getBody();
+
+        ShiftTemplateRequest updateReq = new ShiftTemplateRequest("S1", LocalTime.of(9, 0), LocalTime.of(18, 0),
+                240, 60, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        ShiftTemplateResponse updated = controller.updateShiftTemplate(deskId, created.id(), updateReq);
+
+        assertThat(updated.startTime()).isEqualTo(LocalTime.of(9, 0));
+        assertThat(controller.listShiftTemplates(deskId))
+                .anySatisfy(r -> assertThat(r.startTime()).isEqualTo(LocalTime.of(9, 0)));
     }
 
     // ---------- helpers ----------
