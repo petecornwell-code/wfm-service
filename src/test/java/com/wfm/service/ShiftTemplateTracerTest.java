@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.*;
  * that does not yet exist, then pass once the tracer slice is implemented.
  */
 @DataJpaTest
-@Import({ShiftTemplateService.class, ShiftTemplateController.class})
+@Import({ShiftTemplateService.class, ShiftTemplateController.class, TimeslotGeneratorService.class})
 @ActiveProfiles("test")
 class ShiftTemplateTracerTest {
 
