@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,8 +39,18 @@ public class ShiftTemplateService {
         this.timeslotGeneratorService = timeslotGeneratorService;
     }
 
+    /**
+     * Sorted by name ascending then effectiveFrom descending (P-14), applied here in one
+     * readable line rather than a long derived-query method name. A stable sort keeps rows
+     * tying on both keys in a fixed relative order between reads.
+     */
     public List<ShiftTemplate> listShiftTemplates(UUID deskId) {
-        return shiftTemplateRepository.findByTenantIdAndDeskId(TenantContext.getTenantId(), deskId);
+        List<ShiftTemplate> templates =
+                shiftTemplateRepository.findByTenantIdAndDeskId(TenantContext.getTenantId(), deskId);
+        return templates.stream()
+                .sorted(Comparator.comparing(ShiftTemplate::getName)
+                        .thenComparing(ShiftTemplate::getEffectiveFrom, Comparator.reverseOrder()))
+                .toList();
     }
 
     @Transactional
