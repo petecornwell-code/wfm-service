@@ -45,7 +45,7 @@ granularity per config.json. Full detail: `.planning/ROADMAP.md` Phase Details.
 | Phase | Name | Requirements | Depends on | Research at plan time |
 |-------|------|--------------|------------|------------------------|
 | 14 | Shift Library & Scheduling Mode | SHLB-01…06, MODE-01…05 | — | No — mirrors `Specialization`/`minimumStaffing` patterns |
-| 15 | Shift Envelope & Coupling | ENVL-01…07 | Phase 14 | Yes — CH placer XML nesting is MEDIUM confidence |
+| 15 | Shift Envelope, Breaks & Library Generation | ENVL-01…10, SHLB-07 | Phase 14 | Yes — CH placer XML nesting is MEDIUM confidence |
 | 16 | Usual Shift Storage | USHF-01…06 | Phase 14 | No — mirrors `AgentDayHours`/`resolvePreferences` |
 | 17 | Consistency Constraint & Drift Reporting | CONS-01…06, DRFT-01…04 | Phase 15, 16 | No — but confirm salvage-material rework scope |
 
