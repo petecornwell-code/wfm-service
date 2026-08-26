@@ -14,6 +14,16 @@ expected: |
   With seeded staffing demand and a partial shift library, the Coverage panel lists the
   specific uncovered `(date, timeslot)` windows by name — not a generic validation message.
 awaiting: user response
+environment: |
+  Tests 2, 8 and 9 are UI-only and are to be run against the deployed dev environment:
+  https://d2bbtcc80peap7.cloudfront.net (deploy run 32980835056, commit f503bad).
+  V39 is live there and verified: schedulingMode is returned on desk responses and the app
+  booted under ddl-auto=validate against the migrated schema (the G-14-1 failure mode).
+  The environment holds one pre-existing desk, "Stubhub (EN)" (SLOT), with no shift templates
+  and hasLiveDemand=false — test 2 needs a desk carrying staffing demand plus a deliberately
+  partial library before the Coverage panel has anything to render.
+  Unrelated pre-existing defect to expect: GET /api/v1/agents returns 500
+  ("function lower(bytea) does not exist") — not a Phase 14 file, not a Phase 14 gap.
 
 ## Tests
 
