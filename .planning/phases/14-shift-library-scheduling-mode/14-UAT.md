@@ -1,27 +1,25 @@
 ---
-status: testing
+status: complete
 phase: 14-shift-library-scheduling-mode
 source: 14-01-SUMMARY.md, 14-02-SUMMARY.md, 14-03-SUMMARY.md, 14-04-SUMMARY.md, 14-05-SUMMARY.md, 14-06-SUMMARY.md
 started: 2026-08-25T00:00:00Z
-updated: 2026-08-26T15:15:00Z
+updated: 2026-08-26T16:40:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: Coverage panel names specific uncovered demand windows (UI)
-expected: |
-  With seeded staffing demand and a partial shift library, the Coverage panel lists the
-  specific uncovered `(date, timeslot)` windows by name — not a generic validation message.
-awaiting: user response
+[testing complete]
+
 environment: |
-  Tests 2, 8 and 9 are UI-only and are to be run against the deployed dev environment:
+  Tests 2, 8 and 9 were run manually against the deployed dev environment:
   https://d2bbtcc80peap7.cloudfront.net (deploy run 32980835056, commit f503bad).
   V39 is live there and verified: schedulingMode is returned on desk responses and the app
   booted under ddl-auto=validate against the migrated schema (the G-14-1 failure mode).
-  The environment holds one pre-existing desk, "Stubhub (EN)" (SLOT), with no shift templates
-  and hasLiveDemand=false — test 2 needs a desk carrying staffing demand plus a deliberately
-  partial library before the Coverage panel has anything to render.
+  As of 2026-08-26 the desk "Stubhub (EN)" (id 6170be17-3bee-41da-9d81-62ddd50c786f) is
+  schedulingMode SHIFT with a four-template library (Early 08:00-17:00, Late 12:00-21:00
+  Mon-Fri; Weekend Early 10:00-19:00, Weekend Late 11:00-20:00 Sat-Sun) and validation
+  reporting hasLiveDemand=true, uncoveredWindows []. Shift Library URL:
+  /desks/6170be17-3bee-41da-9d81-62ddd50c786f/shift-library
   Unrelated pre-existing defect to expect: GET /api/v1/agents returns 500
   ("function lower(bytea) does not exist") — not a Phase 14 file, not a Phase 14 gap.
 
@@ -41,7 +39,10 @@ note_outcome: The concern this note raised was justified, and the review claim i
 
 ### 2. Coverage panel names specific uncovered demand windows
 expected: With seeded staffing demand and a partial shift library, the Coverage panel lists the specific uncovered `(date, timeslot)` windows by name — not a generic validation message
-result: [pending]
+result: pass
+reported: "tested manually - it works!"
+verified_by: user-manual
+environment: "https://d2bbtcc80peap7.cloudfront.net/desks/6170be17-3bee-41da-9d81-62ddd50c786f/shift-library (deploy run 32980835056, commit f503bad). Note: at verification time the deployed desk had advanced from the state recorded in the original environment note — Stubhub (EN) was schedulingMode SHIFT with a full four-template library (Early, Late, Weekend Early, Weekend Late) and validation reporting hasLiveDemand=true with uncoveredWindows []. User created the partial-library condition manually before observing the panel."
 
 ### 3. Mode switch is refused with the same named windows
 expected: Clicking "Shift-scheduled" leaves the toggle on "Slot-scheduled" and shows the same named uncovered windows, with no duplicate error surface
@@ -78,19 +79,23 @@ evidence: "API: DeskRequest has no schedulingMode field, and PUT /api/v1/desks/{
 
 ### 8. Contracted-hours mismatch is advisory, not blocking
 expected: A template whose net duration matches no agent's contracted hours shows the amber warning glyph with the correct tooltip and still saves successfully (D-06 — advisory on save, blocking only at the mode switch in the fatal case)
-result: [pending]
+result: pass
+verified_by: user-manual
+note_setup: "First attempt was refused by a *different* rule — the D-02 grid-alignment guard (ShiftTemplateService.java:179, hard 400): 'Start, end, and break times must align to this desk's 60-minute schedule grid.' That refusal is correct behaviour, not a Phase 14 defect; it simply blocks the setup for this test. Live desk grid is 08:00 start / 60-minute increments / 21:00 end, so every one of start, end, break-start and break-end must land on the hour. All 28 agents on the desk carry effectiveContractedHoursPerDay 8.0 (single distinct value), so any net duration != 8.00 triggers the D-06 advisory. Reaching test 8 therefore requires a template that is grid-aligned AND off-8h — e.g. 09:00-15:00 with a 60-min break at offset 180 (break 12:00-13:00), net 5.00 hours, Tue-Fri."
+evidence: "User confirmed the advisory path renders as specified: template saves successfully, amber glyph present with tooltip. Advisory source is ShiftLibraryValidationService.findHoursAdvisories (:227); UI renders it at ShiftLibrary.tsx:565 as <span title={advisory.message}>⚠</span>, with a warning toast on save at :240."
 
 ### 9. Visual legibility with realistic data (6 backstop claims)
 expected: Multiple eras of one template name read as legible eras rather than accidental duplicates (D-11); a long template name does not break the table or the input layout; a realistic count of uncovered windows stays readable; the advisory tooltip is legible
-result: [pending]
+result: pass
+verified_by: user-manual
 note: These are the plan's own six `verification: backstop` truths. No frontend test framework exists in this codebase (`frontend/package.json` has no test script, no vitest/jest/testing-library), so these cannot be proven automatically by design, not by omission.
 
 ## Summary
 
 total: 9
-passed: 6
+passed: 9
 issues: 0
-pending: 3
+pending: 0
 skipped: 0
 blocked: 0
 
