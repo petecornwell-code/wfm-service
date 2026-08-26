@@ -194,7 +194,11 @@ public class ShiftLibraryValidationService {
         if (bounds.isEmpty()) {
             return misaligned;
         }
+        LocalDate today = LocalDate.now();
         for (ShiftTemplate template : templates) {
+            if (template.getEffectiveTo() != null && template.getEffectiveTo().isBefore(today)) {
+                continue; // retired — cannot be scheduled again, its alignment is moot
+            }
             if (!isTemplateAligned(template, bounds.get())) {
                 misaligned.add(template.getName() + " (" + template.getEffectiveFrom() + ")");
             }
