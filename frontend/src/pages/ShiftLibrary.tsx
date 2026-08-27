@@ -222,7 +222,7 @@ function BandEditor({
 const fieldErrorStyle = { fontSize: '0.75rem', color: '#92400e', marginTop: '2px' }
 const amberPanelStyle = { background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '0.75rem' }
 
-const COLUMN_COUNT = 7 // Name, Start–End, Break, Weekdays, Effective range, Hours match, Actions
+const COLUMN_COUNT = 8 // Name, Start–End, Break, Weekdays, Effective range, Hours match, Capacity, Actions
 
 // The coverage panel (D-04/D-05/D-08 — one implementation, two callers). Every verdict is read
 // from the response and rendered; none is recomputed from templates/timeslots in the browser.
@@ -854,6 +854,7 @@ export default function ShiftLibrary() {
               <th>Weekdays</th>
               <th>Effective range</th>
               <th>Hours match</th>
+              <th>Capacity</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -927,6 +928,19 @@ export default function ShiftLibrary() {
                       // response, never recomputed from the row's own duration in the browser.
                       const advisory = validation?.hoursAdvisories.find(a => a.templateId === t.id)
                       return advisory ? <span title={advisory.message}>⚠</span> : null
+                    })()}
+                  </td>
+                  <td>
+                    {(() => {
+                      // D-03's named residual risk (P-23): identical glyph-plus-tooltip mechanism
+                      // as the Hours match column, non-blocking (the save already succeeded). A
+                      // template with advisories on several weekdays names them all in one
+                      // tooltip rather than rendering several glyphs; a clean row is a blank cell,
+                      // matching the Hours match column's own clean-row treatment.
+                      const advisories = validation?.capacityAdvisories.filter(a => a.templateId === t.id) ?? []
+                      if (advisories.length === 0) return null
+                      const tooltip = advisories.map(a => a.message).join('\n')
+                      return <span title={tooltip}>⚠</span>
                     })()}
                   </td>
                   <td>
