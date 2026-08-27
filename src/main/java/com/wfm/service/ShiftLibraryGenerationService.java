@@ -1,10 +1,12 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftLibrarySuggestionResponse;
 import com.wfm.dto.ShiftLibrarySuggestionResponse.SuggestedBand;
 import com.wfm.dto.ShiftLibrarySuggestionResponse.SuggestedTemplate;
 import com.wfm.dto.TimeslotBoundsResponse;
+import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftTemplate;
@@ -78,6 +80,18 @@ public class ShiftLibraryGenerationService {
     }
 
     /**
+     * D-12's shared refusal message. Byte-identical diagnostic clause to {@link
+     * ShiftLibraryValidationService#NO_DEMAND_MESSAGE} ("This desk has no staffing demand
+     * loaded."), with only the trailing call-to-action clause adapted to the generation context
+     * (UI-SPEC copywriting contract). Covers both trigger conditions -- zero live demand rows OR
+     * zero contracted-hours agents -- without distinguishing which failed, mirroring that the
+     * underlying guard is one guard, not two.
+     */
+    static final String NO_DEMAND_OR_HOURS_MESSAGE =
+            "This desk has no staffing demand loaded. Upload staffing requirements and set agents' "
+                    + "contracted hours before requesting a suggested library.";
+
+    /**
      * Computes a fresh suggestion for {@code deskId}. No write of any kind occurs -- every
      * collaborator call below is a read.
      */
@@ -92,6 +106,13 @@ public class ShiftLibraryGenerationService {
                 .filter(sr -> sr.getRequiredFTEs() > 0)
                 .toList();
         List<AgentDayHours> agentDayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
+
+        // D-05's never-pass-vacuously rule: a desk with zero live demand, or zero agents carrying
+        // contracted hours, is refused and never handed an empty draft.
+        if (demand.isEmpty() || agentDayHours.isEmpty()) {
+            throw new PreSolveValidationException(NO_DEMAND_OR_HOURS_MESSAGE,
+                    List.of(new ErrorDetail("demand", NO_DEMAND_OR_HOURS_MESSAGE, null)));
+        }
 
         List<ShiftLibraryValidationService.Window> windows = distinctSortedWindows(demand);
 
@@ -112,19 +133,28 @@ public class ShiftLibraryGenerationService {
         List<Candidate> candidates =
                 enumerateCandidates(windows, bounds, breakConfig, hoursByWeekday, demandedWeekdays);
 
+        // P-08's named refusal: exceeding the declared candidate cap is reported, never silently
+        // truncated -- a desk whose data shape breaks the "tens, not thousands" sizing assumption
+        // says so out loud instead of quietly returning a worse answer.
+        if (candidates.size() > MAX_CANDIDATE_COUNT) {
+            String message = "Candidate enumeration produced " + candidates.size()
+                    + " candidates, exceeding the cap of " + MAX_CANDIDATE_COUNT
+                    + ". Reduce the desk's demand time range or contracted-hours variety before "
+                    + "requesting a suggested library.";
+            throw new PreSolveValidationException(message, List.of(new ErrorDetail("candidates", message, null)));
+        }
+
         List<Candidate> selected = greedyCover(candidates, windows);
         List<ShiftLibraryValidationService.Window> uncovered = stillUncovered(selected, windows);
 
-        // Re-verified through ShiftLibraryValidationService.covers() above (not a re-derivation) --
-        // a draft that still fails after the greedy-then-verify pass is a generation bug, not a
-        // partial result, so it is asserted rather than returned silently.
-        if (!uncovered.isEmpty()) {
-            throw new IllegalStateException(
-                    "Generated draft failed its own coverage re-verification for " + uncovered.size()
-                            + " window(s) on desk " + deskId);
-        }
+        // D-12: do not refuse outright when full coverage is impossible -- the desk that most
+        // needs help would get nothing. Return the best partial draft plus the still-uncovered
+        // windows, named in the exact ErrorDetail shape SHLB-05's coverage report already emits.
+        List<ErrorDetail> uncoveredDetails = uncovered.stream()
+                .map(w -> new ErrorDetail("coverage", w.date() + " " + w.startTime() + "-" + w.endTime(), null))
+                .toList();
 
-        return buildResponse(selected);
+        return buildResponse(selected, uncoveredDetails);
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
@@ -359,7 +389,7 @@ public class ShiftLibraryGenerationService {
 
     // --- Response assembly (P-10/P-11) ---
 
-    private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected) {
+    private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected, List<ErrorDetail> uncoveredDetails) {
         LocalDate today = LocalDate.now();
         List<SuggestedTemplate> templates = new ArrayList<>();
         int index = 1;
@@ -373,7 +403,7 @@ public class ShiftLibraryGenerationService {
                     candidate.template().getEndTime(), bands, validWeekdays, today, null, candidate.netHours()));
             index++;
         }
-        return new ShiftLibrarySuggestionResponse(templates, List.of());
+        return new ShiftLibrarySuggestionResponse(templates, uncoveredDetails);
     }
 
     private record BreakConfig(int breakDurationMinutes, BigDecimal breakMinShiftHours) {}
