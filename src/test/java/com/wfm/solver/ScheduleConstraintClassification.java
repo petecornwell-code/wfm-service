@@ -81,9 +81,9 @@ public final class ScheduleConstraintClassification {
      * preference rows — it still reads the phase's *former* name ("Shift Envelope & Coupling")
      * deliberately, as a historical record of who resolved them; renaming or deleting the
      * constant would break {@code 14-VERIFICATION.md} item 21's verified claim that the constant
-     * matches its markdown mirror byte-for-byte (P-27). Later tasks in this same plan add
-     * "Band capacity" (new) and reclassify "Break clustering" (from {@code MODE_AGNOSTIC}, once
-     * it has a real body) to {@code MODE_GATED} as well.
+     * matches its markdown mirror byte-for-byte (P-27). Task 2 of this same plan reclassifies
+     * "Break clustering" from {@code MODE_AGNOSTIC} to {@code MODE_GATED} once it has a real body
+     * (ENVL-09); Task 3 adds a new "Band capacity" row, also {@code MODE_GATED}.
      */
     public static Map<String, Entry> classifications() {
         Map<String, Entry> map = new LinkedHashMap<>();
@@ -190,12 +190,17 @@ public final class ScheduleConstraintClassification {
                 PHASE_15_OWNER));
 
         map.put("Break clustering", new Entry(
-                ModeClassification.MODE_AGNOSTIC,
-                "Constraint body is `penalizeConfigurable(a -> 0)` — a documented no-op placeholder "
-                        + "today (\"Evaluated as a no-op placeholder ... deferred to Phase 5 optimization\", "
-                        + "ScheduleConstraintProvider.java breakClustering). Classification is moot until "
-                        + "it does something; recorded as mode-agnostic because an inert constraint has no "
-                        + "mode-dependent behaviour to gate.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 (ENVL-09) gave this constraint a real body, reclassified from "
+                        + "MODE_AGNOSTIC (the prior row described only the inert placeholder): a "
+                        + "cross-agent, per-timeslot aggregation penalising on-break agents exceeding "
+                        + "breakClusterThresholdPct percent of the timeslot's assigned agents. The "
+                        + "on-break half explicitly gates SchedulingMode.SHIFT and is structurally inert "
+                        + "on a SLOT desk (zero AgentShiftAssignment rows to derive 'on break' from), so "
+                        + "the whole constraint's penalty is zero on every SLOT desk by construction -- "
+                        + "the same mode-dependent-behaviour shape as 'Shift envelope compliance'. The "
+                        + "assigned-agent half of the aggregation runs identically in both modes, exactly "
+                        + "as it always has.",
                 null));
 
         map.put("Contracted hours (over)", new Entry(

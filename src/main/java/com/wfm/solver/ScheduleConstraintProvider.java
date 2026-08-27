@@ -2,6 +2,7 @@ package com.wfm.solver;
 
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
+import ai.timefold.solver.core.api.score.stream.bi.BiConstraintStream;
 import com.wfm.model.*;
 
 import java.math.BigDecimal;
@@ -688,15 +689,83 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 11. Break clustering — penalise when the number of agents on break in a
-     * single timeslot exceeds the threshold percentage of assigned agents.
-     * Evaluated as a no-op placeholder — full implementation requires cross-agent
-     * aggregation per timeslot which is deferred to Phase 5 optimization.
+     * A tagged per-timeslot contribution — either "N agents seated" or "N agents on break" — so
+     * two independently {@code groupBy}-derived counts can be unioned via {@code concat} and
+     * recombined by a single downstream {@code groupBy}. See {@link #breakClustering}'s javadoc
+     * for why this indirection exists (Timefold 1.16.0 has no Bi-to-Bi stream join).
      */
-    private Constraint breakClustering(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getAgent() != null)
-                .penalizeConfigurable(a -> 0)
+    private record ClusterMark(int assigned, int onBreak) {}
+
+    /**
+     * 11. Break clustering (Phase 15, ENVL-09) — penalises the linear excess of on-break agents
+     * over {@code breakClusterThresholdPct} percent of the timeslot's assigned agents. Replaces
+     * the {@code penalizeConfigurable(a -> 0)} placeholder that shipped before this phase, and
+     * for the first time gives {@code breakClusterThresholdPct} something to do.
+     *
+     * <p><b>"Assigned agents"</b> is every seated {@link AgentAssignment} at that timeslot,
+     * including overflow seats (the flagged ENVL-09 assumption in 15-06-PLAN.md, validated
+     * empirically by {@code BreakClusteringConstraintTest}'s required contrast fixture, not
+     * merely asserted). <b>"On break"</b> is derived structurally from the agent's assigned
+     * {@code (template, band)} pair's break window — never from assignment gaps, which is what
+     * the four now-mode-gated break constraints did and which has no equivalent in shift mode
+     * (ENVL-05).
+     *
+     * <p><b>Mechanism note — why this isn't a single {@code groupBy}-then-{@code join}
+     * pipeline.</b> The two counts this constraint compares (agents seated at a timeslot, and
+     * agents on break at a timeslot) come from different source entities
+     * ({@link AgentAssignment} and {@link AgentShiftAssignment} respectively), so each needs its
+     * own {@code groupBy} — and Timefold 1.16.0's public Constraint Streams API has no operator
+     * to join two dynamically {@code groupBy}-derived {@code BiConstraintStream}s directly (only
+     * Bi-to-{@code UniConstraintStream} and Bi-to-{@code Class} joins exist; see
+     * {@code BiConstraintStream}'s {@code join} overloads). Each count is instead tagged into the
+     * common {@link ClusterMark} shape via {@code map}, the two tagged streams are unioned with
+     * {@code concat} (a genuine union operator Timefold does expose), and one final
+     * {@code groupBy} with two {@code sum} collectors recombines them per timeslot. This is the
+     * sound substitute for the plan's own "join the two on timeslot" sketch, which described a
+     * join shape the framework does not expose at this arity.
+     *
+     * <p>Joins to {@link Timeslot} directly on the on-break side, not through
+     * {@link AgentAssignment}: an on-break agent structurally has no seat at the timeslot their
+     * break covers (a legal solve forbids one via {@link #shiftEnvelopeCompliance}), so deriving
+     * "on break" from assignment rows at that timeslot would always see zero. {@link Timeslot} is
+     * itself a {@code @ProblemFactCollectionProperty}, so every timeslot is visited whether or
+     * not a seat happens to exist there — exactly the case of a fully-clustered break window with
+     * zero demand-derived seats, which is the live StubHub (EN) failure this requirement exists
+     * to fix.
+     *
+     * <p>Leads with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and gates
+     * {@code SchedulingMode.SHIFT} before joining {@link Timeslot}, mirroring
+     * {@link #shiftEnvelopeCompliance}'s performance contract (commit {@code 90bf3d2}) — a
+     * SLOT-mode desk's on-break side finds zero shift rows and stays dead; the assigned-count
+     * side is unavoidably {@link AgentAssignment}-led (it must be, that is what it counts) and is
+     * unchanged in cost from before this phase.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint breakClustering(ConstraintFactory factory) {
+        BiConstraintStream<Timeslot, ClusterMark> assignedMarks = factory
+                .forEachIncludingUnassigned(AgentAssignment.class)
+                .groupBy(a -> a.getTimeslot(),
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
+                .map((ts, total) -> ts, (ts, total) -> new ClusterMark(total, 0));
+
+        BiConstraintStream<Timeslot, ClusterMark> onBreakMarks = factory
+                .forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(Timeslot.class, equal((sa, cfg) -> sa.getDate(), Timeslot::getDate))
+                .filter((sa, cfg, ts) -> isOnBreak(ts, sa.getShiftBandPair()))
+                .groupBy((sa, cfg, ts) -> ts, countTri())
+                .map((ts, onBreak) -> ts, (ts, onBreak) -> new ClusterMark(0, onBreak));
+
+        return assignedMarks.concat(onBreakMarks)
+                .groupBy((ts, mark) -> ts,
+                        sum((ts, mark) -> mark.assigned()),
+                        sum((ts, mark) -> mark.onBreak()))
+                .join(ScheduleConfig.class)
+                .filter((ts, totalAssigned, onBreak, cfg) ->
+                        onBreak * 100 > totalAssigned * cfg.breakClusterThresholdPct())
+                .penalizeConfigurable((ts, totalAssigned, onBreak, cfg) ->
+                        onBreak - (totalAssigned * cfg.breakClusterThresholdPct()) / 100)
                 .asConstraint("Break clustering");
     }
 
@@ -836,5 +905,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignments == null || assignments.isEmpty()) return 15;
         Timeslot t = assignments.get(0).getTimeslot();
         return (int) java.time.temporal.ChronoUnit.MINUTES.between(t.getStartTime(), t.getEndTime());
+    }
+
+    /**
+     * True when {@code ts} falls inside {@code pair}'s band's break interval (Phase 15, ENVL-09).
+     * Mirrors {@link ShiftBandPair#covers}'s own break-overlap test exactly (half-open on both
+     * ends), but as a standalone predicate: {@code covers} answers "is this seat legal", which is
+     * false both outside the envelope AND inside the break, while this answers "is this
+     * specifically the break", needed to count on-break agents rather than illegal seats.
+     */
+    private static boolean isOnBreak(Timeslot ts, ShiftBandPair pair) {
+        if (pair == null || pair.band() == null || pair.band().getDurationMinutes() <= 0) {
+            return false;
+        }
+        LocalTime breakStart = pair.band().getBreakStartTime(pair.template());
+        LocalTime breakEnd = pair.band().getBreakEndTime(pair.template());
+        return ts.getStartTime().isBefore(breakEnd) && ts.getEndTime().isAfter(breakStart);
     }
 }

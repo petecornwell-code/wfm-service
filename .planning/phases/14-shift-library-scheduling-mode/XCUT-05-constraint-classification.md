@@ -2,10 +2,10 @@
 
 **Phase:** 14 — Shift Library & Scheduling Mode
 **Generated:** 2026-08-25
-**Updated:** 2026-08-27 (Phase 15, plan 15-06, Task 1) — see "Phase 15 resolution" below. Also
+**Updated:** 2026-08-27 (Phase 15, plan 15-06, Tasks 1-2) — see "Phase 15 resolution" below. Also
 folds in the "Shift envelope compliance" row plan 15-03 added to the Java classification but never
 mirrored here — this document and `ScheduleConstraintClassification.java` had silently drifted
-apart in the interim; both now agree again, closing that gap in the same commit as this task's own
+apart in the interim; both now agree again, closing that gap in the same commit as Task 1's own
 changes.
 
 ## Derivation
@@ -29,7 +29,7 @@ it. This markdown table will rot the moment it is edited independently of that t
 table and the test ever disagree, the test's `ScheduleConstraintClassification` map is right and
 this document is wrong.
 
-## Phase 15 resolution (plan 15-06, Task 1, 2026-08-27)
+## Phase 15 resolution (plan 15-06, Tasks 1-2, 2026-08-27)
 
 Six rows moved this task:
 
@@ -53,9 +53,11 @@ reads the phase's *former* name ("Shift Envelope & Coupling") deliberately, as a
 of who resolved these rows; `14-VERIFICATION.md` item 21 asserts the constant matches this
 document byte-for-byte, so both move in the same commit.
 
-Later tasks in this same plan add "Band capacity" (new hard constraint) and reclassify "Break
-clustering" (once it has a real body) to `MODE_GATED` as well — not yet reflected below; this
-document is updated again as those tasks land.
+Task 2 additionally gives "Break clustering" a real body (ENVL-09) and reclassifies it from
+`MODE_AGNOSTIC` (which described only the inert placeholder) to `MODE_GATED` — its on-break half
+is structurally inert on a SLOT desk, so the whole constraint's penalty is zero there by
+construction. Task 3 (later in this same plan) adds a new "Band capacity" row, also `MODE_GATED`
+— not yet reflected below; this document is updated again as that task lands.
 
 ## Classification Table
 
@@ -73,7 +75,7 @@ document is updated again as those tasks land.
 | Prefer primary specialization | MODE_AGNOSTIC | Pure agent-attribute soft preference (primary vs. secondary specialization); unaffected by shift structure. | — |
 | Honour preferred start time | MODE_GATED | **Phase 15 (was OPEN_RESOLVE_IN_PHASE_15):** in shift mode the agent's start comes from the assigned library shift, not a per-slot solver decision, so this constraint would tune against a signal the operator no longer controls per-slot — gated off for SHIFT desks. Phase 17's CONS-05 use of `preferredStartTime` at shift granularity (a tiebreak between two equally-scored shifts) is a *new* use of the preference, not a reason to leave this per-slot constraint on. | Phase 15 — Shift Envelope & Coupling |
 | Honour preferred break time | MODE_GATED | **Phase 15 (was OPEN_RESOLVE_IN_PHASE_15):** same reasoning — in shift mode the break comes from the assigned band, not a solver-derived gap. | Phase 15 — Shift Envelope & Coupling |
-| Break clustering | MODE_AGNOSTIC | Constraint body is `penalizeConfigurable(a -> 0)` — a documented no-op placeholder today. Classification is moot until it does something; recorded as mode-agnostic because an inert constraint has no mode-dependent behaviour to gate. A later task in this same plan gives it a real body and reclassifies it. | — |
+| Break clustering | MODE_GATED | **Phase 15 Task 2 (was MODE_AGNOSTIC, describing only the inert placeholder):** now a real cross-agent, per-timeslot aggregation penalising on-break agents exceeding `breakClusterThresholdPct` percent of the timeslot's assigned agents (ENVL-09). The on-break half explicitly gates `SchedulingMode.SHIFT` and is structurally inert on a SLOT desk; the assigned-agent half runs identically in both modes, exactly as it always has. | — |
 | Contracted hours (over) | MODE_AGNOSTIC | Compares assignment count to `AgentDayConfig.effectiveHours`-derived expected slots; ROADMAP.md's joint-unsatisfiability argument (D-06) explicitly assumes this constraint still applies unchanged in shift mode. | — |
 | Contracted hours (under) | MODE_AGNOSTIC | Same basis as Contracted hours (over) — expected-slots comparison, mode-independent. | — |
 | Contracted hours (under, zero) | MODE_AGNOSTIC | Same basis as Contracted hours (over) — penalises agents with an `AgentDayConfig` but zero assignments; mode-independent. | — |
@@ -86,18 +88,19 @@ document is updated again as those tasks land.
 
 **Twenty constraints, twenty classification rows, zero unclassified:**
 
-- **13 mode-agnostic** — Unassigned assignment, Agent day off, Specialization match, One
-  assignment per timeslot, Prefer primary specialization, Break clustering, Contracted hours
-  (over), Contracted hours (under), Contracted hours (under, zero), Bulk over-allocation limit,
-  Bulk under-allocation soft, Bulk under-allocation hard, Minimum staffing.
-- **7 mode-gated** — Exactly one break, Break duration, Break blocked window, Break start
-  alignment, Shift envelope compliance, Honour preferred start time, Honour preferred break time.
+- **12 mode-agnostic** — Unassigned assignment, Agent day off, Specialization match, One
+  assignment per timeslot, Prefer primary specialization, Contracted hours (over), Contracted
+  hours (under), Contracted hours (under, zero), Bulk over-allocation limit, Bulk
+  under-allocation soft, Bulk under-allocation hard, Minimum staffing.
+- **8 mode-gated** — Exactly one break, Break duration, Break blocked window, Break start
+  alignment, Shift envelope compliance, Honour preferred start time, Honour preferred break time,
+  Break clustering.
 - **0 needs-a-shift-variant.**
 - **0 open.**
 
 XCUT-05 is now complete: every constraint this project's solver evaluates is classified, and
 nothing is left `OPEN_RESOLVE_IN_PHASE_15` for a future phase to inherit. (This table grows again
-later in this same plan when "Band capacity" and "Break clustering" join the mode-gated set.)
+later in this same plan when "Band capacity" joins the mode-gated set.)
 
 ## Historical record — what Phase 14 left open
 
