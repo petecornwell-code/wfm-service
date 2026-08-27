@@ -33,7 +33,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **SHLB-04**: Operator can edit and retire shift templates without corrupting schedules that already reference them
 - [x] **SHLB-05**: The system validates a desk's shift library against that desk's staffing demand curve and reports which demand windows no combination of library shifts can cover
 - [x] **SHLB-06**: A shift template whose net working duration cannot match any agent's effective contracted hours for a valid weekday is reported to the operator at definition time, not discovered at solve time
-- [ ] **SHLB-07**: Operator can request a suggested shift library computed from the desk's staffing demand and its agents' effective contracted hours — returned as an editable draft that is never applied automatically, and derived from the same coverage predicate the library validation already uses, not a second implementation
+- [x] **SHLB-07**: Operator can request a suggested shift library computed from the desk's staffing demand and its agents' effective contracted hours — returned as an editable draft that is never applied automatically, and derived from the same coverage predicate the library validation already uses, not a second implementation
 
 ### Scheduling Mode (MODE)
 
@@ -132,7 +132,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SHLB-01…06 | Phase 14 | Complete (2026-08-26) |
-| SHLB-07 | Phase 15 | Pending |
+| SHLB-07 | Phase 15 | Complete |
 | MODE-01…05 | Phase 14 | Complete (2026-08-26) |
 | ENVL-01…10 | Phase 15 | Pending |
 | USHF-01…06 | Phase 16 | Pending |

@@ -8,6 +8,7 @@ import {
   type ShiftTemplateBody,
   type ShiftLibraryValidation,
   type Desk,
+  type ApiErrorDetail,
   ApiRequestError,
   getErrorMessage,
 } from '../api/client'
@@ -33,24 +34,38 @@ function formatHours(hours: number): string {
   return String(Math.round(hours * 100) / 100)
 }
 
-// The live preview line as the operator fills the add/edit form (Copywriting Contract, Component
-// Specifications §2) — computed client-side, purely for display; the offset submitted to the API
-// is derived separately, immediately before submit (D-01).
-function breakPreviewText(startTime: string, endTime: string, breakStartTime: string, breakDurationMinutes: string): string | null {
+// One in-progress break band row, held as strings throughout (P-20) — matching how every other
+// numeric input in this form is held. capacity === '' is the deliberate "blank, unlimited" state
+// (D-03), never pre-filled with 0.
+interface BandRow {
+  breakStartTime: string
+  breakDurationMinutes: string
+  capacity: string
+}
+
+function blankBandRow(): BandRow {
+  return { breakStartTime: '', breakDurationMinutes: '0', capacity: '' }
+}
+
+// The per-band live preview line (Copywriting Contract, Component Specifications §1) — computed
+// client-side, purely for display; the offset submitted to the API is derived separately (P-21),
+// immediately before submit. capacityText is always rendered explicitly, never omitted, so a
+// blank capacity reads as a deliberate choice (D-03).
+function bandPreviewText(startTime: string, endTime: string, band: BandRow): string | null {
   if (!startTime || !endTime) return null
-  const duration = Number(breakDurationMinutes) || 0
-  const breakStartMin = toMinutes(breakStartTime || startTime)
+  const duration = Number(band.breakDurationMinutes) || 0
+  const breakStartMin = toMinutes(band.breakStartTime || startTime)
   const breakEndMin = breakStartMin + duration
   const netMinutes = toMinutes(endTime) - toMinutes(startTime) - duration
-  return `Break ${minutesToTime(breakStartMin)}–${minutesToTime(breakEndMin)} (${duration}m), net ${formatHours(netMinutes / 60)}h worked.`
+  const capacityText = band.capacity === '' ? 'unlimited' : `capacity ${band.capacity}`
+  return `Break ${minutesToTime(breakStartMin)}–${minutesToTime(breakEndMin)} (${duration}m) · ${capacityText}, net ${formatHours(netMinutes / 60)}h worked.`
 }
 
 interface TemplateFormState {
   name: string
   startTime: string
   endTime: string
-  breakStartTime: string
-  breakDurationMinutes: string
+  bands: BandRow[]
   validWeekdays: Set<string>
   effectiveFrom: string
   effectiveTo: string
@@ -61,34 +76,153 @@ function emptyForm(): TemplateFormState {
     name: '',
     startTime: '',
     endTime: '',
-    breakStartTime: '',
-    breakDurationMinutes: '0',
+    // A fresh Add form starts with zero bands — the valid "no break" state (D-08 discretion),
+    // never a seeded blank row.
+    bands: [],
     validWeekdays: new Set<string>(),
     effectiveFrom: todayIso(),
     effectiveTo: '',
   }
 }
 
+// One generated draft row (SHLB-07, D-11) — always-editable (P-24), reusing TemplateFormState's
+// exact shape plus its own per-row submitting/error state, since draft rows are saved and error
+// independently of one another and of the Add/Edit form.
+interface DraftRowState extends TemplateFormState {
+  submitting: boolean
+  fieldErrors: Record<string, string>
+}
+
 function formToBody(f: TemplateFormState): ShiftTemplateBody {
-  // The operator enters a wall-clock break start; the offset the API stores is computed
-  // client-side immediately before submit (D-01), never persisted as a wall-clock value.
-  const breakOffsetMinutes = f.breakStartTime ? toMinutes(f.breakStartTime) - toMinutes(f.startTime) : 0
+  // The operator enters a wall-clock break start per band; the offset the API stores is computed
+  // client-side immediately before submit (D-01/P-21), never persisted as a wall-clock value.
   return {
     name: f.name,
     startTime: f.startTime,
     endTime: f.endTime,
-    breakOffsetMinutes,
-    breakDurationMinutes: Number(f.breakDurationMinutes) || 0,
+    bands: f.bands.map(b => ({
+      offsetMinutes: b.breakStartTime ? toMinutes(b.breakStartTime) - toMinutes(f.startTime) : 0,
+      durationMinutes: Number(b.breakDurationMinutes) || 0,
+      capacity: b.capacity === '' ? null : parseInt(b.capacity, 10),
+    })),
     validWeekdays: Array.from(f.validWeekdays),
     effectiveFrom: f.effectiveFrom,
     effectiveTo: f.effectiveTo || null,
   }
 }
 
+// The band editor (UI-SPEC Component Specifications §1) — a repeatable, appendable list of band
+// rows, reused verbatim by both the Add/Edit form and every Suggested Library draft row (P-24).
+// Bands are a plain useState array with spread-append/index-filter removal (P-20) — there is no
+// existing "append a blank row" precedent in this codebase to imitate.
+function BandEditor({
+  bands,
+  startTime,
+  endTime,
+  onAdd,
+  onRemove,
+  onUpdate,
+  fieldErrors,
+  onClearFieldError,
+  disabled,
+}: {
+  bands: BandRow[]
+  startTime: string
+  endTime: string
+  onAdd: () => void
+  onRemove: (idx: number) => void
+  onUpdate: (idx: number, patch: Partial<BandRow>) => void
+  fieldErrors: Record<string, string>
+  onClearFieldError: (field: string) => void
+  disabled: boolean
+}) {
+  return (
+    <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 600 }}>Break Bands</div>
+      {bands.length === 0 ? (
+        <div style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
+          No break bands added — this template has no break.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {bands.map((band, idx) => {
+            // The backend emits one ErrorDetail per offending band keyed by "bands[i].breakStartTime"
+            // / "bands[i].breakEndTime" — routed here to that band's own row, not once for the whole
+            // form (an operator with three bands and one misaligned band sees exactly which one).
+            const startErr = fieldErrors[`bands[${idx}].breakStartTime`]
+            const endErr = fieldErrors[`bands[${idx}].breakEndTime`]
+            const bandErr = startErr || endErr
+            const preview = bandPreviewText(startTime, endTime, band)
+            return (
+              <div key={idx}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Break start time{' '}
+                    <input
+                      type="time"
+                      value={band.breakStartTime}
+                      disabled={disabled}
+                      onChange={e => {
+                        onUpdate(idx, { breakStartTime: e.target.value })
+                        onClearFieldError(`bands[${idx}].breakStartTime`)
+                        onClearFieldError(`bands[${idx}].breakEndTime`)
+                      }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Duration (minutes){' '}
+                    <input
+                      type="number"
+                      min="0"
+                      value={band.breakDurationMinutes}
+                      disabled={disabled}
+                      onChange={e => {
+                        onUpdate(idx, { breakDurationMinutes: e.target.value })
+                        onClearFieldError(`bands[${idx}].breakEndTime`)
+                      }}
+                      style={{ width: '80px' }}
+                    />
+                  </label>
+                  <label style={{ fontSize: '0.8rem' }}>
+                    Capacity (optional){' '}
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Unlimited"
+                      value={band.capacity}
+                      disabled={disabled}
+                      onChange={e => onUpdate(idx, { capacity: e.target.value })}
+                      style={{ width: '90px' }}
+                    />
+                  </label>
+                  <button
+                    onClick={() => onRemove(idx)}
+                    disabled={disabled}
+                    style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {bandErr && <div style={fieldErrorStyle}>{bandErr}</div>}
+                {preview && (
+                  <div style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: '2px' }}>{preview}</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <button onClick={onAdd} disabled={disabled} style={{ alignSelf: 'flex-start', fontSize: '0.85rem' }}>
+        + Add Break Band
+      </button>
+    </div>
+  )
+}
+
 const fieldErrorStyle = { fontSize: '0.75rem', color: '#92400e', marginTop: '2px' }
 const amberPanelStyle = { background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '0.75rem' }
 
-const COLUMN_COUNT = 7 // Name, Start–End, Break, Weekdays, Effective range, Hours match, Actions
+const COLUMN_COUNT = 8 // Name, Start–End, Break, Weekdays, Effective range, Hours match, Capacity, Actions
 
 // The coverage panel (D-04/D-05/D-08 — one implementation, two callers). Every verdict is read
 // from the response and rendered; none is recomputed from templates/timeslots in the browser.
@@ -159,6 +293,17 @@ export default function ShiftLibrary() {
   const [desk, setDesk] = useState<Desk | null>(null)
   const [switchingMode, setSwitchingMode] = useState(false)
 
+  // Suggested Library (SHLB-07, D-11) — stateless: nothing here is ever written until an
+  // individual draft row's own Save. `hasSuggested` gates the whole section rendering nothing at
+  // all before the first click (Component Specifications §3); once true, exactly one of
+  // `draftRefusal` (D-12 refusal) or `draftRows` (populated draft, optionally with
+  // `draftUncoveredWindows`) is set.
+  const [suggesting, setSuggesting] = useState(false)
+  const [hasSuggested, setHasSuggested] = useState(false)
+  const [draftRows, setDraftRows] = useState<DraftRowState[] | null>(null)
+  const [draftRefusal, setDraftRefusal] = useState<string | null>(null)
+  const [draftUncoveredWindows, setDraftUncoveredWindows] = useState<ApiErrorDetail[] | null>(null)
+
   useEffect(() => {
     if (!deskId) return
     shiftTemplatesApi.list(deskId)
@@ -221,6 +366,20 @@ export default function ShiftLibrary() {
     })
   }
 
+  // Band list mutation (P-20) — a plain spread-append / index-filter array, no library. Shared by
+  // the Add/Edit form and every Suggested Library draft row via each caller's own setter.
+  const addBand = (setF: (updater: (f: TemplateFormState) => TemplateFormState) => void) =>
+    setF(prev => ({ ...prev, bands: [...prev.bands, blankBandRow()] }))
+
+  const removeBand = (setF: (updater: (f: TemplateFormState) => TemplateFormState) => void, idx: number) =>
+    setF(prev => ({ ...prev, bands: prev.bands.filter((_, i) => i !== idx) }))
+
+  const updateBand = (
+    setF: (updater: (f: TemplateFormState) => TemplateFormState) => void,
+    idx: number,
+    patch: Partial<BandRow>,
+  ) => setF(prev => ({ ...prev, bands: prev.bands.map((b, i) => (i === idx ? { ...b, ...patch } : b)) }))
+
   const startAdd = () => {
     setForm(emptyForm())
     setFieldErrors({})
@@ -261,7 +420,8 @@ export default function ShiftLibrary() {
   }
 
   // Seeds every field from the template's current values (Specializations.tsx:58-62 pattern) —
-  // never opens blank for an edit.
+  // never opens blank for an edit. Bands arrive offset-ascending from the server and are seeded
+  // one row per existing band, extending the same scalar-to-list seeding pattern.
   const startEdit = (t: ShiftTemplate) => {
     setRetiringId(null)
     setEditingId(t.id)
@@ -270,8 +430,11 @@ export default function ShiftLibrary() {
       name: t.name,
       startTime: t.startTime.slice(0, 5),
       endTime: t.endTime.slice(0, 5),
-      breakStartTime: t.breakStartTime.slice(0, 5),
-      breakDurationMinutes: String(t.breakDurationMinutes),
+      bands: t.bands.map(b => ({
+        breakStartTime: b.breakStartTime.slice(0, 5),
+        breakDurationMinutes: String(b.durationMinutes),
+        capacity: b.capacity === null ? '' : String(b.capacity),
+      })),
       validWeekdays: new Set(t.validWeekdays),
       effectiveFrom: t.effectiveFrom,
       effectiveTo: t.effectiveTo || '',
@@ -321,8 +484,7 @@ export default function ShiftLibrary() {
         name: t.name,
         startTime: t.startTime.slice(0, 5),
         endTime: t.endTime.slice(0, 5),
-        breakOffsetMinutes: t.breakOffsetMinutes,
-        breakDurationMinutes: t.breakDurationMinutes,
+        bands: t.bands.map(b => ({ offsetMinutes: b.offsetMinutes, durationMinutes: b.durationMinutes, capacity: b.capacity })),
         validWeekdays: t.validWeekdays,
         effectiveFrom: t.effectiveFrom,
         effectiveTo: retireDate,
@@ -370,6 +532,7 @@ export default function ShiftLibrary() {
           misalignedTemplates: gridMessages.length > 0 ? gridMessages : (prev?.misalignedTemplates ?? []),
           hoursAdvisories: prev?.hoursAdvisories ?? [],
           unsatisfiableWeekdays: prev?.unsatisfiableWeekdays ?? [],
+          capacityAdvisories: prev?.capacityAdvisories ?? [],
         }))
         setModeSwitchHoursError(hoursMessage)
         if (demandMessage) showToast('error', demandMessage)
@@ -381,6 +544,112 @@ export default function ShiftLibrary() {
       }
     } finally {
       setSwitchingMode(false)
+    }
+  }
+
+  // SHLB-07 (D-11): a stateless GET, recomputed fresh every call. Clicking again while a draft is
+  // present replaces the whole draft in place, discarding any unsaved edits — no confirmation
+  // dialog, since nothing generated has ever been persisted (D-12, same no-confirm()-on-a-
+  // harmless-action rule as Phase 14's D-12/I-3).
+  const handleSuggest = async () => {
+    if (!deskId || suggesting) return
+    setSuggesting(true)
+    try {
+      const result = await shiftLibraryApi.suggestion(deskId)
+      setDraftRefusal(null)
+      setDraftUncoveredWindows(result.uncoveredWindows.length > 0 ? result.uncoveredWindows : null)
+      setDraftRows(result.templates.map(t => {
+        const startTime = t.startTime.slice(0, 5)
+        return {
+          name: t.name,
+          startTime,
+          endTime: t.endTime.slice(0, 5),
+          bands: t.bands.map(b => ({
+            breakStartTime: minutesToTime(toMinutes(startTime) + b.offsetMinutes),
+            breakDurationMinutes: String(b.durationMinutes),
+            capacity: b.capacity === null ? '' : String(b.capacity),
+          })),
+          validWeekdays: new Set(t.validWeekdays),
+          effectiveFrom: t.effectiveFrom,
+          effectiveTo: t.effectiveTo || '',
+          submitting: false,
+          fieldErrors: {},
+        }
+      }))
+      setHasSuggested(true)
+    } catch (err) {
+      // D-12: zero live demand or zero contracted-hours agents refuses with a 400 whose message
+      // is the shared diagnostic text — rendered verbatim, never an empty draft table. Any other
+      // failure (network/500) is toasted like any other API call on this page.
+      if (err instanceof ApiRequestError && err.status === 400) {
+        setDraftRows(null)
+        setDraftUncoveredWindows(null)
+        setDraftRefusal(err.message)
+        setHasSuggested(true)
+      } else {
+        showToast('error', getErrorMessage(err))
+      }
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const toggleDraftWeekday = (idx: number, day: string) => {
+    setDraftRows(prev => prev && prev.map((r, i) => {
+      if (i !== idx) return r
+      const next = new Set(r.validWeekdays)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return { ...r, validWeekdays: next }
+    }))
+  }
+
+  const clearDraftFieldError = (idx: number, field: string) => {
+    setDraftRows(prev => prev && prev.map((r, i) => {
+      if (i !== idx || !(field in r.fieldErrors)) return r
+      const next = { ...r.fieldErrors }
+      delete next[field]
+      return { ...r, fieldErrors: next }
+    }))
+  }
+
+  // Adapts a single draft row into the same `setF`-shaped setter the band helpers
+  // (addBand/removeBand/updateBand) and every text-field onChange already expect, so the draft
+  // row editor reuses those functions verbatim rather than a parallel implementation.
+  const setDraftRow = (idx: number) => (updater: (f: TemplateFormState) => TemplateFormState) => {
+    setDraftRows(prev => (prev ? prev.map((r, i) => (i === idx ? { ...r, ...updater(r) } : r)) : prev))
+  }
+
+  const handleDropDraftRow = (idx: number) => {
+    setDraftRows(prev => (prev ? prev.filter((_, i) => i !== idx) : prev))
+  }
+
+  // Commits through the identical create call a manual Add uses (D-11/T-15-19) — on success the
+  // row leaves the draft and appears in the saved template list exactly as a manual add would; a
+  // validation error surfaces through the identical inline mechanism (no draft-specific path).
+  const handleSaveDraftRow = async (idx: number) => {
+    if (!deskId || !draftRows) return
+    const row = draftRows[idx]
+    if (!row || !row.name.trim() || !row.startTime || !row.endTime) return
+    setDraftRows(prev => prev && prev.map((r, i) => (i === idx ? { ...r, submitting: true } : r)))
+    try {
+      const created = await shiftTemplatesApi.create(deskId, formToBody(row))
+      setTemplates(ts => [...ts, created])
+      setDraftRows(prev => (prev ? prev.filter((_, i) => i !== idx) : prev))
+      showToast('success', 'Shift template created')
+      const report = await fetchValidation()
+      toastAdvisoryIfAny(report, created.id)
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 400 && err.details.length > 0) {
+        const next: Record<string, string> = {}
+        for (const d of err.details) {
+          if (d.field) next[d.field] = d.message
+        }
+        setDraftRows(prev => prev && prev.map((r, i) => (i === idx ? { ...r, submitting: false, fieldErrors: next } : r)))
+      } else {
+        showToast('error', getErrorMessage(err))
+        setDraftRows(prev => prev && prev.map((r, i) => (i === idx ? { ...r, submitting: false } : r)))
+      }
     }
   }
 
@@ -408,32 +677,19 @@ export default function ShiftLibrary() {
           </label>
           {fieldErrors.endTime && <div style={fieldErrorStyle}>{fieldErrors.endTime}</div>}
         </div>
-        <div>
-          <label style={{ fontSize: '0.8rem' }}>
-            Break start time{' '}
-            <input type="time" value={f.breakStartTime} onChange={e => { setF(prev => ({ ...prev, breakStartTime: e.target.value })); clearFieldError('breakStartTime') }} />
-          </label>
-          {fieldErrors.breakStartTime && <div style={fieldErrorStyle}>{fieldErrors.breakStartTime}</div>}
-        </div>
-        <div>
-          <label style={{ fontSize: '0.8rem' }}>
-            Break duration (minutes){' '}
-            {/* Clearing 'breakEndTime' (not a duration-keyed field) is deliberate: changing the
-                duration moves where breakEndTime lands, so any stale breakEndTime error is now
-                invalid. There is no server-side 'breakDurationMinutes' field key today (negative
-                and envelope checks throw IllegalArgumentException, which carries no details), but
-                if one is ever added, clear it here too so it isn't silently left stale. */}
-            <input type="number" min="0" value={f.breakDurationMinutes} onChange={e => { setF(prev => ({ ...prev, breakDurationMinutes: e.target.value })); clearFieldError('breakEndTime') }} style={{ width: '80px' }} />
-          </label>
-          {fieldErrors.breakEndTime && <div style={fieldErrorStyle}>{fieldErrors.breakEndTime}</div>}
-        </div>
       </div>
 
-      {breakPreviewText(f.startTime, f.endTime, f.breakStartTime, f.breakDurationMinutes) && (
-        <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
-          {breakPreviewText(f.startTime, f.endTime, f.breakStartTime, f.breakDurationMinutes)}
-        </div>
-      )}
+      <BandEditor
+        bands={f.bands}
+        startTime={f.startTime}
+        endTime={f.endTime}
+        onAdd={() => addBand(setF)}
+        onRemove={idx => removeBand(setF, idx)}
+        onUpdate={(idx, patch) => updateBand(setF, idx, patch)}
+        fieldErrors={fieldErrors}
+        onClearFieldError={clearFieldError}
+        disabled={submitting}
+      />
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         {DAY_ORDER.map(day => (
@@ -482,13 +738,106 @@ export default function ShiftLibrary() {
     </div>
   )
 
+  // A generated draft row (Component Specifications §3) — always-editable (P-24), reusing the
+  // exact same field set and controls as the Add/Edit form, including the Task 1 BandEditor.
+  // Deliberately not a click-to-edit toggle like the saved-template list: the whole point of a
+  // draft is fast pre-save iteration.
+  const renderDraftRow = (row: DraftRowState, idx: number) => {
+    const setF = setDraftRow(idx)
+    return (
+      <div key={idx} style={{ background: '#fff', padding: '0.75rem', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <input placeholder="Name" value={row.name} onChange={e => setF(prev => ({ ...prev, name: e.target.value }))} />
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>
+              Start time{' '}
+              <input type="time" value={row.startTime} onChange={e => { setF(prev => ({ ...prev, startTime: e.target.value })); clearDraftFieldError(idx, 'startTime') }} />
+            </label>
+            {row.fieldErrors.startTime && <div style={fieldErrorStyle}>{row.fieldErrors.startTime}</div>}
+          </div>
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>
+              End time{' '}
+              <input type="time" value={row.endTime} onChange={e => { setF(prev => ({ ...prev, endTime: e.target.value })); clearDraftFieldError(idx, 'endTime') }} />
+            </label>
+            {row.fieldErrors.endTime && <div style={fieldErrorStyle}>{row.fieldErrors.endTime}</div>}
+          </div>
+        </div>
+
+        <BandEditor
+          bands={row.bands}
+          startTime={row.startTime}
+          endTime={row.endTime}
+          onAdd={() => addBand(setF)}
+          onRemove={i => removeBand(setF, i)}
+          onUpdate={(i, patch) => updateBand(setF, i, patch)}
+          fieldErrors={row.fieldErrors}
+          onClearFieldError={field => clearDraftFieldError(idx, field)}
+          disabled={row.submitting}
+        />
+
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {DAY_ORDER.map(day => (
+            <label key={day} style={{ fontSize: '0.8rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {DAY_LABELS[day]}
+              <input type="checkbox" checked={row.validWeekdays.has(day)} onChange={() => toggleDraftWeekday(idx, day)} />
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <label style={{ fontSize: '0.8rem' }}>
+            Effective from{' '}
+            <input type="date" value={row.effectiveFrom} onChange={e => setF(prev => ({ ...prev, effectiveFrom: e.target.value }))} />
+          </label>
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>
+              Effective to{' '}
+              <input type="date" value={row.effectiveTo} onChange={e => setF(prev => ({ ...prev, effectiveTo: e.target.value }))} />
+            </label>
+            <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Leave blank for open-ended</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="primary"
+            onClick={() => handleSaveDraftRow(idx)}
+            disabled={row.submitting}
+            style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
+          >
+            {row.submitting ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            onClick={() => handleDropDraftRow(idx)}
+            disabled={row.submitting}
+            style={{ fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
+          >
+            Drop
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Shift Templates</h3>
 
       <div style={{ margin: '16px 0' }}>
         {!adding && (
-          <button className="primary" onClick={startAdd}>Add Shift Template</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="primary" onClick={startAdd}>Add Shift Template</button>
+            {/* Deliberately plain, not accent (Color contract ruling) — a suggestion is an
+                assist, not a more important way to build a library than a manual Add. */}
+            <button
+              onClick={handleSuggest}
+              disabled={suggesting}
+              style={{ background: '#fff', color: '#111827', border: '1px solid #d1d5db' }}
+            >
+              {suggesting ? 'Suggesting...' : 'Suggest a Library'}
+            </button>
+          </div>
         )}
         {adding && renderForm(form, setForm, 'add')}
       </div>
@@ -505,6 +854,7 @@ export default function ShiftLibrary() {
               <th>Weekdays</th>
               <th>Effective range</th>
               <th>Hours match</th>
+              <th>Capacity</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -531,7 +881,22 @@ export default function ShiftLibrary() {
                     )}
                   </td>
                   <td>{t.startTime.slice(0, 5)}–{t.endTime.slice(0, 5)}</td>
-                  <td>{t.breakStartTime.slice(0, 5)}–{t.breakEndTime.slice(0, 5)} ({t.breakDurationMinutes}m)</td>
+                  <td>
+                    {/* Band-aware Break column (UI-SPEC Component Specifications §2): zero bands
+                        reads "No break" (a deliberate valid state, never a blank cell); one band
+                        renders unchanged from Phase 14; two-or-more render one line per band,
+                        offset-ascending (server-guaranteed order) — no maximum-row cap. */}
+                    {t.bands.length === 0 ? (
+                      <span style={{ color: '#9ca3af' }}>No break</span>
+                    ) : (
+                      t.bands.map(b => (
+                        <div key={b.id}>
+                          {b.breakStartTime.slice(0, 5)}–{b.breakEndTime.slice(0, 5)} ({b.durationMinutes}m)
+                          {b.capacity !== null ? ` · cap ${b.capacity}` : ''}
+                        </div>
+                      ))
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       {DAY_ORDER.map(day => (
@@ -566,6 +931,19 @@ export default function ShiftLibrary() {
                     })()}
                   </td>
                   <td>
+                    {(() => {
+                      // D-03's named residual risk (P-23): identical glyph-plus-tooltip mechanism
+                      // as the Hours match column, non-blocking (the save already succeeded). A
+                      // template with advisories on several weekdays names them all in one
+                      // tooltip rather than rendering several glyphs; a clean row is a blank cell,
+                      // matching the Hours match column's own clean-row treatment.
+                      const advisories = validation?.capacityAdvisories.filter(a => a.templateId === t.id) ?? []
+                      if (advisories.length === 0) return null
+                      const tooltip = advisories.map(a => a.message).join('\n')
+                      return <span title={tooltip}>⚠</span>
+                    })()}
+                  </td>
+                  <td>
                     {retiringId === t.id ? (
                       <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                         <label style={{ fontSize: '0.8rem' }}>
@@ -587,6 +965,50 @@ export default function ShiftLibrary() {
             })}
           </tbody>
         </table>
+      )}
+
+      {/* Suggested Library (SHLB-07, D-11, Component Specifications §3) — renders nothing at all
+          before the first click, not a persistent empty slot. */}
+      {hasSuggested && (
+        <div style={{ margin: '16px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Suggested Library</h3>
+            {draftRows && draftRows.length > 0 && (
+              <span style={{ fontSize: '13px', fontWeight: 600, background: '#e5e7eb', color: '#374151', borderRadius: '4px', padding: '1px 6px' }}>Draft</span>
+            )}
+          </div>
+          {draftRefusal ? (
+            // D-12 refusal: no Draft badge (nothing was generated), never an empty draft table.
+            <div style={{ ...amberPanelStyle, marginTop: '8px' }}>{draftRefusal}</div>
+          ) : (
+            draftRows && draftRows.length > 0 && (
+              <>
+                <div style={{ border: '1px dashed #d1d5db', borderRadius: '8px', padding: '12px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
+                    This draft isn't saved — edits are lost if you navigate away.
+                  </div>
+                  {draftRows.map((row, idx) => renderDraftRow(row, idx))}
+                </div>
+                {draftUncoveredWindows && draftUncoveredWindows.length > 0 && (
+                  // Partial coverage (P-22): the existing CoveragePanel reused verbatim, fed the
+                  // response's own uncoveredWindows — never a second uncovered-windows renderer.
+                  <div style={{ marginTop: '8px' }}>
+                    <CoveragePanel
+                      validation={{
+                        hasLiveDemand: true,
+                        uncoveredWindows: draftUncoveredWindows.map(d => d.message),
+                        misalignedTemplates: [],
+                        hoursAdvisories: [],
+                        unsatisfiableWeekdays: [],
+                        capacityAdvisories: [],
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )
+          )}
+        </div>
       )}
 
       <div style={{ margin: '16px 0' }}>
