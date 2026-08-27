@@ -344,20 +344,35 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * match against there; the explicit {@code SchedulingMode.SHIFT} filter is defence in depth
      * on top of that structural fact, keeping the constraint provably silent even if a shift row
      * were ever present alongside a SLOT {@link ScheduleConfig}.
+     *
+     * <p><b>Stream order is a performance contract, not a style choice.</b> This constraint must
+     * lead with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and apply the
+     * {@code SchedulingMode.SHIFT} gate BEFORE touching {@link AgentAssignment}. The original
+     * 15-03 form led with {@code forEach(AgentAssignment.class).filter(a -> a.getAgent() != null)}
+     * and joined the shift rows second, which put all 480 seat entities of a slot-mode solve
+     * through an extra filter node and a two-key join index that could never produce a match.
+     * Measured on {@code BreakAwareConstructionTest}'s 30-agent slot-mode scenario, that cost
+     * roughly 3x construction-heuristic throughput (1049ms -> 347ms for the same 480 steps) and
+     * ~40% of local-search throughput — enough to drop a wall-clock-bounded solve from
+     * {@code 0hard} to {@code -100hard} and worse. Leading with the shift stream keeps the whole
+     * node network dead on a slot-mode desk. Do not reorder these joins.
+     *
+     * <p>Joining {@code AgentAssignment.class} directly (rather than filtering an
+     * {@code AgentAssignment} lead stream) also subsumes the old explicit
+     * {@code a.getAgent() != null} guard: every {@code forEach}/{@code join(Class, ...)} silently
+     * drops planning entities whose genuine variable is null, which is exactly what that filter
+     * did, so {@code a.getAgent().getId()} below stays safe.
      */
     // Package-private so ConstraintVerifier can target this constraint in isolation
     // (mirrors bulkUnderallocationSoft/minimumStaffing's precedent in this file).
     Constraint shiftEnvelopeCompliance(ConstraintFactory factory) {
-        ai.timefold.solver.core.api.score.stream.uni.UniConstraintStream<AgentShiftAssignment> shiftRows =
-                factory.forEachIncludingUnassigned(AgentShiftAssignment.class);
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getAgent() != null)
-                .join(shiftRows,
-                        equal(a -> a.getAgent().getId(), sa -> sa.getAgent().getId()),
-                        equal(a -> a.getTimeslot().getDate(), AgentShiftAssignment::getDate))
+        return factory.forEachIncludingUnassigned(AgentShiftAssignment.class)
                 .join(ScheduleConfig.class)
-                .filter((a, sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
-                .filter((a, sa, cfg) -> sa.getShiftBandPair() == null
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(AgentAssignment.class,
+                        equal((sa, cfg) -> sa.getAgent().getId(), a -> a.getAgent().getId()),
+                        equal((sa, cfg) -> sa.getDate(), a -> a.getTimeslot().getDate()))
+                .filter((sa, cfg, a) -> sa.getShiftBandPair() == null
                         || !sa.getShiftBandPair().covers(a.getTimeslot()))
                 .penalizeConfigurable()
                 .asConstraint("Shift envelope compliance");
