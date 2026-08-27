@@ -76,6 +76,16 @@ class ShiftModelBenchmarkTest {
     private static final int DAY_COUNT = 2;
     private static final int TEMPLATE_COUNT = 2;
 
+    // Indicative real-desk-scale run (D-16, non-comparative) — 30 agents matches the scale
+    // SPIKE-COUPLING.md's open item 1 names ("real problem size: 30 agents ... 19 existing
+    // constraints", now 21 after plan 15-06). Single seed, larger step budget: reported for scale
+    // only, never a pass/fail criterion.
+    private static final int INDICATIVE_AGENT_COUNT = 30;
+    private static final int INDICATIVE_DAY_COUNT = 1;
+    private static final int INDICATIVE_TEMPLATE_COUNT = 3;
+    private static final int INDICATIVE_STEP_COUNT_LIMIT = 3000;
+    private static final long INDICATIVE_SEED = 1L;
+
     /** One benchmark run's outcome — model-independent metrics (D-14) plus soft score, reported but
      * never thresholded, since the two arms do not evaluate the same constraint set. */
     record RunMetrics(
@@ -107,6 +117,57 @@ class ShiftModelBenchmarkTest {
 
         assertThat(slot).as("slot arm must print a complete metric row").isNotNull();
         assertThat(shift).as("shift arm must print a complete metric row").isNotNull();
+    }
+
+    // ------------------------------------------------------------------
+    //  Task 2 — the full run: three arms, five seeds, plus one indicative real-desk-scale run
+    // ------------------------------------------------------------------
+
+    @Test
+    @EnabledIfSystemProperty(named = "wfm.benchmark", matches = "true")
+    void fullRun_threeArmsFiveSeeds_plusOneIndicativeRealDeskScaleRun() {
+        System.out.println();
+        System.out.println("=== XCUT-04 FULL RUN — slot vs shift(shifts-first) vs shift(seats-first, D-08), 5 seeds ===");
+        System.out.println("No fixture, seed, or step-budget value is adjusted after this point (D-15/P-36).");
+
+        List<RunMetrics> slotRuns = runSeeds("slot", this::buildSlotSchedule, false, AGENT_COUNT, DAY_COUNT);
+        List<RunMetrics> shiftsFirstRuns = runSeeds("shift-shifts-first", this::buildShiftSchedule, false, AGENT_COUNT, DAY_COUNT);
+        List<RunMetrics> seatsFirstRuns = runSeeds("shift-seats-first", this::buildShiftSchedule, true, AGENT_COUNT, DAY_COUNT);
+
+        List<RunMetrics> all = new ArrayList<>();
+        all.addAll(slotRuns);
+        all.addAll(shiftsFirstRuns);
+        all.addAll(seatsFirstRuns);
+        printPerRunTable(all);
+        printSummaryTable(List.of(slotRuns, shiftsFirstRuns, seatsFirstRuns));
+
+        // Must-pass, deterministic per D-15: the shift arm reaches 0hard on every seed, under BOTH
+        // CH orderings — the only assertion this test enforces in code. The comparative
+        // median-vs-spread reading and the CH-ordering decision are operator/write-up judgement
+        // against the pass rule already committed in 15-BENCHMARK.md, not something this test
+        // adjudicates (mirrors 12-03's own division of labour between code and record).
+        assertThat(shiftsFirstRuns)
+                .as("shift-shifts-first must reach 0hard on every one of the 5 seeds")
+                .allSatisfy(m -> assertThat(m.hardScore()).as("seed=%d", m.seed()).isZero());
+        assertThat(seatsFirstRuns)
+                .as("shift-seats-first must reach 0hard on every one of the 5 seeds")
+                .allSatisfy(m -> assertThat(m.hardScore()).as("seed=%d", m.seed()).isZero());
+
+        System.out.println();
+        System.out.println("=== INDICATIVE ONLY (D-16) — one real-desk-scale run, non-comparative, no pass/fail ===");
+        RunMetrics indicative = runIndicativeRealDeskScaleRun();
+        printPerRunTable(List.of(indicative));
+    }
+
+    private RunMetrics runIndicativeRealDeskScaleRun() {
+        Schedule schedule = ShiftModeFixtures.buildShiftModeSchedule(
+                INDICATIVE_AGENT_COUNT, INDICATIVE_DAY_COUNT, INDICATIVE_TEMPLATE_COUNT, 1).schedule();
+        SolverConfig config = loadSolverConfig(INDICATIVE_SEED, false);
+        List<PhaseConfig> phases = config.getPhaseConfigList();
+        phases.get(phases.size() - 1)
+                .setTerminationConfig(new TerminationConfig().withStepCountLimit(INDICATIVE_STEP_COUNT_LIMIT));
+        return runOnce("shift-indicative-30agent", schedule, config, INDICATIVE_SEED,
+                INDICATIVE_AGENT_COUNT, INDICATIVE_DAY_COUNT);
     }
 
     // ------------------------------------------------------------------

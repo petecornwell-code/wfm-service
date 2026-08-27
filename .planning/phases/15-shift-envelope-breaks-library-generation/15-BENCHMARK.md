@@ -111,8 +111,86 @@ gates **piloting a shift-mode desk**, not shipping the phase.
 
 ## Results
 
-*(To be filled in by Task 2's commit, verbatim as the harness prints it. No fixture, seed, or
-step-budget value will be adjusted after this point.)*
+**Run date:** 2026-08-27
+**Command:** `./gradlew test --tests "com.wfm.solver.ShiftModelBenchmarkTest" -Dwfm.benchmark=true`
+**Result:** BUILD SUCCESSFUL. Numbers below are transcribed verbatim from the harness's own stdout.
+No fixture, seed, or step-budget value was adjusted after this run.
+
+### Per-Run Results — Comparative Arms (5 seeds each)
+
+| arm | seed | hardScore | softScore | unstaffedDemandSlots | hoursAssigned | hoursNeeded | elapsedMillis |
+|---|---|---|---|---|---|---|---|
+| slot | 1 | 0 | -128 | 0 | 64.00 | 64.00 | 5410 |
+| slot | 2 | -5140 | -149 | 43 | 51.25 | 64.00 | 4207 |
+| slot | 3 | -3420 | -147 | 28 | 55.50 | 64.00 | 4197 |
+| slot | 4 | -1700 | -144 | 17 | 59.75 | 64.00 | 3999 |
+| slot | 5 | -3420 | -149 | 34 | 55.50 | 64.00 | 3072 |
+| shift-shifts-first | 1 | 0 | -192 | 0 | 64.00 | 64.00 | 82 |
+| shift-shifts-first | 2 | 0 | -192 | 0 | 64.00 | 64.00 | 66 |
+| shift-shifts-first | 3 | 0 | -192 | 0 | 64.00 | 64.00 | 62 |
+| shift-shifts-first | 4 | 0 | -192 | 0 | 64.00 | 64.00 | 58 |
+| shift-shifts-first | 5 | 0 | -192 | 0 | 64.00 | 64.00 | 61 |
+| shift-seats-first | 1 | 0 | -192 | 0 | 64.00 | 64.00 | 59 |
+| shift-seats-first | 2 | 0 | -192 | 0 | 64.00 | 64.00 | 58 |
+| shift-seats-first | 3 | 0 | -192 | 0 | 64.00 | 64.00 | 58 |
+| shift-seats-first | 4 | 0 | -192 | 0 | 64.00 | 64.00 | 62 |
+| shift-seats-first | 5 | 0 | -192 | 0 | 64.00 | 64.00 | 62 |
+
+### Summary — Median and Full Min/Max Spread (never a mean)
+
+| arm | hardScore median | hardScore min | hardScore max | unstaffedDemandSlots median | unstaffedDemandSlots min | unstaffedDemandSlots max | hoursAssigned median | hoursAssigned min | hoursAssigned max | softScore median | softScore min | softScore max |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| slot | -3420.0 | -5140.0 | 0.0 | 28.0 | 0.0 | 43.0 | 55.5 | 51.25 | 64.0 | -147.0 | -149.0 | -128.0 |
+| shift-shifts-first | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 64.0 | 64.0 | 64.0 | -192.0 | -192.0 | -192.0 |
+| shift-seats-first | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 64.0 | 64.0 | 64.0 | -192.0 | -192.0 | -192.0 |
+
+**Slot arm's own min/max spread (the noise-rule denominator):** unstaffed demand slots 0–43 (spread
+**43**); hours assigned 51.25h–64.00h (spread **12.75h**).
+
+### Indicative Real-Desk-Scale Run (D-16, non-comparative — no pass/fail attaches)
+
+30 agents, 1 day, 3 shift templates, step-count limit 3000, seed 1 (single run, not a seed sweep):
+
+| arm | seed | hardScore | softScore | unstaffedDemandSlots | hoursAssigned | hoursNeeded | elapsedMillis |
+|---|---|---|---|---|---|---|---|
+| shift-indicative-30agent | 1 | 0 | -720 | 0 | 240.00 | 240.00 | 321 |
+
+**Reading (indicative only, no conclusion drawn on timing per the project's run-to-run-variance
+lesson — 12-RESEARCH.md, `SPIKE-COUPLING.md`):** the 30-agent shift-mode fixture reaches `0hard`
+in 321ms wall time within a 3000-step budget, with every demand slot staffed. This partly answers
+`SPIKE-COUPLING.md` open item 1 (whether the extra `AgentAssignment × AgentShiftAssignment` join
+costs materially at real scale) — at this scale the join did not prevent a fast, fully-feasible
+solve. No performance figure from this single indicative run is treated as a benchmark result; per
+the spike's own standing caveat, only a proper seeded sweep would license that.
+
+### Supplementary ad-hoc sweep — not part of the committed test (reported per this plan's runtime-budget guidance)
+
+The slot arm's failure to reach `0hard` on 4 of 5 seeds (above) was checked against a 20x larger
+step budget (20,000 steps instead of 1,000, same 5 seeds, same fixture, same solverConfig.xml) to
+determine whether the gap is a step-budget artifact or a genuine local-search plateau. This sweep
+was run ad hoc — it is NOT part of the committed `ShiftModelBenchmarkTest` (keeping the committed
+suite's runtime bounded) and its numbers are reported here for interpretation only, clearly
+separated from the committed-test numbers above:
+
+| arm | seed | hardScore | softScore | unstaffedDemandSlots | hoursAssigned | hoursNeeded | elapsedMillis |
+|---|---|---|---|---|---|---|---|
+| slot (20k steps) | 1 | 0 | -128 | 0 | 64.00 | 64.00 | 97165 |
+| slot (20k steps) | 2 | -5130 | -148 | 43 | 51.25 | 64.00 | 80142 |
+| slot (20k steps) | 3 | -3420 | -140 | 24 | 55.50 | 64.00 | 99152 |
+| slot (20k steps) | 4 | 0 | -128 | 0 | 64.00 | 64.00 | 110499 |
+| slot (20k steps) | 5 | -3420 | -146 | 34 | 55.50 | 64.00 | 94543 |
+| shift-shifts-first (20k steps) | 1–5 | 0 (all 5) | -192 (all 5) | 0 (all 5) | 64.00 (all 5) | 64.00 | 735–917 |
+| shift-seats-first (20k steps) | 1–5 | 0 (all 5) | -192 (all 5) | 0 (all 5) | 64.00 (all 5) | 64.00 | 915–960 |
+
+**Reading:** at 20x the committed step budget, one previously-failing slot seed (seed 4) converges
+to `0hard`; the other three (seeds 2, 3, 5) remain at essentially the SAME hard/soft scores and
+unstaffed-slot counts as at 1,000 steps — not merely slower, but stuck at what appears to be a
+genuine local-search plateau that the default change/swap neighbourhood cannot escape even with
+20x more search. The shift arm, by contrast, reaches its perfect result via construction heuristic
+alone (0 local-search steps needed) on every seed at both budgets. This supplementary sweep is
+reported to rule out "the committed test's 1,000-step budget was simply too stingy to the slot arm"
+as an alternative explanation for the gap recorded above — it was checked, and it is not the
+explanation. It does not change the committed-test numbers used against the Pass Rule.
 
 ## Verdict
 
