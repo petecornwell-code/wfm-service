@@ -149,6 +149,16 @@ No fixture, seed, or step-budget value was adjusted after this run.
 
 ### Indicative Real-Desk-Scale Run (D-16, non-comparative — no pass/fail attaches)
 
+**Data provenance (T-15-32):** this run reads NO real tenant data — it uses `ShiftModeFixtures`
+scaled to `agentCount=30`, the SAME synthetic fixture builder (fake agent names `Agent-N`,
+synthetic `bamboohrId`s `A-N`) as the comparative arms and the ENVL correctness tests, matching
+this project's established convention (`AtomicShiftMoveBenchmarkTest`'s own javadoc made the
+identical defensive statement about its synthetic `BENCH-N` fixture). "Real-desk" in D-16's naming
+refers to matching the REAL DESK SCALE `SPIKE-COUPLING.md` open item 1 names (30 agents, 19+
+constraints) — not to reading an actual production tenant's data. This is a stronger mitigation of
+T-15-32 than filtering PII from real data after the fact: no agent name, email, or BambooHR
+identifier from any real desk is ever read, so none can leak into this document by construction.
+
 30 agents, 1 day, 3 shift templates, step-count limit 3000, seed 1 (single run, not a seed sweep):
 
 | arm | seed | hardScore | softScore | unstaffedDemandSlots | hoursAssigned | hoursNeeded | elapsedMillis |
