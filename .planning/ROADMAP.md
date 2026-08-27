@@ -196,7 +196,7 @@ Plans:
 
 - [x] 15-09-PLAN.md — Envelope-aware seat supply: suppress filler seats where no live shift reaches, guarantee seats where one does, un-blind `ShiftModeFixtures`, correct the stale XCUT-05 row (wave 1)
 - [x] 15-10-PLAN.md — Report layer reads the authoritative envelope and band instead of deriving both from seat gaps; envelope divergence becomes visible data; export and preference KPIs corrected (wave 1)
-- [ ] 15-11-PLAN.md — Pre-solve in-envelope seat-supply gate: refuse with named shortfall and levers rather than returning an unlabelled residual; zero-slack pinned as a deliberate invariant (wave 2)
+- [x] 15-11-PLAN.md — Pre-solve in-envelope seat-supply gate: refuse with named shortfall and levers rather than returning an unlabelled residual; zero-slack pinned as a deliberate invariant (wave 2)
 - [ ] 15-12-PLAN.md — Agent Schedule reads the authoritative shift; envelope breach and deliberately-unstaffed hours rendered visibly in Agent Allocation (wave 2)
 - [ ] 15-13-PLAN.md — Shape-complete end-to-end regression, characterising-test disposition, deferral record for the two latent defects left out of scope (wave 3)
 
