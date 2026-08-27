@@ -51,7 +51,7 @@ import static org.mockito.Mockito.when;
  * under H2, so it is supplied here as a {@code @MockitoBean} and stubbed per test.
  */
 @DataJpaTest
-@Import({ShiftLibraryValidationService.class, ShiftLibraryValidationController.class})
+@Import({ShiftLibraryValidationService.class, ShiftLibraryGenerationService.class, ShiftLibraryValidationController.class})
 @ActiveProfiles("test")
 class ShiftLibraryValidationServiceTest {
 
