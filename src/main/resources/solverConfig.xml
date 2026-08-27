@@ -24,7 +24,25 @@
          placed, so shiftEnvelopeCompliance has something to check against from the first seat
          onward. D-08 makes this ordering a measured question — plan 15-08's benchmark carries a
          third arm swapping these two blocks, and the winner ships. Nothing else in this file
-         changes between the arms. -->
+         changes between the arms.
+
+         CRITICAL — the cacheType/selectionOrder/sorterManner triple on <entitySelector> is NOT
+         optional decoration. Naming an entitySelector explicitly REPLACES the whole selector
+         config the solver would otherwise have derived: QueuedEntityPlacerFactory
+         .buildEntitySelectorConfig() only calls AbstractFromConfigFactory
+         .getDefaultEntitySelectorConfigForEntity() when getEntitySelectorConfig() is null, and it
+         is that default builder — not the phase — that stamps on
+             cacheType=PHASE, selectionOrder=SORTED, sorterManner=<policy's entity sorter manner>
+         whenever EntitySelectorConfig.hasSorter(manner, entityDescriptor) is true. The phase
+         policy's manner is DECREASING_DIFFICULTY_IF_AVAILABLE (the default
+         constructionHeuristicType is ALLOCATE_ENTITY_FROM_QUEUE). So AgentAssignment's
+         @PlanningEntity(difficultyComparatorClass = AgentAssignmentDifficultyComparator.class)
+         was silently dropped the moment this file stopped using a bare <constructionHeuristic/>,
+         which cost ~40 hard points on the 30-agent break-aware scenario. Re-stating the triple
+         below restores it. AgentShiftAssignment declares no difficulty comparison, so hasSorter()
+         is false for it and the default builder emits a bare selector — hence no triple on the
+         shift selector, deliberately. Add the triple there too if that entity ever gains a
+         difficulty comparator. Verified against timefold-solver-core-1.16.0 sources. -->
     <constructionHeuristic>
         <queuedEntityPlacer>
             <entitySelector id="shiftEntitySelector">
@@ -37,6 +55,9 @@
         <queuedEntityPlacer>
             <entitySelector id="seatEntitySelector">
                 <entityClass>com.wfm.model.AgentAssignment</entityClass>
+                <cacheType>PHASE</cacheType>
+                <selectionOrder>SORTED</selectionOrder>
+                <sorterManner>DECREASING_DIFFICULTY_IF_AVAILABLE</sorterManner>
             </entitySelector>
         </queuedEntityPlacer>
     </constructionHeuristic>
