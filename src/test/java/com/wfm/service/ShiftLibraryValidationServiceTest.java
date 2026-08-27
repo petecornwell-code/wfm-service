@@ -9,12 +9,14 @@ import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
@@ -61,6 +63,9 @@ class ShiftLibraryValidationServiceTest {
 
     @Autowired
     private ShiftTemplateRepository shiftTemplateRepository;
+
+    @Autowired
+    private ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
 
     @Autowired
     private StaffingRequirementRepository staffingRequirementRepository;
@@ -235,6 +240,69 @@ class ShiftLibraryValidationServiceTest {
         assertThat(combinedResponse.uncoveredWindows()).isEmpty();
     }
 
+    // ---------- Any-band coverage (D-02, Task 2) ----------
+
+    @Test
+    void validate_twoBandTemplate_selfCoversItsOwnBreakHour() {
+        // D-02's worked example: 08:00-17:00 template with bands at offsets 240 and 300, both 60
+        // minutes -- the 12:00-13:00 window is covered because band B (13:00-14:00 break) leaves
+        // it worked, even though band A's own break (12:00-13:00) does not.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 300, 60, null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(12, 0), LocalTime.of(12, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+    }
+
+    @Test
+    void validate_touchingBands_secondBandCoversWhereFirstDoesNot() {
+        // Band A break 12:00-13:00 (offset 240), band B break 13:00-14:00 (offset 300) touch
+        // exactly at 13:00 -- two distinct legal bands, not a duplicate (P-05). Band A leaves
+        // 13:00-13:30 worked even though it sits inside band B's own break window.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 300, 60, null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(13, 0), LocalTime.of(13, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+    }
+
+    @Test
+    void validate_oneBandTemplate_matchesPreMigrationSingleOffsetInvariant() {
+        // D-02: a one-band template's coverage, misalignment, hours-advisory and
+        // unsatisfiable-weekday verdicts are byte-identical to Phase 14's single-offset
+        // predecessor for the exact same fixture asserted pre-migration in this suite.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(12, 0), LocalTime.of(12, 30), 1, null);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).containsExactly("2026-01-05 12:00-12:30");
+        assertThat(response.misalignedTemplates()).isEmpty();
+        assertThat(response.hoursAdvisories()).noneMatch(a -> a.templateId().equals(template.getId()));
+        assertThat(response.unsatisfiableWeekdays()).isEmpty();
+    }
+
     @Test
     void validate_zeroDurationBreak_neverExcludesAnySlot() {
         UUID deskId = saveDesk(TENANT_A);
@@ -381,7 +449,7 @@ class ShiftLibraryValidationServiceTest {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
-        assertThat(template.getNetHours()).isEqualByComparingTo("8.00");
+        assertThat(template.getNetHours(60)).isEqualByComparingTo("8.00");
         Agent agent = saveAgent(TENANT_A, deskId, "A1");
         saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("8.00"));
 
@@ -518,6 +586,98 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.unsatisfiableWeekdays()).containsExactly("MONDAY", "TUESDAY");
     }
 
+    // ---------- Capacity shortfall advisory (D-03 residual risk, Task 3) ----------
+
+    @Test
+    void validate_allBlankCapacities_noAdvisory() {
+        UUID deskId = saveDesk(TENANT_A);
+        // saveTemplate's own band is created with a blank (null) capacity by construction.
+        saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_capacityAtOrAboveHeadcount_noAdvisory() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 2);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_capacityBelowHeadcount_producesOneAdvisoryNamingAllFour() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 1);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).hasSize(1);
+        ShiftLibraryValidationResponse.CapacityAdvisory advisory = response.capacityAdvisories().get(0);
+        assertThat(advisory.templateId()).isEqualTo(template.getId());
+        assertThat(advisory.templateName()).isEqualTo("S1");
+        assertThat(advisory.weekday()).isEqualTo(DayOfWeek.MONDAY);
+        assertThat(advisory.capacityTotal()).isEqualTo(1);
+        assertThat(advisory.admissibleHeadcount()).isEqualTo(2);
+        assertThat(advisory.message()).isEqualTo(
+                "Shift template 'S1' has total break-band capacity 1 on Monday, but 2 agent(s) "
+                        + "could be scheduled on it that day. Increase capacity or add a band before solving.");
+    }
+
+    @Test
+    void validate_mixedBlankAndSetCapacity_clearsTheWholeTemplate() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        addBand(template, 240, 60, 1);
+        addBand(template, 300, 60, null); // blank band -> unlimited, clears the whole template
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_retiredTemplateWithShortfall_excludedFromCapacityAdvisories() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31));
+        addBand(template, 240, 60, 1);
+        Agent a1 = saveAgent(TENANT_A, deskId, "A1");
+        Agent a2 = saveAgent(TENANT_A, deskId, "A2");
+        saveAgentDayHours(TENANT_A, a1, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        saveAgentDayHours(TENANT_A, a2, DayOfWeek.MONDAY, new BigDecimal("8.00"));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.capacityAdvisories()).isEmpty();
+    }
+
     // ---------- Controller (Task 2) ----------
 
     @Test
@@ -559,6 +719,12 @@ class ShiftLibraryValidationServiceTest {
         return deskRepository.save(desk).getId();
     }
 
+    /**
+     * D-01 note: this helper's signature is kept identical to Phase 14's scalar-field version so
+     * every pre-existing test body below is untouched (mechanical port) -- a duration > 0 becomes
+     * exactly one persisted band, mirroring V40's own migration fan-out rule (a zero duration
+     * yields zero bands, "no break").
+     */
     private ShiftTemplate saveTemplate(UUID deskId, String name, LocalTime start, LocalTime end,
                                         int breakOffsetMinutes, int breakDurationMinutes,
                                         Set<DayOfWeek> weekdays, LocalDate effectiveFrom, LocalDate effectiveTo) {
@@ -568,12 +734,25 @@ class ShiftLibraryValidationServiceTest {
         template.setName(name);
         template.setStartTime(start);
         template.setEndTime(end);
-        template.setBreakOffsetMinutes(breakOffsetMinutes);
-        template.setBreakDurationMinutes(breakDurationMinutes);
         template.setValidWeekdays(weekdays);
         template.setEffectiveFrom(effectiveFrom);
         template.setEffectiveTo(effectiveTo);
-        return shiftTemplateRepository.save(template);
+        ShiftTemplate saved = shiftTemplateRepository.save(template);
+        if (breakDurationMinutes > 0) {
+            addBand(saved, breakOffsetMinutes, breakDurationMinutes, null);
+        }
+        return saved;
+    }
+
+    private ShiftTemplateBreakBand addBand(ShiftTemplate template, int offsetMinutes, int durationMinutes,
+                                            Integer capacity) {
+        ShiftTemplateBreakBand band = new ShiftTemplateBreakBand();
+        band.setTenantId(TENANT_A);
+        band.setShiftTemplate(template);
+        band.setOffsetMinutes(offsetMinutes);
+        band.setDurationMinutes(durationMinutes);
+        band.setCapacity(capacity);
+        return shiftTemplateBreakBandRepository.save(band);
     }
 
     private Specialization saveSpecialization(long tenantId, UUID deskId, String name) {

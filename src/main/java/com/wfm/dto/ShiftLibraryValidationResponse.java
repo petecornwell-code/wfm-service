@@ -15,7 +15,8 @@ public record ShiftLibraryValidationResponse(
         List<String> uncoveredWindows,
         List<String> misalignedTemplates,
         List<HoursAdvisory> hoursAdvisories,
-        List<String> unsatisfiableWeekdays
+        List<String> unsatisfiableWeekdays,
+        List<CapacityAdvisory> capacityAdvisories
 ) {
     /** SHLB-06 advisory (D-06/D-07): never blocking, except folded into unsatisfiableWeekdays. */
     public record HoursAdvisory(
@@ -23,6 +24,20 @@ public record ShiftLibraryValidationResponse(
             String templateName,
             DayOfWeek weekday,
             BigDecimal netHours,
+            String message
+    ) {}
+
+    /**
+     * D-03's named residual risk, placed (Task 3, P-06): an operator whose band capacities total
+     * below a shift's admissible headcount sees this rather than a bare hard score at solve time.
+     * Advisory only in this plan — never thrown by {@code requireShiftModeReady}.
+     */
+    public record CapacityAdvisory(
+            UUID templateId,
+            String templateName,
+            DayOfWeek weekday,
+            int capacityTotal,
+            long admissibleHeadcount,
             String message
     ) {}
 }

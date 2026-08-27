@@ -4,6 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.controller.ShiftTemplateController;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftTemplateRequest;
+import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.dto.ShiftTemplateResponse;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
@@ -41,6 +42,11 @@ import static org.mockito.Mockito.when;
  * .getLiveBounds runs a Postgres-only native query (EXTRACT(EPOCH FROM ...)) that cannot execute
  * under H2, so it is supplied here as a @MockitoBean and stubbed per test rather than the real
  * bean.
+ *
+ * <p>Ported by Phase 15 Plan 01 (D-01) from Phase 14's scalar breakOffsetMinutes/
+ * breakDurationMinutes request fields to the band list — see ShiftTemplateBreakBandServiceTest
+ * for the band-specific round trip, capacity and duplicate-detection coverage this file no
+ * longer owns.
  */
 @DataJpaTest
 @Import({ShiftTemplateService.class, ShiftTemplateController.class})
@@ -154,7 +160,7 @@ class ShiftTemplateServiceTest {
     void create_startTimeEqualsEndTime_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(8, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -165,7 +171,7 @@ class ShiftTemplateServiceTest {
     void create_endTimeBeforeStartTime_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(17, 0), LocalTime.of(8, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -173,10 +179,11 @@ class ShiftTemplateServiceTest {
     }
 
     @Test
-    void create_negativeBreakValues_rejected() {
+    void create_negativeBandOffset_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                -10, 30, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(new BreakBandRequest(-10, 30, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -184,10 +191,11 @@ class ShiftTemplateServiceTest {
     }
 
     @Test
-    void create_breakExceedsEnvelope_rejected() {
+    void create_bandExceedsEnvelope_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(9, 0),
-                55, 30, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(new BreakBandRequest(55, 30, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -195,21 +203,19 @@ class ShiftTemplateServiceTest {
     }
 
     @Test
-    void create_zeroDurationBreak_accepted_netHoursEqualsFullEnvelope() {
-        UUID deskId = saveDesk(TENANT_A);
-        ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(12, 0),
-                120, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+    void netHours_zeroBreakDuration_equalsFullEnvelope() {
+        ShiftTemplate template = new ShiftTemplate();
+        template.setStartTime(LocalTime.of(8, 0));
+        template.setEndTime(LocalTime.of(12, 0));
 
-        ShiftTemplate created = service.createShiftTemplate(deskId, req);
-
-        assertThat(created.getNetHours()).isEqualByComparingTo(new BigDecimal("4.00"));
+        assertThat(template.getNetHours(0)).isEqualByComparingTo(new BigDecimal("4.00"));
     }
 
     @Test
     void create_nullWeekdaySet_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                0, 0, null, LocalDate.of(2026, 1, 1), null);
+                List.of(), null, LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -220,7 +226,7 @@ class ShiftTemplateServiceTest {
     void create_emptyWeekdaySet_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                0, 0, Set.of(), LocalDate.of(2026, 1, 1), null);
+                List.of(), Set.of(), LocalDate.of(2026, 1, 1), null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -231,10 +237,10 @@ class ShiftTemplateServiceTest {
     void create_overlappingWeekdaySets_bothSucceed() {
         UUID deskId = saveDesk(TENANT_A);
         service.createShiftTemplate(deskId, new ShiftTemplateRequest("Morning", LocalTime.of(8, 0), LocalTime.of(12, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY), LocalDate.of(2026, 1, 1), null));
+                List.of(), Set.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY), LocalDate.of(2026, 1, 1), null));
 
         assertThatCode(() -> service.createShiftTemplate(deskId, new ShiftTemplateRequest("Afternoon",
-                LocalTime.of(13, 0), LocalTime.of(17, 0), 0, 0,
+                LocalTime.of(13, 0), LocalTime.of(17, 0), List.of(),
                 Set.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY), LocalDate.of(2026, 1, 1), null)))
                 .doesNotThrowAnyException();
     }
@@ -243,7 +249,7 @@ class ShiftTemplateServiceTest {
     void create_nullEffectiveFrom_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), null, null);
+                List.of(), Set.of(DayOfWeek.MONDAY), null, null);
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -254,7 +260,7 @@ class ShiftTemplateServiceTest {
     void create_effectiveToBeforeEffectiveFrom_rejected() {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 6, 1), LocalDate.of(2026, 1, 1));
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 6, 1), LocalDate.of(2026, 1, 1));
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -270,7 +276,7 @@ class ShiftTemplateServiceTest {
                 new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
                         LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 15), LocalTime.of(17, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         PreSolveValidationException ex = catchThrowableOfType(
                 () -> service.createShiftTemplate(deskId, req), PreSolveValidationException.class);
@@ -282,30 +288,32 @@ class ShiftTemplateServiceTest {
     }
 
     @Test
-    void create_offGridBreakStart_rejectedWithBreakStartTimeDetail() {
+    void create_offGridBandBreakStart_rejectedWithIndexedBandDetail() {
         UUID deskId = saveDesk(TENANT_A);
         when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
                 new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
                         LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
-        // start 08:00 (aligned), break offset 15 -> break start 08:15 (misaligned on a 30-min grid)
+        // start 08:00 (aligned), band offset 15 -> break start 08:15 (misaligned on a 30-min grid)
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                15, 30, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(new BreakBandRequest(15, 30, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         PreSolveValidationException ex = catchThrowableOfType(
                 () -> service.createShiftTemplate(deskId, req), PreSolveValidationException.class);
 
         assertThat(ex).isNotNull();
-        assertThat(ex.getDetails()).extracting(ErrorDetail::field).contains("breakStartTime");
+        assertThat(ex.getDetails()).extracting(ErrorDetail::field).contains("bands[0].breakStartTime");
     }
 
     @Test
-    void create_onGridWithBreak_accepted() {
+    void create_onGridWithBand_accepted() {
         UUID deskId = saveDesk(TENANT_A);
         when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
                 new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
                         LocalTime.of(8, 0), LocalTime.of(20, 0), 30)));
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
-                240, 60, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(new BreakBandRequest(240, 60, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatCode(() -> service.createShiftTemplate(deskId, req)).doesNotThrowAnyException();
     }
@@ -315,7 +323,7 @@ class ShiftTemplateServiceTest {
         UUID deskId = saveDesk(TENANT_A);
         when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.empty());
         ShiftTemplateRequest req = new ShiftTemplateRequest("S1", LocalTime.of(8, 15), LocalTime.of(17, 0),
-                0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         assertThatCode(() -> service.createShiftTemplate(deskId, req)).doesNotThrowAnyException();
     }
@@ -328,7 +336,8 @@ class ShiftTemplateServiceTest {
         ShiftTemplate created = service.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 1, 1), null));
 
         ShiftTemplate retired = service.updateShiftTemplate(deskId, created.getId(),
-                new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                new ShiftTemplateRequest("S1", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                        List.of(new BreakBandRequest(240, 60, null)),
                         Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), LocalDate.now()));
 
         assertThat(retired.getEffectiveTo()).isEqualTo(LocalDate.now());
@@ -447,7 +456,8 @@ class ShiftTemplateServiceTest {
                 controller.createShiftTemplate(deskId, request("S1", LocalDate.of(2026, 1, 1), null)).getBody();
 
         ShiftTemplateRequest updateReq = new ShiftTemplateRequest("S1", LocalTime.of(9, 0), LocalTime.of(18, 0),
-                240, 60, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+                List.of(new BreakBandRequest(240, 60, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
         ShiftTemplateResponse updated = controller.updateShiftTemplate(deskId, created.id(), updateReq);
 
         assertThat(updated.startTime()).isEqualTo(LocalTime.of(9, 0));
@@ -458,7 +468,8 @@ class ShiftTemplateServiceTest {
     // ---------- helpers ----------
 
     private ShiftTemplateRequest request(String name, LocalDate effectiveFrom, LocalDate effectiveTo) {
-        return new ShiftTemplateRequest(name, LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+        return new ShiftTemplateRequest(name, LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.MONDAY), effectiveFrom, effectiveTo);
     }
 

@@ -2,7 +2,10 @@ package com.wfm.controller;
 
 import com.wfm.dto.ShiftTemplateRequest;
 import com.wfm.dto.ShiftTemplateResponse;
+import com.wfm.dto.ShiftTemplateResponse.BreakBandResponse;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.model.ShiftTemplateBreakBand;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.service.ShiftTemplateService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,9 +20,12 @@ import java.util.UUID;
 public class ShiftTemplateController {
 
     private final ShiftTemplateService shiftTemplateService;
+    private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
 
-    public ShiftTemplateController(ShiftTemplateService shiftTemplateService) {
+    public ShiftTemplateController(ShiftTemplateService shiftTemplateService,
+                                    ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository) {
         this.shiftTemplateService = shiftTemplateService;
+        this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
     }
 
     @GetMapping
@@ -48,16 +54,24 @@ public class ShiftTemplateController {
     }
 
     private ShiftTemplateResponse toResponse(ShiftTemplate template) {
+        List<ShiftTemplateBreakBand> bands = shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(template.getTenantId(), template.getId());
+        List<BreakBandResponse> bandResponses = bands.stream()
+                .map(band -> new BreakBandResponse(
+                        band.getId(),
+                        band.getOffsetMinutes(),
+                        band.getDurationMinutes(),
+                        band.getBreakStartTime(template),
+                        band.getBreakEndTime(template),
+                        band.getCapacity(),
+                        template.getNetHours(band.getDurationMinutes())))
+                .toList();
         return new ShiftTemplateResponse(
                 template.getId(),
                 template.getName(),
                 template.getStartTime(),
                 template.getEndTime(),
-                template.getBreakOffsetMinutes(),
-                template.getBreakDurationMinutes(),
-                template.getBreakStartTime(),
-                template.getBreakEndTime(),
-                template.getNetHours(),
+                bandResponses,
                 List.copyOf(template.getValidWeekdays()),
                 template.getEffectiveFrom(),
                 template.getEffectiveTo(),
