@@ -224,6 +224,89 @@ class ShiftLibraryGenerationServiceTest {
                 .isInstanceOf(PreSolveValidationException.class);
     }
 
+    // ---------- Task 3: determinism, minimality, break-less prohibition ----------
+
+    @Test
+    void generateSuggestion_repeatedRequestsAgainstUnchangedFixture_returnEqualDraftsFieldForField() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            for (int hour = 8; hour < 21; hour++) {
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+            }
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        for (DayOfWeek weekday : DayOfWeek.values()) {
+            saveAgentDayHours(TENANT_A, agent, weekday, new BigDecimal("8.00"));
+        }
+
+        ShiftLibrarySuggestionResponse first = generationService.generateSuggestion(deskId);
+        ShiftLibrarySuggestionResponse second = generationService.generateSuggestion(deskId);
+
+        assertThat(second).isEqualTo(first);
+    }
+
+    @Test
+    void generateSuggestion_knownOptimalCoverOfTwo_draftIsNotLargerThanTheHandBuiltCover() {
+        // A single weekday's 9-hour demand (08:00-17:00) with 8h-contracted agents matches one
+        // candidate envelope's own span exactly, so its 1-hour break always leaves exactly one
+        // demand hour uncovered no matter where it falls -- one template can never fully cover it.
+        // A hand-built pair does: span 08:00-17:00 with its break at 09:00-10:00, plus the same
+        // span with its break at 10:00-11:00 -- each leaves the other's gap hour covered as
+        // working time. The optimal cover size is therefore known by construction to be 2.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 17; hour++) {
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates()).hasSizeLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void generateSuggestion_shortDurationBelowThreshold_permitsBreakLess_fullDurationAtThreshold_neverBreakLess() {
+        // Fallback breakMinShiftHours is 4.00h (no persisted Schedule for this desk). A 3.00h
+        // agent-day is strictly below the threshold (break-less permitted); a 4.00h agent-day
+        // reaches it exactly (break-less prohibited by construction, never filtered after the fact).
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+
+        LocalDate monday = WEEK_START; // WEEK_START is always a Monday
+        LocalDate tuesday = WEEK_START.plusDays(1);
+        for (int hour = 8; hour < 11; hour++) { // 08:00-11:00, exactly 3 hours
+            saveDemand(TENANT_A, deskId, spec, monday, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        for (int hour = 8; hour < 12; hour++) { // 08:00-12:00, exactly 4 hours
+            saveDemand(TENANT_A, deskId, spec, tuesday, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("3.00"));
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.TUESDAY, new BigDecimal("4.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        // Companion case: 3.00h is strictly below the 4.00h threshold -- break-less is permitted,
+        // and preferred here since it has zero envelope-hours beyond demand.
+        assertThat(response.templates())
+                .filteredOn(t -> t.netHours().compareTo(new BigDecimal("3.00")) == 0)
+                .isNotEmpty()
+                .allSatisfy(t -> assertThat(t.bands()).isEmpty());
+
+        // 4.00h reaches the threshold exactly -- never generated break-less, by construction.
+        assertThat(response.templates())
+                .filteredOn(t -> t.netHours().compareTo(new BigDecimal("4.00")) >= 0)
+                .allSatisfy(t -> assertThat(t.bands()).isNotEmpty());
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(long tenantId) {
