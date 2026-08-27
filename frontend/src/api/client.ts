@@ -390,6 +390,11 @@ export interface ShiftDescriptor {
   bandDurationMinutes: number | null
 }
 
+export interface ShiftEnvelopeDivergence {
+  outOfEnvelopeSeats: string[]
+  unworkedLegalSlots: string[]
+}
+
 export interface AgentScheduleEntry {
   agentId: string
   agentName: string
@@ -400,6 +405,7 @@ export interface AgentScheduleEntry {
   assignments: AssignmentDetail[]
   breaks: BreakDetail[]
   shift: ShiftDescriptor | null
+  divergence?: ShiftEnvelopeDivergence | null
 }
 
 export interface PreferenceReportEntry {

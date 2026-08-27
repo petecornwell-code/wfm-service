@@ -865,7 +865,17 @@ function AgentScheduleTab({ data, specs }: { data: AgentScheduleEntry[]; specs: 
               {entries.map((e, i) => (
                 <tr key={i}>
                   <td style={{ padding: '4px 8px' }}>{e.date}</td>
-                  <td style={{ padding: '4px 8px' }}>{e.shiftStart} — {e.shiftEnd}</td>
+                  <td style={{ padding: '4px 8px' }}>
+                    {e.shift ? `${toHHMM(e.shift.startTime)} — ${toHHMM(e.shift.endTime)}` : `${e.shiftStart} — ${e.shiftEnd}`}
+                    {e.divergence && (e.divergence.outOfEnvelopeSeats.length > 0 || e.divergence.unworkedLegalSlots.length > 0) && (
+                      <div
+                        title={`Out-of-envelope seats: ${e.divergence.outOfEnvelopeSeats.length > 0 ? e.divergence.outOfEnvelopeSeats.map(toHHMM).join(', ') : 'none'}\nUnworked legal slots: ${e.divergence.unworkedLegalSlots.length > 0 ? e.divergence.unworkedLegalSlots.map(toHHMM).join(', ') : 'none'}`}
+                        style={{ marginTop: '2px', fontSize: '0.7rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '3px', padding: '1px 4px', display: 'inline-block' }}
+                      >
+                        ⚠ {e.divergence.outOfEnvelopeSeats.length} outside envelope, {e.divergence.unworkedLegalSlots.length} unworked
+                      </div>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(e.totalHours).toFixed(2)}</td>
                   <td style={{ padding: '4px 8px' }}>
                     <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
