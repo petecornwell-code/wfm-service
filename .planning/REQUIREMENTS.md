@@ -33,7 +33,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **SHLB-04**: Operator can edit and retire shift templates without corrupting schedules that already reference them
 - [x] **SHLB-05**: The system validates a desk's shift library against that desk's staffing demand curve and reports which demand windows no combination of library shifts can cover
 - [x] **SHLB-06**: A shift template whose net working duration cannot match any agent's effective contracted hours for a valid weekday is reported to the operator at definition time, not discovered at solve time
-- [x] **SHLB-07**: Operator can request a suggested shift library computed from the desk's staffing demand and its agents' effective contracted hours — returned as an editable draft that is never applied automatically, and derived from the same coverage predicate the library validation already uses, not a second implementation
+- [ ] **SHLB-07**: Operator can request a suggested shift library computed from the desk's staffing demand and its agents' effective contracted hours — returned as an editable draft that is never applied automatically, and derived from the same coverage predicate the library validation already uses, not a second implementation
 
 ### Scheduling Mode (MODE)
 
@@ -46,15 +46,15 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 ### Shift Envelope (ENVL)
 
 - [ ] **ENVL-01**: On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from that desk's library
-- [x] **ENVL-02**: An agent is never assigned a seat in a timeslot outside their assigned shift envelope, enforced as a hard constraint
-- [x] **ENVL-03**: An agent's specialization may still vary between timeslots within their shift
-- [x] **ENVL-04**: An agent's working day on a shift-scheduled desk is contiguous, apart from their break
-- [x] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
-- [x] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
-- [x] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
-- [x] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
-- [x] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
-- [x] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
+- [ ] **ENVL-02**: An agent is never assigned a seat in a timeslot outside their assigned shift envelope, enforced as a hard constraint
+- [ ] **ENVL-03**: An agent's specialization may still vary between timeslots within their shift
+- [ ] **ENVL-04**: An agent's working day on a shift-scheduled desk is contiguous, apart from their break
+- [ ] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
+- [ ] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
+- [ ] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
+- [ ] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
+- [ ] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
+- [ ] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
 
 ### Usual Shift (USHF)
 
@@ -132,7 +132,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SHLB-01…06 | Phase 14 | Complete (2026-08-26) |
-| SHLB-07 | Phase 15 | Complete |
+| SHLB-07 | Phase 15 | Gaps Found |
 | MODE-01…05 | Phase 14 | Complete (2026-08-26) |
 | ENVL-01…10 | Phase 15 | Pending |
 | USHF-01…06 | Phase 16 | Pending |
