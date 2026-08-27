@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 8
 waived_count: 0
 fixed_count: 0
-total_count: 7
-last_updated: 2026-08-24T12:54:26.239Z
+total_count: 8
+last_updated: 2026-08-27T05:52:41.259Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,7 @@ last_updated: 2026-08-24T12:54:26.239Z
 | 5 | 13 | unrun-verify | frontend/src/pages/DeskAgents.tsx |  | 13-04 Task 1 <human-check> per-cell combo walkthrough (typed number, PTO/MANDATORY pick, Not-set clear, out-of-range rejection, offline error revert, datalist overflow) not run — no live desk with an enriched upload available in this executor session | open |  | 2026-08-22T01:01:23.383Z |  |
 | 6 | 13 | unrun-verify | frontend/src/pages/DeskAgents.tsx |  | 13-04 Task 2 <human-check> bulk 'Set all days to…' walkthrough (no-dialog on unlabelled agent, accurate label-count confirm dialog, decline/accept paths, single-line layout) not run — no live desk with an enriched upload available in this executor session | open |  | 2026-08-22T01:01:23.451Z |  |
 | 7 | 13 | unrun-verify | src/main/java/com/wfm/controller/GlobalExceptionHandler.java |  | 13-06 Task 2 <human-check> HTTP-level walkthrough (malformed day-segment returns 400 not 500, valid/out-of-range day-hours paths unchanged, bulk contracted-hours 400 message, genuine 500 still generic) not run — no live backend available in this executor session; only the direct handler unit test (GlobalExceptionHandlerTest) proves the response the handler builds, not Spring's dispatch to it (P-17) | open |  | 2026-08-24T12:54:26.239Z |  |
+| 8 | 15 | deviation | build.gradle |  | Rule 3 blocking fix: restored the wfm.benchmark system-property test-JVM passthrough (removed at commit 299c42c alongside the Phase 12 harness) — without it -Dwfm.benchmark=true never reaches the test JVM and ShiftModelBenchmarkTest silently never runs | open |  | 2026-08-27T05:52:41.259Z |  |
 
 ````json
 [
@@ -107,6 +108,18 @@ last_updated: 2026-08-24T12:54:26.239Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-24T12:54:26.239Z",
+    "resolved_at": null
+  },
+  {
+    "id": 8,
+    "kind": "deviation",
+    "phase": "15",
+    "file": "build.gradle",
+    "line": null,
+    "description": "Rule 3 blocking fix: restored the wfm.benchmark system-property test-JVM passthrough (removed at commit 299c42c alongside the Phase 12 harness) — without it -Dwfm.benchmark=true never reaches the test JVM and ShiftModelBenchmarkTest silently never runs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-27T05:52:41.259Z",
     "resolved_at": null
   }
 ]
