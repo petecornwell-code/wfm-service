@@ -1223,7 +1223,7 @@ public class SolverService {
             var solverFactory = ai.timefold.solver.core.api.solver.SolverFactory.<Schedule>create(
                     new ai.timefold.solver.core.config.solver.SolverConfig()
                             .withSolutionClass(Schedule.class)
-                            .withEntityClasses(AgentAssignment.class)
+                            .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                             .withScoreDirectorFactory(
                                     new ai.timefold.solver.core.config.score.director.ScoreDirectorFactoryConfig()
                                             .withConstraintProviderClass(com.wfm.solver.ScheduleConstraintProvider.class)));

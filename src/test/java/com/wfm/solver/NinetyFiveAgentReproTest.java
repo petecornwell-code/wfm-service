@@ -59,7 +59,7 @@ class NinetyFiveAgentReproTest {
         SolverFactory<Schedule> scoringFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
         var solutionManager = ai.timefold.solver.core.api.solver.SolutionManager
@@ -80,11 +80,12 @@ class NinetyFiveAgentReproTest {
         // Run solver: CH + 30s local search
         SolverConfig solverConfig = new SolverConfig()
                 .withSolutionClass(Schedule.class)
-                .withEntityClasses(AgentAssignment.class)
+                .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                 .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                         .withConstraintProviderClass(ScheduleConstraintProvider.class))
                 .withPhases(
-                        new ConstructionHeuristicPhaseConfig(),
+                        TestConstructionHeuristicPhases.shiftPhase(),
+                        TestConstructionHeuristicPhases.seatPhase(),
                         new LocalSearchPhaseConfig()
                                 .withTerminationConfig(new TerminationConfig()
                                         .withSpentLimit(Duration.ofSeconds(30))
@@ -105,7 +106,7 @@ class NinetyFiveAgentReproTest {
         SolverFactory<Schedule> scoringFactory2 = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
         var sm2 = ai.timefold.solver.core.api.solver.SolutionManager

@@ -114,11 +114,12 @@ class MultiDayConstraintDiagnosticTest {
     private Schedule runSolver(Schedule schedule, Duration localSearchDuration) {
         SolverConfig solverConfig = new SolverConfig()
                 .withSolutionClass(Schedule.class)
-                .withEntityClasses(AgentAssignment.class)
+                .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                 .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                         .withConstraintProviderClass(ScheduleConstraintProvider.class))
                 .withPhases(
-                        new ConstructionHeuristicPhaseConfig(),
+                        TestConstructionHeuristicPhases.shiftPhase(),
+                        TestConstructionHeuristicPhases.seatPhase(),
                         new LocalSearchPhaseConfig()
                                 .withTerminationConfig(new TerminationConfig()
                                         .withSpentLimit(localSearchDuration)
@@ -133,7 +134,7 @@ class MultiDayConstraintDiagnosticTest {
         SolverFactory<Schedule> scoringFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
 

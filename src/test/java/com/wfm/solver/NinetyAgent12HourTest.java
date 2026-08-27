@@ -73,7 +73,7 @@ class NinetyAgent12HourTest {
         SolverFactory<Schedule> solverFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
 
@@ -141,11 +141,12 @@ class NinetyAgent12HourTest {
         // Run solver: CH + 30s local search
         SolverConfig solverConfig = new SolverConfig()
                 .withSolutionClass(Schedule.class)
-                .withEntityClasses(AgentAssignment.class)
+                .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                 .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                         .withConstraintProviderClass(ScheduleConstraintProvider.class))
                 .withPhases(
-                        new ConstructionHeuristicPhaseConfig(),
+                        TestConstructionHeuristicPhases.shiftPhase(),
+                        TestConstructionHeuristicPhases.seatPhase(),
                         new LocalSearchPhaseConfig()
                                 .withTerminationConfig(new TerminationConfig()
                                         .withSpentLimit(Duration.ofSeconds(30))
@@ -166,7 +167,7 @@ class NinetyAgent12HourTest {
         SolverFactory<Schedule> scoringFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
         var solutionManager = ai.timefold.solver.core.api.solver.SolutionManager
