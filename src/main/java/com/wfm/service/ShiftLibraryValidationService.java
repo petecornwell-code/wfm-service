@@ -205,7 +205,7 @@ public class ShiftLibraryValidationService {
         if (!template.getValidWeekdays().contains(window.date().getDayOfWeek())) {
             return false;
         }
-        if (!withinEffectiveRange(template, window.date())) {
+        if (!template.isEffectiveOn(window.date())) {
             return false;
         }
         if (window.startTime().isBefore(template.getStartTime()) || window.endTime().isAfter(template.getEndTime())) {
@@ -223,13 +223,6 @@ public class ShiftLibraryValidationService {
             boolean overlapsBreak = window.startTime().isBefore(breakEnd) && window.endTime().isAfter(breakStart);
             return !overlapsBreak;
         });
-    }
-
-    private static boolean withinEffectiveRange(ShiftTemplate template, LocalDate date) {
-        if (template.getEffectiveFrom().isAfter(date)) {
-            return false;
-        }
-        return template.getEffectiveTo() == null || !template.getEffectiveTo().isBefore(date);
     }
 
     // --- Grid re-check (D-02) ---
@@ -332,7 +325,7 @@ public class ShiftLibraryValidationService {
                 if (!t.getValidWeekdays().contains(weekday)) {
                     return false;
                 }
-                if (demandedDates.stream().noneMatch(d -> withinEffectiveRange(t, d))) {
+                if (demandedDates.stream().noneMatch(t::isEffectiveOn)) {
                     return false;
                 }
                 List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(t.getId(), List.of());

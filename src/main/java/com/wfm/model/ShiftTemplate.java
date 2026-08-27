@@ -134,4 +134,26 @@ public class ShiftTemplate {
         long netMinutes = totalMinutes - breakDurationMinutes;
         return BigDecimal.valueOf(netMinutes).divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
     }
+
+    /**
+     * True when {@code date} falls inside this template's effective range — the single
+     * predicate for "is this template live on this specific day" (D-10's "ENTIRE lifecycle
+     * mechanism"). Both ends are checked: a template whose {@code effectiveFrom} is still in the
+     * future (an UPCOMING template, a first-class UI-surfaced state) is NOT effective yet; a
+     * retired template ({@code effectiveTo} before {@code date}) no longer is. {@code
+     * effectiveTo == null} means "still live," matching every other effective-range check in this
+     * codebase.
+     *
+     * <p>The ONE implementation of this predicate (CR-01 gap closure) — {@code
+     * ShiftLibraryValidationService} and {@code AgentShiftAssignment#getEligibleShiftBandPairs()}
+     * both call this rather than each carrying their own copy, per this project's own
+     * P-19/D-02 "one implementation, not two that can drift" discipline.
+     */
+    @Transient
+    public boolean isEffectiveOn(LocalDate date) {
+        if (effectiveFrom != null && effectiveFrom.isAfter(date)) {
+            return false;
+        }
+        return effectiveTo == null || !effectiveTo.isBefore(date);
+    }
 }

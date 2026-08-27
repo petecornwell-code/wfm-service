@@ -176,9 +176,126 @@ class SolverServiceShiftAssignmentTest {
         ShiftBandPair pair = new ShiftBandPair(template, b);
 
         AgentShiftAssignment sa = new AgentShiftAssignment();
+        // CR-01 gap closure: date must be set for eligibility filtering to run at all --
+        // SolverService.buildShiftAssignments always sets it in production (mirrors dayConfig's
+        // date), so a row with no date is a construction defect and correctly yields no eligible
+        // pairs. This test asserts the matching-hours case, so date is required here to isolate
+        // that behaviour from the (separately covered) missing-date case.
+        sa.setDate(MON);
         sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
         sa.setDeskShiftBandPairs(List.of(pair));
 
         assertThat(sa.getEligibleShiftBandPairs()).containsExactly(pair);
+    }
+
+    // --- CR-01 gap closure: effective-range enforcement, per agent-day ---
+
+    @Test
+    void eligibleShiftBandPairs_templateNotYetEffective_isExcluded() {
+        // effectiveFrom is three months after MON — an UPCOMING template, explicitly supported
+        // by the UI (ShiftLibrary.tsx's "Upcoming" badge) but must not be assignable yet.
+        ShiftTemplate upcoming = template("Upcoming", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                MON.plusMonths(3));
+        ShiftTemplateBreakBand b = band(upcoming, 240, 60); // 8.00h net, matches dayConfig below
+        ShiftBandPair pair = new ShiftBandPair(upcoming, b);
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(pair));
+
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+        assertThat(sa.getShiftBandPair()).isNull(); // stays unassigned, never silently off-library
+    }
+
+    @Test
+    void eligibleShiftBandPairs_templateRetired_isExcluded() {
+        ShiftTemplate retired = template("Retired", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                LocalDate.of(2020, 1, 1));
+        retired.setEffectiveTo(MON.minusDays(1)); // retired the day before this row's date
+        ShiftTemplateBreakBand b = band(retired, 240, 60);
+        ShiftBandPair pair = new ShiftBandPair(retired, b);
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(pair));
+
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+    }
+
+    @Test
+    void eligibleShiftBandPairs_templateEffectiveForOnlyPartOfSchedulePeriod_perAgentDayEnforced() {
+        // One template, effective starting mid-period (TUE). Two AgentShiftAssignment rows for
+        // the SAME agent share the SAME deskShiftBandPairs list instance (mirrors
+        // SolverService.buildShiftAssignments), one dated MON (before effectiveFrom), one dated
+        // TUE (on effectiveFrom) — proving eligibility is enforced per row's own date, not once
+        // for the whole desk/period.
+        ShiftTemplate midPeriod = template("MidPeriod", LocalTime.of(8, 0), LocalTime.of(17, 0), TUE);
+        ShiftTemplateBreakBand b = band(midPeriod, 240, 60); // 8.00h net
+        ShiftBandPair pair = new ShiftBandPair(midPeriod, b);
+        List<ShiftBandPair> sharedPairs = List.of(pair);
+
+        AgentShiftAssignment monRow = new AgentShiftAssignment();
+        monRow.setDate(MON);
+        monRow.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        monRow.setDeskShiftBandPairs(sharedPairs);
+
+        AgentShiftAssignment tueRow = new AgentShiftAssignment();
+        tueRow.setDate(TUE);
+        tueRow.setDayConfig(dayConfig(UUID.randomUUID(), TUE, new BigDecimal("8.00")));
+        tueRow.setDeskShiftBandPairs(sharedPairs);
+
+        assertThat(monRow.getEligibleShiftBandPairs()).isEmpty(); // before effectiveFrom
+        assertThat(tueRow.getEligibleShiftBandPairs()).containsExactly(pair); // on effectiveFrom
+    }
+
+    // --- filterLiveShiftTemplates (CR-01 gap closure — desk-level pre-filter against the
+    //     schedule's actual period, never LocalDate.now()) ---
+
+    @Test
+    void filterLiveShiftTemplates_excludesUpcomingTemplate_whenNoOverlapWithPeriod() {
+        ShiftTemplate upcoming = template("Upcoming", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                MON.plusMonths(3));
+
+        List<ShiftTemplate> live = SolverService.filterLiveShiftTemplates(
+                SchedulingMode.SHIFT, List.of(upcoming), MON, TUE);
+
+        assertThat(live).isEmpty();
+    }
+
+    @Test
+    void filterLiveShiftTemplates_includesTemplateEffectiveForOnlyPartOfPeriod() {
+        // effectiveFrom lands ON the period's last day -- overlaps, so must still be loaded even
+        // though it is not effective for most of the period (per-day enforcement narrows it down
+        // further downstream).
+        ShiftTemplate midPeriod = template("MidPeriod", LocalTime.of(8, 0), LocalTime.of(17, 0), TUE);
+
+        List<ShiftTemplate> live = SolverService.filterLiveShiftTemplates(
+                SchedulingMode.SHIFT, List.of(midPeriod), MON, TUE);
+
+        assertThat(live).containsExactly(midPeriod);
+    }
+
+    @Test
+    void filterLiveShiftTemplates_excludesRetiredTemplate() {
+        ShiftTemplate retired = template("Retired", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                LocalDate.of(2020, 1, 1));
+        retired.setEffectiveTo(MON.minusDays(1));
+
+        List<ShiftTemplate> live = SolverService.filterLiveShiftTemplates(
+                SchedulingMode.SHIFT, List.of(retired), MON, TUE);
+
+        assertThat(live).isEmpty();
+    }
+
+    @Test
+    void filterLiveShiftTemplates_slotMode_returnsEmpty() {
+        ShiftTemplate t = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0), LocalDate.of(2020, 1, 1));
+
+        List<ShiftTemplate> live = SolverService.filterLiveShiftTemplates(
+                SchedulingMode.SLOT, List.of(t), MON, TUE);
+
+        assertThat(live).isEmpty();
     }
 }
