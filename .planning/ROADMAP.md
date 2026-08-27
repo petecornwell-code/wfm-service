@@ -174,13 +174,13 @@ composing one by hand.
 
 **Research needed at plan time**: Yes — the coupling *mechanism* is settled (see Notes), but the exact `ConstructionHeuristicPhaseConfig`/`QueuedEntityPlacerConfig`/`EntitySelectorConfig` XML nesting for two sequential CH phases is only MEDIUM confidence per ARCHITECTURE.md, and the spike found the `EntitySelectorConfig` needs both `entityClass` and `id` set or the mimic-selector reference resolves to the wrong entity. Verify against a fixture before writing the real `solverConfig.xml`.
 
-**Plans**: 1/8 plans executed
+**Plans**: 3/8 plans executed
 
 Plans:
 
 - [x] 15-01-PLAN.md — Break bands become the template's break: V40 migration, `ShiftTemplateBreakBand`, any-band `covers()`, capacity advisory, migration-vs-entity guard (wave 1)
-- [ ] 15-02-PLAN.md — SHLB-07 suggested shift library: stateless generation endpoint, set cover, D-12 partial coverage and refusal (wave 2)
-- [ ] 15-03-PLAN.md — Shift envelope entity, two explicitly-scoped CH phases, `shiftEnvelopeCompliance`, and the build-a-solver test (wave 2)
+- [x] 15-02-PLAN.md — SHLB-07 suggested shift library: stateless generation endpoint, set cover, D-12 partial coverage and refusal (wave 2)
+- [x] 15-03-PLAN.md — Shift envelope entity, two explicitly-scoped CH phases, `shiftEnvelopeCompliance`, and the build-a-solver test (wave 2)
 - [ ] 15-04-PLAN.md — ENVL-07 ground-truth walker outside the score director, plus the disagreement proof (wave 3)
 - [ ] 15-05-PLAN.md — Shift Library UI: repeatable break-band editor and Suggested Library draft panel (wave 3)
 - [ ] 15-06-PLAN.md — Band capacity hard cap, real `Break clustering` body, mode-gating six constraints, XCUT-05 closed (wave 4)
