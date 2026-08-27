@@ -135,6 +135,7 @@ class ScheduleServiceShiftSnapshotTest {
 
         UUID inMemoryScheduleId = UUID.randomUUID();
         Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
 
         ShiftTemplateBreakBand band = shiftTemplateBreakBandRepository
                 .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, template.getId())
@@ -192,6 +193,7 @@ class ScheduleServiceShiftSnapshotTest {
 
         UUID inMemoryScheduleId = UUID.randomUUID();
         Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
 
         AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
         shiftAssignment.setId(UUID.randomUUID());
@@ -264,6 +266,44 @@ class ScheduleServiceShiftSnapshotTest {
                 .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
         assertThat(persistedAssignments).hasSize(1);
         assertThat(persistedAssignments.get(0).getAgent().getId()).isEqualTo(agent.getId());
+    }
+
+    @Test
+    void deleteSchedule_shiftMode_deletesAgentShiftAssignmentRows() {
+        // CR-03 regression: before the fix, deleteSchedule never called any deleteBy* method on
+        // AgentShiftAssignmentRepository (it exposed none), so agent_shift_assignment rows for a
+        // deleted accepted SHIFT-mode schedule were silently orphaned (schedule_id carries no FK,
+        // per V41, so the schedule row's own deletion cannot cascade to them).
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        ShiftTemplate template = saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setTenantId(TENANT_A);
+        shiftAssignment.setDeskId(deskId);
+        shiftAssignment.setScheduleId(inMemoryScheduleId);
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, null));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        assertThat(agentShiftAssignmentRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId()))
+                .hasSize(1);
+
+        scheduleService.deleteSchedule(deskId, saved.getId());
+
+        assertThat(agentShiftAssignmentRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId()))
+                .isEmpty();
     }
 
     // ---------- Task 2: schedulingMode and the per-entry shift descriptor ----------
@@ -451,13 +491,21 @@ class ScheduleServiceShiftSnapshotTest {
     }
 
     @Test
-    void getScheduleDetail_acceptedShiftModeSchedule_derivesSchedulingModeFromShiftRowPresence() {
+    void getScheduleDetail_acceptedShiftModeSchedule_reportsPersistedSchedulingMode() {
+        // CR-02 gap closure rename: this test previously asserted the OLD inferred-from-
+        // shift-row-presence mechanism (hence its old name,
+        // ...derivesSchedulingModeFromShiftRowPresence) — that inference is exactly the CR-02
+        // defect (see the dedicated zero-shift regression test below), so this test now sets
+        // schedulingMode explicitly on the in-memory schedule (mirroring what
+        // SolverService.buildSchedule always does before a real solve) and asserts it survives
+        // accept + reload via the new persisted scheduling_mode column (V43), not derivation.
         UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
         Agent agent = saveAgent(TENANT_A, deskId, "A1");
         ShiftTemplate template = saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
 
         UUID inMemoryScheduleId = UUID.randomUUID();
         Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
         AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
         shiftAssignment.setId(UUID.randomUUID());
         shiftAssignment.setTenantId(TENANT_A);
@@ -470,6 +518,54 @@ class ScheduleServiceShiftSnapshotTest {
 
         inMemoryStore.put(schedule);
         Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
+
+        assertThat(response.getSchedulingMode()).isEqualTo("SHIFT");
+    }
+
+    @Test
+    void getScheduleDetail_acceptedShiftModeSchedule_zeroPlacedShifts_stillReportsShift() {
+        // CR-02 regression: the exact case the old inference got wrong. acceptSchedule is
+        // reachable for any COMPLETED/STOPPED schedule regardless of feasibility, and only ever
+        // writes an agent_shift_assignment row when shiftAssignment.getShiftBandPair() is
+        // non-null — a SHIFT-mode solve stopped early (or whose live library matches no agent's
+        // contracted hours) can legitimately reach COMPLETED/STOPPED with zero placed shifts.
+        // Before the fix, loadSnapshotData inferred schedulingMode from
+        // shiftAssignments.isEmpty(), so this exact scenario read back mislabeled SLOT. With the
+        // fix, schedulingMode is a persisted column written once at accept time from the
+        // in-memory schedule's own recorded mode, independent of how many (if any) shift rows
+        // were written.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        ShiftTemplate template = saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+
+        // A shift assignment row exists on the in-memory solution, but its shiftBandPair is null
+        // — e.g. the construction heuristic never got to it before the solve stopped. acceptSchedule
+        // skips any such row (pair == null), so zero agent_shift_assignment rows are written.
+        AgentShiftAssignment unplacedShiftAssignment = new AgentShiftAssignment();
+        unplacedShiftAssignment.setId(UUID.randomUUID());
+        unplacedShiftAssignment.setTenantId(TENANT_A);
+        unplacedShiftAssignment.setDeskId(deskId);
+        unplacedShiftAssignment.setScheduleId(inMemoryScheduleId);
+        unplacedShiftAssignment.setAgent(agent);
+        unplacedShiftAssignment.setDate(MONDAY);
+        unplacedShiftAssignment.setShiftBandPair(null);
+        schedule.setShiftAssignments(new ArrayList<>(List.of(unplacedShiftAssignment)));
+        schedule.setAssignments(new ArrayList<>());
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        // Zero agent_shift_assignment rows were actually persisted — confirms this test exercises
+        // the exact CR-02 scenario, not the ordinary "at least one placed shift" case above.
+        assertThat(agentShiftAssignmentRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId()))
+                .isEmpty();
 
         ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
 

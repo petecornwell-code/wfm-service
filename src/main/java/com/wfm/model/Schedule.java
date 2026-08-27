@@ -152,11 +152,16 @@ public class Schedule {
     @Transient
     private List<ShiftBandPair> shiftBandPairs = new ArrayList<>();
 
-    // Not persisted — a solver-input value only, threaded through from Desk.schedulingMode by
-    // SolverService.buildSchedule (see getScheduleConfig() below). Adding a persisted column here
-    // would need its own migration, which this phase's V41 does not carry.
-    @Transient
-    private SchedulingMode schedulingMode;
+    // CR-02 gap closure (V43): persisted, not inferred. Records the mode THIS schedule was
+    // actually solved under -- SolverService.buildSchedule sets it from Desk.schedulingMode
+    // before any solve starts (see getScheduleConfig() below), so acceptSchedule's
+    // entityManager.persist(schedule) call below writes this column alongside every other scalar
+    // field, and a later reload (loadSnapshotData) simply reads it back like any other column
+    // rather than re-deriving it from whether any agent_shift_assignment rows happen to exist —
+    // that inference broke for a SHIFT-mode schedule accepted with zero placed shifts (CR-02).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scheduling_mode", nullable = false)
+    private SchedulingMode schedulingMode = SchedulingMode.SLOT;
 
     @Transient
     private List<String> warnings = new ArrayList<>();

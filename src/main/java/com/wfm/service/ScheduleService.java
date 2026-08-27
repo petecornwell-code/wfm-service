@@ -234,6 +234,10 @@ public class ScheduleService {
                 AcceptedScheduleDateStatus.ACCEPTED, AcceptedScheduleDateStatus.SUPERSEDED);
 
         // Save the Schedule record — flush supersede updates first, then persist
+        // CR-02 gap closure: schedulingMode is now a mapped column (V43), already carrying the
+        // mode this in-memory schedule was actually solved under (SolverService.buildSchedule),
+        // so this persist() call writes it as a genuine recorded fact — nothing else needs to
+        // write or infer it, at accept time or on later reload.
         entityManager.flush();
         schedule.setStatus(ScheduleStatus.ACCEPTED);
         schedule.setId(null);
@@ -356,6 +360,11 @@ public class ScheduleService {
         }
 
         agentAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
+        // CR-03 gap closure: agent_shift_assignment carries no FK to schedule (V41), so deleting
+        // the schedule row below does not cascade to it — it must be deleted explicitly here,
+        // mirroring agentAssignmentRepository's own delete immediately above, or every
+        // shift-envelope row for a deleted SHIFT-mode accepted schedule is permanently orphaned.
+        agentShiftAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         staffingRequirementRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         scheduleRepository.delete(schedule);
@@ -408,14 +417,14 @@ public class ScheduleService {
                 .findWithRelationsByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
         schedule.setShiftAssignments(shiftAssignments);
 
-        // P-32: schedulingMode records the mode THIS schedule was solved under, never a live
-        // desk read — a desk's mode can change after acceptance, and the report must still
-        // render correctly. An accepted schedule carries no persisted mode column (the value is
-        // solver-input-only for an in-memory schedule per 15-03's D-04/D-05), so it is derived
-        // from the accept-time shift snapshot itself: any accepted shift row means this schedule
-        // was solved in SHIFT mode (D-05 — one row per working agent-day), and the accept path
-        // writes zero such rows for a SLOT-mode accept (Task 1's own third assertion).
-        schedule.setSchedulingMode(shiftAssignments.isEmpty() ? SchedulingMode.SLOT : SchedulingMode.SHIFT);
+        // P-32 / CR-02 gap closure: schedulingMode records the mode THIS schedule was solved
+        // under, never a live desk read — a desk's mode can change after acceptance, and the
+        // report must still render correctly. It is now a mapped column (V43) written once at
+        // accept time from the in-memory schedule's own recorded mode, so `schedule` above already
+        // carries the correct value straight from the DB row — no inference from the shift-row
+        // snapshot's emptiness is needed (or safe: that inference broke for a SHIFT-mode accept
+        // that placed zero shifts, since an empty snapshot is legitimately reachable in that
+        // state, not just in SLOT mode).
 
         // Load days off for the schedule period to exclude PTO days from preferences
         List<AgentDayOff> allDaysOff = agentDayOffRepository.findByTenantIdAndDeskIdAndDateBetween(
@@ -521,10 +530,11 @@ public class ScheduleService {
         r.setBreakStartAlignment(s.getBreakStartAlignment() != null
                 ? s.getBreakStartAlignment().name() : null);
         r.setBreakClusterThresholdPct(s.getBreakClusterThresholdPct());
-        // P-32: non-nullable — every schedule was solved under exactly one mode. In-memory
-        // schedules already carry it from SolverService.buildSchedule; loadSnapshotData derives
-        // it for an accepted schedule from its own shift-row snapshot (never a live desk read).
-        // Falls back to SLOT only for the structurally-impossible case of neither path having run.
+        // P-32 / CR-02: non-nullable — every schedule was solved under exactly one mode. In-memory
+        // schedules already carry it from SolverService.buildSchedule; an accepted schedule reads
+        // it directly off its own persisted scheduling_mode column (V43, never a live desk read),
+        // populated by JPA on load like any other scalar field. Falls back to SLOT only for the
+        // structurally-impossible case of neither path having run.
         r.setSchedulingMode(s.getSchedulingMode() != null ? s.getSchedulingMode().name() : SchedulingMode.SLOT.name());
         r.setDefaultContractedHoursPerDay(s.getDefaultContractedHoursPerDay());
         r.setOverallocationHardLimitPct(s.getOverallocationHardLimitPct());
