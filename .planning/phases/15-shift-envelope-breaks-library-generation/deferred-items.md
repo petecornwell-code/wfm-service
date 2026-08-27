@@ -55,3 +55,40 @@ that threshold is what surfaced both defects above.
 **The interim gate carve-out recorded in `1971b3f` is WITHDRAWN.** It is no longer needed and
 must not be applied: the full suite passes outright (452 tests, 0 failures). Any future failure
 of this test should be treated as a real signal and investigated, not waived.
+
+## Wave 4 throughput observation: mode-gating costs ~2x CH time, quality unchanged
+
+Measured on `BreakAwareConstructionTest`'s 30-agent slot-mode scenario after wave 4 merged
+(15-06's six `ifExists(Class, filtering(...))` mode gates plus break-clustering and
+band-capacity constraints):
+
+| | wave 3 | wave 4 |
+|---|---|---|
+| CH phase (1) time | 266ms (as reported by the wave-2 fix agent) | **532ms** (measured) |
+| LS throughput | 43.2k moves/sec (reported) | **40.6k moves/sec** (measured) |
+| CH quality, isolation | `480/480, 0hard/0soft` (measured) | `480/480, 0hard/0soft` (measured) |
+| Full-suite canary | `480/480, 0hard/0soft` | `479/480, -320hard/-1soft` |
+| Suite duration | 7m47s | 24m31s |
+
+**Not treated as blocking, and here is the reasoning.** Quality per step is IDENTICAL --
+both reach `0hard/0soft` in isolation. Only throughput moved. Plan 15-08's benchmark is
+specified by XCUT-04 as *seeded, step-count-terminated* A/B runs, so both arms execute the
+same step count and a time cost does not bias the comparison. Had the benchmark been
+wall-clock bounded, this WOULD have been blocking -- a slot arm carrying a shift-support tax
+would have flattered the shift model.
+
+**Two things this does mean:**
+
+1. The canary's margin against its `-500` assertion fell from 500 to 180 points under
+   full-suite load. It is drifting back toward the knife's edge it occupied before `90bf3d2`.
+   This strengthens the existing recommendation to terminate it on `stepCountLimit` rather
+   than `spentLimit`.
+2. Mode-gating six previously-mode-agnostic constraints with `ifExists` adds a per-tuple check
+   in SLOT mode WITHOUT removing work there (those constraints must still fire on a slot desk).
+   If slot-mode solve latency ever becomes a product concern, that is the place to look --
+   a `SchedulingMode`-keyed split of the constraint list, evaluated once per solve rather than
+   per tuple, would avoid it.
+
+Caveat on provenance: the wave-3 CH/LS figures above are as reported by the wave-2 fix agent
+and were not independently re-measured. The QUALITY figures -- which are what the
+non-blocking conclusion rests on -- were measured directly at both commits.
