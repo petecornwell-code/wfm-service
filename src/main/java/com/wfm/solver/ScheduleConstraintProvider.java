@@ -6,7 +6,6 @@ import ai.timefold.solver.core.api.score.stream.bi.BiConstraintStream;
 import com.wfm.model.*;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalTime;
 import java.util.*;
 
@@ -467,11 +466,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    int expectedSlots = dayConfig.expectedWorkSlots();
                     return assignmentCount > expectedSlots;
                 })
                 .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    int expectedSlots = dayConfig.expectedWorkSlots();
                     return assignmentCount - expectedSlots;
                 })
                 .asConstraint("Contracted hours (over)");
@@ -493,11 +492,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((daId, date, cnt) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, cnt) -> date, AgentDayConfig::date))
                 .filter((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    int expectedSlots = dayConfig.expectedWorkSlots();
                     return assignmentCount < expectedSlots;
                 })
                 .penalizeConfigurable((daId, date, assignmentCount, dayConfig) -> {
-                    int expectedSlots = expectedWorkSlots(dayConfig);
+                    int expectedSlots = dayConfig.expectedWorkSlots();
                     return expectedSlots - assignmentCount;
                 })
                 .asConstraint("Contracted hours (under)");
@@ -516,7 +515,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .ifNotExists(AgentAssignment.class,
                         equal(AgentDayConfig::agentId, a -> a.getAgent() != null ? a.getAgent().getId() : null),
                         equal(AgentDayConfig::date, a -> a.getTimeslot().getDate()))
-                .penalizeConfigurable(dayConfig -> expectedWorkSlots(dayConfig))
+                .penalizeConfigurable(AgentDayConfig::expectedWorkSlots)
                 .asConstraint("Contracted hours (under, zero)");
     }
 
@@ -853,15 +852,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     //  HELPER METHODS
     // ============================================================
 
-    /**
-     * Computes the expected number of work slots for an agent-day.
-     */
-    private int expectedWorkSlots(AgentDayConfig dayConfig) {
-        return dayConfig.effectiveHours()
-                .multiply(BigDecimal.valueOf(60))
-                .divide(BigDecimal.valueOf(dayConfig.incrementMinutes()), 0, RoundingMode.HALF_UP)
-                .intValue();
-    }
+    // Expected-work-slot arithmetic lives on AgentDayConfig.expectedWorkSlots() (Phase 15 plan
+    // 15-11, Task 1) — the constraints above call it directly rather than a local re-derivation,
+    // so this class and SolverService's shift-mode seat-supply gate can never disagree.
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();
