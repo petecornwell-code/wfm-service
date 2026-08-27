@@ -3,21 +3,52 @@ status: testing
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-08-27T18:50:00Z"
+updated: "2026-08-27T21:34:00Z"
 ---
 
 <!--
 WHERE TO TEST
 
-Phase 15 is ALREADY DEPLOYED to the dev environment and healthy:
+Phase 15 is deployed to the dev environment:
 
   https://d2bbtcc80peap7.cloudfront.net        (/actuator/health -> UP, Postgres connected)
 
-Deployed commit: `adaad6d` — the merge of both defect-fix worktrees. Verified to contain NO
-source difference from the phase's final HEAD (`git diff adaad6d..HEAD -- . ':!.planning/'` is
-empty); every commit after it touches only `.planning/**`, which `deploy.yml` excludes via
-`paths-ignore`. So the live dev service runs exactly the code this phase verified, including
-the CR-01/CR-02/CR-03 fixes.
+>>> CORRECTED 2026-08-27T21:22Z. The paragraph below is preserved because its REASONING is
+>>> still sound, but its CONCLUSION expired the moment the gap-closure round landed. What it
+>>> asserted was true of the main phase and is NOT true of the phase as it now stands. Read
+>>> the correction under it before trusting any deployment claim in this file.
+>>>
+>>>   [SUPERSEDED] "Deployed commit: `adaad6d` — the merge of both defect-fix worktrees.
+>>>   Verified to contain NO source difference from the phase's final HEAD
+>>>   (`git diff adaad6d..HEAD -- . ':!.planning/'` is empty); every commit after it touches
+>>>   only `.planning/**`, which `deploy.yml` excludes via `paths-ignore`. So the live dev
+>>>   service runs exactly the code this phase verified, including the CR-01/CR-02/CR-03
+>>>   fixes."
+>>>
+>>> WHAT WAS ACTUALLY TRUE at the moment this UAT session resumed: `adaad6d` was still the
+>>> last deployed commit, but it was NO LONGER equal to HEAD in source. `adaad6d..HEAD`
+>>> excluding `.planning/` contained 17 commits and ~4,086 changed lines across 24 files —
+>>> the ENTIRE G-15-10 gap-closure round: `f893e97` (envelope-aware seat expansion),
+>>> `4492355` (the seat-supply gate), `1bd953b`/`a54abc3`/`ce3c502` (authoritative-envelope
+>>> rendering), `52a1656` (the end-to-end regression). SolverService.java +313,
+>>> ScheduleOutputService.java +164.
+>>>
+>>> The reason the deploy history looked reassuring is the trap: those 17 commits had never
+>>> been PUSHED. The branch was 30 commits ahead of origin. `deploy.yml` fires on push, so
+>>> no deploy could have carried them, and dev was serving the PRE-FIX build — the exact
+>>> build that filed G-15-10. Running test 10 against it would have re-measured the defect
+>>> and read as confirmation that the fix failed.
+>>>
+>>> RESOLVED: branch pushed 21:22Z (`4ae9492..5b7bd15`), deploy run 33117833899 triggered on
+>>> `5b7bd15`. Tests 10, 19 and 20 are meaningful only against that deployment or later.
+>>>
+>>> STANDING RULE for anyone resuming this file: do not trust a recorded deployment claim.
+>>> Re-derive it. `git log --oneline origin/<branch>..HEAD -- . ':!.planning/'` must be EMPTY
+>>> and the newest successful `deploy.yml` run's headSha must equal HEAD. A local commit is
+>>> not a deployed commit.
+>>>
+>>> STILL UNCOMMITTED at push time, therefore NOT in the deployed image:
+>>>   src/main/resources/sample-data/preferences.xlsx (modified, sample data only)
 
 WHAT THE AUTOMATED SUITE DOES AND DOES NOT COVER
 
@@ -53,18 +84,28 @@ expected: |
 awaiting: user response
 
 <!--
+  GATE CLEARED 2026-08-27T21:34Z. Test 10 was blocked on the gap-closure round reaching dev.
+  Deploy run 33117833899 completed SUCCESS on 5b7bd15; deployed sha == HEAD; 0 unpushed source
+  commits; /actuator/health UP with db UP on PostgreSQL. Test 10 is now valid to run.
+
+  Tests 1, 5, 6 and 7 were completed during the deploy window (1 is build-independent; 5/6/7
+  exercise ShiftTemplateService, which the gap-closure round did not touch). Test 10 was not
+  displaced — it was gated.
+-->
+
+<!--
   Test 10 is the priority re-test: it is the test that filed G-15-10, and gap-closure plans
   15-09..15-13 exist to close it. Tests 1, 3-9 and 11-17 were never reached in the first session
   and remain pending. Tests 19 and 20 are NEW, added from 15-VERIFICATION.md's human_verification
   list — they cover the frontend surface plans 15-10/15-12 added, which has never been visually
   exercised because this project has no frontend test framework (Phase 13 P-11).
 
-  NOTE ON DEPLOYMENT: the "WHERE TO TEST" block above names deployed commit `adaad6d`, which
-  predates the entire gap-closure round. The dev deployment must be REDEPLOYED from current HEAD
-  before tests 10, 19 or 20 mean anything — testing the old build would reproduce G-15-10 and
-  tell you nothing about whether it is fixed. Confirm the deployed commit before you start.
+  NOTE ON DEPLOYMENT: this warning was CORRECT and was acted on. `adaad6d` did predate the
+  entire gap-closure round, and the cause was that the round was never pushed — not merely
+  never deployed. Branch pushed and deploy run 33117833899 triggered on `5b7bd15` at 21:22Z.
+  See the corrected WHERE TO TEST block above for the full record and the standing re-derivation
+  rule. Tests 10, 19 and 20 are valid only against that deployment or later.
 -->
-
 
 ## Tests
 
@@ -82,7 +123,41 @@ ORDER BY bands DESC, t.name;
 ```
 
 Every template that previously had a break shows exactly 1 band with its former offset/duration; templates without a break show 0. **This is the highest-value item in the file** — it is the one thing about V40 that deploy success cannot tell you, and the source columns are already dropped.
-result: [pending]
+result: pass
+tested_against: dev (https://d2bbtcc80peap7.cloudfront.net), live cloud data, 2026-08-27T21:26Z
+method: |
+  Read via the live API rather than SQL — GET /api/v1/desks/{id}/shift-templates with header
+  `X-Tenant-ID: 1` returns each template's `bands[]` (offsetMinutes, durationMinutes,
+  breakStartTime, breakEndTime, capacity, netHours), which answers the same question as the
+  planned SQL without needing DB credentials. Build-independent: V40 had already run, so this
+  was answerable during the redeploy window.
+evidence: |
+  Desk Stubhub (EN) (6170be17-3bee-41da-9d81-62ddd50c786f) — the tenant's ONLY desk, SHIFT mode.
+  All 4 templates, each with EXACTLY 1 band, all capacities NULL (= unlimited, per D-03):
+
+    Early          08:00-17:00   1 band   offset 240m / dur 60m -> 12:00-13:00   net 8.0h
+    Weekend Early  10:00-19:00   1 band   offset 240m / dur 60m -> 14:00-15:00   net 8.0h
+    Weekend Late   11:00-20:00   1 band   offset 240m / dur 60m -> 15:00-16:00   net 8.0h
+    Late           12:00-21:00   1 band   offset 240m / dur 60m -> 16:00-17:00   net 8.0h
+
+  Templates with >1 band: none. Templates with 0 bands: none.
+
+  STRONGEST CORROBORATION: V40's own header documents the pre-migration live state as "~15
+  Early-shift agents all break 12:00-13:00". Early's band still reads 12:00-13:00 — the value
+  survived both the fan-out and the DROP COLUMN intact. That is an independent pre-migration
+  record of the expected value, which is otherwise unrecoverable.
+
+  STRUCTURAL ARGUMENT (why the residual risk is one-sided): V40 is a single
+  INSERT...SELECT ... WHERE break_duration_minutes > 0. It CANNOT emit more than one band per
+  template, so duplication was never possible; the only failure mode it carries is a DROPPED
+  break, and none were dropped. Note also that a row with break_duration_minutes > 0 AND a NULL
+  break_offset_minutes would have violated the band table's `offset_minutes INTEGER NOT NULL`
+  and failed the migration — so deploy success independently proves no such row existed.
+user_confirmed: |
+  The one thing the live data cannot settle is whether some template was break-FREE in Phase 14
+  and wrongly acquired a band. Operator confirmed all four templates did carry a one-hour break
+  before this phase, closing that residual.
+reported: "yes"
 
 ### 2. All four migrations apply cleanly on Postgres (dev)
 
@@ -103,17 +178,93 @@ result: [pending]
 ### 5. Band capacity: 0 rejected, blank means unlimited
 
 expected: Capacity `0` is refused with a clear message (a band nobody can use is a data error). BLANK capacity is accepted and means unlimited. Blank and 0 are not the same value.
-result: [pending]
+result: pass
+tested_against: dev API, live desk Stubhub (EN), 2026-08-27T21:31Z
+method: |
+  Exercised directly against POST /api/v1/desks/{id}/shift-templates. Safe to do so because
+  `ShiftTemplateService` is NOT among the files changed after the deployed commit `adaad6d`
+  (`git diff adaad6d..HEAD` touches SolverService, ScheduleOutputService, ScheduleExportService
+  and ScheduleConstraintProvider only) — so these validation rules are byte-identical in the
+  deployed build and the build now shipping. A REJECTED request persists nothing, so the
+  refusal half of this test had zero data footprint (re-listed after: still 4 templates).
+evidence: |
+  REFUSED — capacity 0:
+    HTTP 400 — "Break band capacity must be at least 1 (band at offset 240 minutes)"
+    The message names the offending band, so an operator with several bands knows which one.
+
+  ACCEPTED — blank (null) capacity, on two separate bands of the scratch template, read back
+  from the LIST endpoint as capacity=null and rendered as unlimited. The four pre-existing
+  live templates likewise all carry capacity=null (V40 sets it NULL by design, D-03).
+
+  Blank and 0 are therefore demonstrably NOT the same value: one is refused at save, the other
+  persists and means unlimited.
+source: automated-probe + operator-authorised live write
+
+### 5b. (probe artefact) Scratch template left on the desk
+
+expected: n/a — bookkeeping entry, not a test.
+result: skipped
+reason: |
+  Tests 4/6/7 required one successful multi-band write. `ShiftTemplateController` has NO delete
+  endpoint by design ("no destructive action exists in this phase", D-10/T-14-14), so the scratch
+  could not be removed afterwards. It was therefore created RETIRED FROM BIRTH —
+  effectiveFrom 2025-01-01, effectiveTo 2025-12-31, both entirely before the 2026-01-05..11
+  schedule period — and the API confirms eraStatus=PAST. It is not assignable on any day test 10
+  solves, so it cannot perturb that result.
+    name: ZZ-UAT-SCRATCH-do-not-use
+    id:   4f1b2078-9a62-4dcd-8959-790ae3bb2ac5
+  Remove at leisure via direct SQL if the retired row is unwanted in the library list.
 
 ### 6. Duplicate bands rejected, touching bands allowed
 
 expected: Two bands with the SAME offset AND SAME duration are refused as duplicates. Two bands whose break windows merely touch (A ends exactly as B begins) are accepted as distinct and legal.
-result: [pending]
+result: pass
+tested_against: dev API, live desk Stubhub (EN), 2026-08-27T21:31Z
+evidence: |
+  REFUSED — duplicate pair, bands [offset 240 / dur 60] submitted twice:
+    HTTP 400 — "Duplicate break band at offset 240 minutes with duration 60 minutes"
+
+  ACCEPTED — touching pair, on the scratch template (envelope 09:00-18:00):
+    band offset  60m / dur 60m -> 10:00-11:00
+    band offset 120m / dur 60m -> 11:00-12:00
+  A ends exactly as B begins. Both persisted and both read back from the LIST endpoint as
+  distinct bands. This is the discriminating case: a touching pair shares its BOUNDARY but
+  never both (offset, duration) values, which is precisely why the duplicate key
+  `offset + ":" + duration` admits it — the implementation comment states this intent and the
+  live behaviour matches it.
+source: automated-probe + operator-authorised live write
 
 ### 7. Off-grid band offsets refused, never silently rounded
 
 expected: An offset or duration not landing on the desk's timeslot grid produces a hard 400 with a named, readable message. The value is never silently rounded to fit.
-result: [pending]
+result: pass
+tested_against: dev API, live desk Stubhub (EN), 2026-08-27T21:31Z
+grid: desk live bounds 08:00-21:00, incrementMinutes=60, period 2026-01-05..2026-01-11
+evidence: |
+  THREE independent off-grid shapes, all REFUSED with HTTP 400 and per-field detail. Every
+  response carries the offending VALUE, so the operator can see what was wrong rather than
+  guessing — and in no case was a value accepted-then-rounded:
+
+  (a) off-grid band OFFSET (250m from 09:00 -> break 13:10):
+      "Shift template times must align to the desk's timeslot grid"
+        bands[0].breakStartTime  value 13:10
+        bands[0].breakEndTime    value 14:10
+      Note it reports BOTH boundaries — an off-grid offset drags the end off-grid too.
+
+  (b) off-grid band DURATION (30m on a 60m grid -> break ends 13:30):
+      bands[0].breakEndTime      value 13:30
+      Only the END is flagged; the start at 13:00 is legal. The check is per-boundary, not
+      per-band, which is the more useful diagnosis.
+
+  (c) off-grid TEMPLATE start (09:20):
+      startTime                  value 09:20
+      bands[0].breakStartTime    value 13:20
+      bands[0].breakEndTime      value 14:20
+
+  NEVER SILENTLY ROUNDED — proven positively, not just by the 400: the desk was re-listed after
+  all probes and still held exactly its 4 original templates. A rejected request writes nothing,
+  so there is no rounded row to find.
+source: automated-probe (zero data footprint — all three were refusals)
 
 ### 8. Capacity shortfall shows an advisory at save time
 
@@ -188,15 +339,21 @@ reason: No production deploy has occurred. `deploy.yml` targets the dev environm
 expected: |
   Load a shift-mode schedule with a real envelope divergence (or force one) and confirm the new
   rendering from plans 15-10 and 15-12 lands on the correct cells:
+
     - the Agent Schedule table's Shift column agrees with the Agent Allocation group header for the
       same agent-day (the "Late 12:00-21:00" vs "09:00-21:00" disagreement is gone);
+
     - an inline divergence marker appears on the Agent Schedule row when the actual seats fall
       outside the assigned envelope;
+
     - per-cell `E!` (out-of-envelope seat, amber ring) is visually distinct from `x` (surrendered
       legal slot, amber fill);
+
     - an hour no template reaches renders muted/italic under an "unstaffed by design" header, and
       is clearly distinct from the existing red unfilled-demand treatment;
+
     - tooltips and the extended legend are legible.
+
 result: [pending]
 source: 15-VERIFICATION.md human_verification
 why_human: |
@@ -226,10 +383,10 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 1
+passed: 5
 issues: 0
-pending: 18
-skipped: 0
+pending: 13
+skipped: 1
 blocked: 1
 
 ## Gaps
