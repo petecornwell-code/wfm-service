@@ -352,6 +352,13 @@ public class SolverService {
                     minStaffingSeats.size());
         }
 
+        // 10e. (Phase 15 plan 15-11, G-15-10 D1 half) The shift-mode seat-supply gate. Must run
+        // HERE, after seat construction (step 10d) — not inside runPreSolveValidation (step 7),
+        // which runs before any seat exists. See the method's own javadoc for why moving it back
+        // there would silently defeat it.
+        requireShiftEnvelopeSeatSupply(desk.getSchedulingMode(), shiftAssignments, shiftBandPairs,
+                timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings());
+
         log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedAgents.size(), timeslots.size(),
                 staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
@@ -1086,6 +1093,176 @@ public class SolverService {
         for (CapacityAdvisory advisory : shiftLibraryValidationService.validate(deskId).capacityAdvisories()) {
             errors.add(new ErrorDetail("bandCapacity", advisory.message(), advisory.templateName()));
         }
+    }
+
+    /**
+     * (Phase 15 plan 15-11, G-15-10 D1 half) The shift-mode seat-supply gate — makes in-envelope
+     * seat supply a CHECKED PRECONDITION of every shift-mode solve, rather than something the
+     * model merely hopes for. A no-op entirely when {@code schedulingMode} is not {@code SHIFT}
+     * (Test 5) or when there are no shift-assignment rows to check.
+     *
+     * <p><strong>This cannot live inside {@link #runPreSolveValidation}</strong> — that runs at
+     * step 7, before any seat exists. This gate MUST be called after step 10d, once {@code
+     * assignments} already includes the minimum-staffing top-up, because it counts the SEATS the
+     * solver is actually about to receive rather than re-deriving them from staffing
+     * requirements — so the two can never disagree. Do not "tidy" this call back into step 7;
+     * that would silently defeat it, since {@code assignments} does not exist there yet.
+     *
+     * <p>Two checks, accumulated together and thrown once (mirrors {@link
+     * #runPreSolveValidation}'s accumulate-then-throw shape):
+     * <ol>
+     *   <li><strong>Library-covered supply vs. contracted demand, per date.</strong> Supply is
+     *       the count of {@code assignments} seats sitting at a timeslot at least one live
+     *       {@link ShiftBandPair} covers ({@link ShiftBandPair#covers}, never re-derived
+     *       envelope arithmetic) — counting the seats the solver actually receives, including
+     *       plan 15-09's suppression and top-up, so this can never disagree with what the solver
+     *       sees. Demand is the sum of {@link AgentDayConfig#expectedWorkSlots()} across that
+     *       date's {@link AgentShiftAssignment} rows (the same computation Task 1 moved onto
+     *       {@code AgentDayConfig}, so this gate and the hard contracted-hours constraints can
+     *       never disagree either). Refusing when demand exceeds supply is a genuine necessary
+     *       condition for a zero-hard solve: D-04's value range forces every agent-day to occupy
+     *       exactly its expected work slots, every one of those seats inside its own pair's
+     *       coverage, and every covered slot is covered by SOME live pair — so a desk that fails
+     *       this check cannot reach {@code 0hard} no matter how long the solver runs. The check
+     *       deliberately uses coverage by ANY live pair rather than the agent's eventual pair
+     *       (still free at this point) — the looser test is the only sound one, and it errs
+     *       toward permitting (Test 3).</li>
+     *   <li><strong>Empty value range, per row.</strong> An {@link AgentShiftAssignment} whose
+     *       {@link AgentShiftAssignment#getEligibleShiftBandPairs()} comes back empty on its own
+     *       date degrades silently today to an unassigned shift whose every seat is then
+     *       penalised at solve time. Refused by name instead (Test 4), distinguishing — per
+     *       date, not per row — the case where NO live pair reaches the date at all (a wholly
+     *       retired or wholly upcoming library, Test 6) from an ordinary hours/library
+     *       mismatch, so a retired library reads as one message rather than as an hours mismatch
+     *       repeated for every agent rostered that day.</li>
+     * </ol>
+     *
+     * <p>Finally, a non-blocking advisory (Test 7): for every date with shift-assignment rows,
+     * once the whole desk has passed both checks above, the covered timeslot carrying the fewest
+     * seats is recorded in {@code warnings} — the schedule's own warnings collection, appended
+     * to rather than replaced, since {@link #computeCapacityWarnings} already wrote to it earlier
+     * in the same solve. This points at the pinch point without pretending to a precision the
+     * aggregate check above does not have, and it must never throw.
+     */
+    static void requireShiftEnvelopeSeatSupply(
+            SchedulingMode schedulingMode,
+            List<AgentShiftAssignment> shiftAssignments,
+            List<ShiftBandPair> shiftBandPairs,
+            List<Timeslot> timeslots,
+            List<AgentAssignment> assignments,
+            int overallocationHardLimitPct,
+            List<String> warnings) {
+
+        if (schedulingMode != SchedulingMode.SHIFT
+                || shiftAssignments == null || shiftAssignments.isEmpty()) {
+            return;
+        }
+        List<ShiftBandPair> pairs = shiftBandPairs == null ? List.of() : shiftBandPairs;
+
+        Map<LocalDate, List<AgentShiftAssignment>> rowsByDate = shiftAssignments.stream()
+                .collect(Collectors.groupingBy(AgentShiftAssignment::getDate,
+                        LinkedHashMap::new, Collectors.toList()));
+        Map<LocalDate, List<Timeslot>> timeslotsByDate = (timeslots == null ? List.<Timeslot>of() : timeslots)
+                .stream()
+                .collect(Collectors.groupingBy(Timeslot::getDate, LinkedHashMap::new, Collectors.toList()));
+        Map<UUID, Long> seatsByTimeslotId = (assignments == null ? List.<AgentAssignment>of() : assignments)
+                .stream()
+                .filter(a -> a.getTimeslot() != null)
+                .collect(Collectors.groupingBy(a -> a.getTimeslot().getId(), Collectors.counting()));
+
+        List<ErrorDetail> errors = new ArrayList<>();
+
+        for (Map.Entry<LocalDate, List<AgentShiftAssignment>> entry : rowsByDate.entrySet()) {
+            LocalDate date = entry.getKey();
+            List<AgentShiftAssignment> rows = entry.getValue();
+
+            List<Timeslot> coveredTimeslots = timeslotsByDate.getOrDefault(date, List.of()).stream()
+                    .filter(ts -> pairs.stream().anyMatch(p -> p.covers(ts)))
+                    .toList();
+            int librarySupplySlots = coveredTimeslots.stream()
+                    .mapToInt(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L).intValue())
+                    .sum();
+            int contractedSlots = rows.stream()
+                    .mapToInt(r -> r.getDayConfig().expectedWorkSlots())
+                    .sum();
+
+            if (contractedSlots > librarySupplySlots) {
+                int incrementMinutes = rows.get(0).getDayConfig().incrementMinutes();
+                int shortfallSlots = contractedSlots - librarySupplySlots;
+                errors.add(new ErrorDetail("shiftLibrary",
+                        "On " + date + ", rostered agent-days need " + contractedSlots
+                                + " slot(s) (" + slotsToHours(contractedSlots, incrementMinutes)
+                                + "h) inside the shift library's live envelopes, but the library "
+                                + "only reaches " + librarySupplySlots + " slot(s) ("
+                                + slotsToHours(librarySupplySlots, incrementMinutes)
+                                + "h) there — a shortfall of " + shortfallSlots + " slot(s) ("
+                                + slotsToHours(shortfallSlots, incrementMinutes) + "h). On a "
+                                + "shift-scheduled desk an agent works exactly their assigned "
+                                + "shift, so this cannot be resolved by solving for longer. To "
+                                + "fix it: raise the desk's over-allocation limit (currently "
+                                + overallocationHardLimitPct + "%), correct the demand forecast "
+                                + "for the hours the library covers, reduce rostered hours for "
+                                + date + ", or change the library so its envelopes sit over "
+                                + "demand-bearing hours.",
+                        date.toString()));
+            }
+
+            List<AgentShiftAssignment> unassignable = rows.stream()
+                    .filter(r -> r.getEligibleShiftBandPairs().isEmpty())
+                    .toList();
+            if (!unassignable.isEmpty()) {
+                boolean anyPairLiveOnDate = pairs.stream()
+                        .anyMatch(p -> p.template().isEffectiveOn(date));
+                if (!anyPairLiveOnDate) {
+                    errors.add(new ErrorDetail("shiftLibrary",
+                            "No live shift template reaches " + date + " — the shift library is "
+                                    + "entirely upcoming or retired for this date, so none of "
+                                    + "the " + unassignable.size() + " agent(s) rostered that "
+                                    + "day can be scheduled.",
+                            date.toString()));
+                } else {
+                    for (AgentShiftAssignment row : unassignable) {
+                        errors.add(new ErrorDetail("shiftLibrary",
+                                "Agent " + row.getAgent().getName() + " is contracted "
+                                        + row.getDayConfig().effectiveHours() + "h on " + date
+                                        + ", which matches no live shift template's net hours. "
+                                        + "On a shift-scheduled desk an agent works exactly "
+                                        + "their assigned shift, so this agent cannot be "
+                                        + "scheduled that day without either correcting their "
+                                        + "contracted hours or adding a template whose net "
+                                        + "hours equal them.",
+                                row.getAgent().getId().toString()));
+                    }
+                }
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new PreSolveValidationException(
+                    "Shift envelope seat-supply check failed with " + errors.size() + " issue(s)",
+                    errors);
+        }
+
+        // Non-blocking advisory: the covered timeslot with the fewest seats, per rostered date.
+        for (LocalDate date : rowsByDate.keySet()) {
+            List<Timeslot> coveredTimeslots = timeslotsByDate.getOrDefault(date, List.of()).stream()
+                    .filter(ts -> pairs.stream().anyMatch(p -> p.covers(ts)))
+                    .toList();
+            coveredTimeslots.stream()
+                    .min(Comparator.comparingLong(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L)))
+                    .ifPresent(tightest -> {
+                        long seatCount = seatsByTimeslotId.getOrDefault(tightest.getId(), 0L);
+                        warnings.add("Shift library seat supply on " + date + " is tightest at "
+                                + tightest.getStartTime() + "-" + tightest.getEndTime() + " with "
+                                + seatCount + " seat(s) available.");
+                    });
+        }
+    }
+
+    private static BigDecimal slotsToHours(int slots, int incrementMinutes) {
+        return BigDecimal.valueOf(slots)
+                .multiply(BigDecimal.valueOf(incrementMinutes))
+                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     }
 
     /**
