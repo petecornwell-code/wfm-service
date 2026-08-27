@@ -408,6 +408,15 @@ public class ScheduleService {
                 .findWithRelationsByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
         schedule.setShiftAssignments(shiftAssignments);
 
+        // P-32: schedulingMode records the mode THIS schedule was solved under, never a live
+        // desk read — a desk's mode can change after acceptance, and the report must still
+        // render correctly. An accepted schedule carries no persisted mode column (the value is
+        // solver-input-only for an in-memory schedule per 15-03's D-04/D-05), so it is derived
+        // from the accept-time shift snapshot itself: any accepted shift row means this schedule
+        // was solved in SHIFT mode (D-05 — one row per working agent-day), and the accept path
+        // writes zero such rows for a SLOT-mode accept (Task 1's own third assertion).
+        schedule.setSchedulingMode(shiftAssignments.isEmpty() ? SchedulingMode.SLOT : SchedulingMode.SHIFT);
+
         // Load days off for the schedule period to exclude PTO days from preferences
         List<AgentDayOff> allDaysOff = agentDayOffRepository.findByTenantIdAndDeskIdAndDateBetween(
                 tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
@@ -512,6 +521,11 @@ public class ScheduleService {
         r.setBreakStartAlignment(s.getBreakStartAlignment() != null
                 ? s.getBreakStartAlignment().name() : null);
         r.setBreakClusterThresholdPct(s.getBreakClusterThresholdPct());
+        // P-32: non-nullable — every schedule was solved under exactly one mode. In-memory
+        // schedules already carry it from SolverService.buildSchedule; loadSnapshotData derives
+        // it for an accepted schedule from its own shift-row snapshot (never a live desk read).
+        // Falls back to SLOT only for the structurally-impossible case of neither path having run.
+        r.setSchedulingMode(s.getSchedulingMode() != null ? s.getSchedulingMode().name() : SchedulingMode.SLOT.name());
         r.setDefaultContractedHoursPerDay(s.getDefaultContractedHoursPerDay());
         r.setOverallocationHardLimitPct(s.getOverallocationHardLimitPct());
         r.setUnderallocationHardLimitPct(s.getUnderallocationHardLimitPct());

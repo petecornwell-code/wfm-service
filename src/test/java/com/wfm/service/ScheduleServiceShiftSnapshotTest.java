@@ -1,6 +1,8 @@
 package com.wfm.service;
 
+import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.config.TenantContext;
+import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ShiftTemplateRequest;
 import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.model.Agent;
@@ -44,19 +46,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 15 Plan 07 Task 1: proves the D-07 accept-time denormalised shift snapshot end to end —
+ * Phase 15 Plan 07: Task 1 proves the D-07 accept-time denormalised shift snapshot end to end —
  * an accepted shift-mode schedule records what the agent actually worked, immune to a later
- * template edit.
+ * template edit. Task 2 proves {@code schedulingMode} on {@code ScheduleDetailResponse} and the
+ * per-entry {@code ShiftDescriptor} are populated correctly for both the in-memory and accepted
+ * paths, from the one {@code ScheduleOutputService.buildAgentSchedule} builder.
  *
- * <p>{@code ScheduleOutputService} is supplied as a {@code @MockitoBean} rather than the real
- * bean: its constructor requires a Timefold {@code SolverFactory<Schedule>}, which is normally
- * auto-configured by {@code timefold-solver-spring-boot-starter} outside the {@code @DataJpaTest}
- * slice — the same reason {@code ShiftTemplateServiceTest} mocks
- * {@code TimeslotGeneratorService.getLiveBounds} rather than exercising the real Postgres-only
- * native query under H2. This plan's scope (the repository, the accept-time write, and the
- * accepted-schedule reload) is exercised directly against
- * {@code AgentShiftAssignmentRepository} rather than through {@code ScheduleOutputService}'s
- * response shape, which is Plan 07 Task 2's concern.
+ * <p>{@code ScheduleOutputService} is supplied as a {@code @MockitoBean} for the {@code
+ * ScheduleService}-level tests: its constructor requires a Timefold
+ * {@code SolverFactory<Schedule>}, which is normally auto-configured by
+ * {@code timefold-solver-spring-boot-starter} outside the {@code @DataJpaTest} slice — the same
+ * reason {@code ShiftTemplateServiceTest} mocks {@code TimeslotGeneratorService.getLiveBounds}
+ * rather than exercising the real Postgres-only native query under H2. Task 1's assertions are
+ * exercised directly against {@code AgentShiftAssignmentRepository}. Task 2's
+ * {@code buildAgentSchedule} assertions instantiate the REAL {@code ScheduleOutputService} plainly
+ * (no Spring), backed by a real {@code SolverFactory.createFromXmlResource("solverConfig.xml")} —
+ * mirroring {@code SolverConfigBuildTest} — since {@code buildAgentSchedule} needs no database and
+ * no solved schedule, only the plain POJO graph it reads.
  */
 @DataJpaTest
 @Import({ScheduleService.class, InMemoryScheduleStore.class, ShiftTemplateService.class})
@@ -99,6 +105,11 @@ class ScheduleServiceShiftSnapshotTest {
     private static final long TENANT_A = 1L;
     private static final LocalDate MONDAY = LocalDate.now().plusMonths(1)
             .with(java.time.temporal.TemporalAdjusters.next(DayOfWeek.MONDAY));
+
+    // Task 2's buildAgentSchedule assertions instantiate the real ScheduleOutputService plainly
+    // (no Spring bean) — built once, mirroring SolverConfigBuildTest's own plain-JUnit factory.
+    private static final SolverFactory<Schedule> SOLVER_FACTORY =
+            SolverFactory.createFromXmlResource("solverConfig.xml");
 
     @BeforeEach
     void setUp() {
@@ -253,6 +264,237 @@ class ScheduleServiceShiftSnapshotTest {
                 .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
         assertThat(persistedAssignments).hasSize(1);
         assertThat(persistedAssignments.get(0).getAgent().getId()).isEqualTo(agent.getId());
+    }
+
+    // ---------- Task 2: schedulingMode and the per-entry shift descriptor ----------
+
+    @Test
+    void buildAgentSchedule_shiftModeInMemory_returnsShiftDescriptorOnEveryWorkingAgentDay() {
+        Agent agent = new Agent();
+        agent.setId(UUID.randomUUID());
+        agent.setName("Ana");
+
+        Specialization spec = new Specialization();
+        spec.setId(UUID.randomUUID());
+        spec.setName("S1");
+
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(MONDAY);
+        ts.setStartTime(LocalTime.of(8, 0));
+        ts.setEndTime(LocalTime.of(9, 0));
+
+        AgentAssignment assignment = new AgentAssignment();
+        assignment.setId(UUID.randomUUID());
+        assignment.setTimeslot(ts);
+        assignment.setRequiredSpecialization(spec);
+        assignment.setAgent(agent);
+
+        ShiftTemplate template = new ShiftTemplate();
+        template.setId(UUID.randomUUID());
+        template.setName("Early");
+        template.setStartTime(LocalTime.of(8, 0));
+        template.setEndTime(LocalTime.of(17, 0));
+
+        ShiftTemplateBreakBand band = new ShiftTemplateBreakBand();
+        band.setId(UUID.randomUUID());
+        band.setOffsetMinutes(240);
+        band.setDurationMinutes(60);
+
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, band));
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(60);
+        schedule.setAssignments(new ArrayList<>(List.of(assignment)));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+
+        List<ScheduleDetailResponse.AgentScheduleEntry> entries =
+                realOutputService().buildAgentSchedule(schedule);
+
+        assertThat(entries).hasSize(1);
+        ScheduleDetailResponse.ShiftDescriptor shift = entries.get(0).shift();
+        assertThat(shift).isNotNull();
+        assertThat(shift.sourceTemplateId()).isEqualTo(template.getId());
+        assertThat(shift.templateName()).isEqualTo("Early");
+        assertThat(shift.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(shift.endTime()).isEqualTo(LocalTime.of(17, 0));
+        assertThat(shift.bandOffsetMinutes()).isEqualTo(240);
+        assertThat(shift.bandDurationMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void buildAgentSchedule_afterAcceptAndReload_returnsIdenticalDescriptorReadFromDenormalisedRow() {
+        Agent agent = new Agent();
+        agent.setId(UUID.randomUUID());
+        agent.setName("Ana");
+
+        Specialization spec = new Specialization();
+        spec.setId(UUID.randomUUID());
+        spec.setName("S1");
+
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(MONDAY);
+        ts.setStartTime(LocalTime.of(8, 0));
+        ts.setEndTime(LocalTime.of(9, 0));
+
+        AgentAssignment assignment = new AgentAssignment();
+        assignment.setId(UUID.randomUUID());
+        assignment.setTimeslot(ts);
+        assignment.setRequiredSpecialization(spec);
+        assignment.setAgent(agent);
+
+        // Simulates a row reloaded via loadSnapshotData: transient shiftBandPair is null (JPA
+        // never populates @Transient fields), only the D-07 denormalised scalars are present.
+        UUID sourceTemplateId = UUID.randomUUID();
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(null);
+        shiftAssignment.setTemplateName("Early");
+        shiftAssignment.setShiftStartTime(LocalTime.of(8, 0));
+        shiftAssignment.setShiftEndTime(LocalTime.of(17, 0));
+        shiftAssignment.setBandOffsetMinutes(240);
+        shiftAssignment.setBandDurationMinutes(60);
+        shiftAssignment.setSourceTemplateId(sourceTemplateId);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(60);
+        schedule.setAssignments(new ArrayList<>(List.of(assignment)));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+
+        List<ScheduleDetailResponse.AgentScheduleEntry> entries =
+                realOutputService().buildAgentSchedule(schedule);
+
+        assertThat(entries).hasSize(1);
+        ScheduleDetailResponse.ShiftDescriptor shift = entries.get(0).shift();
+        assertThat(shift).isNotNull();
+        assertThat(shift.sourceTemplateId()).isEqualTo(sourceTemplateId);
+        assertThat(shift.templateName()).isEqualTo("Early");
+        assertThat(shift.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(shift.endTime()).isEqualTo(LocalTime.of(17, 0));
+        assertThat(shift.bandOffsetMinutes()).isEqualTo(240);
+        assertThat(shift.bandDurationMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void buildAgentSchedule_slotMode_returnsNullShiftOnEveryEntryAndOtherFieldsUnchanged() {
+        Agent agent = new Agent();
+        agent.setId(UUID.randomUUID());
+        agent.setName("Ana");
+
+        Specialization spec = new Specialization();
+        spec.setId(UUID.randomUUID());
+        spec.setName("S1");
+
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(MONDAY);
+        ts.setStartTime(LocalTime.of(8, 0));
+        ts.setEndTime(LocalTime.of(9, 0));
+
+        AgentAssignment assignment = new AgentAssignment();
+        assignment.setId(UUID.randomUUID());
+        assignment.setTimeslot(ts);
+        assignment.setRequiredSpecialization(spec);
+        assignment.setAgent(agent);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(60);
+        schedule.setAssignments(new ArrayList<>(List.of(assignment)));
+        schedule.setShiftAssignments(new ArrayList<>()); // SLOT-mode desks always reach here empty
+
+        List<ScheduleDetailResponse.AgentScheduleEntry> entries =
+                realOutputService().buildAgentSchedule(schedule);
+
+        assertThat(entries).hasSize(1);
+        ScheduleDetailResponse.AgentScheduleEntry entry = entries.get(0);
+        assertThat(entry.shift()).isNull();
+        // Every other field is unchanged from today's expectations (Phase 14 behaviour).
+        assertThat(entry.agentName()).isEqualTo("Ana");
+        assertThat(entry.date()).isEqualTo(MONDAY);
+        assertThat(entry.shiftStart()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(entry.shiftEnd()).isEqualTo(LocalTime.of(9, 0));
+        assertThat(entry.assignments()).hasSize(1);
+        assertThat(entry.breaks()).isEmpty();
+    }
+
+    @Test
+    void getScheduleDetail_inMemoryShiftModeSchedule_reportsSchedulingModeShift() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        inMemoryStore.put(schedule);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, scheduleId, null);
+
+        assertThat(response.getSchedulingMode()).isEqualTo("SHIFT");
+    }
+
+    @Test
+    void getScheduleDetail_inMemorySlotModeSchedule_reportsSchedulingModeSlot() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SLOT);
+        inMemoryStore.put(schedule);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, scheduleId, null);
+
+        assertThat(response.getSchedulingMode()).isEqualTo("SLOT");
+    }
+
+    @Test
+    void getScheduleDetail_acceptedShiftModeSchedule_derivesSchedulingModeFromShiftRowPresence() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        ShiftTemplate template = saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setTenantId(TENANT_A);
+        shiftAssignment.setDeskId(deskId);
+        shiftAssignment.setScheduleId(inMemoryScheduleId);
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, null));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
+
+        assertThat(response.getSchedulingMode()).isEqualTo("SHIFT");
+    }
+
+    @Test
+    void getScheduleDetail_acceptedSlotModeSchedule_reportsSchedulingModeSlot() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setShiftAssignments(new ArrayList<>());
+        schedule.setAssignments(new ArrayList<>());
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
+
+        assertThat(response.getSchedulingMode()).isEqualTo("SLOT");
+    }
+
+    private ScheduleOutputService realOutputService() {
+        return new ScheduleOutputService(SOLVER_FACTORY);
     }
 
     // ---------- helpers ----------

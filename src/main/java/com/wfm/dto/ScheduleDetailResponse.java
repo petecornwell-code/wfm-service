@@ -22,6 +22,7 @@ public class ScheduleDetailResponse {
     private BigDecimal breakMinShiftHours;
     private String breakStartAlignment;
     private int breakClusterThresholdPct;
+    private String schedulingMode;
     private BigDecimal defaultContractedHoursPerDay;
     private int overallocationHardLimitPct;
     private int underallocationHardLimitPct;
@@ -57,7 +58,25 @@ public class ScheduleDetailResponse {
             LocalTime shiftEnd,
             BigDecimal totalHours,
             List<AssignmentDetail> assignments,
-            List<BreakDetail> breaks
+            List<BreakDetail> breaks,
+            ShiftDescriptor shift
+    ) {}
+
+    /**
+     * The shift an agent was assigned on a shift-scheduled desk (ENVL-01/XCUT-01) — null on a
+     * slot-scheduled desk, or on a shift-scheduled agent-day the solver left unassigned.
+     * {@code sourceTemplateId} is lineage only, nullable. Populated from one builder
+     * ({@code ScheduleOutputService.buildAgentSchedule}) for both the in-memory path (reading the
+     * transient {@code AgentShiftAssignment.shiftBandPair}) and the accepted path (reading the
+     * D-07 denormalised scalar columns), so the two shapes cannot drift.
+     */
+    public record ShiftDescriptor(
+            UUID sourceTemplateId,
+            String templateName,
+            LocalTime startTime,
+            LocalTime endTime,
+            Integer bandOffsetMinutes,
+            Integer bandDurationMinutes
     ) {}
 
     public record AssignmentDetail(
@@ -142,6 +161,8 @@ public class ScheduleDetailResponse {
     public void setBreakStartAlignment(String v) { this.breakStartAlignment = v; }
     public int getBreakClusterThresholdPct() { return breakClusterThresholdPct; }
     public void setBreakClusterThresholdPct(int v) { this.breakClusterThresholdPct = v; }
+    public String getSchedulingMode() { return schedulingMode; }
+    public void setSchedulingMode(String v) { this.schedulingMode = v; }
     public BigDecimal getDefaultContractedHoursPerDay() { return defaultContractedHoursPerDay; }
     public void setDefaultContractedHoursPerDay(BigDecimal v) { this.defaultContractedHoursPerDay = v; }
     public int getOverallocationHardLimitPct() { return overallocationHardLimitPct; }
