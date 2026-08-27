@@ -141,10 +141,26 @@ public class AgentShiftAssignment {
      * {@code SolverService.buildShiftBandPairs} (template name, then {@code effectiveFrom}, then
      * band offset ascending) — filtered to those whose net hours exactly match this row's
      * {@link AgentDayConfig#effectiveHours()}, via the same exact-equality helper
-     * {@code ShiftLibraryValidationService} uses, no tolerance. Filtering with {@code Stream}
-     * preserves the pre-sorted order rather than re-deriving it per call. An agent-day whose
-     * hours match no live pair returns an empty range — the variable stays unassigned
-     * ({@code allowsUnassigned}), it never throws.
+     * {@code ShiftLibraryValidationService} uses, no tolerance, AND whose template is actually
+     * within its effective date range on THIS row's {@code date} (CR-01 gap closure).
+     *
+     * <p>The effective-range check is deliberately per-row rather than a one-time filter over
+     * {@code deskShiftBandPairs} at load time: {@code deskShiftBandPairs} is one shared list
+     * instance reused across every {@link AgentShiftAssignment} in the schedule regardless of
+     * date (see {@code SolverService.buildShiftAssignments}), so a schedule period that straddles
+     * a template's {@code effectiveFrom}/{@code effectiveTo} boundary needs different eligibility
+     * per agent-day, not per desk. {@link ShiftTemplate#isEffectiveOn(java.time.LocalDate)} is the
+     * ONE implementation of the effective-range predicate (reused, not re-derived, from
+     * {@code ShiftLibraryValidationService}); an UPCOMING template (future {@code effectiveFrom})
+     * or a RETIRED template ({@code effectiveTo} before {@code date}) is excluded, matching
+     * ENVL-01's "from that desk's live library" clause.
+     *
+     * <p>Filtering with {@code Stream} preserves the pre-sorted order rather than re-deriving it
+     * per call. An agent-day whose hours match no live-on-that-date pair returns an empty range —
+     * the variable stays unassigned ({@code allowsUnassigned}), it never throws; a desk whose
+     * ENTIRE library is UPCOMING/retired for a working agent-day correctly drives
+     * {@code shiftEnvelopeCompliance} to penalise every seat for that agent-day (D-06) rather than
+     * silently permitting an off-library shift.
      */
     @ValueRangeProvider(id = "shiftBandRange")
     public List<ShiftBandPair> getEligibleShiftBandPairs() {
@@ -157,6 +173,7 @@ public class AgentShiftAssignment {
                     BigDecimal net = BigDecimals.normalize(p.netHours());
                     return net != null && effective != null && net.compareTo(effective) == 0;
                 })
+                .filter(p -> date != null && p.template().isEffectiveOn(date))
                 .toList();
     }
 }

@@ -275,11 +275,20 @@ public class SolverService {
         // row per working agent-day (D-05). A SLOT-mode desk gets both empty, keeping a
         // slot-mode solve structurally identical to today's — no new AgentShiftAssignment row,
         // nothing for shiftEnvelopeCompliance to join against.
-        List<ShiftTemplate> liveShiftTemplates = desk.getSchedulingMode() == SchedulingMode.SHIFT
-                ? shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, deskId).stream()
-                        .filter(t -> t.getEffectiveTo() == null || !t.getEffectiveTo().isBefore(LocalDate.now()))
-                        .toList()
-                : List.of();
+        //
+        // CR-01 gap closure: this is a coarse, desk-level pre-filter against the SCHEDULE'S
+        // period (never LocalDate.now() — a schedule period can lie entirely in the future or
+        // past relative to solve time), keeping templates with ANY overlap with the period so a
+        // template effective only for part of a straddling period is still loaded. The precise,
+        // per-agent-day enforcement (a template must be effective on THIS row's specific date,
+        // not merely "sometime in the period") lives in
+        // AgentShiftAssignment#getEligibleShiftBandPairs(), which every row — regardless of its
+        // individual date — filters against the SAME ShiftTemplate#isEffectiveOn(LocalDate)
+        // predicate this coarse filter also calls, so the two can never disagree about what
+        // "effective" means.
+        List<ShiftTemplate> liveShiftTemplates = filterLiveShiftTemplates(desk.getSchedulingMode(),
+                shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, deskId),
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByShiftTemplateId = liveShiftTemplates.isEmpty()
                 ? Map.of()
                 : shiftTemplateBreakBandRepository
@@ -635,6 +644,33 @@ public class SolverService {
     }
 
     // --- Shift envelope population (Phase 15, D-04/D-05) ---
+
+    /**
+     * The desk's shift templates that overlap the schedule's period at all (CR-01 gap closure) —
+     * a coarse, desk-level pre-filter, not the final per-agent-day eligibility check (that lives
+     * in {@code AgentShiftAssignment#getEligibleShiftBandPairs()}). Deliberately checks OVERLAP
+     * with {@code [periodStartDate, periodEndDate]}, not full containment: a template whose
+     * {@code effectiveFrom} falls in the middle of the period must still be included so it
+     * remains selectable for the days it IS effective on, even though it must be excluded for the
+     * days before {@code effectiveFrom}. Never reads {@code LocalDate.now()} — a schedule period
+     * can lie entirely in the future or the past relative to when the solve actually runs, so
+     * "today" is never the right reference date for a solve-time filter (only for a live UI
+     * badge). Mode-gated exactly like {@link #buildShiftBandPairs}: a SLOT-mode desk gets an
+     * empty list.
+     *
+     * <p>Package-private static and pure, mirroring {@link #buildShiftBandPairs}'s precedent so
+     * it is directly unit-testable without a repository or Spring context.
+     */
+    static List<ShiftTemplate> filterLiveShiftTemplates(SchedulingMode schedulingMode,
+            List<ShiftTemplate> allTemplates, LocalDate periodStartDate, LocalDate periodEndDate) {
+        if (schedulingMode != SchedulingMode.SHIFT) {
+            return List.of();
+        }
+        return allTemplates.stream()
+                .filter(t -> !t.getEffectiveFrom().isAfter(periodEndDate)
+                        && (t.getEffectiveTo() == null || !t.getEffectiveTo().isBefore(periodStartDate)))
+                .toList();
+    }
 
     /**
      * The desk's live {@code (template, band)} pairs, sorted by template name, then
