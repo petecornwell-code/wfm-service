@@ -46,12 +46,12 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 ### Shift Envelope (ENVL)
 
 - [ ] **ENVL-01**: On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from that desk's library
-- [ ] **ENVL-02**: An agent is never assigned a seat in a timeslot outside their assigned shift envelope, enforced as a hard constraint
-- [ ] **ENVL-03**: An agent's specialization may still vary between timeslots within their shift
+- [x] **ENVL-02**: An agent is never assigned a seat in a timeslot outside their assigned shift envelope, enforced as a hard constraint
+- [x] **ENVL-03**: An agent's specialization may still vary between timeslots within their shift
 - [ ] **ENVL-04**: An agent's working day on a shift-scheduled desk is contiguous, apart from their break
 - [ ] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
-- [ ] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
-- [ ] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
+- [x] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
+- [x] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
 - [ ] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
 - [ ] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
 - [ ] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
