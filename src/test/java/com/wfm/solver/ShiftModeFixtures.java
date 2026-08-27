@@ -15,6 +15,7 @@ import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
+import com.wfm.service.SolverSeatExpansionAccess;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -22,8 +23,10 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * Reusable shift-mode {@link Schedule} fixture builder (Phase 15, plan 15-04) — shared by this
@@ -40,6 +43,26 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@link AgentShiftAssignment} starts with a {@code null shiftBandPair} — all placement is the
  * solver's job (ENVL-06, "no pre-assignment pipeline").
  *
+ * <p><strong>Operating window vs. envelope (G-15-10, plan 15-09).</strong> {@link #OPERATING_START}
+ * / {@link #OPERATING_END} are the desk's grid — strictly WIDER than {@link #ENVELOPE_START} /
+ * {@link #ENVELOPE_END}, which every template uses as its own start/end. This is deliberate: a
+ * single shared pair previously made an out-of-envelope timeslot unconstructible in any shift-mode
+ * test, which is exactly the shape that let G-15-10 (minimum-staffing seats manufactured outside
+ * every shift envelope) ship undetected through 505 green tests and a 4-agent benchmark. Demand is
+ * generated only inside the envelope, outside the shared break window (unchanged); the new outer
+ * timeslots and the break window therefore legitimately carry zero demand — the shape production
+ * hits on a real desk.
+ *
+ * <p><strong>Filler seats now come from production (G-15-10, plan 15-09, Task 2).</strong> Both
+ * {@link #buildShiftModeSchedule} and {@link #buildSlotModeSchedule} route their minimum-staffing
+ * top-up through {@link SolverSeatExpansionAccess#expandMinimumStaffingSeats}, the real production
+ * expansion — never a fixture-local reimplementation — so a future regression in that method
+ * surfaces in every shift test, not only in {@code ShiftModeMinimumStaffingSeatSupplyTest}. Each
+ * mode calls it with its own scheduling mode: SHIFT-mode seats are suppressed at timeslots no live
+ * {@link ShiftBandPair} covers (operator ruling OR-1) and guaranteed at covered zero-demand
+ * timeslots; SLOT-mode seats top up every zero-seat timeslot unconditionally, exactly as
+ * {@link #buildSlotModeSchedule} always represented before this plan.
+ *
  * <p><strong>Deterministic ids.</strong> Every entity id in a fixture built by this class is a
  * sequential {@code UUID} derived from a per-call counter, not {@code UUID.randomUUID()}. This is
  * load-bearing, not cosmetic: {@link AgentAssignmentDifficultyComparator} breaks difficulty ties
@@ -47,7 +70,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * seats) by comparing entity ids, so a random-UUID tiebreak would silently randomise the
  * construction heuristic's seat placement order across otherwise-identical runs and made the same
  * fixture parameters converge to {@code 0hard} on some runs and not others under a fixed step
- * budget. Two calls with the same parameters now produce byte-identical entity graphs.
+ * budget. Two calls with the same parameters now produce byte-identical entity graphs — including
+ * the filler seats {@code SolverSeatExpansionAccess} returns with fresh {@code UUID.randomUUID()}
+ * ids, which are re-stamped with this fixture's sequential counter, in the order returned, before
+ * being appended.
  */
 final class ShiftModeFixtures {
 
@@ -55,9 +81,20 @@ final class ShiftModeFixtures {
 
     static final long TENANT = 1L;
     static final LocalDate BASE_DATE = LocalDate.of(2026, 9, 7); // Monday
-    static final LocalTime OPERATING_START = LocalTime.of(8, 0);
-    static final LocalTime OPERATING_END = LocalTime.of(17, 0); // 9h envelope
     static final int INCREMENT_MINUTES = 15;
+
+    /** Every template's own start/end — unchanged by this plan (G-15-10). */
+    static final LocalTime ENVELOPE_START = LocalTime.of(8, 0);
+    static final LocalTime ENVELOPE_END = LocalTime.of(17, 0); // 9h envelope
+
+    /**
+     * The desk's grid — strictly wider than the envelope on both sides, so a timeslot exists
+     * that no template reaches (G-15-10, plan 15-09, Task 2). One increment before the envelope
+     * starts and one increment after it ends is the minimum shape that proves the point.
+     */
+    static final LocalTime OPERATING_START = ENVELOPE_START.minusMinutes(INCREMENT_MINUTES);
+    static final LocalTime OPERATING_END = ENVELOPE_END.plusMinutes(INCREMENT_MINUTES);
+
     static final int BREAK_DURATION_MINUTES = 60;
     static final BigDecimal BREAK_MIN_SHIFT_HOURS = new BigDecimal("4.00");
     static final BigDecimal BREAK_BLOCKED_HOURS = new BigDecimal("1.00");
@@ -80,10 +117,23 @@ final class ShiftModeFixtures {
                          Specialization specBeforeBreak, Specialization specAfterBreak) {}
 
     /**
+     * Every fact the two mode builders share, built once so a shift-mode and a slot-mode fixture
+     * over the same parameters can never quietly drift apart (P-19) — only the filler-seat
+     * expansion (mode-dependent) and final assembly differ between the two callers.
+     */
+    private record BaseBuild(AtomicLong ids, UUID deskId, UUID scheduleId, int dayCount,
+                              List<Agent> agents, List<ShiftTemplate> templates,
+                              List<ShiftBandPair> sharedPairs, List<Timeslot> allTimeslots,
+                              List<StaffingRequirement> staffingReqs, List<AgentAssignment> demandSeats,
+                              List<AgentShiftAssignment> shiftAssignments, List<AgentDayConfig> dayConfigs,
+                              Specialization specBeforeBreak, Specialization specAfterBreak,
+                              ConstraintWeights weights) {}
+
+    /**
      * A complete SHIFT-mode {@link Schedule}: {@code agentCount} agents each contracted to
      * {@link #CONTRACTED_HOURS}, working {@code dayCount} consecutive days from {@link #BASE_DATE},
      * choosing among {@code templateCount} shift templates — all sharing the same
-     * {@link #OPERATING_START}/{@link #OPERATING_END} envelope, each carrying {@code bandsPerTemplate}
+     * {@link #ENVELOPE_START}/{@link #ENVELOPE_END} envelope, each carrying {@code bandsPerTemplate}
      * break bands of {@link #BREAK_DURATION_MINUTES} minutes at distinct ON_HOUR offsets, so every
      * template's net duration equals {@link #CONTRACTED_HOURS} regardless of which band is chosen
      * (D-04's entity-level value-range filter reads only net hours, never the band).
@@ -95,6 +145,58 @@ final class ShiftModeFixtures {
      * this method's uniform per-slot demand does not adapt to staggered break distributions.
      */
     static ShiftFixture buildShiftModeSchedule(int agentCount, int dayCount, int templateCount, int bandsPerTemplate) {
+        BaseBuild base = buildBase(agentCount, dayCount, templateCount, bandsPerTemplate);
+
+        Map<LocalDate, Integer> workingAgentDaysByDate = base.shiftAssignments().stream()
+                .collect(Collectors.groupingBy(AgentShiftAssignment::getDate, Collectors.summingInt(sa -> 1)));
+
+        List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
+                TENANT, base.deskId(), base.scheduleId(), base.allTimeslots(), base.demandSeats(),
+                base.staffingReqs(), List.of(base.specBeforeBreak(), base.specAfterBreak()),
+                SchedulingMode.SHIFT, base.sharedPairs(), workingAgentDaysByDate);
+        restampIds(fillerSeats, base.ids());
+
+        List<AgentAssignment> allAssignments = new ArrayList<>(base.demandSeats());
+        allAssignments.addAll(fillerSeats);
+
+        Schedule schedule = assembleSchedule(base, SchedulingMode.SHIFT,
+                base.shiftAssignments(), base.sharedPairs(), allAssignments);
+
+        return new ShiftFixture(schedule, base.agents(), base.templates(),
+                base.specBeforeBreak(), base.specAfterBreak());
+    }
+
+    /**
+     * The SLOT-mode sibling: zero {@link AgentShiftAssignment} rows, zero {@link ShiftBandPair}s,
+     * {@link SchedulingMode#SLOT}. Same operating window, agent roster and demand shape as
+     * {@link #buildShiftModeSchedule} (built via {@link #buildBase}, the same shared base-fact
+     * construction) so a caller can diff the two modes' solved outcomes directly rather than
+     * maintaining two fixture builders that could quietly drift apart (P-19). Its own filler-seat
+     * top-up is computed independently, in SLOT mode (unconditional, every zero-seat timeslot) —
+     * reusing the SHIFT-mode fixture's already-computed filler seats here would silently give the
+     * SLOT arm SHIFT-mode's coverage suppression, which is not what a SLOT desk does in production.
+     */
+    static Schedule buildSlotModeSchedule(int agentCount, int dayCount) {
+        BaseBuild base = buildBase(agentCount, dayCount, 1, 1);
+
+        List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
+                TENANT, base.deskId(), base.scheduleId(), base.allTimeslots(), base.demandSeats(),
+                base.staffingReqs(), List.of(base.specBeforeBreak(), base.specAfterBreak()),
+                SchedulingMode.SLOT, List.of(), Map.of());
+        restampIds(fillerSeats, base.ids());
+
+        List<AgentAssignment> allAssignments = new ArrayList<>(base.demandSeats());
+        allAssignments.addAll(fillerSeats);
+
+        return assembleSchedule(base, SchedulingMode.SLOT, List.of(), List.of(), allAssignments);
+    }
+
+    // ------------------------------------------------------------------
+    //  Shared base-fact construction (P-19) -- everything except the mode-dependent filler
+    //  expansion and final Schedule assembly
+    // ------------------------------------------------------------------
+
+    private static BaseBuild buildBase(int agentCount, int dayCount, int templateCount, int bandsPerTemplate) {
         if (bandsPerTemplate < 1 || bandsPerTemplate > ON_HOUR_BAND_OFFSETS.length) {
             throw new IllegalArgumentException("bandsPerTemplate must be in [1, " + ON_HOUR_BAND_OFFSETS.length + "]");
         }
@@ -120,7 +222,7 @@ final class ShiftModeFixtures {
 
         List<ShiftTemplate> templates = new ArrayList<>();
         for (int t = 0; t < templateCount; t++) {
-            templates.add(template(ids, deskId, "Shift-" + (char) ('A' + t), OPERATING_START, OPERATING_END));
+            templates.add(template(ids, deskId, "Shift-" + (char) ('A' + t), ENVELOPE_START, ENVELOPE_END));
         }
 
         List<ShiftBandPair> pairs = new ArrayList<>();
@@ -139,7 +241,7 @@ final class ShiftModeFixtures {
 
         // The shared break window every working agent takes, derived from the FIRST offset -- valid
         // only for bandsPerTemplate == 1 (see method javadoc).
-        LocalTime breakStart = OPERATING_START.plusMinutes(ON_HOUR_BAND_OFFSETS[0]);
+        LocalTime breakStart = ENVELOPE_START.plusMinutes(ON_HOUR_BAND_OFFSETS[0]);
         LocalTime breakEnd = breakStart.plusMinutes(BREAK_DURATION_MINUTES);
 
         List<Timeslot> allTimeslots = new ArrayList<>();
@@ -158,11 +260,16 @@ final class ShiftModeFixtures {
             allTimeslots.addAll(dayTimeslots);
 
             for (Timeslot ts : dayTimeslots) {
-                boolean onBreak = !ts.getStartTime().isBefore(breakStart) && ts.getStartTime().isBefore(breakEnd);
+                LocalTime start = ts.getStartTime();
+                boolean insideEnvelope = !start.isBefore(ENVELOPE_START) && start.isBefore(ENVELOPE_END);
+                if (!insideEnvelope) {
+                    continue; // outside every template's envelope -- no demand, and (Task 1) no filler seat either
+                }
+                boolean onBreak = !start.isBefore(breakStart) && start.isBefore(breakEnd);
                 if (onBreak) {
                     continue; // nobody works the shared break window -- zero demand, not a zero-fill seat
                 }
-                Specialization required = ts.getStartTime().isBefore(breakStart) ? specBeforeBreak : specAfterBreak;
+                Specialization required = start.isBefore(breakStart) ? specBeforeBreak : specAfterBreak;
 
                 StaffingRequirement sr = new StaffingRequirement();
                 sr.setId(nextId(ids));
@@ -212,15 +319,30 @@ final class ShiftModeFixtures {
         weights.setTenantId(TENANT);
         weights.setDeskId(deskId);
 
+        return new BaseBuild(ids, deskId, scheduleId, dayCount, agents, templates, sharedPairs,
+                allTimeslots, staffingReqs, seats, shiftAssignments, dayConfigs,
+                specBeforeBreak, specAfterBreak, weights);
+    }
+
+    /**
+     * Final {@link Schedule} assembly, shared by both mode builders. {@code timeslotDemandConfigs}
+     * is computed from {@code base.demandSeats()} ONLY (never {@code assignments}, which also
+     * carries filler seats) — filler seats must never inflate the over/under-allocation ceiling
+     * (unchanged production invariant, SolverService step 10b/10d ordering).
+     */
+    private static Schedule assembleSchedule(BaseBuild base, SchedulingMode mode,
+            List<AgentShiftAssignment> shiftAssignments, List<ShiftBandPair> shiftBandPairs,
+            List<AgentAssignment> assignments) {
+
         Schedule schedule = new Schedule();
-        schedule.setId(scheduleId);
+        schedule.setId(base.scheduleId());
         schedule.setTenantId(TENANT);
-        schedule.setDeskId(deskId);
+        schedule.setDeskId(base.deskId());
         schedule.setIncrementMinutes(INCREMENT_MINUTES);
         schedule.setStartTime(OPERATING_START);
         schedule.setEndTime(OPERATING_END);
         schedule.setPeriodStartDate(BASE_DATE);
-        schedule.setPeriodEndDate(BASE_DATE.plusDays(Math.max(dayCount - 1, 0)));
+        schedule.setPeriodEndDate(BASE_DATE.plusDays(Math.max(base.dayCount() - 1, 0)));
         schedule.setBreakBlockedHours(BREAK_BLOCKED_HOURS);
         schedule.setBreakDurationMinutes(BREAK_DURATION_MINUTES);
         schedule.setBreakMinShiftHours(BREAK_MIN_SHIFT_HOURS);
@@ -229,37 +351,22 @@ final class ShiftModeFixtures {
         schedule.setOverallocationHardLimitPct(OVERALLOCATION_PCT);
         schedule.setUnderallocationHardLimitPct(UNDERALLOCATION_PCT);
         schedule.setStatus(ScheduleStatus.RUNNING);
-        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setSchedulingMode(mode);
 
-        schedule.setConstraintWeights(weights);
-        schedule.setSpecializations(List.of(specBeforeBreak, specAfterBreak));
-        schedule.setAgents(agents);
-        schedule.setTimeslots(allTimeslots);
-        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setConstraintWeights(base.weights());
+        schedule.setSpecializations(List.of(base.specBeforeBreak(), base.specAfterBreak()));
+        schedule.setAgents(base.agents());
+        schedule.setTimeslots(base.allTimeslots());
+        schedule.setStaffingRequirements(base.staffingReqs());
         schedule.setAgentPreferences(List.of());
         schedule.setAgentDaysOff(List.of());
         schedule.setAgentExceptions(List.of());
-        schedule.setAgentDayConfigs(dayConfigs);
-        schedule.setShiftBandPairs(sharedPairs);
-        schedule.setShiftAssignments(shiftAssignments);
-        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(seats));
-        schedule.setAssignments(seats);
+        schedule.setAgentDayConfigs(base.dayConfigs());
+        schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
+        schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
+        schedule.setTimeslotDemandConfigs(computeTimeslotDemandConfigs(base.demandSeats()));
+        schedule.setAssignments(assignments);
 
-        return new ShiftFixture(schedule, agents, templates, specBeforeBreak, specAfterBreak);
-    }
-
-    /**
-     * The SLOT-mode sibling: zero {@link AgentShiftAssignment} rows, zero {@link ShiftBandPair}s,
-     * {@link SchedulingMode#SLOT}. Same operating window, agent roster and demand shape as
-     * {@link #buildShiftModeSchedule} (built via the same code path, then stripped) so a caller can
-     * diff the two modes' solved outcomes directly rather than maintaining two fixture builders that
-     * could quietly drift apart (P-19).
-     */
-    static Schedule buildSlotModeSchedule(int agentCount, int dayCount) {
-        Schedule schedule = buildShiftModeSchedule(agentCount, dayCount, 1, 1).schedule();
-        schedule.setSchedulingMode(SchedulingMode.SLOT);
-        schedule.setShiftAssignments(new ArrayList<>());
-        schedule.setShiftBandPairs(new ArrayList<>());
         return schedule;
     }
 
@@ -269,6 +376,18 @@ final class ShiftModeFixtures {
 
     private static UUID nextId(AtomicLong seq) {
         return new UUID(0L, seq.getAndIncrement());
+    }
+
+    /**
+     * Re-stamps production-returned filler seats (fresh {@code UUID.randomUUID()} ids) with this
+     * fixture's own sequential counter, in the order returned -- preserves the class's
+     * deterministic-id guarantee across a production call whose own id generation is intentionally
+     * random (see class javadoc).
+     */
+    private static void restampIds(List<AgentAssignment> fillerSeats, AtomicLong ids) {
+        for (AgentAssignment seat : fillerSeats) {
+            seat.setId(nextId(ids));
+        }
     }
 
     private static Specialization specialization(AtomicLong ids, UUID deskId, String name) {
