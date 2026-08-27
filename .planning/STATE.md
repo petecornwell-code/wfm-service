@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-11-PLAN.md
-last_updated: "2026-08-27T17:38:07.217Z"
+stopped_at: Completed 15-12-PLAN.md
+last_updated: "2026-08-27T17:45:46.366Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 15 execution started
-state_head: 528d9de6db69ca40739bfd4219c95631f849c4e9
+state_head: 8ef45f2578598fc2aa87d9d141820f6add0f2ca6
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 25
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 4 of 13
+Plan: 5 of 13
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 15 execution started
 
@@ -221,6 +221,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: The shift-mode seat-supply gate (SolverService.requireShiftEnvelopeSeatSupply) runs after step 10d (seats exist), not inside runPreSolveValidation (step 7) -- deliberately, since it counts the seats the solver actually receives
 - [Phase 15]: The D-04 zero-slack value-range equality stays unrelaxed; G-15-10's D1 half is closed by making seat supply a checked precondition, not by loosening the value range (three reasons recorded in ShiftEnvelopeSupplyInvariantTest)
 - [Phase 15]: shiftEnvelopeComplianceWeight stays at ofHard(1) (tied with 4 other constraints) -- deliberately not raised, since the gate (not the weight) is what closes the gap; empirical refutation (-4 to -400 relocation) recorded in test
+- [Phase 15]: Phase 15 Plan 12: AgentScheduleEntry.divergence added as optional (not required-but-nullable like shift) so pre-existing fixtures don't need updating
+- [Phase 15]: Phase 15 Plan 12: Agent Allocation envelope containment test is deliberately NOT band-aware -- break-window rejection surfaces via per-cell divergence marks instead, per explicit plan comment requirement
 
 ### Blockers/Concerns
 
@@ -236,8 +238,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-27T17:38:06.963Z
-Stopped at: Completed 15-11-PLAN.md
+Last session: 2026-08-27T17:45:46.137Z
+Stopped at: Completed 15-12-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -269,3 +271,4 @@ Resume file: None
 | Phase 15 P09 | 46min | 3 tasks | 9 files |
 | Phase 15 P10 | 44min | 3 tasks | 6 files |
 | Phase 15 P11 | 40 min | 3 tasks | 6 files |
+| Phase 15 P12 | 6 min | 2 tasks | 2 files |
