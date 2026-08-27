@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
-current_phase: 16
-current_phase_name: Usual Shift Storage
-status: planning
-stopped_at: Phase 15 complete, ready to plan Phase 16
-last_updated: "2026-08-27T13:04:38.564Z"
+current_phase: 15
+current_phase_name: Shift Envelope, Breaks & Library Generation
+status: executing
+stopped_at: Completed 15-09-PLAN.md
+last_updated: "2026-08-27T16:08:35.730Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 15 complete, transitioned to Phase 16
-state_head: e744b7ac01af3858c30cafb7ec85ef6b0d19505c
+last_activity_desc: Phase 15 execution started
+state_head: 8429cb9c8a3057babd592f37aec2f665dca8016d
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 14
-  completed_plans: 14
-  percent: 50
+  completed_phases: 1
+  total_plans: 19
+  completed_plans: 15
+  percent: 25
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 
 ## Current Position
 
-Phase: 16 — Usual Shift Storage
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-08-27 — Phase 15 complete, transitioned to Phase 16
+Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
+Plan: 2 of 13
+Status: Ready to execute
+Last activity: 2026-08-27 — Phase 15 execution started
 
-Progress: [██▌░░░░░░░] 25% (1/4 phases — Phase 14 complete, 6/6 plans)
+Progress: [███░░░░░░░] 25% (1/4 phases — Phase 14 complete, 6/6 plans)
 
 ## Milestone v1.3 Roadmap
 
@@ -213,6 +213,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 14]: Phase 14 Plan 05: P-22 adopted verbatim — the RUNNING-solve 409 guard applies symmetrically to both switch directions, while the coverage gate (requireShiftModeReady) applies only SLOT-to-SHIFT; D-12's 'ungated' refers to the coverage validation only, not the in-flight guard
 - [Phase 14]: Phase 14 Plan 05: switchSchedulingMode writes exactly one column (desk.scheduling_mode); MODE-04 proven field-by-field across a SLOT-SHIFT-SLOT round trip against an ACCEPTED Schedule plus its snapshot Timeslot/StaffingRequirement rows and untouched live rows
 - [Phase 14]: [Phase 14] Phase 14 Plan 06: era legibility split across two cells (Current badge in Name cell, Upcoming/Past muted text beside Effective range dates); mode-switch 400 refusal updates Coverage panel directly from err.details rather than a second GET; SHLB-06's second toast reuses the existing 'warning' toast type
+- [Phase 15]: expandMinimumStaffingSeats branches on SchedulingMode: SLOT (or empty SHIFT library) keeps the unconditional per-timeslot top-up; SHIFT suppresses seats at timeslots no live ShiftBandPair covers (OR-1) and guarantees max(MIN_AGENTS_PER_TIMESLOT, workingAgentDaysOn(date)) seats where covered but demand-free
+- [Phase 15]: buildSlotModeSchedule computes its own SLOT-mode filler seats independently rather than inheriting buildShiftModeSchedule's SHIFT-computed ones, so the SLOT benchmark arm keeps its correct unconditional top-up
+- [Phase 15]: Minimum staffing reclassified MODE_AGNOSTIC -> MODE_GATED in XCUT-05 classification table (G-15-10): seat supply is now mode-dependent
 
 ### Blockers/Concerns
 
@@ -228,9 +231,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-26T22:57:35.270Z
-Stopped at: Phase 15 complete, ready to plan Phase 16
-Resume file: .planning/phases/15-shift-envelope-breaks-library-generation/15-01-PLAN.md
+Last session: 2026-08-27T16:08:35.590Z
+Stopped at: Completed 15-09-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -258,3 +261,4 @@ Resume file: .planning/phases/15-shift-envelope-breaks-library-generation/15-01-
 | Phase 14 P04 | 30min | 2 tasks | 5 files |
 | Phase 14 P05 | 22min | 2 tasks | 5 files |
 | Phase 14 P06 | 25min | 3 tasks | 3 files |
+| Phase 15 P09 | 46min | 3 tasks | 9 files |

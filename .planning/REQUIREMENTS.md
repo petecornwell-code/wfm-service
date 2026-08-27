@@ -142,7 +142,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | XCUT-02 (every write path) | Phases 16, 17 | Pending |
 | XCUT-03 (solverConfig.xml build test) | Phase 15 | Pending |
 | XCUT-04 (seeded A/B benchmark) | Phases 15, 17 | Partial — Phase 15 benchmark delivered (`15-BENCHMARK.md`, PASS verdict, D-08 CH-ordering decided); Phase 17's own XCUT-04 obligation outstanding |
-| XCUT-05 (constraint classification) | Phases 14, 15 | Partial — Phase 14 classification delivered (`XCUT-05-constraint-classification.md`); Phase 15 mode-gating outstanding |
+| XCUT-05 (constraint classification) | Phases 14, 15 | Complete (2026-08-27) — Phase 14 classification delivered (`XCUT-05-constraint-classification.md`); Phase 15 mode-gating (plans 15-06, 15-09) closed the remaining "Minimum staffing" row |
 
 **Coverage:**
 
