@@ -1,6 +1,7 @@
 package com.wfm.migration;
 
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import jakarta.persistence.Column;
@@ -58,11 +59,23 @@ import static org.assertj.core.api.Assertions.fail;
  */
 class MigrationEntityConsistencyTest {
 
-    /** table name -> entity class this test reconciles it against. */
+    /**
+     * table name -> entity class this test reconciles it against.
+     *
+     * <p>{@code constraint_weights} added in Phase 15 plan 15-06 (T-15-24): V42's new
+     * {@code band_capacity_weight} column is reconciled against {@link ConstraintWeights}'s
+     * {@code bandCapacityWeight} field here rather than surfacing at boot. Its {@code HardSoftScore}
+     * -typed fields are not in {@link #COMPATIBLE_SQL_TYPES} (no entry for that type), so this test
+     * only asserts column *existence*, not a type match, for every weight column -- deliberately:
+     * {@code HardSoftScoreConverter} maps every weight field to a single {@code VARCHAR}, and this
+     * test's type table has no vocabulary for "converted via a JPA AttributeConverter", only for
+     * plain scalar mappings.
+     */
     private static final Map<String, Class<?>> DECLARED_TABLES = Map.of(
             "shift_template", ShiftTemplate.class,
             "shift_template_break_band", ShiftTemplateBreakBand.class,
-            "agent_shift_assignment", AgentShiftAssignment.class
+            "agent_shift_assignment", AgentShiftAssignment.class,
+            "constraint_weights", ConstraintWeights.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */
@@ -80,11 +93,24 @@ class MigrationEntityConsistencyTest {
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "CREATE TABLE\\s+(\\w+)\\s*\\((.*?)\\)\\s*;", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern ALTER_ADD_COLUMN = Pattern.compile(
-            "ALTER TABLE\\s+(\\w+)\\s+ADD COLUMN\\s+(\\w+)\\s+([A-Za-z]+(?:\\(\\d+(?:,\\s*\\d+)?\\))?)",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern ALTER_DROP_COLUMN = Pattern.compile(
-            "ALTER TABLE\\s+(\\w+)\\s+DROP COLUMN\\s+(\\w+)\\s*;", Pattern.CASE_INSENSITIVE);
+    /**
+     * One whole {@code ALTER TABLE <name> <clauses>;} statement, clauses captured as a single
+     * blob to be split on top-level commas afterwards (T-15-24 fix). A single {@code ALTER TABLE}
+     * keyword can introduce MULTIPLE comma-separated {@code ADD COLUMN}/{@code DROP COLUMN}
+     * clauses in one statement (Postgres syntax, used extensively by {@code V2} for
+     * {@code constraint_weights}) — the previous per-clause regex only ever matched the clause
+     * immediately following the {@code ALTER TABLE} keyword itself, silently dropping every
+     * subsequent {@code ADD COLUMN}/{@code DROP COLUMN} clause in the same statement. That bug
+     * was latent because no table using multi-column {@code ALTER TABLE} was ever added to
+     * {@link #DECLARED_TABLES} until {@code constraint_weights} (Phase 15, ENVL board T-15-24) —
+     * adding it surfaced the gap rather than introducing a new one.
+     */
+    private static final Pattern ALTER_TABLE_STATEMENT = Pattern.compile(
+            "ALTER TABLE\\s+(\\w+)\\s+(.*?);", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern ADD_COLUMN_CLAUSE = Pattern.compile(
+            "^ADD COLUMN\\s+(\\w+)\\s+([A-Za-z]+(?:\\(\\d+(?:,\\s*\\d+)?\\))?)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DROP_COLUMN_CLAUSE = Pattern.compile(
+            "^DROP COLUMN\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern COLUMN_LINE = Pattern.compile(
             "^(\\w+)\\s+([A-Za-z]+(?:\\(\\d+(?:,\\s*\\d+)?\\))?)");
     private static final Pattern MIGRATION_FILE_NAME = Pattern.compile("^V(\\d+)__.*\\.sql$");
@@ -184,21 +210,36 @@ class MigrationEntityConsistencyTest {
         }
     }
 
+    /**
+     * Folds every {@code ALTER TABLE} statement's comma-separated clause list (T-15-24 fix — see
+     * {@link #ALTER_TABLE_STATEMENT}'s javadoc). {@code ADD COLUMN}/{@code DROP COLUMN} clauses
+     * are applied in the order they appear; any other clause (e.g. {@code ALTER COLUMN ... SET
+     * NOT NULL}/{@code SET DEFAULT}) is intentionally ignored — it changes a constraint or
+     * default this test doesn't model, never column existence.
+     */
     private void applyAlterColumns(String sql, Map<String, Map<String, String>> effective) {
-        Matcher addMatcher = ALTER_ADD_COLUMN.matcher(sql);
-        while (addMatcher.find()) {
-            String table = addMatcher.group(1).toLowerCase(Locale.ROOT);
-            String column = addMatcher.group(2).toLowerCase(Locale.ROOT);
-            String sqlType = normalizeType(addMatcher.group(3));
-            effective.computeIfAbsent(table, t -> new LinkedHashMap<>()).put(column, sqlType);
-        }
-        Matcher dropMatcher = ALTER_DROP_COLUMN.matcher(sql);
-        while (dropMatcher.find()) {
-            String table = dropMatcher.group(1).toLowerCase(Locale.ROOT);
-            String column = dropMatcher.group(2).toLowerCase(Locale.ROOT);
-            Map<String, String> columns = effective.get(table);
-            if (columns != null) {
-                columns.remove(column);
+        Matcher statementMatcher = ALTER_TABLE_STATEMENT.matcher(sql);
+        while (statementMatcher.find()) {
+            String table = statementMatcher.group(1).toLowerCase(Locale.ROOT);
+            String clauseList = statementMatcher.group(2);
+            Map<String, String> columns = effective.computeIfAbsent(table, t -> new LinkedHashMap<>());
+            for (String rawClause : splitTopLevelCommaList(clauseList)) {
+                String clause = rawClause.trim();
+                if (clause.isEmpty()) {
+                    continue;
+                }
+                Matcher addMatcher = ADD_COLUMN_CLAUSE.matcher(clause);
+                if (addMatcher.find()) {
+                    String column = addMatcher.group(1).toLowerCase(Locale.ROOT);
+                    String sqlType = normalizeType(addMatcher.group(2));
+                    columns.put(column, sqlType);
+                    continue;
+                }
+                Matcher dropMatcher = DROP_COLUMN_CLAUSE.matcher(clause);
+                if (dropMatcher.find()) {
+                    String column = dropMatcher.group(1).toLowerCase(Locale.ROOT);
+                    columns.remove(column);
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.wfm.solver;
 
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
+import ai.timefold.solver.core.api.score.stream.bi.BiConstraintStream;
 import com.wfm.model.*;
 
 import java.math.BigDecimal;
@@ -70,6 +71,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             breakBlockedWindow(factory),
             breakStartAlignment(factory),
             shiftEnvelopeCompliance(factory),
+            bandCapacity(factory),
             preferPrimarySpecialization(factory),
             honourPreferredStartTime(factory),
             honourPreferredBreakTime(factory),
@@ -185,14 +187,36 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * should NOT be penalised for missing a break — the break gap will form
      * as the shift is completed. This prevents the constraint from blocking
      * CH progress regardless of its weight.
+     *
+     * <p>(Phase 15, ENVL-05) <b>Mode-gated off for shift-scheduled desks</b> — reclassified
+     * {@code MODE_GATED} in {@link ScheduleConstraintClassification}. In shift mode a break's
+     * position is the assigned band's offset, not something to discover from assignment gaps, so
+     * there is no longer a question for this constraint to answer; it is simply inert. The body
+     * below is untouched byte-for-byte (P-25) — only an {@code ifExists} gate is added.
+     * <b>Note on mechanism:</b> the plan's own sketch called for an added {@code .join(
+     * ScheduleConfig.class)} plus a filter, mirroring {@link #shiftEnvelopeCompliance}'s shape —
+     * but this constraint's stream is already a 4-tuple (Quad) by the time it reaches this point,
+     * and Timefold 1.16.0's public Constraint Streams API has no 5-tuple (Penta) stream type to
+     * join into. {@code ifExists(ScheduleConfig.class, filtering(...))} achieves the identical
+     * effect (gate on the mode singleton) without growing tuple arity, so the existing filter/
+     * penalize lambdas below need no signature change at all — an even smaller diff than the
+     * plan's sketch, not a larger one. The gate reads {@code != SHIFT} rather than {@code == SLOT}
+     * so a never-set {@code ScheduleConfig.schedulingMode()} (every pre-Phase-15 test fixture that
+     * builds a {@code Schedule} without calling {@code setSchedulingMode}, e.g.
+     * {@code BreakAwareConstructionTest}) still resolves to "active", matching this constraint's
+     * behaviour before this phase and keeping that test's own assertions genuinely exercising break
+     * geometry rather than silently disabling it.
      */
-    private Constraint exactlyOneBreak(ConstraintFactory factory) {
+    Constraint exactlyOneBreak(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .ifExists(ScheduleConfig.class,
+                        filtering((daId, date, assignments, dayConfig, cfg) ->
+                                cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
@@ -235,14 +259,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 5. Break duration — the single contiguous gap must be exactly
      * breakDurationMinutes / incrementMinutes timeslots long.
      * Uses AgentDayConfig for exception-aware effective hours.
+     *
+     * <p>(Phase 15, ENVL-05) Mode-gated off for shift-scheduled desks — see
+     * {@link #exactlyOneBreak}'s javadoc for the reclassification reasoning and the
+     * {@code ifExists}-not-{@code join} mechanism note (Timefold has no Penta stream).
      */
-    private Constraint breakDuration(ConstraintFactory factory) {
+    Constraint breakDuration(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .ifExists(ScheduleConfig.class,
+                        filtering((daId, date, assignments, dayConfig, cfg) ->
+                                cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
@@ -261,14 +292,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 6. Break blocked window — break must not fall within the first or last
      * N hours of the agent's shift.
      * Uses AgentDayConfig for exception-aware effective hours.
+     *
+     * <p>(Phase 15, ENVL-05) Mode-gated off for shift-scheduled desks — see
+     * {@link #exactlyOneBreak}'s javadoc for the reclassification reasoning and the
+     * {@code ifExists}-not-{@code join} mechanism note (Timefold has no Penta stream).
      */
-    private Constraint breakBlockedWindow(ConstraintFactory factory) {
+    Constraint breakBlockedWindow(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .ifExists(ScheduleConfig.class,
+                        filtering((daId, date, assignments, dayConfig, cfg) ->
+                                cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
@@ -298,14 +336,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 7. Break start alignment — break must start on a timeslot boundary
      * matching the configured alignment.
      * Uses AgentDayConfig for exception-aware effective hours.
+     *
+     * <p>(Phase 15, ENVL-05) Mode-gated off for shift-scheduled desks — see
+     * {@link #exactlyOneBreak}'s javadoc for the reclassification reasoning and the
+     * {@code ifExists}-not-{@code join} mechanism note (Timefold has no Penta stream).
      */
-    private Constraint breakStartAlignment(ConstraintFactory factory) {
+    Constraint breakStartAlignment(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 .groupBy(AGENT_ID, DATE, TO_LIST)
                 .join(AgentDayConfig.class,
                         equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
                         equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .ifExists(ScheduleConfig.class,
+                        filtering((daId, date, assignments, dayConfig, cfg) ->
+                                cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
@@ -376,6 +421,37 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         || !sa.getShiftBandPair().covers(a.getTimeslot()))
                 .penalizeConfigurable()
                 .asConstraint("Shift envelope compliance");
+    }
+
+    /**
+     * (Phase 15, ENVL-08/D-03) Band capacity — a set band capacity is a real hard cap; a blank
+     * one is genuinely unlimited. Groups {@link AgentShiftAssignment} by {@code (date,
+     * shiftBandPair)}, counts agent-days on that exact pair, and penalises the excess over the
+     * band's capacity once it is set. Capacity is scoped per date (the group key), so N agent-days
+     * on Monday and N on Tuesday are both legal — the same band on different dates never shares a
+     * cap. Two bands on the same template have independent capacities because {@link
+     * ShiftBandPair} equality is component-wise over the band, not the template alone.
+     *
+     * <p>A {@code null} capacity produces no tuple at all (filtered out before the group-and-count
+     * even runs) — blank is not zero, and an unlimited band never contributes a violation
+     * regardless of headcount (D-03).
+     *
+     * <p>Leads with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and gates
+     * {@code SchedulingMode.SHIFT} before any other check, mirroring {@link
+     * #shiftEnvelopeCompliance}'s performance contract (commit {@code 90bf3d2}) — a SLOT-mode
+     * desk has zero shift rows, so this constraint's node network is dead there by construction.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint bandCapacity(ConstraintFactory factory) {
+        return factory.forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT
+                        && sa.getShiftBandPair().band() != null
+                        && sa.getShiftBandPair().band().getCapacity() != null)
+                .groupBy((sa, cfg) -> sa.getDate(), (sa, cfg) -> sa.getShiftBandPair(), countBi())
+                .filter((date, pair, agentDayCount) -> agentDayCount > pair.band().getCapacity())
+                .penalizeConfigurable((date, pair, agentDayCount) -> agentDayCount - pair.band().getCapacity())
+                .asConstraint("Band capacity");
     }
 
     /**
@@ -581,13 +657,25 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * timeslot before their preferred start time for that day.
      * Preferences are pre-resolved (weekly vs standing) by SolverService,
      * so all preferences have an exact date set.
+     *
+     * <p>(Phase 15, ENVL-05/P-26) <b>Mode-gated off for shift-scheduled desks</b> — reclassified
+     * {@code MODE_GATED} in {@link ScheduleConstraintClassification} (moved from
+     * {@code OPEN_RESOLVE_IN_PHASE_15}, {@code PHASE_15_OWNER} retained verbatim as the recorded
+     * resolver, P-27). In shift mode the start comes from the assigned library shift, not a
+     * per-slot solver decision, so this constraint would tune against a signal the operator no
+     * longer controls per-slot; Phase 17's CONS-05 use of {@code preferredStartTime} at shift
+     * granularity is a new use, not a reason to leave this per-slot constraint on. Same
+     * {@code != SHIFT} null-safe gate as {@link #exactlyOneBreak} (unset {@code schedulingMode}
+     * resolves to "active", matching every pre-Phase-15 fixture's implicit slot-mode behaviour).
      */
-    private Constraint honourPreferredStartTime(ConstraintFactory factory) {
+    Constraint honourPreferredStartTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 .join(AgentPreference.class,
                         equal(a -> a.getAgent().getId(), p -> p.getAgent().getId()),
                         equal(a -> a.getTimeslot().getDate(), AgentPreference::getDate))
+                .ifExists(ScheduleConfig.class,
+                        filtering((a, p, cfg) -> cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((a, p) -> {
                     if (p.getPreferredStartTime() == null) return false;
                     return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
@@ -600,8 +688,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 10. Honour preferred break time — penalise when an agent's break
      * does not start at their preferred break time.
      * Preferences are pre-resolved by SolverService with exact dates.
+     *
+     * <p>(Phase 15, ENVL-05/P-26) Mode-gated off for shift-scheduled desks — see
+     * {@link #honourPreferredStartTime}'s javadoc for the reclassification reasoning, and
+     * {@link #exactlyOneBreak}'s javadoc for the {@code ifExists}-not-{@code join} mechanism note
+     * (this constraint's stream is already Quad, so a literal {@code join(ScheduleConfig.class)}
+     * would need a nonexistent Penta stream).
      */
-    private Constraint honourPreferredBreakTime(ConstraintFactory factory) {
+    Constraint honourPreferredBreakTime(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
                 // Keyed on the agent id rather than the Agent so this joins the shared
@@ -612,6 +706,9 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                                 p -> p.getAgent().getId()),
                         equal((agentId, date, assignments) -> date,
                                 AgentPreference::getDate))
+                .ifExists(ScheduleConfig.class,
+                        filtering((agentId, date, assignments, pref, cfg) ->
+                                cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((agentId, date, assignments, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
                     int increment = deriveIncrement(assignments);
@@ -624,15 +721,83 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * 11. Break clustering — penalise when the number of agents on break in a
-     * single timeslot exceeds the threshold percentage of assigned agents.
-     * Evaluated as a no-op placeholder — full implementation requires cross-agent
-     * aggregation per timeslot which is deferred to Phase 5 optimization.
+     * A tagged per-timeslot contribution — either "N agents seated" or "N agents on break" — so
+     * two independently {@code groupBy}-derived counts can be unioned via {@code concat} and
+     * recombined by a single downstream {@code groupBy}. See {@link #breakClustering}'s javadoc
+     * for why this indirection exists (Timefold 1.16.0 has no Bi-to-Bi stream join).
      */
-    private Constraint breakClustering(ConstraintFactory factory) {
-        return factory.forEach(AgentAssignment.class)
-                .filter(a -> a.getAgent() != null)
-                .penalizeConfigurable(a -> 0)
+    private record ClusterMark(int assigned, int onBreak) {}
+
+    /**
+     * 11. Break clustering (Phase 15, ENVL-09) — penalises the linear excess of on-break agents
+     * over {@code breakClusterThresholdPct} percent of the timeslot's assigned agents. Replaces
+     * the {@code penalizeConfigurable(a -> 0)} placeholder that shipped before this phase, and
+     * for the first time gives {@code breakClusterThresholdPct} something to do.
+     *
+     * <p><b>"Assigned agents"</b> is every seated {@link AgentAssignment} at that timeslot,
+     * including overflow seats (the flagged ENVL-09 assumption in 15-06-PLAN.md, validated
+     * empirically by {@code BreakClusteringConstraintTest}'s required contrast fixture, not
+     * merely asserted). <b>"On break"</b> is derived structurally from the agent's assigned
+     * {@code (template, band)} pair's break window — never from assignment gaps, which is what
+     * the four now-mode-gated break constraints did and which has no equivalent in shift mode
+     * (ENVL-05).
+     *
+     * <p><b>Mechanism note — why this isn't a single {@code groupBy}-then-{@code join}
+     * pipeline.</b> The two counts this constraint compares (agents seated at a timeslot, and
+     * agents on break at a timeslot) come from different source entities
+     * ({@link AgentAssignment} and {@link AgentShiftAssignment} respectively), so each needs its
+     * own {@code groupBy} — and Timefold 1.16.0's public Constraint Streams API has no operator
+     * to join two dynamically {@code groupBy}-derived {@code BiConstraintStream}s directly (only
+     * Bi-to-{@code UniConstraintStream} and Bi-to-{@code Class} joins exist; see
+     * {@code BiConstraintStream}'s {@code join} overloads). Each count is instead tagged into the
+     * common {@link ClusterMark} shape via {@code map}, the two tagged streams are unioned with
+     * {@code concat} (a genuine union operator Timefold does expose), and one final
+     * {@code groupBy} with two {@code sum} collectors recombines them per timeslot. This is the
+     * sound substitute for the plan's own "join the two on timeslot" sketch, which described a
+     * join shape the framework does not expose at this arity.
+     *
+     * <p>Joins to {@link Timeslot} directly on the on-break side, not through
+     * {@link AgentAssignment}: an on-break agent structurally has no seat at the timeslot their
+     * break covers (a legal solve forbids one via {@link #shiftEnvelopeCompliance}), so deriving
+     * "on break" from assignment rows at that timeslot would always see zero. {@link Timeslot} is
+     * itself a {@code @ProblemFactCollectionProperty}, so every timeslot is visited whether or
+     * not a seat happens to exist there — exactly the case of a fully-clustered break window with
+     * zero demand-derived seats, which is the live StubHub (EN) failure this requirement exists
+     * to fix.
+     *
+     * <p>Leads with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and gates
+     * {@code SchedulingMode.SHIFT} before joining {@link Timeslot}, mirroring
+     * {@link #shiftEnvelopeCompliance}'s performance contract (commit {@code 90bf3d2}) — a
+     * SLOT-mode desk's on-break side finds zero shift rows and stays dead; the assigned-count
+     * side is unavoidably {@link AgentAssignment}-led (it must be, that is what it counts) and is
+     * unchanged in cost from before this phase.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint breakClustering(ConstraintFactory factory) {
+        BiConstraintStream<Timeslot, ClusterMark> assignedMarks = factory
+                .forEachIncludingUnassigned(AgentAssignment.class)
+                .groupBy(a -> a.getTimeslot(),
+                        sum((AgentAssignment a) -> a.getAgent() != null ? 1 : 0))
+                .map((ts, total) -> ts, (ts, total) -> new ClusterMark(total, 0));
+
+        BiConstraintStream<Timeslot, ClusterMark> onBreakMarks = factory
+                .forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(Timeslot.class, equal((sa, cfg) -> sa.getDate(), Timeslot::getDate))
+                .filter((sa, cfg, ts) -> isOnBreak(ts, sa.getShiftBandPair()))
+                .groupBy((sa, cfg, ts) -> ts, countTri())
+                .map((ts, onBreak) -> ts, (ts, onBreak) -> new ClusterMark(0, onBreak));
+
+        return assignedMarks.concat(onBreakMarks)
+                .groupBy((ts, mark) -> ts,
+                        sum((ts, mark) -> mark.assigned()),
+                        sum((ts, mark) -> mark.onBreak()))
+                .join(ScheduleConfig.class)
+                .filter((ts, totalAssigned, onBreak, cfg) ->
+                        onBreak * 100 > totalAssigned * cfg.breakClusterThresholdPct())
+                .penalizeConfigurable((ts, totalAssigned, onBreak, cfg) ->
+                        onBreak - (totalAssigned * cfg.breakClusterThresholdPct()) / 100)
                 .asConstraint("Break clustering");
     }
 
@@ -772,5 +937,21 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignments == null || assignments.isEmpty()) return 15;
         Timeslot t = assignments.get(0).getTimeslot();
         return (int) java.time.temporal.ChronoUnit.MINUTES.between(t.getStartTime(), t.getEndTime());
+    }
+
+    /**
+     * True when {@code ts} falls inside {@code pair}'s band's break interval (Phase 15, ENVL-09).
+     * Mirrors {@link ShiftBandPair#covers}'s own break-overlap test exactly (half-open on both
+     * ends), but as a standalone predicate: {@code covers} answers "is this seat legal", which is
+     * false both outside the envelope AND inside the break, while this answers "is this
+     * specifically the break", needed to count on-break agents rather than illegal seats.
+     */
+    private static boolean isOnBreak(Timeslot ts, ShiftBandPair pair) {
+        if (pair == null || pair.band() == null || pair.band().getDurationMinutes() <= 0) {
+            return false;
+        }
+        LocalTime breakStart = pair.band().getBreakStartTime(pair.template());
+        LocalTime breakEnd = pair.band().getBreakEndTime(pair.template());
+        return ts.getStartTime().isBefore(breakEnd) && ts.getEndTime().isAfter(breakStart);
     }
 }

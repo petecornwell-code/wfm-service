@@ -130,11 +130,17 @@ class ScheduleConstraintClassificationTest {
         }
     }
 
+    /**
+     * Phase 15 resolution (plan 15-06, ENVL-05): the four break constraints Phase 14 tagged
+     * {@code NEEDS_SHIFT_VARIANT} are reclassified {@code MODE_GATED} — this phase determined
+     * mode-gating (an added filter, body untouched) is sufficient and no shift-mode variant is
+     * needed, so {@code NEEDS_SHIFT_VARIANT} is empty from this phase onward. The tag itself stays
+     * in the vocabulary as a historical record (see {@link ScheduleConstraintClassification}'s
+     * class javadoc), but no row may carry it any more — this test still derives its expectation
+     * from the enum, not a hardcoded absence, so a future phase reintroducing the tag is caught.
+     */
     @Test
-    void exactlyTheFourNamedBreakConstraintsCarryNeedsShiftVariant() {
-        Set<String> expected = Set.of(
-                "Exactly one break", "Break duration", "Break blocked window", "Break start alignment");
-
+    void needsShiftVariantIsEmptyAfterPhase15() {
         Set<String> actual = new HashSet<>();
         for (Map.Entry<String, ScheduleConstraintClassification.Entry> row
                 : ScheduleConstraintClassification.classifications().entrySet()) {
@@ -145,18 +151,21 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("D-03's four named break constraints must be exactly the NEEDS_SHIFT_VARIANT set")
-                .containsExactlyInAnyOrderElementsOf(expected);
+                .as("Phase 15 resolved D-03's four named break constraints to MODE_GATED; "
+                        + "NEEDS_SHIFT_VARIANT must be empty")
+                .isEmpty();
     }
 
+    /**
+     * Phase 15 resolution (plan 15-06, ENVL-05/P-26): both preference constraints Phase 14 left
+     * {@code OPEN_RESOLVE_IN_PHASE_15} (naming this phase as owner) are reclassified
+     * {@code MODE_GATED} — zero rows remain {@code OPEN_RESOLVE_IN_PHASE_15}, completing XCUT-05.
+     */
     @Test
-    void exactlyThePreferenceConstraintsCarryOpenResolveInPhase15WithANamedOwner() {
-        Set<String> expected = Set.of("Honour preferred start time", "Honour preferred break time");
-
+    void zeroConstraintsRemainOpenResolveInPhase15() {
         Set<String> actual = new HashSet<>();
-        Map<String, ScheduleConstraintClassification.Entry> classifications =
-                ScheduleConstraintClassification.classifications();
-        for (Map.Entry<String, ScheduleConstraintClassification.Entry> row : classifications.entrySet()) {
+        for (Map.Entry<String, ScheduleConstraintClassification.Entry> row
+                : ScheduleConstraintClassification.classifications().entrySet()) {
             if (row.getValue().classification()
                     == ScheduleConstraintClassification.ModeClassification.OPEN_RESOLVE_IN_PHASE_15) {
                 actual.add(row.getKey());
@@ -164,16 +173,45 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("Exactly the two preference-comparison constraints must be OPEN_RESOLVE_IN_PHASE_15")
+                .as("XCUT-05 requires zero OPEN_RESOLVE_IN_PHASE_15 rows after Phase 15")
+                .isEmpty();
+    }
+
+    /**
+     * The six constraints Task 1 actively mode-gates (added filter, unchanged body), plus the
+     * pre-existing "Shift envelope compliance" (plan 15-03), Task 2's "Break clustering"
+     * (reclassified once it gained a real body, ENVL-09) and Task 3's new "Band capacity"
+     * (ENVL-08/D-03) must all carry MODE_GATED, and the two preference rows must keep
+     * PHASE_15_OWNER verbatim (P-27) even though they are no longer OPEN — the Entry record
+     * permits an owner on any classification.
+     */
+    @Test
+    void thePhase15ModeGatedSetIsExactlyTheNineExpectedRows() {
+        Set<String> expected = Set.of(
+                "Exactly one break", "Break duration", "Break blocked window", "Break start alignment",
+                "Honour preferred start time", "Honour preferred break time",
+                "Shift envelope compliance", "Break clustering", "Band capacity");
+
+        Map<String, ScheduleConstraintClassification.Entry> classifications =
+                ScheduleConstraintClassification.classifications();
+        Set<String> actual = new HashSet<>();
+        for (Map.Entry<String, ScheduleConstraintClassification.Entry> row : classifications.entrySet()) {
+            if (row.getValue().classification()
+                    == ScheduleConstraintClassification.ModeClassification.MODE_GATED) {
+                actual.add(row.getKey());
+            }
+        }
+
+        assertThat(actual)
+                .as("MODE_GATED must be exactly the nine constraints whose behaviour depends on "
+                        + "SchedulingMode after Phase 15")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
-        for (String name : expected) {
+        for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {
             String owner = classifications.get(name).owner();
             assertThat(owner)
-                    .as("OPEN_RESOLVE_IN_PHASE_15 row '%s' must name a non-blank owner", name)
-                    .isNotBlank();
-            assertThat(owner)
-                    .as("OPEN_RESOLVE_IN_PHASE_15 row '%s' must name Phase 15 as owner", name)
+                    .as("MODE_GATED row '%s' must retain PHASE_15_OWNER verbatim (P-27)", name)
+                    .isNotBlank()
                     .contains("Phase 15");
         }
     }

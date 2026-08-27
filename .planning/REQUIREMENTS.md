@@ -48,12 +48,12 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [ ] **ENVL-01**: On a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from that desk's library
 - [x] **ENVL-02**: An agent is never assigned a seat in a timeslot outside their assigned shift envelope, enforced as a hard constraint
 - [x] **ENVL-03**: An agent's specialization may still vary between timeslots within their shift
-- [ ] **ENVL-04**: An agent's working day on a shift-scheduled desk is contiguous, apart from their break
-- [ ] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
+- [x] **ENVL-04**: An agent's working day on a shift-scheduled desk is contiguous, apart from their break
+- [x] **ENVL-05**: Break placement on a shift-scheduled desk comes from the shift template rather than from the four emergent break constraints
 - [x] **ENVL-06**: The solver reaches a feasible initial solution on a shift-scheduled desk without any pre-assignment pipeline
 - [x] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
-- [ ] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
-- [ ] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
+- [x] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
+- [x] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
 - [x] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
 
 ### Usual Shift (USHF)
@@ -90,7 +90,7 @@ project has already been burned by each one.
 - [ ] **XCUT-02**: Every guarantee is verified on every reachable write path, not only the one its phase built. *(v1.2 audit I-2: open across two consecutive audits because a second entry point bypassed the merge engine.)*
 - [ ] **XCUT-03**: Any change to `solverConfig.xml` is validated by a test that actually builds a solver. *(No test under `src/test/java/com/wfm/solver/` currently does, and the coupling spike found a solver-build failure that would therefore have shipped silently.)*
 - [ ] **XCUT-04**: The shift model's effect on schedule quality is judged by seeded, step-count-terminated A/B runs reporting median **and** full min/max spread, against a threshold committed before the run, including at realistic (~130%) over-allocation. *(Phase 12 produced a +0.25h median inside a 5.00h noise spread and was withdrawn.)*
-- [ ] **XCUT-05**: Every one of the existing constraints is explicitly classified as mode-agnostic, mode-gated, or needing a shift-mode variant — no constraint is left unclassified. *(A test suite where every fixture is single-mode is structurally blind to interaction bugs.)*
+- [x] **XCUT-05**: Every one of the existing constraints is explicitly classified as mode-agnostic, mode-gated, or needing a shift-mode variant — no constraint is left unclassified. *(A test suite where every fixture is single-mode is structurally blind to interaction bugs.)*
 
 ## Deferred to a Future Milestone
 

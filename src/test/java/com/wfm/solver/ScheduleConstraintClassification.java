@@ -25,10 +25,13 @@ public final class ScheduleConstraintClassification {
     /**
      * The four-constant tag vocabulary (Phase 14 P-08).
      *
-     * <p>{@link #MODE_GATED} is deliberately unused today — ROADMAP.md success criterion 5
-     * records that the four break constraints tagged below "aren't actually mode-gated until
-     * Phase 15". The tag exists for Phase 15 to move rows into; its current emptiness is itself
-     * a finding, not an oversight.
+     * <p>{@link #MODE_GATED} was deliberately unused at Phase 14 close — ROADMAP.md success
+     * criterion 5 recorded that the four break constraints tagged {@code NEEDS_SHIFT_VARIANT}
+     * "aren't actually mode-gated until Phase 15". Phase 15 (plan 15-06) is that move: six rows
+     * now carry {@code MODE_GATED} (see the note on {@link #classifications()}), and
+     * {@code NEEDS_SHIFT_VARIANT}/{@code OPEN_RESOLVE_IN_PHASE_15} are both empty from this phase
+     * onward — the constants stay in the vocabulary as the historical record of what Phase 14 left
+     * open and Phase 15 closed, not because either is expected to be used again.
      */
     public enum ModeClassification {
         MODE_AGNOSTIC,
@@ -67,6 +70,20 @@ public final class ScheduleConstraintClassification {
      * the exact string each constraint's {@code .asConstraint(...)} call passes — the same
      * string each corresponding {@link ConstraintWeights} field's {@code @ConstraintWeight}
      * carries. Insertion order mirrors {@code defineConstraints}'s array order.
+     *
+     * <p><strong>Phase 15 resolution (2026-08-27, plan 15-06).</strong> Task 1 moves six rows:
+     * the four D-03-named break constraints ("Exactly one break", "Break duration", "Break
+     * blocked window", "Break start alignment") from {@code NEEDS_SHIFT_VARIANT} to
+     * {@code MODE_GATED}, and the two preference constraints ("Honour preferred start time",
+     * "Honour preferred break time") from {@code OPEN_RESOLVE_IN_PHASE_15} to {@code MODE_GATED}
+     * — zero rows remain {@code OPEN_RESOLVE_IN_PHASE_15} after Task 1 (XCUT-05 complete).
+     * {@code PHASE_15_OWNER}'s string is retained verbatim on the two preference rows — it still
+     * reads the phase's *former* name ("Shift Envelope & Coupling") deliberately, as a historical
+     * record of who resolved them; renaming or deleting the constant would break
+     * {@code 14-VERIFICATION.md} item 21's verified claim that the constant matches its markdown
+     * mirror byte-for-byte (P-27). Task 2 reclassifies "Break clustering" from
+     * {@code MODE_AGNOSTIC} to {@code MODE_GATED} once it has a real body (ENVL-09). Task 3 adds
+     * a new "Band capacity" row, also {@code MODE_GATED} (ENVL-08/D-03).
      */
     public static Map<String, Entry> classifications() {
         Map<String, Entry> map = new LinkedHashMap<>();
@@ -94,31 +111,39 @@ public final class ScheduleConstraintClassification {
                 null));
 
         map.put("Exactly one break", new Entry(
-                ModeClassification.NEEDS_SHIFT_VARIANT,
-                "One of D-03's named four break constraints. Break is currently derived from "
-                        + "assignment gaps (countContiguousGaps/getGapLengths); D-01 makes shift-mode breaks "
-                        + "a fixed template offset instead, so this constraint needs a shift-mode variant.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05): reclassified from NEEDS_SHIFT_VARIANT. Break "
+                        + "placement in shift mode is the assigned band's offset, not something to "
+                        + "discover from assignment gaps (countContiguousGaps/getGapLengths) -- there is "
+                        + "no longer a question for a shift-mode variant to answer, so the constraint is "
+                        + "simply gated off for SHIFT desks (ifExists(ScheduleConfig, filtering(mode != "
+                        + "SHIFT)); the body is untouched byte-for-byte, P-25) and stays fully active, "
+                        + "unchanged, for SLOT desks.",
                 null));
 
         map.put("Break duration", new Entry(
-                ModeClassification.NEEDS_SHIFT_VARIANT,
-                "One of the four. Currently derives duration from the single assignment gap's "
-                        + "length; a shift-mode variant compares against the template's fixed "
-                        + "break_duration_minutes instead.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05): same reasoning as 'Exactly one break' -- the "
+                        + "template's fixed break_duration_minutes (now a band's duration_minutes) "
+                        + "replaces the single assignment gap's length as the only place break duration "
+                        + "is defined in shift mode, so the constraint is gated off there and unchanged "
+                        + "for SLOT desks.",
                 null));
 
         map.put("Break blocked window", new Entry(
-                ModeClassification.NEEDS_SHIFT_VARIANT,
-                "One of the four. Currently derives break position from assignment-gap position "
-                        + "relative to the derived shift start/end; a shift-mode variant would compare "
-                        + "against the template's fixed envelope instead.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05): same reasoning as 'Exactly one break' -- the "
+                        + "template's fixed envelope and band offset replace the derived shift "
+                        + "start/end and gap position as the only place break position is decided in "
+                        + "shift mode, so the constraint is gated off there and unchanged for SLOT desks.",
                 null));
 
         map.put("Break start alignment", new Entry(
-                ModeClassification.NEEDS_SHIFT_VARIANT,
-                "One of the four. Currently derives break start from the assignment gap's start; "
-                        + "a shift-mode variant is unnecessary in the same form once the break start is "
-                        + "template-fixed (D-01), but the constraint as coded still needs re-deriving.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05): same reasoning as 'Exactly one break' -- the "
+                        + "band's offset is fixed at template-authoring time (D-01, itself grid-aligned "
+                        + "by Phase 14's D-02), so there is no solver-chosen break start left to check "
+                        + "in shift mode; the constraint is gated off there and unchanged for SLOT desks.",
                 null));
 
         map.put("Shift envelope compliance", new Entry(
@@ -133,6 +158,15 @@ public final class ScheduleConstraintClassification {
                         + "even if a shift row were present.",
                 null));
 
+        map.put("Band capacity", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 15 (ENVL-08/D-03): groups AgentShiftAssignment by (date, shiftBandPair), "
+                        + "penalising agent-day counts on a pair that exceed its band's set capacity. A "
+                        + "blank capacity produces no tuple at all -- unlimited, not zero. Inert on a "
+                        + "SLOT desk because no AgentShiftAssignment rows exist there to group, the same "
+                        + "structural-inertness shape as 'Shift envelope compliance'.",
+                null));
+
         map.put("Prefer primary specialization", new Entry(
                 ModeClassification.MODE_AGNOSTIC,
                 "Pure agent-attribute soft preference (primary vs. secondary specialization); "
@@ -140,35 +174,42 @@ public final class ScheduleConstraintClassification {
                 null));
 
         map.put("Honour preferred start time", new Entry(
-                ModeClassification.OPEN_RESOLVE_IN_PHASE_15,
-                "Penalises a timeslot before AgentPreference.preferredStartTime — a solver-derived "
-                        + "value compared against a preference. In shift mode the agent's start is chosen "
-                        + "from the library, not per-timeslot; whether comparing against a template-fixed "
-                        + "value is still the same constraint or needs its own variant cannot be answered "
-                        + "without the shift envelope Phase 15 builds. Deliberately left open rather than "
-                        + "guessed — this phase touches no solver code (14-RESEARCH.md Open Questions #1).",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05/P-26): reclassified from OPEN_RESOLVE_IN_PHASE_15. "
+                        + "In shift mode the agent's start comes from the assigned library shift, not a "
+                        + "per-slot solver decision, so this constraint would tune against a signal the "
+                        + "operator no longer controls per-slot -- gated off for SHIFT desks and "
+                        + "unchanged for SLOT desks. PHASE_15_OWNER is retained verbatim as the recorded "
+                        + "resolver (P-27) even though the row is no longer OPEN -- the Entry record "
+                        + "permits an owner on any classification, and the phase's former name stays "
+                        + "byte-identical to its markdown mirror. Phase 17's CONS-05 use of "
+                        + "preferredStartTime at shift granularity (as a tiebreak between two "
+                        + "equally-scored shifts) is a NEW use of the preference, not a reason to leave "
+                        + "this per-slot constraint on.",
                 PHASE_15_OWNER));
 
         map.put("Honour preferred break time", new Entry(
-                ModeClassification.OPEN_RESOLVE_IN_PHASE_15,
-                "Currently derives the actual break start from assignment gaps (findBreakStart) and "
-                        + "compares it to AgentPreference.preferredBreakTime — a solver-derived value "
-                        + "compared against a preference, same shape as the start-time row above. In "
-                        + "shift mode the break start is template-fixed (D-01); whether this constraint "
-                        + "should compare the template's fixed break start against the preference, or "
-                        + "become moot, needs solver-level judgement Phase 14 is scoped to avoid. Not "
-                        + "automatically bundled with D-03's named four break constraints — those cannot "
-                        + "exist without a shift envelope, whereas this one is answerable but genuinely "
-                        + "undecided today.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 resolution (ENVL-05/P-26): reclassified from OPEN_RESOLVE_IN_PHASE_15, "
+                        + "same reasoning as 'Honour preferred start time' -- in shift mode the break "
+                        + "comes from the assigned band, not a solver-derived gap, so this constraint "
+                        + "would tune against a signal the operator no longer controls per-slot. Gated "
+                        + "off for SHIFT desks and unchanged for SLOT desks. PHASE_15_OWNER retained "
+                        + "verbatim (P-27).",
                 PHASE_15_OWNER));
 
         map.put("Break clustering", new Entry(
-                ModeClassification.MODE_AGNOSTIC,
-                "Constraint body is `penalizeConfigurable(a -> 0)` — a documented no-op placeholder "
-                        + "today (\"Evaluated as a no-op placeholder ... deferred to Phase 5 optimization\", "
-                        + "ScheduleConstraintProvider.java breakClustering). Classification is moot until "
-                        + "it does something; recorded as mode-agnostic because an inert constraint has no "
-                        + "mode-dependent behaviour to gate.",
+                ModeClassification.MODE_GATED,
+                "Phase 15 (ENVL-09) gave this constraint a real body, reclassified from "
+                        + "MODE_AGNOSTIC (the prior row described only the inert placeholder): a "
+                        + "cross-agent, per-timeslot aggregation penalising on-break agents exceeding "
+                        + "breakClusterThresholdPct percent of the timeslot's assigned agents. The "
+                        + "on-break half explicitly gates SchedulingMode.SHIFT and is structurally inert "
+                        + "on a SLOT desk (zero AgentShiftAssignment rows to derive 'on break' from), so "
+                        + "the whole constraint's penalty is zero on every SLOT desk by construction -- "
+                        + "the same mode-dependent-behaviour shape as 'Shift envelope compliance'. The "
+                        + "assigned-agent half of the aggregation runs identically in both modes, exactly "
+                        + "as it always has.",
                 null));
 
         map.put("Contracted hours (over)", new Entry(

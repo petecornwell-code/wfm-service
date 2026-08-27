@@ -137,6 +137,19 @@ public class ConstraintWeights {
     @Column(name = "shift_envelope_compliance_weight")
     private HardSoftScore shiftEnvelopeComplianceWeight = HardSoftScore.ofHard(1);
 
+    /**
+     * Weight for "Band capacity" (Phase 15, ENVL-08/D-03) — a band's set capacity is a hard cap
+     * only when set; blank/null capacity is unlimited and never produces a tuple for this
+     * constraint to penalise at all. Hard by default: an over-capacity agent-day on a band is an
+     * illegal schedule, not a preference — mirroring {@code shiftEnvelopeComplianceWeight}'s
+     * reasoning and V37/V38/V41's precedent that hard-vs-soft is this column's value, not a code
+     * decision.
+     */
+    @ConstraintWeight("Band capacity")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "band_capacity_weight")
+    private HardSoftScore bandCapacityWeight = HardSoftScore.ofHard(1);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -207,4 +220,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getShiftEnvelopeComplianceWeight() { return shiftEnvelopeComplianceWeight; }
     public void setShiftEnvelopeComplianceWeight(HardSoftScore shiftEnvelopeComplianceWeight) { this.shiftEnvelopeComplianceWeight = shiftEnvelopeComplianceWeight; }
+
+    public HardSoftScore getBandCapacityWeight() { return bandCapacityWeight; }
+    public void setBandCapacityWeight(HardSoftScore bandCapacityWeight) { this.bandCapacityWeight = bandCapacityWeight; }
 }
