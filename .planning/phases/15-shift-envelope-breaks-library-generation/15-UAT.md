@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: testing
 phase: 15-shift-envelope-breaks-library-generation
-source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md]
+source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-08-27T16:20:00Z"
+updated: "2026-08-27T18:50:00Z"
 ---
 
 <!--
@@ -43,13 +43,28 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 1
-name: V40 data fan-out preserved every existing break (dev)
+number: 10
+name: Shift-mode solve succeeds at production scale (RE-TEST after G-15-10 closure)
 expected: |
-  Against the dev database, every pre-existing template that had a non-zero
-  `break_duration_minutes` now has exactly ONE band carrying its former offset and duration;
-  templates that had no break have zero bands. Nothing lost, nothing duplicated.
+  The StubHub (EN) desk that previously converged on an irreducible -19 hard score — all of it on
+  `Shift envelope compliance` — now either reaches 0 hard in acceptable time, or is REFUSED BEFORE
+  solving with a named shortfall and the levers you control. What must never happen again is a
+  completed or near-complete solve that still carries residual envelope penalty.
 awaiting: user response
+
+<!--
+  Test 10 is the priority re-test: it is the test that filed G-15-10, and gap-closure plans
+  15-09..15-13 exist to close it. Tests 1, 3-9 and 11-17 were never reached in the first session
+  and remain pending. Tests 19 and 20 are NEW, added from 15-VERIFICATION.md's human_verification
+  list — they cover the frontend surface plans 15-10/15-12 added, which has never been visually
+  exercised because this project has no frontend test framework (Phase 13 P-11).
+
+  NOTE ON DEPLOYMENT: the "WHERE TO TEST" block above names deployed commit `adaad6d`, which
+  predates the entire gap-closure round. The dev deployment must be REDEPLOYED from current HEAD
+  before tests 10, 19 or 20 mean anything — testing the old build would reproduce G-15-10 and
+  tell you nothing about whether it is fixed. Confirm the deployed commit before you start.
+-->
+
 
 ## Tests
 
@@ -112,11 +127,13 @@ result: [pending]
 
 ### 10. Shift-mode solve succeeds at production scale
 
-expected: A real desk in shift-scheduled mode solves to a feasible schedule in acceptable time. The automated benchmark ran only 4 agents x 2 days — this is the first exercise at your real agent count, day count and demand curve.
-result: issue
-reported: "It seems to be stuck on shift envelope compliance. A big issue is covering 0 hour slots - It pulls to fill the 0 slot but then adds breaks to fill in the gaps!"
+expected: A real desk in shift-scheduled mode solves to a feasible schedule in acceptable time. The automated benchmark ran only 4 agents x 2 days — this is the first exercise at your real agent count, day count and demand curve. AFTER G-15-10 CLOSURE, the acceptable outcomes are exactly two: (a) the solve reaches 0 hard in acceptable time, or (b) the solve is REFUSED BEFORE it starts, naming the date, the seat shortfall and the levers you control. A completed solve still carrying residual `Shift envelope compliance` penalty is a failure. Per operator ruling OR-1, an hour the shift library does not reach is now deliberately unstaffed and should render as such — that is correct behaviour, not a bug.
+result: [pending]
+previous_result: issue
+previously_reported: "It seems to be stuck on shift envelope compliance. A big issue is covering 0 hour slots - It pulls to fill the 0 slot but then adds breaks to fill in the gaps!"
 severity: blocker
 tested_against: dev (https://d2bbtcc80peap7.cloudfront.net), live cloud data
+retest_reason: "Gap G-15-10 closed by plans 15-09..15-13. Requires a dev redeploy from current HEAD first — deployed commit adaad6d predates the entire gap-closure round."
 
 ### 11. No agent is seated outside their assigned shift envelope
 
@@ -166,12 +183,52 @@ result: blocked
 blocked_by: server
 reason: No production deploy has occurred. `deploy.yml` targets the dev environment (ECS cluster `wfm-service-dev`) only. Unblock when a production deploy is planned.
 
+### 19. Envelope divergence and unstaffed hours render correctly
+
+expected: |
+  Load a shift-mode schedule with a real envelope divergence (or force one) and confirm the new
+  rendering from plans 15-10 and 15-12 lands on the correct cells:
+    - the Agent Schedule table's Shift column agrees with the Agent Allocation group header for the
+      same agent-day (the "Late 12:00-21:00" vs "09:00-21:00" disagreement is gone);
+    - an inline divergence marker appears on the Agent Schedule row when the actual seats fall
+      outside the assigned envelope;
+    - per-cell `E!` (out-of-envelope seat, amber ring) is visually distinct from `x` (surrendered
+      legal slot, amber fill);
+    - an hour no template reaches renders muted/italic under an "unstaffed by design" header, and
+      is clearly distinct from the existing red unfilled-demand treatment;
+    - tooltips and the extended legend are legible.
+result: [pending]
+source: 15-VERIFICATION.md human_verification
+why_human: |
+  This project has no frontend test framework (Phase 13 P-11, a standing constraint). 15-12-SUMMARY.md
+  marks all three of its rendering must-haves `human_judgment: true` for that reason. `npm run build`
+  proves the code compiles and bundles — not that the marks are legible or correctly positioned.
+known_caveat: |
+  Code review WR-02: the "unstaffed by design" tooltip reflects only that day's assigned shifts,
+  not the desk's full live shift library, so its literal wording can be inaccurate in an edge case.
+  Known and unfixed — judge the visual treatment, not the tooltip's precise claim.
+
+### 20. Warning list does not grow while a schedule is running
+
+expected: |
+  Start a SHIFT-mode solve that produces an envelope divergence and leave the results page open
+  while it is RUNNING. The schedule's warnings should NOT accumulate duplicate entries as the page
+  polls (every 2s). The divergence information itself should be correct on every refresh.
+result: [pending]
+source: 15-REVIEW.md CR-04 (verifier re-judged from blocker to warning)
+why_human: |
+  `ScheduleOutputService.buildAgentSchedule` appends to the shared live `Schedule` object's warnings
+  list on every call with no dedup guard, and `InMemoryScheduleStore.get()` returns the same object
+  reference rather than a copy. Confirmed present in code by both the reviewer and the verifier, but
+  unfixed — no phase success criterion depends on bounded warning-list behaviour, so it did not block
+  verification. This test establishes how visible it actually is to an operator.
+
 ## Summary
 
-total: 18
+total: 20
 passed: 1
-issues: 1
-pending: 15
+issues: 0
+pending: 18
 skipped: 0
 blocked: 1
 
@@ -179,7 +236,27 @@ blocked: 1
 
 - gap_id: G-15-10
   truth: "A real desk in shift-scheduled mode solves to a feasible schedule in acceptable time"
-  status: failed
+  status: closed_pending_retest
+  closed_by: [15-09, 15-10, 15-11, 15-12, 15-13]
+  closure_evidence: |
+    All four AND-gated root causes fixed and independently verified against HEAD (d490171) by
+    15-VERIFICATION.md — not accepted from SUMMARY prose:
+      D1 — SolverService.requireShiftEnvelopeSeatSupply refuses a solve whose in-envelope seat
+           supply cannot meet contracted demand, naming date, shortfall and levers (plan 15-11).
+           The zero-slack equality was KEPT deliberately and pinned by an invariant test.
+      D2 — SolverService.expandMinimumStaffingSeats is now SchedulingMode-aware: no filler seat
+           where no live band reaches, guaranteed seats where a band reaches but demand does not
+           (plan 15-09). SLOT mode proven unchanged.
+      D3 — follows from D1+D2: the cheapest-hard-violation arbitrage has no destination left.
+      D4 — ScheduleOutputService reads the authoritative ShiftDescriptor/AgentShiftAssignment
+           instead of redrawing the envelope around held seats; ShiftEnvelopeDivergence surfaces
+           the breach; frontend renders it (plans 15-10, 15-12).
+    ShiftDeskEndToEndRegressionTest solves a fixture built to the live defect's SHAPE through the
+    real solverConfig.xml and asserts no completed solve carries residual envelope penalty (3/3).
+    Full suite: 546 tests, 0 failures, 0 errors, 2 pre-existing skips.
+  retest: "Test 10, against a dev deployment REDEPLOYED from current HEAD. The gap is closed in
+    code; it is not closed in this record until the live desk that filed it passes."
+  original_status: failed
   reason: "User reported: It seems to be stuck on shift envelope compliance. A big issue is covering 0 hour slots - It pulls to fill the 0 slot but then adds breaks to fill in the gaps!"
   severity: blocker
   test: 10
