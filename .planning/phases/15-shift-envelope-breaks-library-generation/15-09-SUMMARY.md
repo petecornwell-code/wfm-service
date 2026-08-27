@@ -206,3 +206,9 @@ None - no external service configuration required.
 ---
 *Phase: 15-shift-envelope-breaks-library-generation*
 *Completed: 2026-08-27*
+
+## Self-Check: PASSED
+
+All 10 tracked files verified present on disk (`[ -f ]`); all 5 commit hashes
+(`b1a905b`, `f893e97`, `2e97c19`, `2aa3ddf`, `c4ed87d`) verified present via
+`git log --oneline --all`.
