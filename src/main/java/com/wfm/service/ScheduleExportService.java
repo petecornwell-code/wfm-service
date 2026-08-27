@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -100,9 +101,21 @@ public class ScheduleExportService {
                                      List<AgentScheduleEntry> entries) {
         Sheet sheet = workbook.createSheet("Agent Schedule");
 
+        // Shift/Envelope columns only exist when at least one entry carries an assigned shift
+        // (Phase 15 plan 10, Task 3) — a slot desk's sheet stays byte-identical to today,
+        // including column count and header text, since no entry on a slot desk ever carries a
+        // shift descriptor.
+        boolean hasShiftMode = entries != null && entries.stream().anyMatch(e -> e.shift() != null);
+
+        List<String> colsList = new ArrayList<>(List.of(
+                "Agent", "Date", "Start Time", "End Time", "Specialization", "Match Type", "Break"));
+        if (hasShiftMode) {
+            colsList.add("Shift Template");
+            colsList.add("Shift Envelope");
+        }
+        String[] cols = colsList.toArray(new String[0]);
+
         Row header = sheet.createRow(0);
-        String[] cols = {"Agent", "Date", "Start Time", "End Time", "Specialization",
-                         "Match Type", "Break"};
         for (int i = 0; i < cols.length; i++) {
             Cell cell = header.createCell(i);
             cell.setCellValue(cols[i]);
@@ -113,7 +126,13 @@ public class ScheduleExportService {
 
         int rowNum = 1;
         for (AgentScheduleEntry agent : entries) {
-            // Write assignment rows
+            String shiftTemplateName = agent.shift() != null ? agent.shift().templateName() : "";
+            String shiftEnvelope = agent.shift() != null
+                    ? agent.shift().startTime() + " - " + agent.shift().endTime()
+                    : "";
+
+            // Write assignment rows — the shift an agent was assigned is visible here, when
+            // present, so an operator reading the export can tell which envelope an agent was on.
             for (AssignmentDetail ad : agent.assignments()) {
                 Row row = sheet.createRow(rowNum++);
                 row.createCell(0).setCellValue(agent.agentName());
@@ -123,9 +142,16 @@ public class ScheduleExportService {
                 row.createCell(4).setCellValue(ad.specializationName());
                 row.createCell(5).setCellValue(ad.matchType());
                 row.createCell(6).setCellValue("");
+                if (hasShiftMode) {
+                    row.createCell(7).setCellValue(shiftTemplateName);
+                    row.createCell(8).setCellValue(shiftEnvelope);
+                }
             }
 
-            // Write break rows
+            // Write break rows — Task 3's own done-criterion: these already read
+            // AgentScheduleEntry.breaks(), so Task 2's band-derived correction reaches the XLSX
+            // with no change to this loop. The Shift/Envelope cells are left blank on break rows
+            // (not created) even in shift mode — they belong to the assignment rows.
             for (BreakDetail bd : agent.breaks()) {
                 Row row = sheet.createRow(rowNum++);
                 row.createCell(0).setCellValue(agent.agentName());
