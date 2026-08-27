@@ -2,6 +2,7 @@ package com.wfm.migration;
 
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.ConstraintWeights;
+import com.wfm.model.Schedule;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import jakarta.persistence.Column;
@@ -70,12 +71,21 @@ class MigrationEntityConsistencyTest {
      * {@code HardSoftScoreConverter} maps every weight field to a single {@code VARCHAR}, and this
      * test's type table has no vocabulary for "converted via a JPA AttributeConverter", only for
      * plain scalar mappings.
+     *
+     * <p>{@code schedule} added for the CR-02 gap closure (V43): the new {@code scheduling_mode}
+     * column is reconciled against {@link Schedule}'s {@code schedulingMode} field here rather
+     * than surfacing at boot, same rationale as {@code constraint_weights} above. {@code schedule}
+     * accumulates columns across many earlier migrations (V1, V2, V20) that this table's own
+     * fold-in-version-order logic already handles correctly -- {@code score} (V2's merge of
+     * {@code hard_score}/{@code soft_score} into one column) and {@code version} (V20) both
+     * resolve to existing columns the same way {@code scheduling_mode} does now.
      */
     private static final Map<String, Class<?>> DECLARED_TABLES = Map.of(
             "shift_template", ShiftTemplate.class,
             "shift_template_break_band", ShiftTemplateBreakBand.class,
             "agent_shift_assignment", AgentShiftAssignment.class,
-            "constraint_weights", ConstraintWeights.class
+            "constraint_weights", ConstraintWeights.class,
+            "schedule", Schedule.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */
