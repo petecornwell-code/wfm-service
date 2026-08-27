@@ -67,15 +67,18 @@ public class ShiftLibraryGenerationService {
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
+    private final ShiftLibraryValidationService shiftLibraryValidationService;
     private final ScheduleRepository scheduleRepository;
 
     public ShiftLibraryGenerationService(StaffingRequirementRepository staffingRequirementRepository,
                                           AgentDayHoursRepository agentDayHoursRepository,
                                           TimeslotGeneratorService timeslotGeneratorService,
+                                          ShiftLibraryValidationService shiftLibraryValidationService,
                                           ScheduleRepository scheduleRepository) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
+        this.shiftLibraryValidationService = shiftLibraryValidationService;
         this.scheduleRepository = scheduleRepository;
     }
 
@@ -325,7 +328,7 @@ public class ShiftLibraryGenerationService {
             for (Candidate candidate : candidates) {
                 int coverCount = 0;
                 for (ShiftLibraryValidationService.Window window : uncovered) {
-                    if (ShiftLibraryValidationService.covers(candidate.template(), candidate.bands(), window)) {
+                    if (shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), window)) {
                         coverCount++;
                     }
                 }
@@ -343,7 +346,7 @@ public class ShiftLibraryGenerationService {
             selected.add(best);
             Candidate finalBest = best;
             uncovered.removeIf(window ->
-                    ShiftLibraryValidationService.covers(finalBest.template(), finalBest.bands(), window));
+                    shiftLibraryValidationService.covers(finalBest.template(), finalBest.bands(), window));
         }
         return selected;
     }
@@ -379,7 +382,7 @@ public class ShiftLibraryGenerationService {
         List<ShiftLibraryValidationService.Window> result = new ArrayList<>();
         for (ShiftLibraryValidationService.Window window : windows) {
             boolean covered = selected.stream()
-                    .anyMatch(c -> ShiftLibraryValidationService.covers(c.template(), c.bands(), window));
+                    .anyMatch(c -> shiftLibraryValidationService.covers(c.template(), c.bands(), window));
             if (!covered) {
                 result.add(window);
             }
