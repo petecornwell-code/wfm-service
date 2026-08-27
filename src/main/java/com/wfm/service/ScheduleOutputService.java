@@ -139,14 +139,16 @@ public class ScheduleOutputService {
         // denormalised scalar columns) identically, so the two shapes can never disagree. On a
         // slot-scheduled desk schedule.getShiftAssignments() is structurally empty and this map
         // stays empty — every entry's shift stays null, unchanged from today.
-        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate = new HashMap<>();
-        for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
-            if (sa.getAgent() == null) continue;
-            ShiftDescriptor descriptor = resolveShiftDescriptor(sa);
-            if (descriptor == null) continue;
-            shiftDescriptorsByAgentDate
-                    .computeIfAbsent(sa.getAgent().getId(), k -> new HashMap<>())
-                    .put(sa.getDate(), descriptor);
+        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate =
+                buildShiftDescriptorsByAgentDate(schedule);
+
+        // Timeslots for the schedule, grouped by date — the candidate slot set divergence
+        // computation walks to find legal slots the agent did NOT hold (Task 2). The agent's own
+        // assignment list cannot express a slot they do not hold, so this must come from the
+        // schedule's own timeslots.
+        Map<LocalDate, List<Timeslot>> timeslotsByDate = new HashMap<>();
+        for (Timeslot ts : schedule.getTimeslots()) {
+            timeslotsByDate.computeIfAbsent(ts.getDate(), k -> new ArrayList<>()).add(ts);
         }
 
         // Group assigned assignments by (agentId, date)
@@ -171,8 +173,6 @@ public class ScheduleOutputService {
                 String agentName = da.getName();
                 LocalDate date = dateEntry.getKey();
 
-                LocalTime shiftStart = first.getTimeslot().getStartTime();
-                LocalTime shiftEnd = dayAssignments.get(dayAssignments.size() - 1).getTimeslot().getEndTime();
                 BigDecimal totalHours = BigDecimal.valueOf(dayAssignments.size()).multiply(incrementHours);
 
                 // Build assignment details
@@ -187,20 +187,57 @@ public class ScheduleOutputService {
                             matchType));
                 }
 
-                // Find breaks — gaps within shift span
-                List<BreakDetail> breaks = findBreaks(dayAssignments);
-
                 ShiftDescriptor shiftDescriptor = shiftDescriptorsByAgentDate
                         .getOrDefault(agentId, Map.of()).get(date);
 
+                LocalTime shiftStart;
+                LocalTime shiftEnd;
+                List<BreakDetail> breaks;
+                ShiftEnvelopeDivergence divergence = null;
+
+                if (shiftDescriptor != null) {
+                    // Authoritative envelope and band-derived break (Task 2) — the report layer
+                    // reads the same facts the solver already resolved, instead of re-deriving
+                    // both from the seat pattern.
+                    shiftStart = shiftDescriptor.startTime();
+                    shiftEnd = shiftDescriptor.endTime();
+                    breaks = bandBreaks(shiftDescriptor);
+                    List<Timeslot> dayTimeslots = timeslotsByDate.getOrDefault(date, List.of());
+                    divergence = computeDivergence(shiftDescriptor, dayAssignments, dayTimeslots);
+                } else {
+                    // No descriptor: a slot desk, or a shift-mode agent-day the solver left
+                    // unassigned. Keep today's behaviour exactly — seat-derived span, gap-derived
+                    // breaks, no divergence.
+                    shiftStart = first.getTimeslot().getStartTime();
+                    shiftEnd = dayAssignments.get(dayAssignments.size() - 1).getTimeslot().getEndTime();
+                    breaks = findBreaks(dayAssignments);
+                }
+
                 entries.add(new AgentScheduleEntry(
                         agentId, agentName, date, shiftStart, shiftEnd,
-                        totalHours, details, breaks, shiftDescriptor));
+                        totalHours, details, breaks, shiftDescriptor, divergence));
             }
         }
 
         entries.sort(Comparator.comparing(AgentScheduleEntry::agentName)
                 .thenComparing(AgentScheduleEntry::date));
+
+        // Roll the divergence total up into the schedule's own warnings collection — gives the
+        // operator a headline without scanning every row (Task 2, T-15-10-01).
+        int outOfEnvelopeSeatCount = 0;
+        int unworkedLegalSlotCount = 0;
+        for (AgentScheduleEntry entry : entries) {
+            if (entry.divergence() != null) {
+                outOfEnvelopeSeatCount += entry.divergence().outOfEnvelopeSeats().size();
+                unworkedLegalSlotCount += entry.divergence().unworkedLegalSlots().size();
+            }
+        }
+        if (outOfEnvelopeSeatCount > 0 && schedule.getWarnings() != null) {
+            schedule.getWarnings().add(outOfEnvelopeSeatCount
+                    + " agent-day seat(s) fall outside their assigned shift envelope; "
+                    + unworkedLegalSlotCount + " legal envelope slot(s) went unworked.");
+        }
+
         return entries;
     }
 
@@ -211,6 +248,12 @@ public class ScheduleOutputService {
         // Group assignments by agent + date, compute actual start times and breaks
         Map<UUID, Map<LocalDate, LocalTime>> actualStartTimes = new HashMap<>();
         Map<UUID, Map<LocalDate, List<BreakDetail>>> actualBreaks = new HashMap<>();
+
+        // Same descriptor resolution buildAgentSchedule uses — resolved once, from the one
+        // shared helper, so a shift desk's actual-break bookkeeping and its Agent Schedule
+        // entries can never disagree about which agent-days carry an assigned shift (Task 2).
+        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate =
+                buildShiftDescriptorsByAgentDate(schedule);
 
         Map<UUID, Map<LocalDate, List<AgentAssignment>>> grouped = new HashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
@@ -232,7 +275,16 @@ public class ScheduleOutputService {
                         .computeIfAbsent(agentEntry.getKey(), k -> new HashMap<>())
                         .put(dateEntry.getKey(), earliest);
 
-                List<BreakDetail> breaks = findBreaks(dayAssignments);
+                // On a shift desk the actual break is the assigned band's window, not a
+                // gap-derived hole — a shift-desk agent-day's actualBreakTime and the
+                // break-honoured count now measure the real break, not a hole (Task 2,
+                // T-15-10-05). This is a correction, not a regression: a band-derived break will
+                // honour or miss a preferred break time differently from a hole-derived one.
+                ShiftDescriptor descriptor = shiftDescriptorsByAgentDate
+                        .getOrDefault(agentEntry.getKey(), Map.of()).get(dateEntry.getKey());
+                List<BreakDetail> breaks = descriptor != null
+                        ? bandBreaks(descriptor)
+                        : findBreaks(dayAssignments);
                 if (!breaks.isEmpty()) {
                     actualBreaks
                             .computeIfAbsent(agentEntry.getKey(), k -> new HashMap<>())
@@ -422,6 +474,88 @@ public class ScheduleOutputService {
     }
 
     // --- Helpers ---
+
+    /**
+     * Shift descriptor lookup by (agentId, date) — the ONE place this response's shift descriptor
+     * is built, shared by {@link #buildAgentSchedule} and {@link #buildPreferenceReport} (Task 2)
+     * so the two builders resolve descriptors identically instead of each holding their own
+     * chance to disagree. Covers both the in-memory path (reading the transient
+     * {@code AgentShiftAssignment.shiftBandPair}) and the accepted path (reading the D-07
+     * denormalised scalar columns) identically. On a slot-scheduled desk
+     * {@code schedule.getShiftAssignments()} is structurally empty and this map stays empty —
+     * every entry's shift stays null, unchanged from today.
+     */
+    private Map<UUID, Map<LocalDate, ShiftDescriptor>> buildShiftDescriptorsByAgentDate(Schedule schedule) {
+        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate = new HashMap<>();
+        for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
+            if (sa.getAgent() == null) continue;
+            ShiftDescriptor descriptor = resolveShiftDescriptor(sa);
+            if (descriptor == null) continue;
+            shiftDescriptorsByAgentDate
+                    .computeIfAbsent(sa.getAgent().getId(), k -> new HashMap<>())
+                    .put(sa.getDate(), descriptor);
+        }
+        return shiftDescriptorsByAgentDate;
+    }
+
+    /**
+     * The assigned band's window as a single break, derived from the descriptor's offset and
+     * duration — never the gap-walking helper (Task 2). Empty when the band offset or duration is
+     * absent or non-positive, which is the legitimate no-break template shape P-02 permits.
+     */
+    private List<BreakDetail> bandBreaks(ShiftDescriptor descriptor) {
+        Integer offset = descriptor.bandOffsetMinutes();
+        Integer duration = descriptor.bandDurationMinutes();
+        if (offset == null || duration == null || duration <= 0) {
+            return List.of();
+        }
+        LocalTime breakStart = descriptor.startTime().plusMinutes(offset);
+        LocalTime breakEnd = breakStart.plusMinutes(duration);
+        return List.of(new BreakDetail(breakStart, breakEnd, duration));
+    }
+
+    /**
+     * Divergence between the assigned envelope and the day's actual seats (Task 2), using the one
+     * static coverage predicate from {@link com.wfm.model.ShiftBandPair#covers}. A held seat the
+     * predicate rejects is out-of-envelope; a legal slot (from the schedule's own timeslots for
+     * this date — the agent's own assignment list cannot express a slot they do not hold) the
+     * agent does not hold is unworked-legal. Returns {@code null} when both lists are empty so a
+     * clean agent-day carries no noise.
+     */
+    private ShiftEnvelopeDivergence computeDivergence(ShiftDescriptor descriptor,
+            List<AgentAssignment> dayAssignments, List<Timeslot> dayTimeslots) {
+        LocalTime envelopeStart = descriptor.startTime();
+        LocalTime envelopeEnd = descriptor.endTime();
+        Integer bandOffset = descriptor.bandOffsetMinutes();
+        Integer bandDuration = descriptor.bandDurationMinutes();
+
+        List<LocalTime> outOfEnvelopeSeats = new ArrayList<>();
+        Set<UUID> heldTimeslotIds = new HashSet<>();
+        for (AgentAssignment a : dayAssignments) {
+            Timeslot ts = a.getTimeslot();
+            heldTimeslotIds.add(ts.getId());
+            boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
+                    ts.getStartTime(), ts.getEndTime());
+            if (!legal) {
+                outOfEnvelopeSeats.add(ts.getStartTime());
+            }
+        }
+
+        List<LocalTime> unworkedLegalSlots = new ArrayList<>();
+        for (Timeslot ts : dayTimeslots) {
+            if (heldTimeslotIds.contains(ts.getId())) continue;
+            boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
+                    ts.getStartTime(), ts.getEndTime());
+            if (legal) {
+                unworkedLegalSlots.add(ts.getStartTime());
+            }
+        }
+
+        if (outOfEnvelopeSeats.isEmpty() && unworkedLegalSlots.isEmpty()) {
+            return null;
+        }
+        return new ShiftEnvelopeDivergence(outOfEnvelopeSeats, unworkedLegalSlots);
+    }
 
     /**
      * One descriptor shape for both schedule states (Task 2's own done-criterion): a live
