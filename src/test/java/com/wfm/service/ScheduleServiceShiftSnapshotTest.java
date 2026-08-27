@@ -331,6 +331,7 @@ class ScheduleServiceShiftSnapshotTest {
         assignment.setAgent(agent);
 
         ShiftTemplate template = new ShiftTemplate();
+        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setId(UUID.randomUUID());
         template.setName("Early");
         template.setStartTime(LocalTime.of(8, 0));

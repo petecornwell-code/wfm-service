@@ -167,6 +167,34 @@ public class ScheduleService {
         }
         response.setViolatedHardConstraints(new ArrayList<>(violatedHardSet));
 
+        // Warnings are re-published HERE, after every output view above has run, and as a
+        // DEDUPLICATED DEFENSIVE COPY. Three distinct problems are closed by those two properties:
+        //
+        //  1. GROWTH. Several producers write into the one live warnings list — the solver's
+        //     capacity advisory and per-date seat-supply advisories at solve time, and the
+        //     envelope-divergence headline from buildAgentSchedule above. buildAgentSchedule runs
+        //     on EVERY poll of this endpoint (~2s while a solve is RUNNING) against the same
+        //     Schedule instance InMemoryScheduleStore hands back by reference, so any producer that
+        //     appends without a guard inflates the operator's warnings panel without bound. An
+        //     order-preserving dedup here caps the panel regardless of which producer misbehaves,
+        //     rather than relying on every current and future writer to police itself.
+        //  2. ALIASING. buildDetailResponse assigned the LIVE list straight into the response, so
+        //     the DTO aliased mutable solver state and could change under serialisation.
+        //  3. ORDERING TRAP. That assignment happens BEFORE the output views run, so copying it
+        //     there instead would silently DROP the divergence warning buildAgentSchedule adds.
+        //     Re-publishing after the views is what makes the copy safe.
+        //
+        // Deduplication is on exact message equality and keeps first-occurrence order, so two
+        // genuinely different advisories (e.g. per-date seat-supply lines) both survive.
+        List<String> liveWarnings = schedule.getWarnings();
+        if (liveWarnings == null) {
+            response.setWarnings(List.of());
+        } else {
+            synchronized (liveWarnings) {
+                response.setWarnings(new ArrayList<>(new LinkedHashSet<>(liveWarnings)));
+            }
+        }
+
         // If date filter provided, filter output views to that date
         // Constraint violations are always returned in full regardless of date filter (spec §8.4)
         if (dateFilter != null && !dateFilter.isBlank()) {

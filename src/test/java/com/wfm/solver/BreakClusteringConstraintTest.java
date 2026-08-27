@@ -53,6 +53,7 @@ class BreakClusteringConstraintTest {
 
     private static ShiftTemplate template() {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(UUID.randomUUID());
         t.setName("Template-" + UUID.randomUUID());
         t.setStartTime(LocalTime.of(8, 0));

@@ -37,6 +37,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.format.TextStyle;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -1213,12 +1214,40 @@ public class SolverService {
             if (!unassignable.isEmpty()) {
                 boolean anyPairLiveOnDate = pairs.stream()
                         .anyMatch(p -> p.template().isEffectiveOn(date));
+                boolean anyPairAppliesOnWeekday = pairs.stream()
+                        .anyMatch(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date));
                 if (!anyPairLiveOnDate) {
                     errors.add(new ErrorDetail("shiftLibrary",
                             "No live shift template reaches " + date + " — the shift library is "
                                     + "entirely upcoming or retired for this date, so none of "
                                     + "the " + unassignable.size() + " agent(s) rostered that "
                                     + "day can be scheduled.",
+                            date.toString()));
+                } else if (!anyPairAppliesOnWeekday) {
+                    // Distinct from both neighbours, and it must be: the templates ARE live on this
+                    // date (so the branch above does not fire) and the agents' contracted hours may
+                    // match a template perfectly (so the branch below would blame the wrong thing —
+                    // it would tell an operator to change an agent's hours when the real defect is
+                    // an uncovered weekday). Naming the weekday is the whole point of the message.
+                    //
+                    // This case only became REACHABLE when getEligibleShiftBandPairs started
+                    // filtering on validWeekdays. Before that the solver would happily seat the
+                    // agent on a weekday-invalid template and the problem surfaced far downstream
+                    // as residual shiftEnvelopeCompliance penalty — observed live on Stubhub (EN),
+                    // 2026-01-05..11, as a frozen -8 whose eight violations were ALL weekday-invalid
+                    // assignments. Refusing here is what converts that silent, near-feasible wrong
+                    // answer into an up-front, actionable refusal.
+                    errors.add(new ErrorDetail("shiftLibrary",
+                            "No shift template applies on " + date + " (a "
+                                    + date.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+                                    + ") — templates exist and are live on this date, but none of "
+                                    + "them list " + date.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+                                    + " among their valid weekdays, so none of the "
+                                    + unassignable.size() + " agent(s) rostered that day can be "
+                                    + "scheduled. To fix it: add "
+                                    + date.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+                                    + " to an existing template's valid weekdays, add a template "
+                                    + "that covers it, or stop rostering agents on " + date + ".",
                             date.toString()));
                 } else {
                     for (AgentShiftAssignment row : unassignable) {

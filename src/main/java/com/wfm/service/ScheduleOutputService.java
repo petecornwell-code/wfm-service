@@ -232,13 +232,54 @@ public class ScheduleOutputService {
                 unworkedLegalSlotCount += entry.divergence().unworkedLegalSlots().size();
             }
         }
-        if (outOfEnvelopeSeatCount > 0 && schedule.getWarnings() != null) {
-            schedule.getWarnings().add(outOfEnvelopeSeatCount
-                    + " agent-day seat(s) fall outside their assigned shift envelope; "
-                    + unworkedLegalSlotCount + " legal envelope slot(s) went unworked.");
-        }
+        publishDivergenceWarning(schedule, outOfEnvelopeSeatCount, unworkedLegalSlotCount);
 
         return entries;
+    }
+
+    /**
+     * Stable marker identifying THIS method's warning among the schedule's other warnings (the
+     * solver's capacity advisory, the seat-supply advisory). Matching on a fixed substring rather
+     * than on whole-string equality is the point: the two counts change between polls while a
+     * solve is still running, so equality-based dedup would let every changed count append a new
+     * distinct line and the list would still grow — just less obviously.
+     */
+    private static final String ENVELOPE_DIVERGENCE_MARKER =
+            " agent-day seat(s) fall outside their assigned shift envelope; ";
+
+    /**
+     * Publishes the envelope-divergence headline IDEMPOTENTLY (UAT test 20 / review CR-04).
+     *
+     * <p>{@link #buildAgentSchedule} is a READ path: {@code ScheduleService} calls it on every
+     * GET of the schedule results, the results page polls that endpoint roughly every 2 seconds
+     * while a solve is RUNNING, and {@code InMemoryScheduleStore.get} hands back the SAME live
+     * {@link Schedule} instance by reference rather than a copy. A bare {@code warnings.add(...)}
+     * therefore appended one more identical line to the operator's warnings panel on every
+     * refresh, without bound, for as long as the page stayed open.
+     *
+     * <p>Replace-then-add rather than add-if-absent, so the published line always reflects the
+     * CURRENT counts and a divergence that clears (count back to zero) removes its stale warning
+     * instead of leaving a fixed one behind.
+     *
+     * <p>Synchronised on the list because concurrent polls — two browser tabs, or a poll racing
+     * the solve's own completion write — would otherwise interleave {@code removeIf}'s iteration
+     * with another thread's {@code add} on a plain {@code ArrayList}. The previous single
+     * {@code add} was already unsafe here; iterating makes that latent race worth closing.
+     */
+    private void publishDivergenceWarning(Schedule schedule, int outOfEnvelopeSeatCount,
+                                           int unworkedLegalSlotCount) {
+        List<String> warnings = schedule.getWarnings();
+        if (warnings == null) {
+            return;
+        }
+        synchronized (warnings) {
+            warnings.removeIf(w -> w != null && w.contains(ENVELOPE_DIVERGENCE_MARKER));
+            if (outOfEnvelopeSeatCount > 0) {
+                warnings.add(outOfEnvelopeSeatCount
+                        + ENVELOPE_DIVERGENCE_MARKER
+                        + unworkedLegalSlotCount + " legal envelope slot(s) went unworked.");
+            }
+        }
     }
 
     /**

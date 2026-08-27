@@ -156,4 +156,35 @@ public class ShiftTemplate {
         }
         return effectiveTo == null || !effectiveTo.isBefore(date);
     }
+
+    /**
+     * True when this template applies to {@code date}'s DAY OF WEEK — the single predicate for
+     * "may this template be used on this weekday", the weekday counterpart to
+     * {@link #isEffectiveOn(LocalDate)}.
+     *
+     * <p>Deliberately separate from {@code isEffectiveOn}: the two answer different questions and
+     * a caller can legitimately want one without the other. {@code isEffectiveOn} is about the
+     * template's LIFECYCLE (has it started, has it been retired); this is about its WEEKLY
+     * APPLICABILITY (a Weekend template is live all year but applies only on Saturday and Sunday).
+     * The solver's value range requires BOTH.
+     *
+     * <p>An empty or null mask returns {@code false} — a template valid on no weekday applies on
+     * no date. This is NOT reachable for persisted data, and the two independent reasons matter
+     * because they are what make {@code false} the safe answer rather than a desk-breaking one:
+     * {@code valid_weekdays} is {@code VARCHAR(7) NOT NULL} (V39), so no stored row can have a null
+     * mask; and {@code ShiftTemplateService} rejects an empty weekday set at save time ("A shift
+     * template must be valid on at least one weekday"), so no stored row can have an all-zero one.
+     * The empty case therefore arises only for in-memory fixtures that never called
+     * {@link #setValidWeekdays}. Were a null mask reachable in production, returning {@code false}
+     * here would silently render legacy templates unassignable everywhere — so if that NOT NULL
+     * constraint is ever relaxed, revisit this default rather than leaving it to fail quietly.
+     */
+    @Transient
+    public boolean appliesOn(LocalDate date) {
+        if (date == null) {
+            return false;
+        }
+        Set<DayOfWeek> days = getValidWeekdays();
+        return days != null && days.contains(date.getDayOfWeek());
+    }
 }

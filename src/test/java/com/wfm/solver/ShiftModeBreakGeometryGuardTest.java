@@ -242,6 +242,7 @@ class ShiftModeBreakGeometryGuardTest {
         agent.setId(UUID.randomUUID());
 
         ShiftTemplate template = new ShiftTemplate();
+        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setId(UUID.randomUUID());
         template.setName("Late");
         template.setStartTime(ENVELOPE_START);

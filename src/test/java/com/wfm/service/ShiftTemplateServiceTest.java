@@ -205,6 +205,7 @@ class ShiftTemplateServiceTest {
     @Test
     void netHours_zeroBreakDuration_equalsFullEnvelope() {
         ShiftTemplate template = new ShiftTemplate();
+        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setStartTime(LocalTime.of(8, 0));
         template.setEndTime(LocalTime.of(12, 0));
 

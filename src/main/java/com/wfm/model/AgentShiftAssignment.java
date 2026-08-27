@@ -155,12 +155,32 @@ public class AgentShiftAssignment {
      * or a RETIRED template ({@code effectiveTo} before {@code date}) is excluded, matching
      * ENVL-01's "from that desk's live library" clause.
      *
+     * <p>The THIRD filter is the template's {@code validWeekdays} against this row's day of week.
+     * Without it the solver could seat an agent on a template explicitly marked as not applying to
+     * that day — a MON-FRI "Late" on a Sunday, or a SAT/SUN "Weekend Late" on a Wednesday. That is
+     * not a theoretical hole: it was observed live on desk Stubhub (EN) for period
+     * 2026-01-05..2026-01-11, where ALL EIGHT residual hard violations were weekday-invalid
+     * assignments, and it was the sole surviving driver of a frozen -8 hard score after G-15-10's
+     * other four causes had been fixed. The mechanism is indirect, which is why it hid: giving a
+     * Sunday agent the Late envelope (12:00-21:00) when Sunday demand opens at 11:00 forces exactly
+     * one seat outside the envelope and surrenders exactly one legal slot inside it, so it
+     * presented as a seat-supply shortfall (the 1:1 out/unworked fingerprint) rather than as a
+     * weekday error.
+     *
+     * <p>{@code validWeekdays} was previously read ONLY by {@code ShiftLibraryValidationService}
+     * (a page advisory) and {@code ShiftLibraryGenerationService} (suggestion authoring) — the
+     * solver path never consulted it, so the field constrained what the library ADVISED but not
+     * what the solver could DO. This filter is what makes it binding.
+     *
      * <p>Filtering with {@code Stream} preserves the pre-sorted order rather than re-deriving it
      * per call. An agent-day whose hours match no live-on-that-date pair returns an empty range —
      * the variable stays unassigned ({@code allowsUnassigned}), it never throws; a desk whose
      * ENTIRE library is UPCOMING/retired for a working agent-day correctly drives
      * {@code shiftEnvelopeCompliance} to penalise every seat for that agent-day (D-06) rather than
-     * silently permitting an off-library shift.
+     * silently permitting an off-library shift. Narrowing the range by weekday widens that same
+     * empty-range case, which is why {@code SolverService.requireShiftEnvelopeSeatSupply} refuses
+     * such a desk BEFORE solving with a named date rather than letting it degrade into envelope
+     * penalty.
      */
     @ValueRangeProvider(id = "shiftBandRange")
     public List<ShiftBandPair> getEligibleShiftBandPairs() {
@@ -174,6 +194,7 @@ public class AgentShiftAssignment {
                     return net != null && effective != null && net.compareTo(effective) == 0;
                 })
                 .filter(p -> date != null && p.template().isEffectiveOn(date))
+                .filter(p -> date != null && p.template().appliesOn(date))
                 .toList();
     }
 }

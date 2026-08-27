@@ -109,6 +109,69 @@ class ScheduleOutputServiceShiftReportingTest {
     }
 
     // ------------------------------------------------------------------
+    //  UAT test 20 / review CR-04 — the warning headline must be IDEMPOTENT
+    //
+    //  buildAgentSchedule is a READ path. ScheduleService calls it on every GET of the schedule
+    //  results, the results page polls that endpoint ~every 2s while a solve is RUNNING, and
+    //  InMemoryScheduleStore.get returns the SAME Schedule instance by reference. Before the fix
+    //  this method did a bare warnings.add(...), so the operator's warnings panel grew by one
+    //  duplicate line per refresh, unbounded, for as long as the page stayed open.
+    //
+    //  No test in this suite asserted on getWarnings() at all, which is precisely how that
+    //  shipped. These three are the missing guard.
+    // ------------------------------------------------------------------
+
+    @Test
+    void buildAgentSchedule_repeatedPolls_doNotGrowTheWarningsList() {
+        Schedule schedule = scheduleWithLiveDescriptor(SCATTERED);
+
+        // Ten polls stands in for a results page left open ~20 seconds.
+        for (int poll = 0; poll < 10; poll++) {
+            service.buildAgentSchedule(schedule);
+        }
+
+        assertThat(schedule.getWarnings())
+                .as("one divergence headline regardless of how many times the page polled")
+                .filteredOn(w -> w.contains("fall outside their assigned shift envelope"))
+                .hasSize(1);
+    }
+
+    @Test
+    void buildAgentSchedule_preservesWarningsItDoesNotOwn() {
+        Schedule schedule = scheduleWithLiveDescriptor(SCATTERED);
+        // The solver's own capacity advisory (SolverService sets these once per solve). The
+        // divergence republish must not collaterally drop another producer's warning.
+        String capacityAdvisory = "Demand (100 FTE-slots) exceeds supply (80 hrs, 80 slots) by 20 slots.";
+        schedule.getWarnings().add(capacityAdvisory);
+
+        service.buildAgentSchedule(schedule);
+        service.buildAgentSchedule(schedule);
+
+        assertThat(schedule.getWarnings()).contains(capacityAdvisory);
+        assertThat(schedule.getWarnings()).filteredOn(w -> w.equals(capacityAdvisory)).hasSize(1);
+    }
+
+    @Test
+    void buildAgentSchedule_divergenceThatClears_removesItsStaleWarning() {
+        // A divergent poll publishes the headline...
+        Schedule diverged = scheduleWithLiveDescriptor(SCATTERED);
+        service.buildAgentSchedule(diverged);
+        assertThat(diverged.getWarnings())
+                .anyMatch(w -> w.contains("fall outside their assigned shift envelope"));
+
+        // ...and a later poll, once the solver has pulled every seat back inside the envelope,
+        // must RETRACT it. Add-if-absent dedup would leave this stale line on screen forever.
+        Schedule clean = scheduleWithLiveDescriptor(SANE);
+        clean.getWarnings().add("1 agent-day seat(s) fall outside their assigned shift envelope; "
+                + "1 legal envelope slot(s) went unworked.");
+
+        service.buildAgentSchedule(clean);
+
+        assertThat(clean.getWarnings())
+                .noneMatch(w -> w.contains("fall outside their assigned shift envelope"));
+    }
+
+    // ------------------------------------------------------------------
     //  Test 4 — clean agent-day
     // ------------------------------------------------------------------
 
@@ -273,6 +336,7 @@ class ScheduleOutputServiceShiftReportingTest {
         Specialization spec = specialization("Chat");
 
         ShiftTemplate template = new ShiftTemplate();
+        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setId(UUID.randomUUID());
         template.setName("Late");
         template.setStartTime(ENVELOPE_START);

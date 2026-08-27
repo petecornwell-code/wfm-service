@@ -729,6 +729,7 @@ class ShiftLibraryValidationServiceTest {
                                         int breakOffsetMinutes, int breakDurationMinutes,
                                         Set<DayOfWeek> weekdays, LocalDate effectiveFrom, LocalDate effectiveTo) {
         ShiftTemplate template = new ShiftTemplate();
+        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setTenantId(TENANT_A);
         template.setDeskId(deskId);
         template.setName(name);

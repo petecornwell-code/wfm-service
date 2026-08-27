@@ -49,6 +49,7 @@ class ShiftEnvelopeComplianceConstraintTest {
 
     private static ShiftTemplate template(LocalTime start, LocalTime end) {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(UUID.randomUUID());
         t.setName("Template-" + UUID.randomUUID());
         t.setStartTime(start);

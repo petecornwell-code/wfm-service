@@ -17,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -67,6 +68,7 @@ class ShiftEnvelopeSupplyGateTest {
 
     private static ShiftTemplate template(LocalTime start, LocalTime end, LocalDate effectiveFrom, LocalDate effectiveTo) {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(UUID.randomUUID());
         t.setName("Day");
         t.setStartTime(start);
@@ -266,6 +268,73 @@ class ShiftEnvelopeSupplyGateTest {
                         assertThat(d.message()).contains("7.50");
                     });
                 });
+    }
+
+    // ------------------------------------------------------------------
+    //  Uncovered weekday -- refuse up front, and blame the RIGHT thing
+    //
+    //  Narrowing the value range by validWeekdays widens the empty-range case: an agent rostered
+    //  on a day no template lists now has nothing to take. Without this branch the gate would fall
+    //  through to the "hours match no live pair" message and tell the operator to change an
+    //  agent's contracted hours, when the actual defect is an uncovered weekday. Getting the
+    //  DIAGNOSIS right is the point of this test, not merely that it throws.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SHIFT: a weekday no template covers is refused up front, naming the weekday")
+    void refusesWeekdayNoTemplateCovers() {
+        // DAY is a Monday; this template is valid only at the weekend, so nothing covers Monday.
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        t.setValidWeekdays(java.util.EnumSet.of(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY));
+        ShiftBandPair pair = new ShiftBandPair(t, band(t));
+        List<Timeslot> window = operatingWindow();
+
+        Agent a1 = agent("A-1");
+        // Hours match the pair's net hours EXACTLY — so if the gate blamed hours it would be wrong.
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(shiftRow(a1, dc1, List.of(pair)));
+        List<AgentAssignment> assignments = new ArrayList<>(fullSupplySeats(window, 1));
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message()).contains("No shift template applies on");
+                        assertThat(d.message()).contains(DAY.toString());
+                        assertThat(d.message()).contains("Monday");
+                    });
+                    // It must NOT mis-diagnose this as an hours mismatch — the agent's hours are
+                    // a perfect match and telling the operator to change them would send them
+                    // chasing the wrong fix.
+                    assertThat(details).noneSatisfy(d ->
+                            assertThat(d.message()).contains("matches no live shift template's net hours"));
+                });
+    }
+
+    @Test
+    @DisplayName("SHIFT: the template's own valid weekday is not refused")
+    void doesNotRefuseWhenTemplateCoversThatWeekday() {
+        // Non-regression control for the test above: same desk, same agent, same hours — the only
+        // change is that the template now lists the day being solved.
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        t.setValidWeekdays(java.util.EnumSet.of(DAY.getDayOfWeek()));
+        ShiftBandPair pair = new ShiftBandPair(t, band(t));
+        List<Timeslot> window = operatingWindow();
+
+        Agent a1 = agent("A-1");
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(shiftRow(a1, dc1, List.of(pair)));
+        List<AgentAssignment> assignments = new ArrayList<>(fullSupplySeats(window, 1));
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> {
+            SolverService.requireShiftEnvelopeSeatSupply(
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings);
+            throw new RuntimeException("SENTINEL: gate returned normally");
+        }).hasMessage("SENTINEL: gate returned normally");
     }
 
     // ------------------------------------------------------------------

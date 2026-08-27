@@ -113,6 +113,7 @@ class ZeroDemandTimeslotCeilingTest {
 
     private static ShiftTemplate lateTemplate() {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(UUID.randomUUID());
         t.setName("Late");
         t.setStartTime(LATE_START);

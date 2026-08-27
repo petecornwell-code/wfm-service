@@ -33,6 +33,7 @@ class SolverServiceShiftAssignmentTest {
 
     private static ShiftTemplate template(String name, LocalTime start, LocalTime end, LocalDate effectiveFrom) {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(UUID.randomUUID());
         t.setName(name);
         t.setStartTime(start);
@@ -181,6 +182,76 @@ class SolverServiceShiftAssignmentTest {
         // date), so a row with no date is a construction defect and correctly yields no eligible
         // pairs. This test asserts the matching-hours case, so date is required here to isolate
         // that behaviour from the (separately covered) missing-date case.
+        sa.setDate(MON);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(pair));
+
+        assertThat(sa.getEligibleShiftBandPairs()).containsExactly(pair);
+    }
+
+    // --- validWeekdays enforcement, per agent-day (UAT test 10, second gap-closure round) ---
+    //
+    // Found in the field, not by review. On desk Stubhub (EN) for 2026-01-05..11 the solver seated
+    // a MON-FRI "Late" template on a SUNDAY and a SAT/SUN "Weekend Late" on a Monday and a
+    // Wednesday. All EIGHT residual hard violations of a frozen -8 solve were weekday-invalid
+    // assignments. validWeekdays was consulted by ShiftLibraryValidationService (a page advisory)
+    // and ShiftLibraryGenerationService (suggestions) but by NOTHING in the solver path, so the
+    // field constrained what the library ADVISED and not what the solver could DO.
+    //
+    // The symptom was indirect, which is why neither review nor the suite caught it: giving a
+    // Sunday agent the Late envelope (12:00-21:00) when Sunday demand opens at 11:00 forces one
+    // seat outside the envelope and surrenders one legal slot inside it. It therefore presented as
+    // a 1:1 seat-supply shortfall — the exact fingerprint of an already-diagnosed cause — rather
+    // than as a weekday error.
+
+    @Test
+    void eligibleShiftBandPairs_templateNotValidOnThatWeekday_isExcluded() {
+        // The live shape: a MON-FRI template offered to a SUNDAY agent-day.
+        LocalDate sunday = LocalDate.of(2026, 1, 11);
+        assertThat(sunday.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SUNDAY);
+
+        ShiftTemplate late = template("Late", LocalTime.of(12, 0), LocalTime.of(21, 0), LocalDate.of(2026, 1, 1));
+        late.setValidWeekdays(java.util.EnumSet.of(
+                java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.TUESDAY, java.time.DayOfWeek.WEDNESDAY,
+                java.time.DayOfWeek.THURSDAY, java.time.DayOfWeek.FRIDAY));
+        ShiftBandPair pair = new ShiftBandPair(late, band(late, 240, 60)); // 8.00h net
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(sunday);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), sunday, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(pair));
+
+        // Hours match exactly and the template IS effective on this date — the ONLY reason to
+        // exclude it is the weekday. Before the fix this returned the pair.
+        assertThat(late.isEffectiveOn(sunday)).isTrue();
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+    }
+
+    @Test
+    void eligibleShiftBandPairs_weekendTemplateOnAWeekday_isExcluded() {
+        // The mirror-image live case: a SAT/SUN template offered to a Monday agent-day.
+        ShiftTemplate weekendLate = template("Weekend Late", LocalTime.of(11, 0), LocalTime.of(20, 0),
+                LocalDate.of(2026, 1, 1));
+        weekendLate.setValidWeekdays(java.util.EnumSet.of(
+                java.time.DayOfWeek.SATURDAY, java.time.DayOfWeek.SUNDAY));
+        ShiftBandPair pair = new ShiftBandPair(weekendLate, band(weekendLate, 240, 60));
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(pair));
+
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+    }
+
+    @Test
+    void eligibleShiftBandPairs_templateValidOnThatWeekday_isStillOffered() {
+        // Non-regression: narrowing by weekday must not withhold a template on a day it DOES list.
+        ShiftTemplate late = template("Late", LocalTime.of(12, 0), LocalTime.of(21, 0), LocalDate.of(2026, 1, 1));
+        late.setValidWeekdays(java.util.EnumSet.of(java.time.DayOfWeek.MONDAY));
+        ShiftBandPair pair = new ShiftBandPair(late, band(late, 240, 60));
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
         sa.setDate(MON);
         sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
         sa.setDeskShiftBandPairs(List.of(pair));

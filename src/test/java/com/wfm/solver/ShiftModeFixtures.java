@@ -412,6 +412,7 @@ final class ShiftModeFixtures {
 
     private static ShiftTemplate template(AtomicLong ids, UUID deskId, String name, LocalTime start, LocalTime end) {
         ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         t.setId(nextId(ids));
         t.setTenantId(TENANT);
         t.setDeskId(deskId);
