@@ -334,9 +334,18 @@ public class SolverService {
         // 10d. Guarantee a seat on every timeslot so the "Minimum staffing" constraint can
         // actually bite. Deliberately AFTER computeTimeslotDemandConfigs above, so these
         // seats are never counted as demand — they exist to be fillable, not to be required.
+        //
+        // G-15-10 (plan 15-09): on a SHIFT desk this is no longer mode-blind. The per-date
+        // working agent-day count is derived here from shiftAssignments (built at step 9c) by
+        // grouping on AgentShiftAssignment::getDate and counting — no repository call, no
+        // reordering of any existing step.
+        Map<LocalDate, Integer> workingAgentDaysByDate = shiftAssignments.stream()
+                .collect(Collectors.groupingBy(AgentShiftAssignment::getDate,
+                        Collectors.summingInt(sa -> 1)));
         List<AgentAssignment> minStaffingSeats = expandMinimumStaffingSeats(
                 tenantId, deskId, schedule.getId(), timeslots, assignments,
-                staffingRequirements, specializations);
+                staffingRequirements, specializations,
+                desk.getSchedulingMode(), shiftBandPairs, workingAgentDaysByDate);
         if (!minStaffingSeats.isEmpty()) {
             assignments.addAll(minStaffingSeats);
             log.debug("Minimum-staffing seats: {} added for timeslots with no demand-derived seat",
@@ -1152,22 +1161,41 @@ public class SolverService {
      * from the stream, so it stayed silent on exactly the hours it was written for — at any
      * weight, hard included. Creating the seat fixes both halves: the timeslot now appears
      * in the grouping, and the solver has a variable it can actually assign an agent to.
-     * Penalising an hour the solver cannot staff would only make the schedule permanently
-     * infeasible.
      *
-     * <p>Seats are created only up to {@link ScheduleConstraintProvider#MIN_AGENTS_PER_TIMESLOT}
-     * and only where the timeslot falls short, so a timeslot with real demand is untouched.
-     * They are appended AFTER {@code computeTimeslotDemandConfigs} has run, so they never
+     * <p><strong>Mode split (G-15-10, plan 15-09).</strong> On a SLOT desk, or a SHIFT desk
+     * whose live pair list is empty, this behaves exactly as before: every timeslot short of
+     * {@link ScheduleConstraintProvider#MIN_AGENTS_PER_TIMESLOT} is topped up, unconditionally
+     * — the same code path a SLOT desk always took, so a SLOT desk cannot drift. On a SHIFT
+     * desk with a live library, coverage intent is expressed through the library
+     * (operator ruling OR-1), so the top-up branches per timeslot:
+     * <ul>
+     *   <li>already holding a seat (a {@link TimeslotDemandConfig} row governs it) — untouched;
+     *   <li>holding no seat and covered by NO {@link ShiftBandPair#covers} in the live list —
+     *       an hour the operator's library does not reach is an hour they decided not to
+     *       staff, so it gets no seat; penalising a timeslot the solver cannot assign into
+     *       would just make the schedule permanently infeasible;
+     *   <li>holding no seat and covered by at least one pair — gets
+     *       {@code max(MIN_AGENTS_PER_TIMESLOT, workingAgentDaysOn(date))} seats. The D-04
+     *       value range admits only pairs whose net hours exactly equal the agent-day's
+     *       effective hours, so an agent must occupy every non-break slot of their envelope;
+     *       a legal slot with fewer seats than the agents the library can put there is an
+     *       obligation the solver cannot discharge without a hard violation. These seats carry
+     *       no {@code TimeslotDemandConfig} row, so they are free when left empty and free
+     *       when filled — the over-allocation ceiling is untouched.
+     * </ul>
+     *
+     * <p>They are appended AFTER {@code computeTimeslotDemandConfigs} has run, so they never
      * inflate {@link TimeslotDemandConfig} — a filler seat is fillable, not required, and the
      * under/over-allocation constraints continue to judge the hour on its real forecast.
      *
      * <p>Each seat must carry a real {@link Specialization}: {@code specializationMatch}
      * dereferences {@code getRequiredSpecialization().getId()} with no null guard, so a null
-     * would throw during scoring rather than merely go unmatched. The desk's predominant
-     * specialization by total required FTEs is used — it is the one demand is actually
-     * expressed in, so agents rostered on the desk are the most likely to hold it and be able
-     * to satisfy that hard constraint. Ties break on id so a given schedule always expands
-     * identically.
+     * would throw during scoring rather than merely go unmatched. Seats cycle the desk's
+     * specializations in ascending id order, starting at the desk's predominant specialization
+     * by total required FTEs — the one demand is actually expressed in, so agents rostered on
+     * the desk are the most likely to hold it — so seat index 0 at any timeslot is always the
+     * predominant specialization, byte-identical to what a single-seat top-up always produced.
+     * Ties break on id so a given schedule always expands identically.
      *
      * @return the extra seats to append; empty when every timeslot already has enough, or
      *         when the desk has no specialization to attribute a seat to.
@@ -1177,7 +1205,10 @@ public class SolverService {
             List<Timeslot> timeslots,
             List<AgentAssignment> existingAssignments,
             List<StaffingRequirement> staffingRequirements,
-            List<Specialization> specializations) {
+            List<Specialization> specializations,
+            SchedulingMode schedulingMode,
+            List<ShiftBandPair> shiftBandPairs,
+            Map<LocalDate, Integer> workingAgentDaysByDate) {
 
         if (timeslots == null || timeslots.isEmpty()) {
             return List.of();
@@ -1196,22 +1227,83 @@ public class SolverService {
             }
         }
 
+        boolean slotLike = schedulingMode != SchedulingMode.SHIFT
+                || shiftBandPairs == null || shiftBandPairs.isEmpty();
+        List<Specialization> orderedSpecs = specializationCycleFrom(specializations, fillerSpec);
+
         List<AgentAssignment> extra = new ArrayList<>();
         for (Timeslot ts : timeslots) {
             int have = seatsPerTimeslot.getOrDefault(ts.getId(), 0);
-            for (int i = have; i < ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT; i++) {
-                AgentAssignment a = new AgentAssignment();
-                a.setId(UUID.randomUUID());
-                a.setTenantId(tenantId);
-                a.setDeskId(deskId);
-                a.setScheduleId(scheduleId);
-                a.setTimeslot(ts);
-                a.setRequiredSpecialization(fillerSpec);
-                // agent stays null — the solver fills it, driven by "Minimum staffing"
-                extra.add(a);
+
+            if (slotLike) {
+                for (int i = have; i < ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT; i++) {
+                    extra.add(fillerSeat(tenantId, deskId, scheduleId, ts, fillerSpec));
+                }
+                continue;
+            }
+
+            if (have > 0) {
+                continue; // a TimeslotDemandConfig row already governs this hour
+            }
+            boolean covered = shiftBandPairs.stream().anyMatch(pair -> pair.covers(ts));
+            if (!covered) {
+                continue; // OR-1: the library does not reach this hour -- no seat
+            }
+
+            int target = Math.max(ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT,
+                    workingAgentDaysByDate == null
+                            ? 0
+                            : workingAgentDaysByDate.getOrDefault(ts.getDate(), 0));
+            for (int i = 0; i < target; i++) {
+                Specialization spec = orderedSpecs.get(i % orderedSpecs.size());
+                extra.add(fillerSeat(tenantId, deskId, scheduleId, ts, spec));
             }
         }
         return extra;
+    }
+
+    private static AgentAssignment fillerSeat(long tenantId, UUID deskId, UUID scheduleId,
+            Timeslot ts, Specialization spec) {
+        AgentAssignment a = new AgentAssignment();
+        a.setId(UUID.randomUUID());
+        a.setTenantId(tenantId);
+        a.setDeskId(deskId);
+        a.setScheduleId(scheduleId);
+        a.setTimeslot(ts);
+        a.setRequiredSpecialization(spec);
+        // agent stays null — the solver fills it, driven by "Minimum staffing"
+        return a;
+    }
+
+    /**
+     * The desk's specializations in ascending id order, rotated so {@code start} (the
+     * predominant specialization) is first — so cycling through this list assigns seat index 0
+     * the predominant specialization, exactly matching the single-seat top-up's prior output.
+     */
+    private static List<Specialization> specializationCycleFrom(
+            List<Specialization> specializations, Specialization start) {
+
+        List<Specialization> sorted = specializations == null
+                ? List.of()
+                : specializations.stream()
+                        .filter(s -> s.getId() != null)
+                        .sorted(Comparator.comparing(s -> s.getId().toString()))
+                        .toList();
+        if (sorted.isEmpty()) {
+            return List.of(start);
+        }
+        int startIndex = 0;
+        for (int i = 0; i < sorted.size(); i++) {
+            if (sorted.get(i).getId().equals(start.getId())) {
+                startIndex = i;
+                break;
+            }
+        }
+        List<Specialization> rotated = new ArrayList<>(sorted.size());
+        for (int i = 0; i < sorted.size(); i++) {
+            rotated.add(sorted.get((startIndex + i) % sorted.size()));
+        }
+        return rotated;
     }
 
     /**

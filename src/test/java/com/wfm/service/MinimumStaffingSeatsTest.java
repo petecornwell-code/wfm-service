@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.model.AgentAssignment;
+import com.wfm.model.SchedulingMode;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
@@ -12,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,7 +80,8 @@ class MinimumStaffingSeatsTest {
                 List.of(bare, busy),
                 new ArrayList<>(List.of(seat(busy, english))),
                 List.of(requirement(busy, english, 44)),
-                List.of(english));
+                List.of(english),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).hasSize(1);
         assertThat(extra.get(0).getTimeslot()).isEqualTo(bare);
@@ -96,7 +99,8 @@ class MinimumStaffingSeatsTest {
 
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(),
-                List.of(), List.of(english));
+                List.of(), List.of(english),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).hasSize(1);
         assertThat(extra.get(0).getRequiredSpecialization()).isNotNull();
@@ -116,7 +120,8 @@ class MinimumStaffingSeatsTest {
                 List.of(bare, busy),
                 new ArrayList<>(List.of(seat(busy, english))),
                 List.of(requirement(busy, payments, 3), requirement(busy, english, 44)),
-                List.of(english, payments));
+                List.of(english, payments),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).hasSize(1);
         assertThat(extra.get(0).getRequiredSpecialization().getName()).isEqualTo("English");
@@ -133,7 +138,8 @@ class MinimumStaffingSeatsTest {
                 List.of(busy),
                 new ArrayList<>(List.of(seat(busy, english), seat(busy, english))),
                 List.of(requirement(busy, english, 2)),
-                List.of(english));
+                List.of(english),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).isEmpty();
     }
@@ -153,7 +159,8 @@ class MinimumStaffingSeatsTest {
                 List.of(eight, nine, ten, eleven),
                 new ArrayList<>(List.of(seat(eleven, english))),
                 List.of(requirement(eleven, english, 44)),
-                List.of(english));
+                List.of(english),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).hasSize(3);
         assertThat(extra).allSatisfy(a -> assertThat(a.getAgent()).isNull());
@@ -171,11 +178,13 @@ class MinimumStaffingSeatsTest {
         // Equal demand on both, so the tiebreak (lowest id) must decide, not map ordering.
         var reqs = List.of(requirement(bare, a1, 5), requirement(bare, b1, 5));
         String first = SolverService.expandMinimumStaffingSeats(
-                TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), reqs, List.of(a1, b1))
+                TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), reqs, List.of(a1, b1),
+                SchedulingMode.SLOT, List.of(), Map.of())
                 .get(0).getRequiredSpecialization().getId().toString();
         for (int i = 0; i < 5; i++) {
             String again = SolverService.expandMinimumStaffingSeats(
-                    TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), reqs, List.of(a1, b1))
+                    TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), reqs, List.of(a1, b1),
+                    SchedulingMode.SLOT, List.of(), Map.of())
                     .get(0).getRequiredSpecialization().getId().toString();
             assertThat(again).isEqualTo(first);
         }
@@ -187,7 +196,8 @@ class MinimumStaffingSeatsTest {
         Timeslot bare = timeslot(LocalTime.of(8, 0));
 
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
-                TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), List.of(), List.of());
+                TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(), List.of(), List.of(),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).isEmpty();
     }
@@ -200,7 +210,8 @@ class MinimumStaffingSeatsTest {
 
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(),
-                List.of(), List.of(english));
+                List.of(), List.of(english),
+                SchedulingMode.SLOT, List.of(), Map.of());
 
         assertThat(extra).hasSize(ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT);
     }

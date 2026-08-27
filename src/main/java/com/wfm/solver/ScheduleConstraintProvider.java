@@ -582,11 +582,23 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * <p>The bulk under-allocation constraints derive their floor from demand
      * ({@code underallocationHardLimitPct} of {@code totalDemandFTEs}), so a timeslot
      * forecast at zero FTEs obliges nothing — 50% of 0 is 0. A demand file with leading
-     * zeros therefore leaves the desk legitimately unstaffed for those hours, and because
-     * an 8h shift plus a 1h break spans exactly 9 of a 13h window, the solver packs every
-     * shift against the first non-zero hour. That is correct against the forecast but
-     * leaves no cover at all for walk-ins, spillover or a forecast that simply understates
-     * the early hours.
+     * zeros therefore leaves the desk legitimately unstaffed for those hours, and — on a
+     * SLOT desk, where the solver is free to pack shifts wherever it likes — because an 8h
+     * shift plus a 1h break spans exactly 9 of a 13h window, the solver packs every shift
+     * against the first non-zero hour. That is correct against the forecast but leaves no
+     * cover at all for walk-ins, spillover or a forecast that simply understates the early
+     * hours.
+     *
+     * <p><strong>The packing premise does not hold on a SHIFT desk (G-15-10, plan 15-09).</strong>
+     * There the solver does not choose where a shift starts — the operator's shift library
+     * does — so "the solver packs every shift against the first non-zero hour" describes
+     * SLOT-mode freedom the SHIFT-mode solver never has. The floor this constraint enforces
+     * is still meaningful there, but its reachable domain changes: {@code SolverService}
+     * {@code .expandMinimumStaffingSeats} only creates a SHIFT-mode top-up seat at a timeslot
+     * some live {@link ShiftBandPair} covers (operator ruling OR-1 — an hour the library does
+     * not reach is an hour the operator decided not to staff). A timeslot no pair covers
+     * therefore carries no {@link AgentAssignment} at all, so this constraint's {@code groupBy}
+     * emits no group for it and the floor cannot fire there — by design, not by omission.
      *
      * <p><strong>Deliberately weight-driven rather than hard-coded.</strong>
      * {@link ConstraintWeights} is a {@code @ConstraintConfiguration} whose weights are
