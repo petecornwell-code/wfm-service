@@ -125,6 +125,18 @@ public class ConstraintWeights {
     @Column(name = "min_staffing_weight")
     private HardSoftScore minStaffingWeight = HardSoftScore.ofSoft(1000);
 
+    /**
+     * Weight for "Shift envelope compliance" (Phase 15, ENVL-02) — the hard constraint the whole
+     * Option A coupling rests on (SPIKE-COUPLING.md). Hard by default: an agent seated outside
+     * their chosen envelope is an illegal schedule, not a preference. Weight-driven like every
+     * other constraint in this file, per {@code minimumStaffing}'s precedent that hard-vs-soft is
+     * a per-desk configuration row, not a code decision.
+     */
+    @ConstraintWeight("Shift envelope compliance")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "shift_envelope_compliance_weight")
+    private HardSoftScore shiftEnvelopeComplianceWeight = HardSoftScore.ofHard(1);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -192,4 +204,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(HardSoftScore minStaffingWeight) { this.minStaffingWeight = minStaffingWeight; }
+
+    public HardSoftScore getShiftEnvelopeComplianceWeight() { return shiftEnvelopeComplianceWeight; }
+    public void setShiftEnvelopeComplianceWeight(HardSoftScore shiftEnvelopeComplianceWeight) { this.shiftEnvelopeComplianceWeight = shiftEnvelopeComplianceWeight; }
 }
