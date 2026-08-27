@@ -194,20 +194,138 @@ explanation. It does not change the committed-test numbers used against the Pass
 
 ## Verdict
 
-*(To be filled in by Task 3's commit, applying the Pass Rule above exactly as committed.)*
+**PASS.**
 
-## Plateau Finding
+Applying the Pass Rule exactly as committed in the Pass Rule section above, against the Results
+recorded above and nothing else:
 
-*(To be filled in by Task 3's commit.)*
+| # | Criterion | Measured | Result |
+|---|---|---|---|
+| 1 | Must-pass: shift arm reaches `0hard` on every seed | `shift-shifts-first`: `0hard` on seeds 1,2,3,4,5 (5/5). `shift-seats-first`: `0hard` on seeds 1,2,3,4,5 (5/5). | **PASS** |
+| 2 | Comparative: shift arm's median unstaffed demand slots no worse than the slot arm's median | Shift median = **0.0**. Slot median = **28.0**. `0.0 ≤ 28.0`. | **PASS** (literal wording — "no worse than" is satisfied) |
+| 3 | Noise rule applied to the SIZE of that comparative difference | Difference = `28.0 − 0.0 = 28.0`. Slot arm's own spread = `43.0 − 0.0 = 43.0`. `28.0 < 43.0`. | Per the noise rule applied literally, this specific difference is **smaller than the slot arm's own spread** and is therefore written up as **"no measurable difference" on this metric's magnitude** — not claimed as a 28-slot win. Same result for hours assigned: median difference `64.0 − 55.5 = 8.5h` vs slot's own spread `64.00 − 51.25 = 12.75h`; `8.5 < 12.75` → also "no measurable difference" on magnitude. |
+
+**Why the verdict is PASS despite criterion 3's "no measurable difference" on magnitude:** criterion
+1 is not a magnitude comparison — it is a discrete, deterministic, per-seed outcome, and it is not
+subject to the noise rule (there is no "spread" concept for a binary pass/fail). The shift arm
+reached full feasibility on **5 of 5** seeds under both CH orderings; the slot arm reached full
+feasibility on **1 of 5**. That is a **100% vs 20%** convergence-reliability difference, which is
+the actual signal this benchmark surfaces — not the median unstaffed-slot-count gap, whose specific
+*size* the noise rule correctly disqualifies from being called a "28-slot win" given how variable
+(bimodal) the slot arm's own results are. Both readings are true simultaneously and are reported
+here without softening either, exactly as `12-BENCHMARK.md`'s own two-reading disclosure did for
+its threshold #5 — this document does not pick the flattering one and hide the other.
+
+**This is precisely the discipline XCUT-04 exists to enforce.** A less careful write-up would have
+reported "the shift model resolves 28 more unstaffed slots on average" as the headline number.
+Applying the noise rule literally, that specific number does not clear the bar Phase 12's
+withdrawal established. The number that DOES clear the bar, cleanly, is the discrete convergence
+outcome (5/5 vs 1/5) — reported as such, not inflated by borrowing the disqualified metric's size.
+
+## Plateau Finding — soft score (reported, explicitly NOT thresholded, per D-14)
+
+| arm | soft score (all 5 seeds) |
+|---|---|
+| slot | median -147.0, min -149.0, max -128.0 |
+| shift-shifts-first | -192.0 (identical on every seed) |
+| shift-seats-first | -192.0 (identical on every seed) |
+
+The shift arm's soft score is worse (more negative) than the slot arm's. **This is named as a
+finding and is explicitly not a regression call** — the reason is stated plainly, as D-14 requires:
+shift mode gives `Break clustering` a real body and adds `shiftEnvelopeCompliance` and
+`bandCapacity`, three constraints the slot arm never evaluates at all. The two arms are scoring
+different constraint sets, so their soft totals are incommensurable; thresholding on raw soft score
+here would declare a "regression" that is partly an artefact of measuring a constraint set the
+baseline was never subject to.
+
+**The plateau's mechanism, in one line (per `SPIKE-COUPLING.md`):** improving soft score requires a
+shift and its seats to move together, and a plain change-move neighbourhood only ever moves one
+variable at a time — each half of that joint improvement is uphill through
+`shiftEnvelopeCompliance`'s hard wall. **This phase does not remedy it.** A custom Timefold move
+(combined shift-plus-seats) is the obvious remedy and is explicitly out of scope for v1.3 — Phase
+12 built exactly this kind of move, it was withdrawn on this same benchmark discipline, and the
+code was reverted. Reopening it needs its own evidence-led decision, not inheritance from this
+benchmark's numbers.
+
+**A supporting observation, not a separate finding:** the two CH orderings produced BYTE-IDENTICAL
+soft scores (`-192.0`, every seed, both orderings) on this fixture — unlike `SPIKE-COUPLING.md`'s
+toy fixture, where seats-first measurably beat shifts-first (`-5soft` vs `-10soft`). This is exactly
+the divergence `SPIKE-COUPLING.md` open item 5 warned might happen ("its toy fixture has seat
+demand fully determining shift choice, so its `-5soft` seats-first result may not transfer") — and
+it did not transfer. See the CH-Ordering Decision below.
 
 ## CH-Ordering Decision (D-08)
 
-*(To be filled in by Task 3's commit.)*
+**No measurable difference — the committed shifts-first ordering ships unchanged.**
+`solverConfig.xml` is NOT modified.
 
-## Piloting Recommendation
+`shift-shifts-first` and `shift-seats-first` produced IDENTICAL results on every metric, across all
+5 seeds: `0hard`, `-192soft`, 0 unstaffed demand slots, 64.00h assigned — with no variation at all.
+The difference between the two orderings is therefore `0`, trivially smaller than any spread,
+satisfying the plan's own instruction: "If the two orderings differ by less than the noise spread,
+record 'no measurable difference', keep the committed shifts-first ordering, and say in the report
+that the ordering was measured and found not to matter at this scale."
 
-*(To be filled in by Task 3's commit.)*
+This is a genuine, measured answer to D-08 — not an assumption inherited from the toy spike. The
+spike's own open item 5 predicted exactly this outcome was possible ("may not transfer"), because
+the spike's toy fixture had seat demand fully determining shift choice while this fixture's
+templates all share one identical envelope, giving the CH no real choice to make between orderings
+in the first place. **Either outcome (a measured winner, or no measurable difference) is a result;
+neither is a failure to decide** — this benchmark decided by measurement, and measurement said the
+ordering does not matter at this scale.
+
+## Piloting Recommendation (D-13)
+
+**The shift model is a candidate for a supervised single-desk pilot, on the strength of the
+convergence-reliability result — not on the strength of the (noise-disqualified) magnitude of the
+unstaffed-slot or hours-assigned medians.**
+
+What an operator should do next, and on what evidence:
+
+1. **Pilot on one shift-scheduled desk under supervision**, comparing its actual solved schedules
+   against what the same desk would have produced in slot mode over a few real solve cycles. The
+   evidence for taking this step is the must-pass criterion's clean, non-noise-bound result: the
+   shift arm reached full feasibility on every one of 5 seeds under both CH orderings; the slot arm
+   reached full feasibility on only 1 of 5, under the identical step budget, on the identical
+   fixture, with the gap confirmed as a genuine local-search plateau (not a step-budget artifact) by
+   the supplementary 20,000-step sweep above.
+2. **Do not read a specific "N fewer unstaffed slots" or "N more hours" number into pilot-selling
+   material.** The comparative medians measured here (0 vs 28 unstaffed; 64.0h vs 55.5h) are
+   directionally favorable but do not individually clear this benchmark's own noise rule at this
+   fixture's scale — reporting them as sized wins would repeat exactly the Phase 12 mistake XCUT-04
+   exists to prevent.
+3. **Expect a lower soft score on shift-mode schedules and do not treat it as a defect.** The
+   Plateau Finding above explains why: shift mode evaluates three more constraints than slot mode
+   ever did, and the mechanism (a plain change-move neighbourhood can't move a shift and its seats
+   together) is understood, named, and explicitly not remedied in this milestone.
+4. **A FAIL was not returned here, but even if it had been, `scheduling_mode` already defaults to
+   `SLOT` on every desk** — nothing is switched automatically by this document. `Desk`-level
+   `scheduling_mode` remains an explicit, reversible, per-desk operator choice regardless of this
+   verdict.
+5. **Re-run this benchmark against real desk data before widening the pilot past one desk.** The
+   comparative arms here use a small, maximally-tight synthetic fixture (4 agents, exactly
+   `agentCount` seats per timeslot — no idle seat headroom at all, a tighter ratio than
+   `12-BENCHMARK.md`'s literal "over-allocation" concept, which created seats IN EXCESS of demand).
+   This tightness plausibly amplifies the slot arm's convergence difficulty; whether the same
+   100%-vs-20% reliability gap holds at looser, more realistic staffing ratios is untested by this
+   plan and should be checked before a multi-desk rollout decision.
 
 ## What This Benchmark Does Not Close
 
-*(To be filled in by Task 3's commit.)*
+- **The cross-agent seat-displacement gap** filed at
+  `.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md` is *measured* by the same
+  kind of numbers this document reports (a plain change-move neighbourhood's limits under
+  contention) and is explicitly **not resolved** by this phase. Per `PROJECT.md`'s deliberate
+  recording, that todo **stays unlinked to any phase** at Phase 15 close, so a phase close cannot
+  auto-sweep it away unresolved.
+- **The soft-score plateau** is named and explained here, not remedied. A custom Timefold move
+  remains explicitly out of scope for v1.3 (Phase 12 already attempted this and it was withdrawn);
+  reopening it is a separate, evidence-led decision for a later milestone.
+- **Real-desk-scale reliability** is only indicatively touched (one 30-agent run, one seed,
+  non-comparative — D-16). Whether the slot arm's convergence-reliability gap measured on the small
+  comparative fixture holds, narrows, or widens at real desk scale and real (looser) staffing
+  ratios is not established by this benchmark and is named above as a pre-widening check, not
+  assumed.
+- **Multi-day and cross-midnight envelope interactions beyond 2 days** are not exercised by the
+  comparative fixture (`DAY_COUNT = 2`); `SPIKE-COUPLING.md` open item 4 already named multi-day
+  envelopes as untested by its own toy spike, and this benchmark does not close that gap either.
