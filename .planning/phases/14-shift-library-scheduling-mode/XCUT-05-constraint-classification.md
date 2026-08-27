@@ -2,7 +2,7 @@
 
 **Phase:** 14 — Shift Library & Scheduling Mode
 **Generated:** 2026-08-25
-**Updated:** 2026-08-27 (Phase 15, plan 15-06, Tasks 1-2) — see "Phase 15 resolution" below. Also
+**Updated:** 2026-08-27 (Phase 15, plan 15-06, Tasks 1-3) — see "Phase 15 resolution" below. Also
 folds in the "Shift envelope compliance" row plan 15-03 added to the Java classification but never
 mirrored here — this document and `ScheduleConstraintClassification.java` had silently drifted
 apart in the interim; both now agree again, closing that gap in the same commit as Task 1's own
@@ -12,26 +12,27 @@ changes.
 
 The constraint set below was derived from code, twice, independently — never from a stale count
 in a planning document. `ConstraintWeights` (`src/main/java/com/wfm/model/ConstraintWeights.java`)
-now carries **twenty** `@ConstraintWeight` fields (nineteen at Phase 14 close, plus "Shift
-envelope compliance" from plan 15-03). Independently, `ScheduleConstraintProvider.defineConstraints`
-(`src/main/java/com/wfm/solver/ScheduleConstraintProvider.java`) registers **twenty**
+now carries **twenty-one** `@ConstraintWeight` fields (nineteen at Phase 14 close, plus "Shift
+envelope compliance" from plan 15-03 and "Band capacity" from this plan's Task 3). Independently,
+`ScheduleConstraintProvider.defineConstraints`
+(`src/main/java/com/wfm/solver/ScheduleConstraintProvider.java`) registers **twenty-one**
 `Constraint`-returning builder methods. The two derivations agree.
 
 `.planning/codebase/ARCHITECTURE.md`'s figure of **eighteen** is stale — it predates the
-`minimumStaffing` constraint (Phase 14) and this milestone's own addition.
+`minimumStaffing` constraint (Phase 14) and both of this milestone's additions.
 
 **This document is a human-readable mirror, not the enforcement mechanism.**
 `src/test/java/com/wfm/solver/ScheduleConstraintClassificationTest.java` is what actually keeps
 the classification honest: it asserts, by reflection at test time, that
 `ScheduleConstraintClassification`'s key set exactly equals the constraint set the provider
-registers, so that a twenty-first constraint fails `./gradlew test` until someone adds a row for
+registers, so that a twenty-second constraint fails `./gradlew test` until someone adds a row for
 it. This markdown table will rot the moment it is edited independently of that test — if this
 table and the test ever disagree, the test's `ScheduleConstraintClassification` map is right and
 this document is wrong.
 
-## Phase 15 resolution (plan 15-06, Tasks 1-2, 2026-08-27)
+## Phase 15 resolution (plan 15-06, Tasks 1-3, 2026-08-27)
 
-Six rows moved this task:
+Six rows moved in Task 1:
 
 - The four D-03-named break constraints ("Exactly one break", "Break duration", "Break blocked
   window", "Break start alignment") move from `NEEDS_SHIFT_VARIANT` to `MODE_GATED` (ENVL-05):
@@ -44,7 +45,7 @@ Six rows moved this task:
   move from `OPEN_RESOLVE_IN_PHASE_15` to `MODE_GATED` (ENVL-05/P-26): in shift mode the start
   comes from the library and the break from the assigned band, so both would tune against a
   signal the operator no longer controls per-slot. **Zero rows remain `OPEN_RESOLVE_IN_PHASE_15`
-  after this task — XCUT-05 is complete.**
+  after Task 1 — XCUT-05 is complete.**
 
 **`PHASE_15_OWNER` is retained verbatim** on the two preference rows as the recorded resolver,
 even though neither row is `OPEN` any more — the `Entry` record permits an owner value on any
@@ -56,8 +57,8 @@ document byte-for-byte, so both move in the same commit.
 Task 2 additionally gives "Break clustering" a real body (ENVL-09) and reclassifies it from
 `MODE_AGNOSTIC` (which described only the inert placeholder) to `MODE_GATED` — its on-break half
 is structurally inert on a SLOT desk, so the whole constraint's penalty is zero there by
-construction. Task 3 (later in this same plan) adds a new "Band capacity" row, also `MODE_GATED`
-— not yet reflected below; this document is updated again as that task lands.
+construction. Task 3 adds a new "Band capacity" hard constraint (ENVL-08/D-03), also `MODE_GATED`
+— inert on a SLOT desk because no `AgentShiftAssignment` rows exist there to group.
 
 ## Classification Table
 
@@ -72,6 +73,7 @@ construction. Task 3 (later in this same plan) adds a new "Band capacity" row, a
 | Break blocked window | MODE_GATED | **Phase 15 (was NEEDS_SHIFT_VARIANT):** same reasoning — the template's fixed envelope and band offset replace the derived shift start/end and gap position in shift mode. | — |
 | Break start alignment | MODE_GATED | **Phase 15 (was NEEDS_SHIFT_VARIANT):** same reasoning — the band's offset is fixed at template-authoring time (D-01, itself grid-aligned by Phase 14's D-02), so there is no solver-chosen break start left to check in shift mode. | — |
 | Shift envelope compliance | MODE_GATED | Added by plan 15-03, not previously mirrored here. Option A (SPIKE-COUPLING.md): joins `AgentAssignment` to `AgentShiftAssignment` on (agent, date), then `ScheduleConfig`, filtering to SHIFT mode before penalising a definite disagreement — the hard constraint the whole coupling rests on. Doubly inert on a SLOT-scheduled desk: `SolverService` never populates `AgentShiftAssignment` rows there, and the explicit SHIFT-mode filter means the constraint stays silent even if a shift row were present. | — |
+| Band capacity | MODE_GATED | **New in Task 3** (ENVL-08/D-03): groups `AgentShiftAssignment` by `(date, shiftBandPair)`, penalising agent-day counts on a pair that exceed its band's set capacity. A blank capacity produces no tuple at all — unlimited, not zero. Inert on a SLOT desk because no `AgentShiftAssignment` rows exist there to group. | — |
 | Prefer primary specialization | MODE_AGNOSTIC | Pure agent-attribute soft preference (primary vs. secondary specialization); unaffected by shift structure. | — |
 | Honour preferred start time | MODE_GATED | **Phase 15 (was OPEN_RESOLVE_IN_PHASE_15):** in shift mode the agent's start comes from the assigned library shift, not a per-slot solver decision, so this constraint would tune against a signal the operator no longer controls per-slot — gated off for SHIFT desks. Phase 17's CONS-05 use of `preferredStartTime` at shift granularity (a tiebreak between two equally-scored shifts) is a *new* use of the preference, not a reason to leave this per-slot constraint on. | Phase 15 — Shift Envelope & Coupling |
 | Honour preferred break time | MODE_GATED | **Phase 15 (was OPEN_RESOLVE_IN_PHASE_15):** same reasoning — in shift mode the break comes from the assigned band, not a solver-derived gap. | Phase 15 — Shift Envelope & Coupling |
@@ -86,21 +88,20 @@ construction. Task 3 (later in this same plan) adds a new "Band capacity" row, a
 
 ## Summary
 
-**Twenty constraints, twenty classification rows, zero unclassified:**
+**Twenty-one constraints, twenty-one classification rows, zero unclassified:**
 
 - **12 mode-agnostic** — Unassigned assignment, Agent day off, Specialization match, One
   assignment per timeslot, Prefer primary specialization, Contracted hours (over), Contracted
   hours (under), Contracted hours (under, zero), Bulk over-allocation limit, Bulk
   under-allocation soft, Bulk under-allocation hard, Minimum staffing.
-- **8 mode-gated** — Exactly one break, Break duration, Break blocked window, Break start
-  alignment, Shift envelope compliance, Honour preferred start time, Honour preferred break time,
-  Break clustering.
+- **9 mode-gated** — Exactly one break, Break duration, Break blocked window, Break start
+  alignment, Shift envelope compliance, Band capacity, Honour preferred start time, Honour
+  preferred break time, Break clustering.
 - **0 needs-a-shift-variant.**
 - **0 open.**
 
 XCUT-05 is now complete: every constraint this project's solver evaluates is classified, and
-nothing is left `OPEN_RESOLVE_IN_PHASE_15` for a future phase to inherit. (This table grows again
-later in this same plan when "Band capacity" joins the mode-gated set.)
+nothing is left `OPEN_RESOLVE_IN_PHASE_15` for a future phase to inherit.
 
 ## Historical record — what Phase 14 left open
 

@@ -71,6 +71,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             breakBlockedWindow(factory),
             breakStartAlignment(factory),
             shiftEnvelopeCompliance(factory),
+            bandCapacity(factory),
             preferPrimarySpecialization(factory),
             honourPreferredStartTime(factory),
             honourPreferredBreakTime(factory),
@@ -420,6 +421,37 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         || !sa.getShiftBandPair().covers(a.getTimeslot()))
                 .penalizeConfigurable()
                 .asConstraint("Shift envelope compliance");
+    }
+
+    /**
+     * (Phase 15, ENVL-08/D-03) Band capacity — a set band capacity is a real hard cap; a blank
+     * one is genuinely unlimited. Groups {@link AgentShiftAssignment} by {@code (date,
+     * shiftBandPair)}, counts agent-days on that exact pair, and penalises the excess over the
+     * band's capacity once it is set. Capacity is scoped per date (the group key), so N agent-days
+     * on Monday and N on Tuesday are both legal — the same band on different dates never shares a
+     * cap. Two bands on the same template have independent capacities because {@link
+     * ShiftBandPair} equality is component-wise over the band, not the template alone.
+     *
+     * <p>A {@code null} capacity produces no tuple at all (filtered out before the group-and-count
+     * even runs) — blank is not zero, and an unlimited band never contributes a violation
+     * regardless of headcount (D-03).
+     *
+     * <p>Leads with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and gates
+     * {@code SchedulingMode.SHIFT} before any other check, mirroring {@link
+     * #shiftEnvelopeCompliance}'s performance contract (commit {@code 90bf3d2}) — a SLOT-mode
+     * desk has zero shift rows, so this constraint's node network is dead there by construction.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint bandCapacity(ConstraintFactory factory) {
+        return factory.forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT
+                        && sa.getShiftBandPair().band() != null
+                        && sa.getShiftBandPair().band().getCapacity() != null)
+                .groupBy((sa, cfg) -> sa.getDate(), (sa, cfg) -> sa.getShiftBandPair(), countBi())
+                .filter((date, pair, agentDayCount) -> agentDayCount > pair.band().getCapacity())
+                .penalizeConfigurable((date, pair, agentDayCount) -> agentDayCount - pair.band().getCapacity())
+                .asConstraint("Band capacity");
     }
 
     /**

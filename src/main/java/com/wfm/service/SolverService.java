@@ -5,6 +5,7 @@ import ai.timefold.solver.core.api.solver.SolverManager;
 import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
+import com.wfm.dto.ShiftLibraryValidationResponse.CapacityAdvisory;
 import com.wfm.dto.SolveRequest;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
@@ -61,6 +62,7 @@ public class SolverService {
     private final AgentEligibilityService agentEligibilityService;
     private final ShiftTemplateRepository shiftTemplateRepository;
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
+    private final ShiftLibraryValidationService shiftLibraryValidationService;
 
     // D-09/D-10: same window BambooRefreshService uses to sync PTO from BambooHR. Field
     // injection (not a constructor parameter) so every existing SolverService test — which
@@ -87,7 +89,8 @@ public class SolverService {
                          ConstraintWeightsRepository constraintWeightsRepository,
                          AgentEligibilityService agentEligibilityService,
                          ShiftTemplateRepository shiftTemplateRepository,
-                         ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository) {
+                         ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
+                         ShiftLibraryValidationService shiftLibraryValidationService) {
         this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
@@ -104,6 +107,7 @@ public class SolverService {
         this.agentEligibilityService = agentEligibilityService;
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
+        this.shiftLibraryValidationService = shiftLibraryValidationService;
     }
 
     /**
@@ -1004,9 +1008,38 @@ public class SolverService {
             }
         }
 
+        // 13. (Phase 15, ENVL-08/D-03/P-29) Band capacity shortfall — SHIFT-mode only.
+        appendBandCapacityErrors(schedule.getSchedulingMode(), schedule.getDeskId(),
+                shiftLibraryValidationService, errors);
+
         if (!errors.isEmpty()) {
             throw new PreSolveValidationException(
                     "Pre-solve validation failed with " + errors.size() + " issue(s)", errors);
+        }
+    }
+
+    /**
+     * (Phase 15, ENVL-08/D-03/P-29) Appends one {@link ErrorDetail} per band-capacity shortfall,
+     * SHIFT-mode only — a no-op on SLOT-mode desks and on SHIFT desks with no shortfall. Reuses
+     * the SAME computation {@link ShiftLibraryValidationService#validate} already exposes to the
+     * shift-library report (built in plan 15-01 Task 3) rather than re-deriving it here — a
+     * second implementation is the audit NEW-1 shape this project has been burned by twice. The
+     * message an operator read in the save-time advisory and the refusal that stops their solve
+     * are therefore character-identical, one computation with two callers (D-08's discipline
+     * extended to a third caller).
+     *
+     * <p>Package-private static, mirroring {@link #buildShiftBandPairs}/{@link
+     * #buildShiftAssignments}'s precedent — directly unit-testable with a mocked {@link
+     * ShiftLibraryValidationService} and no Spring context, despite depending on an injected
+     * collaborator rather than being pure.
+     */
+    static void appendBandCapacityErrors(SchedulingMode schedulingMode, UUID deskId,
+            ShiftLibraryValidationService shiftLibraryValidationService, List<ErrorDetail> errors) {
+        if (schedulingMode != SchedulingMode.SHIFT) {
+            return;
+        }
+        for (CapacityAdvisory advisory : shiftLibraryValidationService.validate(deskId).capacityAdvisories()) {
+            errors.add(new ErrorDetail("bandCapacity", advisory.message(), advisory.templateName()));
         }
     }
 

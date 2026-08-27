@@ -71,19 +71,19 @@ public final class ScheduleConstraintClassification {
      * string each corresponding {@link ConstraintWeights} field's {@code @ConstraintWeight}
      * carries. Insertion order mirrors {@code defineConstraints}'s array order.
      *
-     * <p><strong>Phase 15 resolution (2026-08-27, plan 15-06, Task 1).</strong> Six rows moved
-     * this task: the four D-03-named break constraints ("Exactly one break", "Break duration",
-     * "Break blocked window", "Break start alignment") move from {@code NEEDS_SHIFT_VARIANT} to
+     * <p><strong>Phase 15 resolution (2026-08-27, plan 15-06).</strong> Task 1 moves six rows:
+     * the four D-03-named break constraints ("Exactly one break", "Break duration", "Break
+     * blocked window", "Break start alignment") from {@code NEEDS_SHIFT_VARIANT} to
      * {@code MODE_GATED}, and the two preference constraints ("Honour preferred start time",
-     * "Honour preferred break time") move from {@code OPEN_RESOLVE_IN_PHASE_15} to
-     * {@code MODE_GATED} — zero rows remain {@code OPEN_RESOLVE_IN_PHASE_15} after this task
-     * (XCUT-05 complete). {@code PHASE_15_OWNER}'s string is retained verbatim on the two
-     * preference rows — it still reads the phase's *former* name ("Shift Envelope & Coupling")
-     * deliberately, as a historical record of who resolved them; renaming or deleting the
-     * constant would break {@code 14-VERIFICATION.md} item 21's verified claim that the constant
-     * matches its markdown mirror byte-for-byte (P-27). Task 2 of this same plan reclassifies
-     * "Break clustering" from {@code MODE_AGNOSTIC} to {@code MODE_GATED} once it has a real body
-     * (ENVL-09); Task 3 adds a new "Band capacity" row, also {@code MODE_GATED}.
+     * "Honour preferred break time") from {@code OPEN_RESOLVE_IN_PHASE_15} to {@code MODE_GATED}
+     * — zero rows remain {@code OPEN_RESOLVE_IN_PHASE_15} after Task 1 (XCUT-05 complete).
+     * {@code PHASE_15_OWNER}'s string is retained verbatim on the two preference rows — it still
+     * reads the phase's *former* name ("Shift Envelope & Coupling") deliberately, as a historical
+     * record of who resolved them; renaming or deleting the constant would break
+     * {@code 14-VERIFICATION.md} item 21's verified claim that the constant matches its markdown
+     * mirror byte-for-byte (P-27). Task 2 reclassifies "Break clustering" from
+     * {@code MODE_AGNOSTIC} to {@code MODE_GATED} once it has a real body (ENVL-09). Task 3 adds
+     * a new "Band capacity" row, also {@code MODE_GATED} (ENVL-08/D-03).
      */
     public static Map<String, Entry> classifications() {
         Map<String, Entry> map = new LinkedHashMap<>();
@@ -156,6 +156,15 @@ public final class ScheduleConstraintClassification {
                         + "SLOT-scheduled desk: SolverService never populates AgentShiftAssignment rows "
                         + "there, and the explicit SHIFT-mode filter means the constraint stays silent "
                         + "even if a shift row were present.",
+                null));
+
+        map.put("Band capacity", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 15 (ENVL-08/D-03): groups AgentShiftAssignment by (date, shiftBandPair), "
+                        + "penalising agent-day counts on a pair that exceed its band's set capacity. A "
+                        + "blank capacity produces no tuple at all -- unlimited, not zero. Inert on a "
+                        + "SLOT desk because no AgentShiftAssignment rows exist there to group, the same "
+                        + "structural-inertness shape as 'Shift envelope compliance'.",
                 null));
 
         map.put("Prefer primary specialization", new Entry(

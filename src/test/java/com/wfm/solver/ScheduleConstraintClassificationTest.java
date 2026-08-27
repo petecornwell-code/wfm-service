@@ -179,18 +179,18 @@ class ScheduleConstraintClassificationTest {
 
     /**
      * The six constraints Task 1 actively mode-gates (added filter, unchanged body), plus the
-     * pre-existing "Shift envelope compliance" (plan 15-03) and Task 2's "Break clustering"
-     * (reclassified once it gained a real body, ENVL-09), must all carry MODE_GATED, and the two
-     * preference rows must keep PHASE_15_OWNER verbatim (P-27) even though they are no longer
-     * OPEN — the Entry record permits an owner on any classification. Task 3 (Band capacity)
-     * grows this set further; this test is intentionally scoped to Tasks 1-2's contribution.
+     * pre-existing "Shift envelope compliance" (plan 15-03), Task 2's "Break clustering"
+     * (reclassified once it gained a real body, ENVL-09) and Task 3's new "Band capacity"
+     * (ENVL-08/D-03) must all carry MODE_GATED, and the two preference rows must keep
+     * PHASE_15_OWNER verbatim (P-27) even though they are no longer OPEN — the Entry record
+     * permits an owner on any classification.
      */
     @Test
-    void thePhase15ModeGatedSetIsExactlyTheEightExpectedRows() {
+    void thePhase15ModeGatedSetIsExactlyTheNineExpectedRows() {
         Set<String> expected = Set.of(
                 "Exactly one break", "Break duration", "Break blocked window", "Break start alignment",
                 "Honour preferred start time", "Honour preferred break time",
-                "Shift envelope compliance", "Break clustering");
+                "Shift envelope compliance", "Break clustering", "Band capacity");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
