@@ -12,7 +12,6 @@ import com.wfm.model.*;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -32,6 +31,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * hard score 0 (feasible).
  */
 class BreakAwareConstructionTest {
+
+    /**
+     * Local-search step budgets, replacing the former 10s/30s/120s wall-clock limits.
+     * Chosen from a measured isolated run in which the 30-agent scenario reached
+     * {@code 0hard/0soft} well inside a 120-second budget; the budgets below keep
+     * generous headroom above what each scenario needs while
+     * {@code withUnimprovedStepCountLimit} ends a plateaued search early.
+     */
+    private static final int STEPS_SMALL = 20_000;
+    private static final int STEPS_MEDIUM = 60_000;
+    private static final int STEPS_LARGE = 150_000;
 
     private static final long TENANT = 1L;
     private static final LocalDate DAY = LocalDate.of(2026, 3, 16);
@@ -58,7 +68,7 @@ class BreakAwareConstructionTest {
                 .isZero();
 
         // Run solver: CH + 10s local search
-        Schedule solved = runSolver(schedule, Duration.ofSeconds(10));
+        Schedule solved = runSolver(schedule, STEPS_SMALL);
 
         long assigned = solved.getAssignments().stream()
                 .filter(a -> a.getAgent() != null).count();
@@ -81,7 +91,7 @@ class BreakAwareConstructionTest {
     void solverCH_10agents_shouldProduceFeasibleSolution() {
         Schedule schedule = buildBreakAwareSchedule(10, START, END, INCREMENT);
 
-        Schedule solved = runSolver(schedule, Duration.ofSeconds(30));
+        Schedule solved = runSolver(schedule, STEPS_MEDIUM);
 
         long assigned = solved.getAssignments().stream()
                 .filter(a -> a.getAgent() != null).count();
@@ -104,7 +114,7 @@ class BreakAwareConstructionTest {
     void solverCH_30agents_30minSlots_shouldProduceFeasibleSolution() {
         Schedule schedule = buildBreakAwareSchedule(30, START, END, 30);
 
-        Schedule solved = runSolver(schedule, Duration.ofSeconds(120));
+        Schedule solved = runSolver(schedule, STEPS_LARGE);
 
         long assigned = solved.getAssignments().stream()
                 .filter(a -> a.getAgent() != null).count();
@@ -128,7 +138,32 @@ class BreakAwareConstructionTest {
     //  Solver runner
     // ------------------------------------------------------------------
 
-    private Schedule runSolver(Schedule schedule, Duration localSearchDuration) {
+    /**
+     * Runs the solver with <b>step-count</b> local-search termination, never a wall clock.
+     *
+     * <p>This test previously terminated on {@code withSpentLimit(Duration)}. That made its
+     * score assertions a measurement of the machine rather than of the solver: on the same
+     * commit, the 30-agent scenario scored {@code 0hard/0soft} in an isolated run and
+     * {@code -320hard} to {@code -1800hard} inside the full suite, purely because a
+     * wall-clock-bounded local search gets a smaller share of a JVM that is also running ~500
+     * other tests. The construction-heuristic output was byte-identical in every case
+     * ({@code -7528hard/-2072soft} at 480 steps), so no code quality was moving -- only
+     * throughput. See {@code deferred-items.md} in phase 15's planning directory.
+     *
+     * <p>Step-count termination makes the work performed deterministic, so these assertions
+     * mean the same thing on a loaded CI box and an idle laptop. This matches the standard the
+     * rest of phase 15 established: {@code ShiftEnvelopeGroundTruthTest} (15-04) and
+     * {@code ShiftModelBenchmarkTest} (15-08, per XCUT-04) both terminate on step count.
+     *
+     * <p>The termination config must be attached to the LOCAL SEARCH PHASE, not to the solver:
+     * plan 15-04 established that solver-scoped {@code StepCountTermination} does not work in
+     * Timefold 1.16.0. {@code withUnimprovedStepCountLimit} bounds the common case -- once the
+     * search plateaus (including on a perfect {@code 0hard/0soft} score, which cannot improve)
+     * it stops early rather than burning the full budget.
+     *
+     * <p><b>No assertion threshold was changed when this was converted.</b>
+     */
+    private Schedule runSolver(Schedule schedule, int localSearchStepLimit) {
         SolverConfig solverConfig = new SolverConfig()
                 .withSolutionClass(Schedule.class)
                 .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
@@ -139,9 +174,9 @@ class BreakAwareConstructionTest {
                         TestConstructionHeuristicPhases.seatPhase(),
                         new LocalSearchPhaseConfig()
                                 .withTerminationConfig(new TerminationConfig()
-                                        .withSpentLimit(localSearchDuration)
-                                        .withUnimprovedSpentLimit(
-                                                Duration.ofMillis(localSearchDuration.toMillis() / 2))));
+                                        .withStepCountLimit(localSearchStepLimit)
+                                        .withUnimprovedStepCountLimit(
+                                                Math.max(1, localSearchStepLimit / 2))));
 
         SolverFactory<Schedule> solverFactory = SolverFactory.create(solverConfig);
         return solverFactory.buildSolver().solve(schedule);
