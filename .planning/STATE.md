@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-09-PLAN.md
-last_updated: "2026-08-27T16:08:35.730Z"
+stopped_at: Completed 15-10-PLAN.md
+last_updated: "2026-08-27T16:53:57.353Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 15 execution started
-state_head: 8429cb9c8a3057babd592f37aec2f665dca8016d
+state_head: 69827787756a4ae9a768dc069fb142d186df1b8a
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 19
-  completed_plans: 15
+  completed_plans: 16
   percent: 25
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 2 of 13
+Plan: 3 of 13
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 15 execution started
 
@@ -216,6 +216,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: expandMinimumStaffingSeats branches on SchedulingMode: SLOT (or empty SHIFT library) keeps the unconditional per-timeslot top-up; SHIFT suppresses seats at timeslots no live ShiftBandPair covers (OR-1) and guarantees max(MIN_AGENTS_PER_TIMESLOT, workingAgentDaysOn(date)) seats where covered but demand-free
 - [Phase 15]: buildSlotModeSchedule computes its own SLOT-mode filler seats independently rather than inheriting buildShiftModeSchedule's SHIFT-computed ones, so the SLOT benchmark arm keeps its correct unconditional top-up
 - [Phase 15]: Minimum staffing reclassified MODE_AGNOSTIC -> MODE_GATED in XCUT-05 classification table (G-15-10): seat supply is now mode-dependent
+- [Phase 15]: Phase 15 Plan 10: one static ShiftBandPair.covers(...) predicate (four scalars) shared by the solver instance method and the report layer; ScheduleOutputService resolves the shift descriptor before computing span/breaks and shares one buildShiftDescriptorsByAgentDate helper between buildAgentSchedule and buildPreferenceReport; export's Shift Template/Shift Envelope columns are conditional on any entry carrying a shift, keeping a slot desk's sheet byte-identical
 
 ### Blockers/Concerns
 
@@ -231,8 +232,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-27T16:08:35.590Z
-Stopped at: Completed 15-09-PLAN.md
+Last session: 2026-08-27T16:53:57.179Z
+Stopped at: Completed 15-10-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -262,3 +263,4 @@ Resume file: None
 | Phase 14 P05 | 22min | 2 tasks | 5 files |
 | Phase 14 P06 | 25min | 3 tasks | 3 files |
 | Phase 15 P09 | 46min | 3 tasks | 9 files |
+| Phase 15 P10 | 44min | 3 tasks | 6 files |
