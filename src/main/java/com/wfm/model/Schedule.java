@@ -140,6 +140,24 @@ public class Schedule {
     @Transient
     private List<AgentAssignment> assignments = new ArrayList<>();
 
+    // --- Phase 15: shift envelope (Option A coupling, D-04/D-05) ---
+    // Both default empty so a slot-scheduled solve is structurally identical to today's — no new
+    // AgentShiftAssignment rows, nothing for shiftEnvelopeCompliance to join against.
+
+    @PlanningEntityCollectionProperty
+    @Transient
+    private List<AgentShiftAssignment> shiftAssignments = new ArrayList<>();
+
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<ShiftBandPair> shiftBandPairs = new ArrayList<>();
+
+    // Not persisted — a solver-input value only, threaded through from Desk.schedulingMode by
+    // SolverService.buildSchedule (see getScheduleConfig() below). Adding a persisted column here
+    // would need its own migration, which this phase's V41 does not carry.
+    @Transient
+    private SchedulingMode schedulingMode;
+
     @Transient
     private List<String> warnings = new ArrayList<>();
 
@@ -246,6 +264,15 @@ public class Schedule {
     public List<AgentAssignment> getAssignments() { return assignments; }
     public void setAssignments(List<AgentAssignment> assignments) { this.assignments = assignments; }
 
+    public List<AgentShiftAssignment> getShiftAssignments() { return shiftAssignments; }
+    public void setShiftAssignments(List<AgentShiftAssignment> shiftAssignments) { this.shiftAssignments = shiftAssignments; }
+
+    public List<ShiftBandPair> getShiftBandPairs() { return shiftBandPairs; }
+    public void setShiftBandPairs(List<ShiftBandPair> shiftBandPairs) { this.shiftBandPairs = shiftBandPairs; }
+
+    public SchedulingMode getSchedulingMode() { return schedulingMode; }
+    public void setSchedulingMode(SchedulingMode schedulingMode) { this.schedulingMode = schedulingMode; }
+
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> warnings) { this.warnings = warnings; }
 
@@ -260,6 +287,7 @@ public class Schedule {
                 breakDurationMinutes, breakMinShiftHours, breakBlockedHours,
                 breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay,
-                overallocationHardLimitPct, underallocationHardLimitPct);
+                overallocationHardLimitPct, underallocationHardLimitPct,
+                schedulingMode);
     }
 }

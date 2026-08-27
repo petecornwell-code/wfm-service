@@ -53,7 +53,7 @@ class IncrementalScoringDiagnosticTest {
         SolverFactory<Schedule> scoringFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
 
@@ -144,12 +144,13 @@ class IncrementalScoringDiagnosticTest {
         // Run with FULL_ASSERT to catch incremental scoring bugs
         SolverConfig solverConfig = new SolverConfig()
                 .withSolutionClass(Schedule.class)
-                .withEntityClasses(AgentAssignment.class)
+                .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                 .withEnvironmentMode(EnvironmentMode.FULL_ASSERT)
                 .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                         .withConstraintProviderClass(ScheduleConstraintProvider.class))
                 .withPhases(
-                        new ConstructionHeuristicPhaseConfig(),
+                        TestConstructionHeuristicPhases.shiftPhase(),
+                        TestConstructionHeuristicPhases.seatPhase(),
                         new LocalSearchPhaseConfig()
                                 .withTerminationConfig(new TerminationConfig()
                                         .withSpentLimit(Duration.ofSeconds(5))));

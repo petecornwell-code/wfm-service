@@ -1,5 +1,6 @@
 package com.wfm.migration;
 
+import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import jakarta.persistence.Column;
@@ -60,7 +61,8 @@ class MigrationEntityConsistencyTest {
     /** table name -> entity class this test reconciles it against. */
     private static final Map<String, Class<?>> DECLARED_TABLES = Map.of(
             "shift_template", ShiftTemplate.class,
-            "shift_template_break_band", ShiftTemplateBreakBand.class
+            "shift_template_break_band", ShiftTemplateBreakBand.class,
+            "agent_shift_assignment", AgentShiftAssignment.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */

@@ -3,6 +3,7 @@ package com.wfm.solver;
 import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
+import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.Schedule;
 import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
@@ -26,7 +27,7 @@ import java.util.UUID;
 class BulkUnderallocationSoftConstraintTest {
 
     private final ConstraintVerifier<ScheduleConstraintProvider, Schedule> verifier =
-            ConstraintVerifier.build(new ScheduleConstraintProvider(), Schedule.class, AgentAssignment.class);
+            ConstraintVerifier.build(new ScheduleConstraintProvider(), Schedule.class, AgentAssignment.class, AgentShiftAssignment.class);
 
     private static Timeslot timeslot(LocalTime start) {
         Timeslot ts = new Timeslot();

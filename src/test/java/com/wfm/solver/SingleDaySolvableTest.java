@@ -62,7 +62,7 @@ class SingleDaySolvableTest {
         SolverFactory<Schedule> solverFactory = SolverFactory.create(
                 new SolverConfig()
                         .withSolutionClass(Schedule.class)
-                        .withEntityClasses(AgentAssignment.class)
+                        .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                         .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
                                 .withConstraintProviderClass(ScheduleConstraintProvider.class)));
 

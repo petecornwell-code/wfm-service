@@ -69,6 +69,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             breakDuration(factory),
             breakBlockedWindow(factory),
             breakStartAlignment(factory),
+            shiftEnvelopeCompliance(factory),
             preferPrimarySpecialization(factory),
             honourPreferredStartTime(factory),
             honourPreferredBreakTime(factory),
@@ -317,6 +318,49 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break start alignment");
+    }
+
+    /**
+     * (Phase 15, ENVL-02) Shift envelope compliance — the hard constraint the whole Option A
+     * coupling rests on (SPIKE-COUPLING.md). Plain positive-join form (CH-friendly, matching
+     * this file's existing convention) rather than {@code ifNotExists}: penalises only a
+     * definite disagreement between two initialised variables, which is what keeps the
+     * construction heuristic able to make progress.
+     *
+     * <p>A {@code null} chosen {@link AgentShiftAssignment#getShiftBandPair()} forbids every
+     * seat that agent-day through the {@code sa.getShiftBandPair() == null} branch below — no
+     * separate "unassigned shift" constraint is needed (D-06); {@code contractedHoursUnder}/
+     * {@code contractedHoursUnderZero} already penalise the resulting emptiness. This requires
+     * joining against {@link ConstraintFactory#forEachIncludingUnassigned}, not the plain
+     * {@code .join(AgentShiftAssignment.class, ...)} shorthand — RESEARCH.md's Open Question 2
+     * left open whether the plain join's default unassigned-filtering (every {@code forEach}/
+     * {@code join(Class, ...)} call silently drops planning entities with a null genuine
+     * variable) would defeat the null branch below; {@code ShiftEnvelopeComplianceConstraintTest}
+     * proved it does, so the explicit "including unassigned" stream is load-bearing, not
+     * decorative.
+     *
+     * <p>Doubly inert on a SLOT-scheduled desk: {@code SolverService} only ever populates
+     * {@link AgentShiftAssignment} rows for a SHIFT-mode desk, so the join below finds nothing to
+     * match against there; the explicit {@code SchedulingMode.SHIFT} filter is defence in depth
+     * on top of that structural fact, keeping the constraint provably silent even if a shift row
+     * were ever present alongside a SLOT {@link ScheduleConfig}.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation
+    // (mirrors bulkUnderallocationSoft/minimumStaffing's precedent in this file).
+    Constraint shiftEnvelopeCompliance(ConstraintFactory factory) {
+        ai.timefold.solver.core.api.score.stream.uni.UniConstraintStream<AgentShiftAssignment> shiftRows =
+                factory.forEachIncludingUnassigned(AgentShiftAssignment.class);
+        return factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getAgent() != null)
+                .join(shiftRows,
+                        equal(a -> a.getAgent().getId(), sa -> sa.getAgent().getId()),
+                        equal(a -> a.getTimeslot().getDate(), AgentShiftAssignment::getDate))
+                .join(ScheduleConfig.class)
+                .filter((a, sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .filter((a, sa, cfg) -> sa.getShiftBandPair() == null
+                        || !sa.getShiftBandPair().covers(a.getTimeslot()))
+                .penalizeConfigurable()
+                .asConstraint("Shift envelope compliance");
     }
 
     /**

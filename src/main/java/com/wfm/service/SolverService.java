@@ -18,6 +18,8 @@ import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.ConstraintWeightsRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -57,6 +59,8 @@ public class SolverService {
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final AgentEligibilityService agentEligibilityService;
+    private final ShiftTemplateRepository shiftTemplateRepository;
+    private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
 
     // D-09/D-10: same window BambooRefreshService uses to sync PTO from BambooHR. Field
     // injection (not a constructor parameter) so every existing SolverService test — which
@@ -81,7 +85,9 @@ public class SolverService {
                          AgentExceptionRepository agentExceptionRepository,
                          AgentDayHoursRepository agentDayHoursRepository,
                          ConstraintWeightsRepository constraintWeightsRepository,
-                         AgentEligibilityService agentEligibilityService) {
+                         AgentEligibilityService agentEligibilityService,
+                         ShiftTemplateRepository shiftTemplateRepository,
+                         ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository) {
         this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
@@ -96,6 +102,8 @@ public class SolverService {
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.agentEligibilityService = agentEligibilityService;
+        this.shiftTemplateRepository = shiftTemplateRepository;
+        this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
     }
 
     /**
@@ -259,6 +267,29 @@ public class SolverService {
         // 9b. Compute capacity warnings (demand vs supply)
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
 
+        // 9c. SHIFT-mode-only: the desk's live (template,band) pairs and one AgentShiftAssignment
+        // row per working agent-day (D-05). A SLOT-mode desk gets both empty, keeping a
+        // slot-mode solve structurally identical to today's — no new AgentShiftAssignment row,
+        // nothing for shiftEnvelopeCompliance to join against.
+        List<ShiftTemplate> liveShiftTemplates = desk.getSchedulingMode() == SchedulingMode.SHIFT
+                ? shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, deskId).stream()
+                        .filter(t -> t.getEffectiveTo() == null || !t.getEffectiveTo().isBefore(LocalDate.now()))
+                        .toList()
+                : List.of();
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByShiftTemplateId = liveShiftTemplates.isEmpty()
+                ? Map.of()
+                : shiftTemplateBreakBandRepository
+                        .findByTenantIdAndShiftTemplateIdInOrderByOffsetMinutesAsc(tenantId,
+                                liveShiftTemplates.stream().map(ShiftTemplate::getId).toList())
+                        .stream()
+                        .collect(Collectors.groupingBy(b -> b.getShiftTemplate().getId()));
+        List<ShiftBandPair> shiftBandPairs = buildShiftBandPairs(
+                desk.getSchedulingMode(), liveShiftTemplates, bandsByShiftTemplateId);
+        Map<UUID, Agent> eligibleAgentsById = eligibleAgents.stream()
+                .collect(Collectors.toMap(Agent::getId, a -> a, (a, b) -> a));
+        List<AgentShiftAssignment> shiftAssignments = buildShiftAssignments(desk.getSchedulingMode(),
+                tenantId, deskId, schedule.getId(), eligibleAgentsById, agentDayConfigs, shiftBandPairs);
+
         // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();
         for (Agent agent : eligibleAgents) {
@@ -318,6 +349,8 @@ public class SolverService {
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
         schedule.setAgentDayConfigs(agentDayConfigs);
+        schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
+        schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
         schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
@@ -446,6 +479,7 @@ public class SolverService {
         s.setDeskId(deskId);
         s.setStatus(ScheduleStatus.RUNNING);
         s.setCreatedAt(OffsetDateTime.now());
+        s.setSchedulingMode(desk.getSchedulingMode());
 
         s.setPeriodStartDate(request.periodStartDate());
         s.setPeriodEndDate(request.periodEndDate());
@@ -594,6 +628,84 @@ public class SolverService {
         }
 
         return configs;
+    }
+
+    // --- Shift envelope population (Phase 15, D-04/D-05) ---
+
+    /**
+     * The desk's live {@code (template, band)} pairs, sorted by template name, then
+     * {@code effectiveFrom}, then band offset ascending (required for XCUT-04's seeded benchmark
+     * to reproduce across runs — this plan's edge_accounting names the ordering explicitly). A
+     * template with zero bands contributes exactly one pair with a {@code null} band (P-02:
+     * "zero bands = no break"). Mode-gated: a SLOT-mode desk gets an empty list regardless of
+     * what {@code templates}/{@code bandsByTemplateId} carry, so the caller never needs its own
+     * mode check.
+     *
+     * <p>Package-private static and pure (no repository access) so it is directly unit-testable,
+     * mirroring {@code resolveEffectiveHours}'s precedent.
+     */
+    static List<ShiftBandPair> buildShiftBandPairs(SchedulingMode schedulingMode,
+            List<ShiftTemplate> templates, Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId) {
+        if (schedulingMode != SchedulingMode.SHIFT) {
+            return List.of();
+        }
+        List<ShiftBandPair> pairs = new ArrayList<>();
+        for (ShiftTemplate template : templates) {
+            List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+            if (bands.isEmpty()) {
+                pairs.add(new ShiftBandPair(template, null));
+            } else {
+                for (ShiftTemplateBreakBand band : bands) {
+                    pairs.add(new ShiftBandPair(template, band));
+                }
+            }
+        }
+        return pairs.stream()
+                .sorted(Comparator
+                        .comparing((ShiftBandPair p) -> p.template().getName())
+                        .thenComparing(p -> p.template().getEffectiveFrom())
+                        .thenComparingInt(p -> p.band() == null ? Integer.MIN_VALUE : p.band().getOffsetMinutes()))
+                .toList();
+    }
+
+    /**
+     * One {@link AgentShiftAssignment} row per {@code agentDayConfigs} entry whose
+     * {@code effectiveHours > 0} (D-05) — the same fact
+     * {@link AgentShiftAssignment#getEligibleShiftBandPairs()} filters by, so entity creation and
+     * the value-range filter can never disagree. Every row shares the SAME
+     * {@code deskShiftBandPairs} list instance (not a copy per row) — required so the value
+     * range's pre-sorted order is never re-derived per entity. Mode-gated the same way as
+     * {@link #buildShiftBandPairs} — a SLOT-mode desk gets zero rows.
+     *
+     * <p>Package-private static and pure, mirroring {@link #buildShiftBandPairs}.
+     */
+    static List<AgentShiftAssignment> buildShiftAssignments(SchedulingMode schedulingMode,
+            long tenantId, UUID deskId, UUID scheduleId, Map<UUID, Agent> agentById,
+            List<AgentDayConfig> agentDayConfigs, List<ShiftBandPair> deskShiftBandPairs) {
+        if (schedulingMode != SchedulingMode.SHIFT) {
+            return List.of();
+        }
+        List<AgentShiftAssignment> assignments = new ArrayList<>();
+        for (AgentDayConfig config : agentDayConfigs) {
+            if (config.effectiveHours() == null || config.effectiveHours().compareTo(BigDecimal.ZERO) <= 0) {
+                continue; // defensive — computeAgentDayConfigs already filters this, D-05
+            }
+            Agent agent = agentById.get(config.agentId());
+            if (agent == null) {
+                continue; // defensive — agentDayConfigs is derived from the same eligible-agent set
+            }
+            AgentShiftAssignment sa = new AgentShiftAssignment();
+            sa.setId(UUID.randomUUID());
+            sa.setTenantId(tenantId);
+            sa.setDeskId(deskId);
+            sa.setScheduleId(scheduleId);
+            sa.setAgent(agent);
+            sa.setDate(config.date());
+            sa.setDayConfig(config);
+            sa.setDeskShiftBandPairs(deskShiftBandPairs);
+            assignments.add(sa);
+        }
+        return assignments;
     }
 
     // --- Timeslot demand configs (per-timeslot demand totals for bulk allocation constraints) ---
@@ -1111,7 +1223,7 @@ public class SolverService {
             var solverFactory = ai.timefold.solver.core.api.solver.SolverFactory.<Schedule>create(
                     new ai.timefold.solver.core.config.solver.SolverConfig()
                             .withSolutionClass(Schedule.class)
-                            .withEntityClasses(AgentAssignment.class)
+                            .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
                             .withScoreDirectorFactory(
                                     new ai.timefold.solver.core.config.score.director.ScoreDirectorFactoryConfig()
                                             .withConstraintProviderClass(com.wfm.solver.ScheduleConstraintProvider.class)));

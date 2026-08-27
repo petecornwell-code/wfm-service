@@ -121,6 +121,18 @@ public final class ScheduleConstraintClassification {
                         + "template-fixed (D-01), but the constraint as coded still needs re-deriving.",
                 null));
 
+        map.put("Shift envelope compliance", new Entry(
+                ModeClassification.MODE_GATED,
+                "Option A (SPIKE-COUPLING.md): joins AgentAssignment to AgentShiftAssignment on "
+                        + "(agent, date), then ScheduleConfig, filtering to SHIFT mode before penalising "
+                        + "a definite disagreement -- the hard constraint the whole coupling rests on, "
+                        + "chosen over a filtered value range that reported 0hard/0soft while 9-14/24 "
+                        + "seats sat outside their agent's envelope on 8/8 seeds. Doubly inert on a "
+                        + "SLOT-scheduled desk: SolverService never populates AgentShiftAssignment rows "
+                        + "there, and the explicit SHIFT-mode filter means the constraint stays silent "
+                        + "even if a shift row were present.",
+                null));
+
         map.put("Prefer primary specialization", new Entry(
                 ModeClassification.MODE_AGNOSTIC,
                 "Pure agent-attribute soft preference (primary vs. secondary specialization); "
