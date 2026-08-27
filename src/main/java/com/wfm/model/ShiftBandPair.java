@@ -27,21 +27,47 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
      * timeslot and template boundaries are both already grid-aligned by Phase 14's D-02 rule, and
      * {@code ScheduleConstraintProvider} already carries two rounding modes (HALF_UP and
      * CEILING) in other constraints; this predicate must not introduce a third.
+     *
+     * <p>Delegates to {@link #covers(LocalTime, LocalTime, Integer, Integer, LocalTime, LocalTime)}
+     * with no behavioural change — see that method for the load-bearing single-implementation
+     * discipline (D-08 / Phase 15 plan 10, T-15-10-04).
      */
     public boolean covers(Timeslot ts) {
-        LocalTime envelopeStart = template.getStartTime();
-        LocalTime envelopeEnd = template.getEndTime();
-        LocalTime slotStart = ts.getStartTime();
-        LocalTime slotEnd = ts.getEndTime();
+        return covers(template.getStartTime(), template.getEndTime(),
+                band == null ? null : band.getOffsetMinutes(),
+                band == null ? null : band.getDurationMinutes(),
+                ts.getStartTime(), ts.getEndTime());
+    }
 
+    /**
+     * The static form of the coverage predicate above, taking the four scalars a descriptor
+     * carries directly rather than the live {@link ShiftTemplate}/{@link ShiftTemplateBreakBand}
+     * references this record wraps. {@link #covers(Timeslot)} delegates to this with no
+     * behavioural change — this IS the predicate, exactly once.
+     *
+     * <p>This is the second caller D-08's "one coverage validator/predicate, two callers"
+     * discipline requires for envelope/break coverage (Phase 15 plan 10): the report layer
+     * ({@code ScheduleOutputService}) holds only a {@code ShiftDescriptor}'s four scalars, never a
+     * live template/band pair, so it calls this overload directly instead of re-deriving the
+     * arithmetic. Any future change to what "covered" means — boundary semantics, break-window
+     * handling, a new edge case — must be made HERE, once, so the solver's {@link #covers(Timeslot)}
+     * and the report layer can never disagree about what an envelope covers.
+     *
+     * <p>{@code bandOffsetMinutes}/{@code bandDurationMinutes} are {@code null} together exactly
+     * when the pair has no band ({@code band == null}), preserving the same "null or non-positive
+     * duration = whole envelope is covered" short-circuit as the instance method.
+     */
+    public static boolean covers(LocalTime envelopeStart, LocalTime envelopeEnd,
+            Integer bandOffsetMinutes, Integer bandDurationMinutes,
+            LocalTime slotStart, LocalTime slotEnd) {
         if (slotStart.isBefore(envelopeStart) || slotEnd.isAfter(envelopeEnd)) {
             return false;
         }
-        if (band == null || band.getDurationMinutes() <= 0) {
+        if (bandOffsetMinutes == null || bandDurationMinutes == null || bandDurationMinutes <= 0) {
             return true;
         }
-        LocalTime breakStart = band.getBreakStartTime(template);
-        LocalTime breakEnd = band.getBreakEndTime(template);
+        LocalTime breakStart = envelopeStart.plusMinutes(bandOffsetMinutes);
+        LocalTime breakEnd = breakStart.plusMinutes(bandDurationMinutes);
         boolean overlapsBreak = slotStart.isBefore(breakEnd) && slotEnd.isAfter(breakStart);
         return !overlapsBreak;
     }

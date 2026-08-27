@@ -59,7 +59,30 @@ public class ScheduleDetailResponse {
             BigDecimal totalHours,
             List<AssignmentDetail> assignments,
             List<BreakDetail> breaks,
-            ShiftDescriptor shift
+            ShiftDescriptor shift,
+            ShiftEnvelopeDivergence divergence
+    ) {}
+
+    /**
+     * Divergence between the assigned envelope and what actually happened (Phase 15 plan 10,
+     * G-15-10 D4 gap closure) — {@code null} whenever there is nothing to report (no shift
+     * descriptor, or a clean agent-day whose held seats exactly equal its legal slots).
+     * {@code outOfEnvelopeSeats} lists the start times of held seats the coverage predicate
+     * ({@link com.wfm.model.ShiftBandPair#covers}) rejects — outside the assigned envelope, or
+     * inside the assigned band's break window. {@code unworkedLegalSlots} lists the start times
+     * of legal slots inside the envelope the agent did not work.
+     *
+     * <p>In a solve where contracted hours are satisfied the two lists have equal size: one
+     * out-of-envelope seat forces the surrender of exactly one legal slot, because
+     * {@code contractedHoursOver}/{@code contractedHoursUnder} pin the held count and the
+     * exact-netHours value range pins the legal count to the same expected total. That equality
+     * is the fingerprint the G-15-10 debug lanes used to separate a seat-supply shortage from an
+     * envelope-capacity shortage, so it is surfaced as two lists rather than collapsed to a
+     * single count.
+     */
+    public record ShiftEnvelopeDivergence(
+            List<LocalTime> outOfEnvelopeSeats,
+            List<LocalTime> unworkedLegalSlots
     ) {}
 
     /**
