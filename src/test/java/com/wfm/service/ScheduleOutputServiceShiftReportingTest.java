@@ -3,9 +3,12 @@ package com.wfm.service;
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.dto.ScheduleDetailResponse.AgentScheduleEntry;
 import com.wfm.dto.ScheduleDetailResponse.BreakDetail;
+import com.wfm.dto.ScheduleDetailResponse.PreferenceReport;
+import com.wfm.dto.ScheduleDetailResponse.PreferenceReportEntry;
 import com.wfm.dto.ScheduleDetailResponse.ShiftEnvelopeDivergence;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
+import com.wfm.model.AgentPreference;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftBandPair;
@@ -213,6 +216,37 @@ class ScheduleOutputServiceShiftReportingTest {
         assertThat(entry.divergence()).isNotNull();
         assertThat(entry.divergence().outOfEnvelopeSeats()).containsExactly(LocalTime.of(8, 0));
         assertThat(entry.divergence().unworkedLegalSlots()).containsExactly(LocalTime.of(13, 0));
+    }
+
+    // ------------------------------------------------------------------
+    //  T-15-10-05 — preference-report break KPI switches to the band window on shift desks
+    // ------------------------------------------------------------------
+
+    @Test
+    void buildPreferenceReport_shiftDesk_actualBreakTimeAndHonouredFlagUseTheBandWindowNotAGapDerivedHole() {
+        Schedule schedule = scheduleWithLiveDescriptor(SCATTERED);
+
+        // Pre-fix, findBreaks(dayAssignments) on SCATTERED yields a merged 09:00-12:00 (180m)
+        // "break" — a pure span artifact from the 08:00 stray seat, not a real break — plus
+        // 13:00-14:00 and the real 16:00-17:00 band break. A preference for 09:00 would have been
+        // (wrongly) reported as honoured against that artifact. Post-fix, the only actual break is
+        // the band window at 16:00, so a 09:00 preference must NOT be honoured.
+        Agent agent = schedule.getAssignments().get(0).getAgent();
+        AgentPreference pref = new AgentPreference();
+        pref.setId(UUID.randomUUID());
+        pref.setAgent(agent);
+        pref.setDate(DAY);
+        pref.setDayOfWeek(DAY.getDayOfWeek());
+        pref.setPreferredBreakTime(LocalTime.of(9, 0));
+        schedule.setAgentPreferences(new ArrayList<>(List.of(pref)));
+        schedule.setBreakDurationMinutes(60);
+
+        PreferenceReport report = service.buildPreferenceReport(schedule);
+
+        assertThat(report.entries()).hasSize(1);
+        PreferenceReportEntry entry = report.entries().get(0);
+        assertThat(entry.actualBreakTime()).isEqualTo(LocalTime.of(16, 0));
+        assertThat(entry.breakTimeHonoured()).isFalse();
     }
 
     // ------------------------------------------------------------------
