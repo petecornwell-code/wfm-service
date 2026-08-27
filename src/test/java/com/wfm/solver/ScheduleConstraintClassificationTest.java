@@ -178,19 +178,21 @@ class ScheduleConstraintClassificationTest {
     }
 
     /**
-     * The six constraints Task 1 actively mode-gates (added filter, unchanged body), plus the
-     * pre-existing "Shift envelope compliance" (plan 15-03), Task 2's "Break clustering"
-     * (reclassified once it gained a real body, ENVL-09) and Task 3's new "Band capacity"
-     * (ENVL-08/D-03) must all carry MODE_GATED, and the two preference rows must keep
+     * The six constraints plan 15-06 Task 1 actively mode-gates (added filter, unchanged body),
+     * plus the pre-existing "Shift envelope compliance" (plan 15-03), plan 15-06 Task 2's
+     * "Break clustering" (reclassified once it gained a real body, ENVL-09), plan 15-06 Task 3's
+     * "Band capacity" (ENVL-08/D-03), and plan 15-09's "Minimum staffing" (G-15-10 — seat supply
+     * is now mode-dependent) must all carry MODE_GATED, and the two preference rows must keep
      * PHASE_15_OWNER verbatim (P-27) even though they are no longer OPEN — the Entry record
      * permits an owner on any classification.
      */
     @Test
-    void thePhase15ModeGatedSetIsExactlyTheNineExpectedRows() {
+    void thePhase15ModeGatedSetIsExactlyTheTenExpectedRows() {
         Set<String> expected = Set.of(
                 "Exactly one break", "Break duration", "Break blocked window", "Break start alignment",
                 "Honour preferred start time", "Honour preferred break time",
-                "Shift envelope compliance", "Break clustering", "Band capacity");
+                "Shift envelope compliance", "Break clustering", "Band capacity",
+                "Minimum staffing");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -203,8 +205,8 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the nine constraints whose behaviour depends on "
-                        + "SchedulingMode after Phase 15")
+                .as("MODE_GATED must be exactly the ten constraints whose behaviour depends on "
+                        + "SchedulingMode after Phase 15 (plans 15-06 and 15-09)")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

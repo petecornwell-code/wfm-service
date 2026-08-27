@@ -27,11 +27,15 @@ public final class ScheduleConstraintClassification {
      *
      * <p>{@link #MODE_GATED} was deliberately unused at Phase 14 close — ROADMAP.md success
      * criterion 5 recorded that the four break constraints tagged {@code NEEDS_SHIFT_VARIANT}
-     * "aren't actually mode-gated until Phase 15". Phase 15 (plan 15-06) is that move: six rows
-     * now carry {@code MODE_GATED} (see the note on {@link #classifications()}), and
-     * {@code NEEDS_SHIFT_VARIANT}/{@code OPEN_RESOLVE_IN_PHASE_15} are both empty from this phase
-     * onward — the constants stay in the vocabulary as the historical record of what Phase 14 left
-     * open and Phase 15 closed, not because either is expected to be used again.
+     * "aren't actually mode-gated until Phase 15". Phase 15 (plans 15-06 and 15-09) is that move
+     * — see the notes on {@link #classifications()} for the running list of which rows carry
+     * {@code MODE_GATED} and why, rather than a count repeated here (a fixed number in this
+     * javadoc has already gone stale once as rows were added across multiple plans;
+     * {@code ScheduleConstraintClassificationTest} derives the authoritative set reflectively,
+     * so this comment does not need to). {@code NEEDS_SHIFT_VARIANT}/{@code OPEN_RESOLVE_IN_PHASE_15}
+     * are both empty from Phase 15 plan 15-06 onward — the constants stay in the vocabulary as
+     * the historical record of what Phase 14 left open and Phase 15 closed, not because either
+     * is expected to be used again.
      */
     public enum ModeClassification {
         MODE_AGNOSTIC,
@@ -84,6 +88,13 @@ public final class ScheduleConstraintClassification {
      * mirror byte-for-byte (P-27). Task 2 reclassifies "Break clustering" from
      * {@code MODE_AGNOSTIC} to {@code MODE_GATED} once it has a real body (ENVL-09). Task 3 adds
      * a new "Band capacity" row, also {@code MODE_GATED} (ENVL-08/D-03).
+     *
+     * <p><strong>Plan 15-09 correction (G-15-10, 2026-08-27).</strong> "Minimum staffing" is
+     * reclassified from {@code MODE_AGNOSTIC} to {@code MODE_GATED}: the constraint body is
+     * shared between modes, but its reachable domain is mode-dependent because seat supply is.
+     * {@code SolverService.expandMinimumStaffingSeats} was mode-blind until this plan, so the
+     * row's "mode-independent" basis was true only by omission — the fix makes seat creation
+     * itself branch on {@code SchedulingMode}, so the classification must say so too.
      */
     public static Map<String, Entry> classifications() {
         Map<String, Entry> map = new LinkedHashMap<>();
@@ -246,9 +257,17 @@ public final class ScheduleConstraintClassification {
                 null));
 
         map.put("Minimum staffing", new Entry(
-                ModeClassification.MODE_AGNOSTIC,
-                "Per-timeslot floor of at least one assigned agent, irrespective of forecast; "
-                        + "mode-independent.",
+                ModeClassification.MODE_GATED,
+                "Plan 15-09 correction (G-15-10): the constraint body is shared -- per-timeslot "
+                        + "floor of at least one assigned agent -- but its reachable domain is "
+                        + "mode-dependent because seat supply is. SolverService"
+                        + ".expandMinimumStaffingSeats now branches on SchedulingMode: on a SHIFT "
+                        + "desk, an uncovered timeslot (no live ShiftBandPair reaches it) carries "
+                        + "no AgentAssignment at all, so this constraint's groupBy emits no group "
+                        + "for it and the floor cannot fire there -- the intended behaviour under "
+                        + "operator ruling OR-1, not an omission. A SLOT desk (or a SHIFT desk "
+                        + "with an empty library) keeps the prior unconditional per-timeslot "
+                        + "top-up unchanged.",
                 null));
 
         return java.util.Collections.unmodifiableMap(map);
