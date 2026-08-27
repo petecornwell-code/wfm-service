@@ -198,7 +198,7 @@ Plans:
 - [x] 15-10-PLAN.md — Report layer reads the authoritative envelope and band instead of deriving both from seat gaps; envelope divergence becomes visible data; export and preference KPIs corrected (wave 1)
 - [x] 15-11-PLAN.md — Pre-solve in-envelope seat-supply gate: refuse with named shortfall and levers rather than returning an unlabelled residual; zero-slack pinned as a deliberate invariant (wave 2)
 - [x] 15-12-PLAN.md — Agent Schedule reads the authoritative shift; envelope breach and deliberately-unstaffed hours rendered visibly in Agent Allocation (wave 2)
-- [ ] 15-13-PLAN.md — Shape-complete end-to-end regression, characterising-test disposition, deferral record for the two latent defects left out of scope (wave 3)
+- [x] 15-13-PLAN.md — Shape-complete end-to-end regression, characterising-test disposition, deferral record for the two latent defects left out of scope (wave 3)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
 first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the

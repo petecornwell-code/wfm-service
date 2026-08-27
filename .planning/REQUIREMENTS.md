@@ -88,7 +88,7 @@ project has already been burned by each one.
 
 - [x] **XCUT-01**: Every phase that writes shift or usual-shift data verifies that the written value is visible to the operator in every surface that displays it — roster, export, accepted-schedule view, drift report. *(v1.2 audit I-1: the model was built and the view never migrated, costing an entire extra phase.)*
 - [ ] **XCUT-02**: Every guarantee is verified on every reachable write path, not only the one its phase built. *(v1.2 audit I-2: open across two consecutive audits because a second entry point bypassed the merge engine.)*
-- [ ] **XCUT-03**: Any change to `solverConfig.xml` is validated by a test that actually builds a solver. *(No test under `src/test/java/com/wfm/solver/` currently does, and the coupling spike found a solver-build failure that would therefore have shipped silently.)*
+- [x] **XCUT-03**: Any change to `solverConfig.xml` is validated by a test that actually builds a solver. *(No test under `src/test/java/com/wfm/solver/` currently does, and the coupling spike found a solver-build failure that would therefore have shipped silently.)*
 - [x] **XCUT-04**: The shift model's effect on schedule quality is judged by seeded, step-count-terminated A/B runs reporting median **and** full min/max spread, against a threshold committed before the run, including at realistic (~130%) over-allocation. *(Phase 12 produced a +0.25h median inside a 5.00h noise spread and was withdrawn.)*
 - [x] **XCUT-05**: Every one of the existing constraints is explicitly classified as mode-agnostic, mode-gated, or needing a shift-mode variant — no constraint is left unclassified. *(A test suite where every fixture is single-mode is structurally blind to interaction bugs.)*
 
@@ -140,7 +140,7 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | DRFT-01…04 | Phase 17 | Pending |
 | XCUT-01 (display verification) | Phases 14, 15, 16, 17 | Pending |
 | XCUT-02 (every write path) | Phases 16, 17 | Pending |
-| XCUT-03 (solverConfig.xml build test) | Phase 15 | Pending |
+| XCUT-03 (solverConfig.xml build test) | Phase 15 | Complete (2026-08-27) — every gap-closure plan's solver tests (15-04, 15-08, 15-09, 15-11, 15-13) build a solver via `SolverConfig.createFromXmlResource("solverConfig.xml")` and solve through it; `ShiftDeskEndToEndRegressionTest` (15-13) is the closing end-to-end proof |
 | XCUT-04 (seeded A/B benchmark) | Phases 15, 17 | Partial — Phase 15 benchmark delivered (`15-BENCHMARK.md`, PASS verdict, D-08 CH-ordering decided); Phase 17's own XCUT-04 obligation outstanding |
 | XCUT-05 (constraint classification) | Phases 14, 15 | Complete (2026-08-27) — Phase 14 classification delivered (`XCUT-05-constraint-classification.md`); Phase 15 mode-gating (plans 15-06, 15-09) closed the remaining "Minimum staffing" row |
 

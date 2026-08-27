@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-12-PLAN.md
-last_updated: "2026-08-27T17:45:46.366Z"
+stopped_at: Completed 15-13-PLAN.md
+last_updated: "2026-08-27T18:21:07.055Z"
 last_activity: 2026-08-27
 last_activity_desc: Phase 15 execution started
-state_head: 8ef45f2578598fc2aa87d9d141820f6add0f2ca6
+state_head: 5f9f935f4ff415dcf0d89c58ead1a6997361a131
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 25
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 5 of 13
+Plan: 6 of 13
 Status: Ready to execute
 Last activity: 2026-08-27 — Phase 15 execution started
 
@@ -223,6 +223,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: shiftEnvelopeComplianceWeight stays at ofHard(1) (tied with 4 other constraints) -- deliberately not raised, since the gate (not the weight) is what closes the gap; empirical refutation (-4 to -400 relocation) recorded in test
 - [Phase 15]: Phase 15 Plan 12: AgentScheduleEntry.divergence added as optional (not required-but-nullable like shift) so pre-existing fixtures don't need updating
 - [Phase 15]: Phase 15 Plan 12: Agent Allocation envelope containment test is deliberately NOT band-aware -- break-window rejection surfaces via per-cell divergence marks instead, per explicit plan comment requirement
+- [Phase 15]: Phase 15 Plan 13: shape-complete demand curve engineered against a template-independent 'core' window so the multi-template fixture stays achievable regardless of the solver's own per-agent template choice; refusal case uniformly thins demand (not agent/template counts) since any nonzero demand blocks production's filler top-up; step budget reduced 20000->2000 after measuring convergence, per the plan's instruction to reduce budget/scale rather than shape
+- [Phase 15]: Phase 15 Plan 13: break-geometry guard keeps the scattered/edge case but re-labels it -- flatness is real but cosmetic to an already-infeasible solve, not the cause; restoring gated slot-mode break constraints considered and rejected (fights envelope model, could make under-supplied desks unsolvable); report-layer case dropped, superseded by plan 15-10's ScheduleOutputServiceShiftReportingTest
 
 ### Blockers/Concerns
 
@@ -238,8 +240,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-08-27T17:45:46.137Z
-Stopped at: Completed 15-12-PLAN.md
+Last session: 2026-08-27T18:21:06.616Z
+Stopped at: Completed 15-13-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -272,3 +274,4 @@ Resume file: None
 | Phase 15 P10 | 44min | 3 tasks | 6 files |
 | Phase 15 P11 | 40 min | 3 tasks | 6 files |
 | Phase 15 P12 | 6 min | 2 tasks | 2 files |
+| Phase 15 P13 | 33min | 3 tasks | 4 files |
