@@ -47,6 +47,14 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+
+    // 15-08: narrow, single-property passthrough so the seeded A/B benchmark harness
+    // (ShiftModelBenchmarkTest, gated on @EnabledIfSystemProperty) can be opted into via
+    // `-Dwfm.benchmark=true` on the Gradle command line. Forwards exactly this one named
+    // property to the test JVM — never the whole JVM property set, which would leak every
+    // `-D` on the Gradle command line (including credentials) into test output and CI logs.
+    // Re-added after being removed at 299c42c alongside the Phase 12 harness it gated.
+    systemProperty 'wfm.benchmark', System.getProperty('wfm.benchmark', 'false')
 }
 
 tasks.register('generateFteSpreadsheet', JavaExec) {
