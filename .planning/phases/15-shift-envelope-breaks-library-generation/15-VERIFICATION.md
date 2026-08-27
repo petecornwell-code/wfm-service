@@ -1,30 +1,18 @@
 ---
 phase: 15-shift-envelope-breaks-library-generation
-verified: 2026-08-27T12:05:31Z
-status: gaps_found
-score: 9/11 must-haves verified
+verified: 2026-08-27T13:15:00Z
+status: passed
+score: 11/11 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "ENVL-01 — on a shift-scheduled desk, the solver assigns each working agent exactly one shift per day from that desk's library"
-    status: failed
-    reason: "The coupling mechanism itself (one AgentShiftAssignment planning variable per working agent-day, hard-constrained into its envelope) is genuinely sound and independently proven by ShiftEnvelopeGroundTruthTest — but the 'from that desk's library' clause is violated: SolverService.startSolve's liveShiftTemplates filter excludes only RETIRED templates (effectiveTo before today) and never excludes UPCOMING templates (effectiveFrom in the future). A shift template created today with an effectiveFrom three months out is immediately assignable in the current solve. This directly undermines Phase 14's SHLB-03 effective-date-range guarantee and is confirmed by direct code reading, independently of the code review (15-REVIEW.md CR-01)."
-    artifacts:
-      - path: "src/main/java/com/wfm/service/SolverService.java"
-        issue: "Lines 278-282: `.filter(t -> t.getEffectiveTo() == null || !t.getEffectiveTo().isBefore(LocalDate.now()))` checks only the retirement boundary. `ShiftLibraryValidationService.withinEffectiveRange` (line 228) already implements the correct two-sided predicate but SolverService never calls it. No downstream code (ShiftBandPair.covers, AgentShiftAssignment.getEligibleShiftBandPairs, or any constraint) checks the effective range against a specific agent-day either."
-    missing:
-      - "Filter liveShiftTemplates (or, better, filter per agent-day when building ShiftBandPairs/AgentShiftAssignments) by both ends of the effective range against the schedule's actual period dates, not LocalDate.now() — e.g. reusing ShiftLibraryValidationService.withinEffectiveRange, per the review's own suggested fix."
-      - "A test asserting an UPCOMING template (effectiveFrom after the schedule period) is excluded from the solver's value range for that period — SolverServiceShiftAssignmentTest currently has no coverage for this case."
-  - truth: "ENVL-10 / XCUT-01 — the shift an agent was assigned is visible correctly in the accepted-schedule view, and a shift-scheduled desk's schedulingMode is recorded accurately"
-    status: failed
-    reason: "ScheduleService.loadSnapshotData infers an accepted schedule's schedulingMode solely from whether any agent_shift_assignment rows exist for it. acceptSchedule only ever writes a row for an AgentShiftAssignment whose shiftBandPair is non-null. acceptSchedule is reachable for any COMPLETED or STOPPED schedule — feasibility is not required. A SHIFT-mode solve that is stopped early, or one whose live library matches no agent's contracted hours, can legitimately reach COMPLETED/STOPPED with zero placed shifts. Accepting it persists zero agent_shift_assignment rows, and every subsequent load reports schedulingMode = SLOT for what was actually a SHIFT-mode solve — a permanent mislabeling of an immutable historical record, feeding directly into ScheduleResults.tsx's mode branch and selecting the wrong (ungrouped) rendering. Confirmed by direct code reading, independently of the code review (15-REVIEW.md CR-02)."
-    artifacts:
-      - path: "src/main/java/com/wfm/service/ScheduleService.java"
-        issue: "Line ~416: `schedule.setSchedulingMode(shiftAssignments.isEmpty() ? SchedulingMode.SLOT : SchedulingMode.SHIFT)` infers state from a collection that can legitimately be empty for the state it is supposed to signal."
-    missing:
-      - "Persist schedulingMode explicitly at accept time (e.g. a column on schedule, or on the accepted agent_assignment/agent_shift_assignment snapshot) written from schedule.getScheduleConfig()'s in-memory value, rather than inferred from row presence."
-      - "A test covering a SHIFT-mode accept with zero placed shift rows, asserting the reloaded schedulingMode is still SHIFT."
-human_verification: []
+re_verification:
+  previous_status: gaps_found
+  previous_score: 9/11
+  gaps_closed:
+    - "ENVL-01 — solver assigns each working agent exactly one shift per day, from that desk's live library (CR-01)"
+    - "ENVL-10 / XCUT-01 — accepted-schedule schedulingMode recorded accurately, not inferred (CR-02)"
+  gaps_remaining: []
+  regressions: []
 ---
 
 # Phase 15: Shift Envelope, Breaks & Library Generation Verification Report
@@ -33,229 +21,273 @@ human_verification: []
 sound and benchmarked honestly, breaks are distributed rather than simultaneous, and a starting
 library can be suggested from demand.
 
-**Verified:** 2026-08-27T12:05:31Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-27T13:15:00Z
+**Status:** passed
+**Re-verification:** Yes — after gap closure (commits `ba0c3f0`, `75349d8`, `6065fd6`)
 
 ## Goal Achievement
 
-The phase goal's three central claims were independently re-derived from the codebase and
-re-executed, not read off SUMMARY.md or 15-BENCHMARK.md prose:
+This is a re-verification of the two gaps (`CR-01`, `CR-02`) reported in the prior run
+(`9/11 must-haves`, `gaps_found`), plus an independently-confirmed third fix (`CR-03`, a
+data-hygiene defect that was documented but not previously promoted to a formal gap). Every claim
+below was re-derived directly from the current HEAD source — not read off the fix commits'
+messages, the SUMMARY files, or the orchestrator's test-count claim.
 
-1. **"The solver assigns one shift per agent-day via a hard-constraint coupling proven sound"** —
-   VERIFIED at the mechanism level. `AgentShiftAssignment` carries exactly one `@PlanningVariable`
-   per row, one row per working agent-day (`AgentDayConfig.effectiveHours > 0`), so a double
-   assignment is structurally impossible. `shiftEnvelopeCompliance` is a genuine hard
-   `ConstraintStream` constraint (not the rejected Option C filtered-value-range) and
-   `ShiftEnvelopeGroundTruthTest` — an external walker sharing no code with the constraint it
-   checks — independently confirms agreement between the reported score and actual envelope
-   membership, including six adversarial corruption cases. I ran both `SolverConfigBuildTest` and
-   `ShiftEnvelopeGroundTruthTest` directly (not trusting the SUMMARY): both pass (8/8 tests, 0
-   failures). **However**, one clause of ENVL-01 — "from that desk's library" — has a genuine,
-   uncovered defect (CR-01, below): a not-yet-effective (UPCOMING) shift template is treated as
-   live immediately, which the solve-time code path does not guard against even though the
-   validation-time code path already does.
+### Gap 1 (CR-01 / ENVL-01) — re-verified closed
 
-2. **"…benchmarked honestly"** — VERIFIED, and re-confirmed independently rather than taken on
-   trust. `15-BENCHMARK.md`'s git history shows the Pass Rule, Harness Configuration, and a
-   placeholder Results/Verdict section committed at `cd26db93` (01:17:46), with the actual numbers
-   filling in 20 minutes later at `836033a`/`57ad2a7` (01:37:18–01:50:02) — the threshold was
-   genuinely fixed before any result existed, not adjusted after seeing one. I independently
-   re-ran `ShiftModelBenchmarkTest -Dwfm.benchmark=true` myself: the reproduced per-seed numbers
-   (e.g. slot seed 1 → `0hard/-128soft`, slot seed 2 → `-5140hard/-149soft`, every shift-arm seed
-   → `0hard/-192soft`) match the transcribed table in `15-BENCHMARK.md` exactly. The verdict's
-   own "no measurable difference" framing under the noise rule, and its refusal to call the 5/5
-   vs 1/5 convergence gap anything other than what it is, hold up against direct inspection of
-   the harness output — this is a genuinely disciplined write-up, not a rebrand of Phase 12's
-   mistake.
+**Claim under test:** eligibility is enforced per agent-day in the solver's own value range, not
+just as a load-time pre-filter, and a template effective for only part of a schedule period is
+genuinely ineligible on the dates outside its range.
 
-3. **"…breaks are distributed rather than simultaneous, and a starting library can be suggested
-   from demand"** — VERIFIED. `breakClustering` has a real body (no longer
-   `penalizeConfigurable(a -> 0)`), `BreakClusteringConstraintTest` carries the exact
-   single-band-starves / multi-band-does-not fixture the ROADMAP asked for, and
-   `ShiftLibraryGenerationService` genuinely calls `ShiftLibraryValidationService.covers()` (the
-   `verify.key-links` tool reported a false negative here on an escaping-regex mismatch — I
-   confirmed the call at `ShiftLibraryGenerationService.java:331` by direct grep).
+- `ShiftTemplate#isEffectiveOn(LocalDate)` (`src/main/java/com/wfm/model/ShiftTemplate.java:153`)
+  is a new, single shared predicate checking both the `effectiveFrom` and `effectiveTo` boundaries.
+  `ShiftLibraryValidationService`'s former private `withinEffectiveRange` copy is gone — grep
+  confirms zero occurrences — and both its call sites (`ShiftLibraryValidationService.java:208,328`)
+  now call `template.isEffectiveOn(...)` directly.
+- `AgentShiftAssignment#getEligibleShiftBandPairs()` — the method actually annotated
+  `@ValueRangeProvider(id = "shiftBandRange")`, which is exactly the id referenced by
+  `AgentShiftAssignment.shiftBandPair`'s `@PlanningVariable(valueRangeProviderRefs =
+  "shiftBandRange")` — now chains a second `.filter(p -> date != null &&
+  p.template().isEffectiveOn(date))` after the existing net-hours filter (lines 166–178). This is
+  the actual value-range provider the solver consults, confirmed by reading the annotation pair
+  directly, not inferred from naming.
+- **The "one shared list instance" claim, verified:** `SolverService.buildShiftAssignments`
+  (lines 722–749) calls `sa.setDeskShiftBandPairs(deskShiftBandPairs)` inside a loop over
+  `agentDayConfigs` with no per-row copy — every `AgentShiftAssignment` row for a desk shares the
+  identical `List<ShiftBandPair>` reference. This is why a desk-level (or period-level) filter
+  alone cannot enforce per-agent-day eligibility for a period that straddles a template's
+  `effectiveFrom`/`effectiveTo` boundary — confirmed by direct code reading, not merely cited from
+  the commit message.
+- `SolverService.filterLiveShiftTemplates` (lines 664–673, renamed and made package-private-static
+  for direct testability) is now a coarse pre-filter checking overlap against
+  `[schedule.getPeriodStartDate(), schedule.getPeriodEndDate()]` — confirmed at the call site
+  (line 289–291) — never `LocalDate.now()`.
+- New test class `SolverServiceShiftAssignmentTest` (15 tests) covers upcoming-template exclusion,
+  retired-template exclusion, and — critically — a period-straddling case with two rows sharing one
+  `deskShiftBandPairs` instance, one dated before `effectiveFrom` (empty range) and one dated on
+  `effectiveFrom` (non-empty range), proving per-row enforcement rather than per-desk. I ran this
+  test class directly: **15/15 pass** (not trusted from the commit message).
 
-**Two genuine, uncovered defects were found by direct code reading** (independently reproducing
-`15-REVIEW.md`'s CR-01 and CR-02, not merely citing them) that undermine specific clauses of
-ENVL-01 and ENVL-10/XCUT-01. These are detailed in the Gaps section below and are the reason this
-phase does not pass outright.
+### Gap 1 side effect — empty-value-range case, verified as claimed
+
+`ScheduleConstraintProvider.shiftEnvelopeCompliance` (line 413) hard-constrains
+`sa.getShiftBandPair() == null || !sa.getShiftBandPair().covers(a.getTimeslot())` for every seated
+timeslot on that agent-day. `ConstraintWeights.shiftEnvelopeComplianceWeight` defaults to
+`HardSoftScore.ofHard(1)` — a genuinely hard constraint, confirmed by reading
+`ConstraintWeights.java:138`. When `getEligibleShiftBandPairs()` returns an empty list (all
+candidates excluded by the effective-range or hours filter), `shiftBandPair` stays `null`
+(`allowsUnassigned = true`), and any seat the CH places for that agent that day is hard-penalised.
+This is exactly the claimed behavior: a desk whose entire library is upcoming/retired for a working
+agent-day drives the solve visibly infeasible, not silently unconstrained. Confirmed directly in
+the constraint source and the constraint-weight default — not merely cited from the fix commit's
+prose.
+
+### Gap 2 (CR-02 / ENVL-10 / XCUT-01) — re-verified closed
+
+**Claim under test:** `schedulingMode` is persisted, not inferred, and no accept/re-solve path
+writes a `Schedule` without it being set.
+
+- `V43__schedule_scheduling_mode.sql` adds `schedule.scheduling_mode VARCHAR(10) NOT NULL DEFAULT
+  'SLOT'` and backfills existing rows via `EXISTS (agent_shift_assignment WHERE schedule_id = s.id)
+  -> SHIFT, else SLOT` — read directly, matches its own header comment exactly, and is explicitly
+  documented (in the SQL comment) as best-effort for historical rows only, not authoritative.
+- `Schedule.schedulingMode` (`Schedule.java:162–164`) is now `@Enumerated(EnumType.STRING)
+  @Column(name = "scheduling_mode", nullable = false)` — no longer `@Transient`.
+- **Every accept/re-solve path traced:** the only `new Schedule()` construction site in the
+  service layer is `SolverService.buildSchedule` (line 489), which sets
+  `s.setSchedulingMode(desk.getSchedulingMode())` at line 495 — before any solve starts. Every
+  `inMemoryStore.put(...)` call in `startSolve`/`stopSolve` (lines 384, 408, 423, 434, 472) operates
+  on this same in-memory `Schedule` instance (Timefold mutates and returns the same working
+  solution object; there is no second construction path). `ScheduleService.acceptSchedule`
+  (line 202–244) retrieves this exact object from `inMemoryStore` and calls
+  `entityManager.persist(schedule)` directly — no intermediate reconstruction that could drop the
+  field. `ScheduleService.loadSnapshotData` (line 398–428) no longer contains any inference logic
+  at all; the loaded entity already carries the DB column value. No path was found that constructs
+  or persists a `Schedule` without `schedulingMode` having been set from `desk.getSchedulingMode()`.
+- New regression test
+  `ScheduleServiceShiftSnapshotTest#getScheduleDetail_acceptedShiftModeSchedule_zeroPlacedShifts_stillReportsShift`
+  reproduces the exact CR-02 scenario: a SHIFT-mode schedule with a shift-assignment row whose
+  `shiftBandPair` is null, confirms zero `agent_shift_assignment` rows are actually persisted (so
+  the test genuinely exercises the empty-snapshot case, not the ordinary case), and asserts the
+  reloaded `schedulingMode` is still `SHIFT`. I ran `ScheduleServiceShiftSnapshotTest` directly:
+  **12/12 pass**, including this test and the CR-03 delete-cascade test below.
+
+### Bonus fix (CR-03) — verified
+
+`AgentShiftAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId` was added and
+`ScheduleService.deleteSchedule` (line 367) now calls it, mirroring
+`agentAssignmentRepository`'s own delete immediately above it. This was flagged but not promoted
+to a formal gap in the prior verification (no must-have truth asserted delete-path cleanup); it is
+now fixed regardless, with its own regression test passing (part of the 12/12 above).
+
+### Migration guard (`MigrationEntityConsistencyTest`) — verified
+
+`schedule` was added to `DECLARED_TABLES` (`MigrationEntityConsistencyTest.java:88`) alongside its
+own explanatory comment. Before this fix, `schedule` was entirely absent from this map, meaning no
+migration touching `schedule` (including V43 itself) was ever reconciled against the entity
+mapping — that gap is now closed for this table. I ran
+`MigrationEntityConsistencyTest` directly: **2/2 pass**. Note for the record (not a phase-15 gap):
+several long-lived tables (`desk`, `agent`, `timeslot`, `staffing_requirement`,
+`agent_assignment`, etc.) are still outside `DECLARED_TABLES` — this is a pre-existing scope
+limitation of the guard, unrelated to and not worsened by this phase's fixes; worth a future
+follow-up but out of scope here.
+
+### Regression check — no new defects found
+
+- `ShiftEnvelopeGroundTruthTest` (ENVL-02/03/07's independent ground-truth walker) — ran directly:
+  **7/7 pass**, unchanged from the prior verification. The core coupling-soundness claim still
+  holds after both fix commits.
+- `BreakClusteringConstraintTest` (5/5), `BandCapacityConstraintTest` (8/8),
+  `ShiftModeBreakGatingTest` (7/7), `SolverConfigBuildTest` (1/1),
+  `ShiftLibraryGenerationServiceTest` (8/8), `ShiftLibraryValidationServiceTest` (36/36) — all ran
+  directly, all pass. None of these files were touched by any of the three fix commits (confirmed
+  by `git diff --stat` across the fix range), so this is a genuine no-regression check, not a
+  restatement of unaffected code.
+- No frontend file was touched by any of the three fix commits (`git diff --stat ...frontend/`
+  across the fix range returns nothing) — `ScheduleResults.tsx`'s mode-branch and
+  `ShiftLibrary.tsx`'s suggestion flow are unaffected by construction, and `npm run build` succeeds
+  cleanly (57 modules, no errors).
+- **Full backend suite, run twice** (the first run collided with my own concurrent targeted test
+  invocations writing to the same output directory and failed on an XML-write race — a
+  self-inflicted artifact, not a real test failure; the second, clean, uncontended run succeeded).
+  Aggregated directly from the 79 `TEST-*.xml` files in `build/test-results/test/`:
+  **79 classes, 505 tests, 0 failures, 0 errors, 2 skipped** (`BUILD SUCCESSFUL`). This
+  independently reproduces, byte-for-byte, the orchestrator's claimed count — not merely accepted
+  from the task description. The 2 skips are both `ShiftModelBenchmarkTest`'s `-Dwfm.benchmark=true`
+  -gated methods, pre-existing and unrelated to this gap closure.
 
 ### Observable Truths (by requirement ID)
 
 | # | Requirement | Truth | Status | Evidence |
 |---|---|---|---|---|
-| 1 | ENVL-01 | Solver assigns each working agent exactly one shift per day, **from that desk's live library** | ✗ FAILED (partial) | Coupling mechanism sound (`AgentShiftAssignment` single variable, `SolverServiceShiftAssignmentTest`) — but `SolverService.startSolve` never excludes UPCOMING templates (CR-01); see Gaps |
-| 2 | ENVL-02 | Agent never seated outside their shift envelope, hard constraint | ✓ VERIFIED | `shiftEnvelopeCompliance` (`ScheduleConstraintProvider.java:413`), `ShiftEnvelopeComplianceConstraintTest`, `ShiftEnvelopeGroundTruthTest` (ran directly, 7/7 pass) |
-| 3 | ENVL-03 | Specialization varies freely within a shift | ✓ VERIFIED | `ShiftEnvelopeGroundTruthTest#specializationVariesWithinShift_notFlaggedByThisWalker` (ran, passes) |
-| 4 | ENVL-04 | Working day contiguous apart from break | ✓ VERIFIED | `ShiftModeBreakGatingTest#everySeatedAgentDay...` (369 lines, substantive) |
-| 5 | ENVL-05 | Break placement from shift template, not the four emergent constraints | ✓ VERIFIED | `ShiftModeBreakGatingTest` — 6 gated-constraint cases, each proving inertness in SHIFT and unchanged behavior in SLOT |
-| 6 | ENVL-06 | Feasible initial solution via CH alone, no pre-assignment pipeline | ✓ VERIFIED | `solverConfig.xml` two explicit `<constructionHeuristic>` phases (shifts-first, D-08); benchmark's own log shows the shift arm reaching `0hard` via CH alone (0 local-search steps) on every seed |
-| 7 | ENVL-07 | Reported score agrees with an independent ground-truth check | ✓ VERIFIED | `ShiftEnvelopeGroundTruthTest` — ran directly, 7/7 pass, including the deliberately-corrupted-solution agreement case |
-| 8 | ENVL-08 | Shift template defines break bands; solver assigns one band per agent-day | ✓ VERIFIED | `AgentShiftAssignment`'s single `(template,band)` variable (D-04); `BandCapacityConstraintTest` (244 lines) |
-| 9 | ENVL-09 | Break clustering constraint has a real, penalising body | ✓ VERIFIED | `ScheduleConstraintProvider.breakClustering` (line 732) replaces the old placeholder; `BreakClusteringConstraintTest` carries the required single-band-starves/multi-band-does-not fixture |
-| 10 | ENVL-10 | Agent Allocation view groups agents by assigned shift; slot desk unchanged | ✗ FAILED (partial) | Grouping itself confirmed wired (`ScheduleResults.tsx:561-629`) — but the `schedulingMode` value it branches on can be silently wrong for an accepted schedule (CR-02); see Gaps |
-| 11 | SHLB-07 | Suggested library computed from demand, editable draft, never auto-applied, reuses `covers()` | ✓ VERIFIED | `ShiftLibraryGenerationService` calls `shiftLibraryValidationService.covers()` directly (confirmed by grep, tool's regex match was a false negative); `ShiftLibraryGenerationServiceTest` (399 lines); frontend draft panel with "isn't saved" copy matches must-have verbatim |
+| 1 | ENVL-01 | Solver assigns each working agent exactly one shift per day, **from that desk's live library** | ✓ VERIFIED | CR-01 closure: per-agent-day `isEffectiveOn` enforcement in the actual value-range provider; `SolverServiceShiftAssignmentTest` 15/15 (ran directly) |
+| 2 | ENVL-02 | Agent never seated outside their shift envelope, hard constraint | ✓ VERIFIED | `shiftEnvelopeCompliance` unchanged; `ShiftEnvelopeGroundTruthTest` 7/7 (ran directly) |
+| 3 | ENVL-03 | Specialization varies freely within a shift | ✓ VERIFIED | `ShiftEnvelopeGroundTruthTest` (ran, passes; unchanged by fix commits) |
+| 4 | ENVL-04 | Working day contiguous apart from break | ✓ VERIFIED | `ShiftModeBreakGatingTest` 7/7 (ran directly; file untouched by fix commits) |
+| 5 | ENVL-05 | Break placement from shift template, not the four emergent constraints | ✓ VERIFIED | `ShiftModeBreakGatingTest` (same run) |
+| 6 | ENVL-06 | Feasible initial solution via CH alone, no pre-assignment pipeline | ✓ VERIFIED | `solverConfig.xml` unchanged; `SolverConfigBuildTest` 1/1 (ran directly) |
+| 7 | ENVL-07 | Reported score agrees with an independent ground-truth check | ✓ VERIFIED | `ShiftEnvelopeGroundTruthTest` 7/7 (ran directly, re-confirming no regression from CR-01's enforcement change) |
+| 8 | ENVL-08 | Shift template defines break bands; solver assigns one band per agent-day | ✓ VERIFIED | `BandCapacityConstraintTest` 8/8 (ran directly) |
+| 9 | ENVL-09 | Break clustering constraint has a real, penalising body | ✓ VERIFIED | `BreakClusteringConstraintTest` 5/5 (ran directly) |
+| 10 | ENVL-10 | Agent Allocation view groups agents by assigned shift; slot desk unchanged, and the recorded mode is accurate | ✓ VERIFIED | CR-02 closure: `schedule.scheduling_mode` persisted column (V43), written on every accept path; `ScheduleServiceShiftSnapshotTest` 12/12 (ran directly), including the zero-placed-shift regression test |
+| 11 | SHLB-07 | Suggested library computed from demand, editable draft, never auto-applied, reuses `covers()` | ✓ VERIFIED | Unaffected by fix commits; `ShiftLibraryGenerationServiceTest` 8/8 (ran directly) |
 
-**Score:** 9/11 requirement-level truths verified; 2 failed (partial — the underlying mechanism for
-each is otherwise sound; the specific undermining clause is the failure).
+**Score:** 11/11 requirement-level truths verified.
 
 ### Cross-Cutting Requirements
 
 | Requirement | Truth | Status | Evidence |
 |---|---|---|---|
-| XCUT-01 | Written shift/mode data visible everywhere it's displayed | ⚠️ Partially undermined by the same CR-02 defect as ENVL-10 above | `AgentShiftAssignment` denormalised snapshot correctly feeds the roster/export/accepted-schedule view in the common case; the `schedulingMode`-mislabeling edge case is the gap |
-| XCUT-03 | Any `solverConfig.xml` change validated by a test that actually builds a solver | ✓ VERIFIED (code) — **but still unchecked in REQUIREMENTS.md** | `SolverConfigBuildTest` exists, is substantive, and I ran it directly: `tests="1" failures="0" errors="0"`. `solverConfig.xml` changed repeatedly this phase (two explicit CH phases, D-08 arm reordering) and this test is part of the full suite. This is a documentation gap in REQUIREMENTS.md, not a code gap — see note below. |
-| XCUT-04 | Seeded, step-count-terminated A/B benchmark, threshold pre-committed | ✓ VERIFIED, independently re-run | See Goal Achievement §2 above — git history confirms pre-commitment, and I reproduced the harness output byte-for-byte against the transcribed table |
-| XCUT-05 | Every constraint classified mode-agnostic/mode-gated/needs-variant | ✓ VERIFIED | `ScheduleConstraintClassification.java` — zero `OPEN_RESOLVE_IN_PHASE_15` rows remain (grep confirms); the two preference constraints reclassified `MODE_GATED` |
+| XCUT-01 | Written shift/mode data visible everywhere it's displayed | ✓ VERIFIED | CR-02 closure removes the last known undermining case; `ScheduleResults.tsx` grouping unchanged and confirmed wired |
+| XCUT-03 | Any `solverConfig.xml` change validated by a test that actually builds a solver | ✓ VERIFIED (code) — **still unchecked in REQUIREMENTS.md, a stale documentation gap carried over from the prior verification** | `SolverConfigBuildTest` 1/1, ran directly |
+| XCUT-04 | Seeded, step-count-terminated A/B benchmark, threshold pre-committed | ✓ VERIFIED | Unaffected by fix commits; previously independently re-run and confirmed |
+| XCUT-05 | Every constraint classified mode-agnostic/mode-gated/needs-variant | ✓ VERIFIED | Unaffected by fix commits |
 
-**Note on the REQUIREMENTS.md ENVL-01 / XCUT-03 checkbox discrepancy** (per the flagged scrutiny
-items): both are still unchecked in `.planning/REQUIREMENTS.md` despite 15-03-SUMMARY.md claiming
-both `requirements-completed`. Git-blaming the file (`63558c9`, `docs(15-04): mark ENVL-02,
-ENVL-03, ENVL-06, ENVL-07 complete`) shows ENVL-02/03/06/07 were flipped to `[x]` in the same
-commit that left ENVL-01 untouched at `[ ]` — this looks like a deliberate choice by whoever wrote
-that commit, not an oversight, and it turns out to be the *correct* current state: CR-01 is a real,
-live defect, so ENVL-01 should stay unchecked until it's fixed. XCUT-03, by contrast, has no
-matching defect — the required test exists, is substantive, and passes; leaving it unchecked
-appears to be a genuine documentation gap that should be corrected (recommend checking it off once
-the ENVL-01 gap closure commit lands, so the two aren't conflated).
+### Required Artifacts (fix-commit scope)
 
-### Required Artifacts (all 8 plans)
+| Artifact | Expected | Status | Details |
+|---|---|---|---|
+| `src/main/java/com/wfm/model/ShiftTemplate.java` | Shared `isEffectiveOn(LocalDate)` predicate | ✓ VERIFIED | Present, substantive, javadoc explains the design rationale; used by 2 call sites |
+| `src/main/java/com/wfm/model/AgentShiftAssignment.java` | Value-range provider filters by `isEffectiveOn` | ✓ VERIFIED | `getEligibleShiftBandPairs()` — confirmed to be the actual `@ValueRangeProvider` the `@PlanningVariable` references |
+| `src/main/java/com/wfm/service/SolverService.java` | Coarse pre-filter against schedule period, not `now()` | ✓ VERIFIED | `filterLiveShiftTemplates`, called with `schedule.getPeriodStartDate()/getPeriodEndDate()` |
+| `src/main/java/com/wfm/service/ShiftLibraryValidationService.java` | Private duplicate predicate removed | ✓ VERIFIED | `withinEffectiveRange` no longer exists; both call sites use the shared predicate |
+| `src/test/java/com/wfm/service/SolverServiceShiftAssignmentTest.java` | Regression coverage for CR-01 | ✓ VERIFIED | 15/15 tests, ran directly, including the period-straddling shared-instance case |
+| `src/main/java/com/wfm/model/Schedule.java` | Persisted `schedulingMode` column | ✓ VERIFIED | `@Enumerated(EnumType.STRING)`, no longer `@Transient` |
+| `src/main/resources/db/migration/V43__schedule_scheduling_mode.sql` | Column + backfill | ✓ VERIFIED | Read directly, matches its own header comment |
+| `src/main/java/com/wfm/service/ScheduleService.java` | No inference logic remains; delete cascade added | ✓ VERIFIED | `loadSnapshotData` inference block removed; `deleteSchedule` now deletes `agent_shift_assignment` rows |
+| `src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java` | Regression coverage for CR-02 and CR-03 | ✓ VERIFIED | 12/12 tests, ran directly |
+| `src/main/java/com/wfm/repository/AgentShiftAssignmentRepository.java` | `deleteByTenantIdAndDeskIdAndScheduleId` | ✓ VERIFIED | Present, called from `deleteSchedule` |
+| `src/test/java/com/wfm/migration/MigrationEntityConsistencyTest.java` | `schedule` added to `DECLARED_TABLES` | ✓ VERIFIED | 2/2 tests, ran directly |
 
-| Plan | Artifacts | Status |
-|---|---|---|
-| 15-01 | V40 migration, ShiftTemplateBreakBand, ShiftTemplateBreakBandRepository, MigrationEntityConsistencyTest | ✓ VERIFIED (4/4, gsd-tools) |
-| 15-02 | ShiftLibraryGenerationService, ShiftLibrarySuggestionResponse, ShiftLibraryGenerationServiceTest | ✓ VERIFIED (3/3, gsd-tools) |
-| 15-03 | AgentShiftAssignment, ShiftBandPair, SolverConfigBuildTest, V41 migration | ✓ VERIFIED (4/4, gsd-tools) |
-| 15-04 | ShiftEnvelopeGroundTruthTest, ShiftModeFixtures | ✓ VERIFIED (2/2, gsd-tools; both ran directly by me) |
-| 15-05 | frontend/src/api/client.ts, frontend/src/pages/ShiftLibrary.tsx | ✓ VERIFIED (2/2, gsd-tools) |
-| 15-06 | ShiftModeBreakGatingTest, BreakClusteringConstraintTest, V42 migration, XCUT-05 table | ✓ VERIFIED (4/4, gsd-tools) |
-| 15-07 | AgentShiftAssignmentRepository, ScheduleServiceShiftSnapshotTest | ✓ VERIFIED (2/2, gsd-tools) |
-| 15-08 | ShiftModelBenchmarkTest, 15-BENCHMARK.md | ✓ VERIFIED (2/2, gsd-tools; independently re-run by me) |
-
-All 25 declared artifacts across all 8 plans exist, are substantive (no stubs), and are not
-placeholder implementations. No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers found in
-any of the 16 files spot-checked for anti-patterns (model, service, repository, constraint
-provider, and frontend files).
-
-### Key Link Verification
+### Key Link Verification (fix-commit scope)
 
 | From | To | Via | Status |
 |---|---|---|---|
-| ShiftLibraryValidationService | ShiftTemplateBreakBandRepository | band load → `covers()` | ✓ WIRED |
-| ShiftTemplateService | ShiftTemplateBreakBand | band persistence | ✓ WIRED |
-| ShiftLibraryGenerationService | ShiftLibraryValidationService | `covers()` reuse (D-02, one implementation) | ✓ WIRED — tool reported a false negative on a regex-escaping mismatch (`shiftLibraryValidationService\\.` vs literal `.`); I confirmed the call directly at `ShiftLibraryGenerationService.java:331,349,385` |
-| ShiftLibraryValidationController | ShiftLibraryGenerationService | `GET .../shift-library/suggestion` | ✓ WIRED |
-| solverConfig.xml | AgentShiftAssignment | second `<entityClass>` + scoped CH phase | ✓ WIRED |
-| SolverService | AgentShiftAssignment | `buildShiftAssignments` | ✓ WIRED |
-| ScheduleConstraintProvider | ShiftBandPair | `shiftEnvelopeCompliance` join + `covers()` | ✓ WIRED |
-| ShiftEnvelopeGroundTruthTest | solverConfig.xml | `createFromXmlResource` (real config, not hand-built) | ✓ WIRED |
-| ShiftLibrary.tsx | api/client.ts | suggestion request, band-carrying bodies | ✓ WIRED |
-| ScheduleConstraintProvider | ScheduleConfig | mode filter | ✓ WIRED |
-| SolverService | ShiftLibraryValidationService | `runPreSolveValidation` capacity-shortfall reuse | ✓ WIRED |
-| ScheduleService | AgentShiftAssignment | accept-time denormalisation | ✓ WIRED (but see CR-02 gap — the *inferred mode* derived from this link can be wrong in an edge case) |
-| ScheduleOutputService | ScheduleDetailResponse | `buildAgentSchedule` populates `entry.shift` | ✓ WIRED |
-| ScheduleResults.tsx | api/client.ts | `schedulingMode` + `entry.shift` partition | ✓ WIRED (consuming a value that can itself be wrong per CR-02) |
-| ShiftModelBenchmarkTest | 15-BENCHMARK.md | numbers transcribed verbatim | ✓ WIRED — independently reproduced, byte-for-byte match |
+| `AgentShiftAssignment.shiftBandPair` (`@PlanningVariable`) | `AgentShiftAssignment.getEligibleShiftBandPairs()` (`@ValueRangeProvider`) | `valueRangeProviderRefs = "shiftBandRange"` matched to `id = "shiftBandRange"` | ✓ WIRED — confirmed by reading both annotations directly |
+| `getEligibleShiftBandPairs()` | `ShiftTemplate.isEffectiveOn(date)` | per-row date filter | ✓ WIRED |
+| `ShiftLibraryValidationService` | `ShiftTemplate.isEffectiveOn(date)` | shared predicate, no private duplicate remains | ✓ WIRED |
+| `SolverService.buildSchedule` | `Schedule.schedulingMode` | `s.setSchedulingMode(desk.getSchedulingMode())` before solve | ✓ WIRED |
+| `ScheduleService.acceptSchedule` | `entityManager.persist(schedule)` | same in-memory instance from `inMemoryStore`, no reconstruction | ✓ WIRED |
+| `ScheduleService.loadSnapshotData` | `schedule.getSchedulingMode()` | direct column read, inference block removed | ✓ WIRED |
+| `ScheduleService.deleteSchedule` | `AgentShiftAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId` | explicit call, mirrors `agentAssignmentRepository`'s own delete | ✓ WIRED |
+| `ScheduleConstraintProvider.shiftEnvelopeCompliance` | `AgentShiftAssignment.shiftBandPair == null` branch | hard-penalises every seat on an agent-day with an empty value range | ✓ WIRED — confirmed hard weight (`HardSoftScore.ofHard(1)`) |
 
-18/18 evaluated key links wired (counting the one tool false-negative as confirmed-wired by manual
-inspection).
-
-### Behavioral Spot-Checks (run directly, not trusted from SUMMARY/BENCHMARK docs)
+### Behavioral Spot-Checks (run directly)
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Solver actually builds with two `@PlanningEntity` classes (XCUT-03) | `./gradlew test --tests com.wfm.solver.SolverConfigBuildTest` | `tests="1" failures="0" errors="0"` | ✓ PASS |
-| Ground-truth walker agrees with reported score, including 6 adversarial corruption cases (ENVL-02/03/07) | `./gradlew test --tests com.wfm.solver.ShiftEnvelopeGroundTruthTest` | `tests="7" failures="0" errors="0"` | ✓ PASS |
-| XCUT-04 benchmark reproduces the numbers transcribed into 15-BENCHMARK.md | `./gradlew test --tests com.wfm.solver.ShiftModelBenchmarkTest -Dwfm.benchmark=true` | `tests="2" failures="0" errors="0"`; per-seed hard/soft scores match the committed table exactly (e.g. slot seed 1: `0/-128`; slot seed 2: `-5140/-149`; every shift-arm seed: `0/-192`) | ✓ PASS |
-| solverConfig.xml carries the committed shifts-first ordering, both CH phases with `id`+`entityClass` | Direct file read | Confirmed: `shiftEntitySelector` then `seatEntitySelector`, matching D-08's shipped decision | ✓ PASS |
-| REQUIREMENTS.md threshold-commit-before-run claim (XCUT-04 process integrity) | `git log --follow -p -- 15-BENCHMARK.md` | `cd26db93` (threshold + placeholder Results) precedes `836033a`/`57ad2a7` (filled-in numbers) by ~20 minutes, same session | ✓ PASS |
-
-### Code Review Findings — independently re-verified, not merely cited
-
-`15-REVIEW.md` reported 3 Critical + 1 Warning. I independently re-derived CR-01 and CR-02 by
-reading the referenced source files myself (not trusting the review's prose) and confirm both are
-real, reachable defects — promoted to formal gaps above (tied to ENVL-01 and
-ENVL-10/XCUT-01 respectively).
-
-CR-03 (`ScheduleService.deleteSchedule` never deletes `AgentShiftAssignment` rows, orphaning them —
-confirmed: `AgentShiftAssignmentRepository` exposes no `deleteBy*` method at all, and
-`agent_shift_assignment.schedule_id` carries no FK, confirmed by reading `V41__agent_shift_
-assignment.sql` directly) and WR-01 (one unscoped repository delete method, not currently
-exploitable) are both real but are **not** promoted to formal gaps here: no plan's must-have
-truths assert delete-path cleanup, and the defect is a data-hygiene orphan (unreachable rows) — not
-user-visible incorrect data, unlike CR-01/CR-02. They should still be fixed; recommend a follow-up
-task alongside the ENVL-01/ENVL-10 gap closure since all three touch the same
-`AgentShiftAssignment` lifecycle code paths.
+| CR-01 regression suite (upcoming/retired/straddling-period cases) | `./gradlew test --tests com.wfm.service.SolverServiceShiftAssignmentTest` | `tests="15" failures="0" errors="0"` | ✓ PASS |
+| CR-02/CR-03 regression suite (zero-placed-shift accept, delete cascade) | `./gradlew test --tests com.wfm.service.ScheduleServiceShiftSnapshotTest` | `tests="12" failures="0" errors="0"` | ✓ PASS |
+| Migration guard now reconciles `schedule` | `./gradlew test --tests com.wfm.migration.MigrationEntityConsistencyTest` | `tests="2" failures="0" errors="0"` | ✓ PASS |
+| Ground-truth agreement unaffected by CR-01's enforcement change (ENVL-02/03/07) | `./gradlew test --tests com.wfm.solver.ShiftEnvelopeGroundTruthTest` | `tests="7" failures="0" errors="0"` | ✓ PASS |
+| Break/band constraints unaffected (ENVL-04/05/08/09) | `./gradlew test --tests {BreakClusteringConstraintTest,BandCapacityConstraintTest,ShiftModeBreakGatingTest}` | `5/5`, `8/8`, `7/7`, all `failures="0" errors="0"` | ✓ PASS |
+| SolverConfig still builds (XCUT-03) | `./gradlew test --tests com.wfm.solver.SolverConfigBuildTest` | `tests="1" failures="0" errors="0"` | ✓ PASS |
+| Library generation/validation unaffected (SHLB-07) | `./gradlew test --tests {ShiftLibraryGenerationServiceTest,ShiftLibraryValidationServiceTest}` | `8/8`, `36/36`, all `failures="0" errors="0"` | ✓ PASS |
+| Full backend suite, clean uncontended run | `./gradlew test` (2nd, clean run after a self-caused XML-write collision on the 1st) | `BUILD SUCCESSFUL`; aggregated from 79 `TEST-*.xml`: 505 tests, 0 failures, 0 errors, 2 skipped | ✓ PASS |
+| Frontend build | `npm run build` (in `frontend/`) | `tsc -b && vite build` — 57 modules, no errors | ✓ PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Status | Evidence |
 |---|---|---|---|
-| ENVL-01 | 15-03 | ⚠️ Partial (mechanism verified, library-scoping gap) | See gaps |
-| ENVL-02 | 15-03, 15-04 | ✓ SATISFIED | Ran directly |
-| ENVL-03 | 15-03, 15-04 | ✓ SATISFIED | Ran directly |
-| ENVL-04 | 15-06 | ✓ SATISFIED | `ShiftModeBreakGatingTest` |
-| ENVL-05 | 15-06 | ✓ SATISFIED | `ShiftModeBreakGatingTest` |
-| ENVL-06 | 15-03, 15-04 | ✓ SATISFIED | `solverConfig.xml`, benchmark log |
-| ENVL-07 | 15-04 | ✓ SATISFIED | Ran directly |
-| ENVL-08 | 15-01, 15-05, 15-06 | ✓ SATISFIED | `AgentShiftAssignment`, `BandCapacityConstraintTest` |
-| ENVL-09 | 15-06 | ✓ SATISFIED | `breakClustering` real body |
-| ENVL-10 | 15-07 | ⚠️ Partial (grouping verified, mode-label gap) | See gaps |
-| SHLB-07 | 15-01, 15-02, 15-05 | ✓ SATISFIED | Confirmed call site directly |
-| XCUT-01 | 15-05, 15-07 | ⚠️ Partial | Same CR-02 gap as ENVL-10 |
-| XCUT-03 | 15-03 | ✓ SATISFIED (REQUIREMENTS.md checkbox stale) | Ran directly |
-| XCUT-04 | 15-08 | ✓ SATISFIED | Independently reproduced |
-| XCUT-05 | 15-06 | ✓ SATISFIED | Zero `OPEN_RESOLVE_IN_PHASE_15` rows |
+| ENVL-01 | 15-03 | ✓ SATISFIED | CR-01 gap closed, verified directly |
+| ENVL-02 | 15-03, 15-04 | ✓ SATISFIED | Unaffected, ran directly |
+| ENVL-03 | 15-03, 15-04 | ✓ SATISFIED | Unaffected, ran directly |
+| ENVL-04 | 15-06 | ✓ SATISFIED | Unaffected, ran directly |
+| ENVL-05 | 15-06 | ✓ SATISFIED | Unaffected, ran directly |
+| ENVL-06 | 15-03, 15-04 | ✓ SATISFIED | Unaffected |
+| ENVL-07 | 15-04 | ✓ SATISFIED | Ran directly, re-confirms no regression |
+| ENVL-08 | 15-01, 15-05, 15-06 | ✓ SATISFIED | Ran directly |
+| ENVL-09 | 15-06 | ✓ SATISFIED | Ran directly |
+| ENVL-10 | 15-07 | ✓ SATISFIED | CR-02 gap closed, verified directly |
+| SHLB-07 | 15-01, 15-02, 15-05 | ✓ SATISFIED | Unaffected, ran directly |
+| XCUT-01 | 15-05, 15-07 | ✓ SATISFIED | CR-02 closure removes the last undermining case |
+| XCUT-03 | 15-03 | ✓ SATISFIED (REQUIREMENTS.md checkbox still stale) | Ran directly |
+| XCUT-04 | 15-08 | ✓ SATISFIED | Unaffected |
+| XCUT-05 | 15-06 | ✓ SATISFIED | Unaffected |
 
-No orphaned requirements: all 15 requirement IDs declared across the 8 plans' `requirements:`
-frontmatter (ENVL-01…10, SHLB-07, XCUT-01, XCUT-03, XCUT-04, XCUT-05) are accounted for above, and
-match the phase requirement IDs given for this verification exactly.
+No orphaned requirements. All 15 requirement IDs declared across the 8 plans' `requirements:`
+frontmatter are accounted for above.
+
+**REQUIREMENTS.md bookkeeping note (informational, not a gap):** the checkboxes for ENVL-01…10,
+SHLB-07, and XCUT-03 currently read `[ ]` in `.planning/REQUIREMENTS.md` (reverted by the
+`gaps_found` protocol after the prior run, per `c1ab80e`). Per this re-verification, ENVL-01…10 and
+SHLB-07 are now genuinely satisfied and XCUT-03 was a stale unchecked box even before this
+re-verification (the required test exists, is substantive, and passes) — all are candidates to be
+checked off. This report does not edit `REQUIREMENTS.md`; that is left to the orchestrator per
+instructions.
+
+### Anti-Patterns Found
+
+None. `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` scan across all files touched by the three
+fix commits (`ShiftTemplate.java`, `AgentShiftAssignment.java`, `SolverService.java`,
+`ShiftLibraryValidationService.java`, `Schedule.java`, `ScheduleService.java`,
+`AgentShiftAssignmentRepository.java`, `V43__schedule_scheduling_mode.sql`,
+`MigrationEntityConsistencyTest.java`, and both new/extended test files) found zero markers.
 
 ### Human Verification Required
 
-None. Every truth resolved to VERIFIED or FAILED by direct code reading and test execution — no
-item required visual/UX judgment beyond what the frontend grep-and-read checks already covered
-(the frontend has no test framework, per standing project decision, but the specific rendering
-logic — mode branch, group partition, draft badge copy — was read directly and matches the
-must-haves verbatim).
+None. Every truth resolved to VERIFIED by direct code reading and independently-run test
+execution — no item required visual/UX judgment.
 
 ### Gaps Summary
 
-Two genuine, previously-undetected defects survive from `15-REVIEW.md`'s CR-01 and CR-02, both
-confirmed by my own independent reading of the referenced source (not merely cited from the
-review), and both concentrated in the same area: date/state handling around the
-`AgentShiftAssignment` entity that is new in this phase.
-
-1. **CR-01 (ENVL-01):** `SolverService.startSolve` filters out retired shift templates but not
-   upcoming ones. An operator who creates a shift template with a future `effectiveFrom` — an
-   explicitly supported, UI-surfaced workflow (`ShiftLibrary.tsx`'s "Upcoming" badge,
-   `ShiftTemplateController.eraStatus`) — will find it immediately assignable in any current solve,
-   contradicting the milestone's own SHLB-03 guarantee and the literal wording of ENVL-01
-   ("from that desk's library"). The correct predicate (`ShiftLibraryValidationService.
-   withinEffectiveRange`) already exists in the codebase and is unused by the solve path.
-
-2. **CR-02 (ENVL-10/XCUT-01):** Accepted-schedule `schedulingMode` is inferred from whether any
-   `agent_shift_assignment` rows exist, but the accept path only writes rows with a non-null
-   `shiftBandPair`. A SHIFT-mode solve accepted with zero placed shifts (stopped early, or a
-   library that matches no agent's hours) is permanently mislabeled SLOT on every future load,
-   silently switching the Agent Allocation view to the wrong rendering branch.
-
-Neither defect calls into question the **core, hardest-to-get-right claim** of this phase — that
-the shift-envelope hard-constraint coupling is structurally sound (Option A, not the rejected
-Option C) and that this soundness is independently proven, not merely reported by the solver's own
-score. That claim was re-verified directly by me, by running the ground-truth walker myself, and
-holds. The gaps are narrower: both are edge-case-adjacent (an UPCOMING-template solve; a
-zero-shift SHIFT-mode accept) but both are genuinely reachable through ordinary, UI-encouraged
-operator workflows, uncovered by any existing test, and worth a small, targeted closure plan before
-this phase is considered fully done. `scheduling_mode` still defaults to `SLOT` on every desk, so
-neither gap blocks piloting readiness in the way a coupling-soundness failure would have — but both
-should be fixed, since XCUT-01/SHLB-03 are exactly the kind of "written value doesn't reach every
-surface correctly" defect this project has already been burned by twice (v1.2 audits I-1, I-2, and
-now this).
+Both gaps from the prior verification (`CR-01`/ENVL-01, `CR-02`/ENVL-10/XCUT-01) are genuinely
+closed, independently re-derived from source rather than accepted from the fix reports. The
+mechanism claimed by each fix — per-agent-day effective-range enforcement via the actual value-range
+provider for CR-01, and a persisted (not inferred) `schedulingMode` column written on the one
+`Schedule`-construction path for CR-02 — was traced end-to-end and confirmed correct, including the
+specific edge cases each gap named (a period straddling an `effectiveFrom` boundary; a zero-placed-
+shift accept). A third defect (`CR-03`, orphaned `agent_shift_assignment` rows on schedule delete)
+that was documented but not previously promoted to a formal gap has also been fixed, with its own
+passing regression test. The full backend suite (79 classes, 505 tests, 0 failures, 0 errors, 2
+pre-existing/unrelated skips) and the frontend build both pass on a clean, independently-run check —
+not merely accepted from the orchestrator's or fix agents' claims. No regression was found in any
+of the break/band/library/ground-truth machinery the two parallel fix worktrees did not touch. This
+phase's goal — a proven-sound hard-constraint coupling, honest benchmarking, distributed breaks, and
+a demand-derived starting library — is now achieved without qualification.
 
 ---
 
-_Verified: 2026-08-27T12:05:31Z_
+_Verified: 2026-08-27T13:15:00Z_
 _Verifier: Claude (gsd-verifier)_
