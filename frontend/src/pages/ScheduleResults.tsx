@@ -597,6 +597,31 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
           return a.templateName.localeCompare(b.templateName)
         })
 
+        // Once 15-09 suppresses filler seats at hours no shift envelope reaches, such an hour
+        // has no worked slot, no break and no unfilled seat, so it vanishes from `slots`
+        // entirely and the desk appears to start later than it actually does. Regenerate the
+        // full increment-aligned grid from the schedule's own operating window and union it
+        // with the existing set so nothing already shown is lost. Scoped to this grouped
+        // (shift-mode) branch only — `slots` itself, used by the slot-mode return above, is
+        // untouched.
+        const fullDaySlots = new Set(slots)
+        if (schedule.incrementMinutes > 0) {
+          const dayEnd = toHHMM(schedule.endTime)
+          for (let t = toHHMM(schedule.startTime); t < dayEnd; t = addMinutes(t, schedule.incrementMinutes)) {
+            fullDaySlots.add(t)
+          }
+        }
+        const shiftSlots = [...fullDaySlots].sort()
+
+        // Union of this day's shift-group envelope spans, from the group data already
+        // assembled above. Envelope-only containment test — deliberately NOT band-aware: a
+        // slot inside a shift's break window still counts as "reached" here. Break-window
+        // rejection is instead surfaced per-cell via the divergence marks below.
+        const envelopeSpans = shiftGroups
+          .filter(g => g.key !== null)
+          .map(g => [toHHMM(g.startTime), toHHMM(g.endTime)] as const)
+        const isEnvelopeReached = (slot: string) => envelopeSpans.some(([s, e]) => slot >= s && slot < e)
+
         return (
           <div key={date} style={{ marginBottom: '2rem' }}>
             <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
@@ -606,14 +631,18 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                   <tr>
                     <th style={{ textAlign: 'left', padding: '4px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
                     <th style={{ textAlign: 'right', padding: '4px 6px', background: '#f3f4f6', fontWeight: 600 }}>Hours</th>
-                    {slots.map(slot => {
-                      const unfilled = unfilledPerSlot[slot] > 0
+                    {shiftSlots.map(slot => {
+                      const unfilled = (unfilledPerSlot[slot] || 0) > 0
+                      const reached = isEnvelopeReached(slot)
                       return (
-                        <th key={slot} style={{
-                          padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb',
-                          background: unfilled ? '#fecaca' : undefined,
-                          color: unfilled ? '#991b1b' : undefined,
-                        }}>
+                        <th key={slot}
+                          title={!unfilled && !reached ? "No shift in this desk's library covers this hour — unstaffed by design" : undefined}
+                          style={{
+                            padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb',
+                            background: unfilled ? '#fecaca' : !reached ? '#f3f4f6' : undefined,
+                            color: unfilled ? '#991b1b' : !reached ? '#9ca3af' : undefined,
+                            fontStyle: !unfilled && !reached ? 'italic' : undefined,
+                          }}>
                           {slot.substring(0, 5)}
                         </th>
                       )
@@ -624,7 +653,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                   {shiftGroups.map(group => (
                     <Fragment key={group.key ?? '__no_shift__'}>
                       <tr>
-                        <td colSpan={2 + slots.length} style={{ padding: '12px', background: '#f3f4f6' }}>
+                        <td colSpan={2 + shiftSlots.length} style={{ padding: '12px', background: '#f3f4f6' }}>
                           {group.key === null ? (
                             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#9ca3af' }}>No shift assigned</span>
                           ) : (
@@ -660,6 +689,11 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                           }
                         }
 
+                        // Divergence marks (T-15-12-04): a seat outside the assigned envelope,
+                        // and a legal slot inside it the agent left unworked.
+                        const outOfEnvelopeSet = new Set((entry.divergence?.outOfEnvelopeSeats ?? []).map(toHHMM))
+                        const unworkedLegalSet = new Set((entry.divergence?.unworkedLegalSlots ?? []).map(toHHMM))
+
                         return (
                           <tr key={entry.agentId + entry.date}>
                             <td style={{
@@ -671,9 +705,11 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                             <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', color: '#374151', background: '#f9fafb' }}>
                               {Number(entry.totalHours).toFixed(1)}
                             </td>
-                            {slots.map(slot => {
+                            {shiftSlots.map(slot => {
                               const isWork = workSlots.has(slot)
                               const isBreak = breakSlots.has(slot)
+                              const isOutOfEnvelope = outOfEnvelopeSet.has(slot)
+                              const isUnworkedLegal = unworkedLegalSet.has(slot)
                               let bg = '#fff'
                               let label = ''
                               if (isWork) {
@@ -685,10 +721,21 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                                 bg = '#e5e7eb'
                                 label = 'B'
                               }
+                              let title: string | undefined
+                              if (isOutOfEnvelope) {
+                                label = 'E!'
+                                title = 'Held seat outside the assigned envelope'
+                              } else if (isUnworkedLegal) {
+                                bg = '#fef3c7'
+                                label = '×'
+                                title = 'Legal slot inside the envelope left unworked'
+                              }
                               return (
-                                <td key={slot} style={{
+                                <td key={slot} title={title} style={{
                                   padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
-                                  background: bg, fontSize: '0.7rem', color: '#6b7280',
+                                  background: bg, fontSize: '0.7rem', color: isOutOfEnvelope ? '#92400e' : '#6b7280',
+                                  fontWeight: isOutOfEnvelope ? 700 : undefined,
+                                  boxShadow: isOutOfEnvelope ? 'inset 0 0 0 2px #d97706' : undefined,
                                 }}>
                                   {label}
                                 </td>
@@ -708,7 +755,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                     <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', background: '#f9fafb' }}>
                       {sortedEntries.reduce((sum, e) => sum + Number(e.totalHours), 0).toFixed(1)}
                     </td>
-                    {slots.map(slot => (
+                    {shiftSlots.map(slot => (
                       <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }}>
                         {agentsPerSlot[slot] || ''}
                       </td>
@@ -721,12 +768,12 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                         Unfilled
                       </td>
                       <td style={{ background: '#fef2f2' }} />
-                      {slots.map(slot => (
+                      {shiftSlots.map(slot => (
                         <td key={slot} style={{
                           padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #fca5a5',
-                          fontSize: '0.75rem', color: '#991b1b', background: unfilledPerSlot[slot] > 0 ? '#fecaca' : '#fef2f2',
+                          fontSize: '0.75rem', color: '#991b1b', background: (unfilledPerSlot[slot] || 0) > 0 ? '#fecaca' : '#fef2f2',
                         }}>
-                          {unfilledPerSlot[slot] > 0 ? unfilledPerSlot[slot] : ''}
+                          {(unfilledPerSlot[slot] || 0) > 0 ? unfilledPerSlot[slot] : ''}
                         </td>
                       ))}
                     </tr>
@@ -734,7 +781,9 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                 </tbody>
               </table>
             </div>
-            {/* Legend — computed and applied exactly as today, independent of grouping */}
+            {/* Legend — base entries computed and applied exactly as today, plus two ENVL-10
+                additions naming the deliberately-unstaffed header treatment and the two
+                divergence marks so neither is left as an unexplained glyph. */}
             <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
               {[...usedSpecNames].sort().map(name => (
                 <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -744,6 +793,9 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
               ))}
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fecaca', border: '1px solid #fca5a5', borderRadius: '2px' }} /> Unfilled seat(s)</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '2px', fontStyle: 'italic' }} /> No shift covers this hour (unstaffed by design)</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fff', boxShadow: 'inset 0 0 0 2px #d97706', border: '1px solid #d1d5db', borderRadius: '2px' }} /> E! = seat outside assigned envelope</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fef3c7', border: '1px solid #d1d5db', borderRadius: '2px' }} /> × = legal slot left unworked</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>
             </div>
           </div>
