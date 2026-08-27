@@ -3,18 +3,43 @@
         xsi:schemaLocation="https://timefold.ai/xsd/solver https://timefold.ai/xsd/solver/solver.xsd">
 
     <solutionClass>com.wfm.model.Schedule</solutionClass>
+    <entityClass>com.wfm.model.AgentShiftAssignment</entityClass>
     <entityClass>com.wfm.model.AgentAssignment</entityClass>
 
     <scoreDirectorFactory>
         <constraintProviderClass>com.wfm.solver.ScheduleConstraintProvider</constraintProviderClass>
     </scoreDirectorFactory>
 
-    <!-- Construction heuristic: builds the initial solution from scratch.
-         All planning variables (AgentAssignment.agent) start as null.
-         The CH assigns agents to seats one at a time, evaluating all 18
-         constraints per move to find feasible break positions, respect
-         contracted hours, and match specializations. -->
-    <constructionHeuristic/>
+    <!-- Construction heuristic — two explicitly-scoped phases, mandatory the moment a second
+         @PlanningEntity class exists in the solution (Phase 15). The bare <constructionHeuristic/>
+         this file used through Phase 14 auto-deduces the single entity class in the solution and
+         throws IllegalArgumentException once a second one is declared
+         (AbstractFromConfigFactory.getTheOnlyEntityDescriptor). Each <entitySelector> below
+         carries both an "id" XML attribute and a nested <entityClass> element — both mandatory: a
+         null id makes the internal mimic-selector resolution ambiguous and produces a misleading
+         "variableName is not a valid planning variable" error. Verified against the solver.xsd
+         compiled into the pinned timefold-solver-core-1.16.0.jar (15-RESEARCH.md Pattern 1).
+
+         Phase order is shifts-first (P-15): every agent-day gets an envelope BEFORE any seat is
+         placed, so shiftEnvelopeCompliance has something to check against from the first seat
+         onward. D-08 makes this ordering a measured question — plan 15-08's benchmark carries a
+         third arm swapping these two blocks, and the winner ships. Nothing else in this file
+         changes between the arms. -->
+    <constructionHeuristic>
+        <queuedEntityPlacer>
+            <entitySelector id="shiftEntitySelector">
+                <entityClass>com.wfm.model.AgentShiftAssignment</entityClass>
+            </entitySelector>
+        </queuedEntityPlacer>
+    </constructionHeuristic>
+
+    <constructionHeuristic>
+        <queuedEntityPlacer>
+            <entitySelector id="seatEntitySelector">
+                <entityClass>com.wfm.model.AgentAssignment</entityClass>
+            </entitySelector>
+        </queuedEntityPlacer>
+    </constructionHeuristic>
 
     <!-- Local search: improve the CH-built solution.
          Termination is configured programmatically from the solver.time-limit property. -->

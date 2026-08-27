@@ -18,5 +18,6 @@ public record ScheduleConfig(
         int breakClusterThresholdPct,
         BigDecimal defaultContractedHoursPerDay,
         int overallocationHardLimitPct,
-        int underallocationHardLimitPct
+        int underallocationHardLimitPct,
+        SchedulingMode schedulingMode
 ) {}
