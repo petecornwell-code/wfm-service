@@ -356,6 +356,11 @@ public class ScheduleService {
         }
 
         agentAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
+        // CR-03 gap closure: agent_shift_assignment carries no FK to schedule (V41), so deleting
+        // the schedule row below does not cascade to it — it must be deleted explicitly here,
+        // mirroring agentAssignmentRepository's own delete immediately above, or every
+        // shift-envelope row for a deleted SHIFT-mode accepted schedule is permanently orphaned.
+        agentShiftAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         staffingRequirementRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         timeslotRepository.deleteByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, scheduleId);
         scheduleRepository.delete(schedule);

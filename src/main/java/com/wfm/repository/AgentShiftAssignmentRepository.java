@@ -31,4 +31,14 @@ public interface AgentShiftAssignmentRepository extends JpaRepository<AgentShift
            "ORDER BY sa.date, a.name")
     List<AgentShiftAssignment> findWithRelationsByTenantIdAndDeskIdAndScheduleId(
             long tenantId, UUID deskId, UUID scheduleId);
+
+    /**
+     * CR-03 gap closure: {@code ScheduleService.deleteSchedule} deletes {@code agent_assignment},
+     * {@code staffing_requirement} and {@code timeslot} rows for a deleted accepted schedule but,
+     * before this method existed, never touched {@code agent_shift_assignment} — this table has
+     * no {@code deleteBy*} method at all and {@code agent_shift_assignment.schedule_id} carries no
+     * FK (V41), so deleting the schedule silently orphaned every shift-envelope row it had. Mirrors
+     * {@link AgentAssignmentRepository#deleteByTenantIdAndDeskIdAndScheduleId} exactly.
+     */
+    void deleteByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
 }

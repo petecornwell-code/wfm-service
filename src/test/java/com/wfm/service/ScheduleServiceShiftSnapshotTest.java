@@ -266,6 +266,44 @@ class ScheduleServiceShiftSnapshotTest {
         assertThat(persistedAssignments.get(0).getAgent().getId()).isEqualTo(agent.getId());
     }
 
+    @Test
+    void deleteSchedule_shiftMode_deletesAgentShiftAssignmentRows() {
+        // CR-03 regression: before the fix, deleteSchedule never called any deleteBy* method on
+        // AgentShiftAssignmentRepository (it exposed none), so agent_shift_assignment rows for a
+        // deleted accepted SHIFT-mode schedule were silently orphaned (schedule_id carries no FK,
+        // per V41, so the schedule row's own deletion cannot cascade to them).
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        ShiftTemplate template = saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setTenantId(TENANT_A);
+        shiftAssignment.setDeskId(deskId);
+        shiftAssignment.setScheduleId(inMemoryScheduleId);
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, null));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        assertThat(agentShiftAssignmentRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId()))
+                .hasSize(1);
+
+        scheduleService.deleteSchedule(deskId, saved.getId());
+
+        assertThat(agentShiftAssignmentRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId()))
+                .isEmpty();
+    }
+
     // ---------- Task 2: schedulingMode and the per-entry shift descriptor ----------
 
     @Test
