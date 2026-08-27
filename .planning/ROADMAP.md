@@ -174,7 +174,12 @@ composing one by hand.
 
 **Research needed at plan time**: Yes — the coupling *mechanism* is settled (see Notes), but the exact `ConstructionHeuristicPhaseConfig`/`QueuedEntityPlacerConfig`/`EntitySelectorConfig` XML nesting for two sequential CH phases is only MEDIUM confidence per ARCHITECTURE.md, and the spike found the `EntitySelectorConfig` needs both `entityClass` and `id` set or the mimic-selector reference resolves to the wrong entity. Verify against a fixture before writing the real `solverConfig.xml`.
 
-**Plans**: 8/8 plans executed
+**Plans**: 8/8 executed, plus 5 gap-closure plans (15-09…15-13, waves 1–3) addressing UAT gap
+**G-15-10** (blocker). Test 10 reached an irreducible hard score of -19 entirely on Shift envelope
+compliance on the live Stubhub (EN) desk. Diagnosis is settled across three debug lanes
+(`.planning/debug/`): envelope-blind minimum-staffing seat supply, a zero-slack value range with no
+margin to absorb a missing seat, cost arbitrage onto the cheapest hard weight, and a report layer
+that redraws the envelope around the violating seat so the breach cannot be displayed as one.
 
 Plans:
 
@@ -186,6 +191,14 @@ Plans:
 - [x] 15-06-PLAN.md — Band capacity hard cap, real `Break clustering` body, mode-gating six constraints, XCUT-05 closed (wave 4)
 - [x] 15-07-PLAN.md — Accept-time shift snapshot (D-07) and shift-grouped Agent Allocation (wave 4)
 - [x] 15-08-PLAN.md — Seeded A/B benchmark, CH-ordering arm, and `15-BENCHMARK.md` (wave 5)
+
+*Gap closure for G-15-10 (blocker) — the phase's completion claim above stands only once these land:*
+
+- [ ] 15-09-PLAN.md — Envelope-aware seat supply: suppress filler seats where no live shift reaches, guarantee seats where one does, un-blind `ShiftModeFixtures`, correct the stale XCUT-05 row (wave 1)
+- [ ] 15-10-PLAN.md — Report layer reads the authoritative envelope and band instead of deriving both from seat gaps; envelope divergence becomes visible data; export and preference KPIs corrected (wave 1)
+- [ ] 15-11-PLAN.md — Pre-solve in-envelope seat-supply gate: refuse with named shortfall and levers rather than returning an unlabelled residual; zero-slack pinned as a deliberate invariant (wave 2)
+- [ ] 15-12-PLAN.md — Agent Schedule reads the authoritative shift; envelope breach and deliberately-unstaffed hours rendered visibly in Agent Allocation (wave 2)
+- [ ] 15-13-PLAN.md — Shape-complete end-to-end regression, characterising-test disposition, deferral record for the two latent defects left out of scope (wave 3)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
 first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the
