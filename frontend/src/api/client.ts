@@ -198,9 +198,12 @@ export const shiftTemplates = {
     request<ShiftTemplate>(`/desks/${deskId}/shift-templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
 }
 
-// --- Shift Library Validation ---
+// --- Shift Library Validation & Generation (SHLB-07) ---
 export const shiftLibrary = {
   validation: (deskId: string) => request<ShiftLibraryValidation>(`/desks/${deskId}/shift-library/validation`),
+  // Stateless (D-11) — recomputed on every call, never persisted. A refusal (zero demand or zero
+  // contracted-hours agents) arrives as a 400 via ApiRequestError, not a resolved value.
+  suggestion: (deskId: string) => request<ShiftLibrarySuggestion>(`/desks/${deskId}/shift-library/suggestion`),
 }
 
 // --- Timeslots ---
@@ -314,10 +317,29 @@ export interface Agent { id: string; name: string; email: string; department: st
 export interface DayHoursEntry { hasRow: boolean; hours: number | null; dayOffType: 'MANDATORY' | 'PTO' | null; effectiveHours: number }
 export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[]; dayHours: Record<string, DayHoursEntry> }
 export interface Specialization { id: string; name: string; color?: string }
-export interface ShiftTemplate { id: string; name: string; startTime: string; endTime: string; breakOffsetMinutes: number; breakDurationMinutes: number; breakStartTime: string; breakEndTime: string; netHours: number; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null; eraStatus: 'CURRENT' | 'UPCOMING' | 'PAST' }
-export interface ShiftTemplateBody { name: string; startTime: string; endTime: string; breakOffsetMinutes: number; breakDurationMinutes: number; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null }
+// One persisted break band (D-01). offsetMinutes/durationMinutes are the source of truth;
+// breakStartTime/breakEndTime are server-derived wall-clock convenience fields for display.
+// capacity null means unlimited (D-03) — never rendered as 0.
+export interface ShiftTemplateBreakBand { id: string; offsetMinutes: number; durationMinutes: number; breakStartTime: string; breakEndTime: string; capacity: number | null; netHours: number }
+// The request-side shape for one band — no id (server-assigned), no derived fields.
+export interface ShiftTemplateBreakBandBody { offsetMinutes: number; durationMinutes: number; capacity: number | null }
+export interface ShiftTemplate { id: string; name: string; startTime: string; endTime: string; bands: ShiftTemplateBreakBand[]; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null; eraStatus: 'CURRENT' | 'UPCOMING' | 'PAST' }
+export interface ShiftTemplateBody { name: string; startTime: string; endTime: string; bands: ShiftTemplateBreakBandBody[]; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null }
 export interface HoursAdvisory { templateId: string; templateName: string; weekday: string; netHours: number; message: string }
-export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[] }
+// D-03's named residual risk (P-06 — Task 3, plan 15-01): a band-capacity total below the
+// admissible headcount, surfaced as a save-time advisory rather than an unexplained hard score.
+export interface CapacityAdvisory { templateId: string; templateName: string; weekday: string; capacityTotal: number; admissibleHeadcount: number; message: string }
+export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[] }
+
+// --- SHLB-07 Suggested Library (D-11) ---
+// A generated candidate mirrors ShiftTemplateBody's field set (P-10) so a draft row can be handed
+// straight to shiftTemplates.create() without a translation layer. capacity is always null on a
+// freshly generated band (P-11) — the operator can still set one before saving.
+export interface SuggestedBand { offsetMinutes: number; durationMinutes: number; capacity: number | null }
+export interface SuggestedTemplate { name: string; startTime: string; endTime: string; bands: SuggestedBand[]; validWeekdays: string[]; effectiveFrom: string; effectiveTo: string | null; netHours: number }
+// uncoveredWindows reuses the same ApiErrorDetail shape SHLB-05's coverage report emits
+// (field="coverage") — fed straight into the existing CoveragePanel component (P-22/D-12).
+export interface ShiftLibrarySuggestion { templates: SuggestedTemplate[]; uncoveredWindows: ApiErrorDetail[] }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
 export interface TimeslotBounds { periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
