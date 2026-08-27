@@ -133,6 +133,22 @@ public class ScheduleOutputService {
         BigDecimal incrementHours = BigDecimal.valueOf(schedule.getIncrementMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
 
+        // Shift descriptor lookup by (agentId, date) — the ONE place this response's shift
+        // descriptor is built, covering both the in-memory path (reading the transient
+        // AgentShiftAssignment.shiftBandPair) and the accepted path (reading the D-07
+        // denormalised scalar columns) identically, so the two shapes can never disagree. On a
+        // slot-scheduled desk schedule.getShiftAssignments() is structurally empty and this map
+        // stays empty — every entry's shift stays null, unchanged from today.
+        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate = new HashMap<>();
+        for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
+            if (sa.getAgent() == null) continue;
+            ShiftDescriptor descriptor = resolveShiftDescriptor(sa);
+            if (descriptor == null) continue;
+            shiftDescriptorsByAgentDate
+                    .computeIfAbsent(sa.getAgent().getId(), k -> new HashMap<>())
+                    .put(sa.getDate(), descriptor);
+        }
+
         // Group assigned assignments by (agentId, date)
         Map<UUID, Map<LocalDate, List<AgentAssignment>>> grouped = new LinkedHashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
@@ -174,9 +190,12 @@ public class ScheduleOutputService {
                 // Find breaks — gaps within shift span
                 List<BreakDetail> breaks = findBreaks(dayAssignments);
 
+                ShiftDescriptor shiftDescriptor = shiftDescriptorsByAgentDate
+                        .getOrDefault(agentId, Map.of()).get(date);
+
                 entries.add(new AgentScheduleEntry(
                         agentId, agentName, date, shiftStart, shiftEnd,
-                        totalHours, details, breaks));
+                        totalHours, details, breaks, shiftDescriptor));
             }
         }
 
@@ -403,6 +422,32 @@ public class ScheduleOutputService {
     }
 
     // --- Helpers ---
+
+    /**
+     * One descriptor shape for both schedule states (Task 2's own done-criterion): a live
+     * in-memory row's transient {@code shiftBandPair} — set only while the schedule is still
+     * unaccepted — is preferred when present; otherwise the D-07 denormalised scalar columns an
+     * accepted row carries are used. A row with neither (an unassigned shift envelope, or a
+     * skipped SLOT-mode row that never reaches this method) has no assigned shift.
+     */
+    private ShiftDescriptor resolveShiftDescriptor(AgentShiftAssignment sa) {
+        ShiftBandPair pair = sa.getShiftBandPair();
+        if (pair != null) {
+            ShiftTemplate template = pair.template();
+            ShiftTemplateBreakBand band = pair.band();
+            return new ShiftDescriptor(
+                    template.getId(), template.getName(), template.getStartTime(), template.getEndTime(),
+                    band == null ? null : band.getOffsetMinutes(),
+                    band == null ? null : band.getDurationMinutes());
+        }
+        if (sa.getTemplateName() != null) {
+            return new ShiftDescriptor(
+                    sa.getSourceTemplateId(), sa.getTemplateName(),
+                    sa.getShiftStartTime(), sa.getShiftEndTime(),
+                    sa.getBandOffsetMinutes(), sa.getBandDurationMinutes());
+        }
+        return null;
+    }
 
     private String determineMatchType(Agent da, Specialization requiredSpec) {
         if (da.getPrimarySpecialization() != null

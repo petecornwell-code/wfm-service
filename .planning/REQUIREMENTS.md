@@ -54,7 +54,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **ENVL-07**: A shift-mode solve reports a score that agrees with an independent check of the resulting schedule — no schedule is ever reported feasible while agents sit outside their envelopes
 - [ ] **ENVL-08**: A shift template defines one or more break bands (offset plus capacity), and the solver assigns each agent-day to exactly one band within its shift — so agents sharing a shift do not all break simultaneously
 - [ ] **ENVL-09**: Break clustering is enforced by a constraint that actually penalises concentration — agents on break in a timeslot exceeding `breakClusterThresholdPct` of that timeslot's assigned agents — replacing the `penalizeConfigurable(a -> 0)` placeholder
-- [ ] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
+- [x] **ENVL-10**: On a shift-scheduled desk, the Agent Allocation view groups agents under the shift they were assigned, each group naming the shift and its headcount; a slot-scheduled desk is unchanged
 
 ### Usual Shift (USHF)
 
@@ -86,7 +86,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 These apply to every phase and are verification criteria, not features. They exist because this
 project has already been burned by each one.
 
-- [ ] **XCUT-01**: Every phase that writes shift or usual-shift data verifies that the written value is visible to the operator in every surface that displays it — roster, export, accepted-schedule view, drift report. *(v1.2 audit I-1: the model was built and the view never migrated, costing an entire extra phase.)*
+- [x] **XCUT-01**: Every phase that writes shift or usual-shift data verifies that the written value is visible to the operator in every surface that displays it — roster, export, accepted-schedule view, drift report. *(v1.2 audit I-1: the model was built and the view never migrated, costing an entire extra phase.)*
 - [ ] **XCUT-02**: Every guarantee is verified on every reachable write path, not only the one its phase built. *(v1.2 audit I-2: open across two consecutive audits because a second entry point bypassed the merge engine.)*
 - [ ] **XCUT-03**: Any change to `solverConfig.xml` is validated by a test that actually builds a solver. *(No test under `src/test/java/com/wfm/solver/` currently does, and the coupling spike found a solver-build failure that would therefore have shipped silently.)*
 - [ ] **XCUT-04**: The shift model's effect on schedule quality is judged by seeded, step-count-terminated A/B runs reporting median **and** full min/max spread, against a threshold committed before the run, including at realistic (~130%) over-allocation. *(Phase 12 produced a +0.25h median inside a 5.00h noise spread and was withdrawn.)*

@@ -416,6 +416,187 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         }
         const hasAnyUnfilled = Object.values(unfilledPerSlot).some(n => n > 0)
 
+        // P-33: the mode branch is the very first statement of this block's rendering decision —
+        // a slot-scheduled desk renders the exact table below, byte-for-byte, no restructuring
+        // whatsoever; no Phase 15 grouping code executes on this branch (T-15-28).
+        if (schedule.schedulingMode !== 'SHIFT') {
+          return (
+            <div key={date} style={{ marginBottom: '2rem' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>Agent</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', background: '#f3f4f6', fontWeight: 600 }}>Hours</th>
+                      {slots.map(slot => {
+                        const unfilled = unfilledPerSlot[slot] > 0
+                        return (
+                          <th key={slot} style={{
+                            padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderLeft: '1px solid #e5e7eb',
+                            background: unfilled ? '#fecaca' : undefined,
+                            color: unfilled ? '#991b1b' : undefined,
+                          }}>
+                            {slot.substring(0, 5)}
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedEntries.map(entry => {
+                      const isFailed = failedAgentIds.has(entry.agentId)
+                      // Build lookup for this agent's slot status
+                      const workSlots = new Set(entry.assignments.map(a => toHHMM(a.startTime)))
+                      const matchTypes: Record<string, string> = {}
+                      const specNames: Record<string, string> = {}
+                      for (const a of entry.assignments) {
+                        matchTypes[toHHMM(a.startTime)] = a.matchType
+                        specNames[toHHMM(a.startTime)] = a.specializationName
+                      }
+
+                      const breakSlots = new Set<string>()
+                      const inc = entry.assignments.length > 0
+                        ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+                        : 0
+                      for (const b of entry.breaks) {
+                        if (inc > 0) {
+                          let t = toHHMM(b.startTime)
+                          while (t < toHHMM(b.endTime)) {
+                            breakSlots.add(t)
+                            t = addMinutes(t, inc)
+                          }
+                        } else {
+                          breakSlots.add(toHHMM(b.startTime))
+                        }
+                      }
+
+                      return (
+                        <tr key={entry.agentId + entry.date}>
+                          <td style={{
+                            padding: '3px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1,
+                            fontWeight: 500, color: isFailed ? '#dc2626' : '#111827',
+                          }}>
+                            {entry.agentName}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', color: '#374151', background: '#f9fafb' }}>
+                            {Number(entry.totalHours).toFixed(1)}
+                          </td>
+                          {slots.map(slot => {
+                            const isWork = workSlots.has(slot)
+                            const isBreak = breakSlots.has(slot)
+                            let bg = '#fff'
+                            let label = ''
+                            if (isWork) {
+                              const mt = matchTypes[slot]
+                              const sn = specNames[slot]
+                              bg = specColorMap[sn] || MATCH_COLORS[mt] || '#dcfce7'
+                              label = ''
+                            } else if (isBreak) {
+                              bg = '#e5e7eb'
+                              label = 'B'
+                            }
+                            return (
+                              <td key={slot} style={{
+                                padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
+                                background: bg, fontSize: '0.7rem', color: '#6b7280',
+                              }}>
+                                {label}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                    {/* Total row */}
+                    <tr style={{ fontWeight: 700, background: '#f9fafb', borderTop: '2px solid #d1d5db' }}>
+                      <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1 }}>
+                        Total: {sortedEntries.length} agents
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', background: '#f9fafb' }}>
+                        {sortedEntries.reduce((sum, e) => sum + Number(e.totalHours), 0).toFixed(1)}
+                      </td>
+                      {slots.map(slot => (
+                        <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }}>
+                          {agentsPerSlot[slot] || ''}
+                        </td>
+                      ))}
+                    </tr>
+                    {/* Unfilled row — only shown when there are unassigned seats */}
+                    {hasAnyUnfilled && (
+                      <tr style={{ fontWeight: 700, background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
+                        <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#fef2f2', zIndex: 1, color: '#991b1b' }}>
+                          Unfilled
+                        </td>
+                        <td style={{ background: '#fef2f2' }} />
+                        {slots.map(slot => (
+                          <td key={slot} style={{
+                            padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #fca5a5',
+                            fontSize: '0.75rem', color: '#991b1b', background: unfilledPerSlot[slot] > 0 ? '#fecaca' : '#fef2f2',
+                          }}>
+                            {unfilledPerSlot[slot] > 0 ? unfilledPerSlot[slot] : ''}
+                          </td>
+                        ))}
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                {[...usedSpecNames].sort().map(name => (
+                  <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ width: '12px', height: '12px', background: specColorMap[name] || '#dcfce7', border: '1px solid #d1d5db', borderRadius: '2px' }} />
+                    {name}
+                  </span>
+                ))}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: '2px' }} /> Break B</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '12px', height: '12px', background: '#fecaca', border: '1px solid #fca5a5', borderRadius: '2px' }} /> Unfilled seat(s)</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ color: '#dc2626', fontWeight: 600 }}>Red name</span> = allocation violation</span>
+              </div>
+            </div>
+          )
+        }
+
+        // --- Grouped variant (ENVL-10, shift-scheduled desks only) ---
+        // Partition already-filtered, already-sorted sortedEntries by shift identity (P-31):
+        // keyed on sourceTemplateId when present, falling back to templateName so the key
+        // survives a null lineage id; entries carrying no shift land in the null bucket.
+        type ShiftGroup = {
+          key: string | null
+          templateName: string
+          startTime: string
+          endTime: string
+          entries: typeof sortedEntries
+        }
+        const groupsByKey = new Map<string | null, ShiftGroup>()
+        for (const entry of sortedEntries) {
+          const shift = entry.shift
+          const key = shift ? (shift.sourceTemplateId || shift.templateName) : null
+          let group = groupsByKey.get(key)
+          if (!group) {
+            group = {
+              key,
+              templateName: shift ? shift.templateName : '',
+              startTime: shift ? shift.startTime : '',
+              endTime: shift ? shift.endTime : '',
+              entries: [],
+            }
+            groupsByKey.set(key, group)
+          }
+          group.entries.push(entry)
+        }
+        // Groups sort by shift start time ascending, tie-broken alphabetically by template name;
+        // the null ("No shift assigned") bucket always sorts last, regardless of any agent's
+        // actual times — an edge case belongs at the bottom, not hidden mid-list.
+        const shiftGroups = [...groupsByKey.values()].sort((a, b) => {
+          if (a.key === null) return 1
+          if (b.key === null) return -1
+          const startCompare = toHHMM(a.startTime).localeCompare(toHHMM(b.startTime))
+          if (startCompare !== 0) return startCompare
+          return a.templateName.localeCompare(b.templateName)
+        })
+
         return (
           <div key={date} style={{ marginBottom: '2rem' }}>
             <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
@@ -440,71 +621,86 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedEntries.map(entry => {
-                    const isFailed = failedAgentIds.has(entry.agentId)
-                    // Build lookup for this agent's slot status
-                    const workSlots = new Set(entry.assignments.map(a => toHHMM(a.startTime)))
-                    const matchTypes: Record<string, string> = {}
-                    const specNames: Record<string, string> = {}
-                    for (const a of entry.assignments) {
-                      matchTypes[toHHMM(a.startTime)] = a.matchType
-                      specNames[toHHMM(a.startTime)] = a.specializationName
-                    }
-
-                    const breakSlots = new Set<string>()
-                    const inc = entry.assignments.length > 0
-                      ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
-                      : 0
-                    for (const b of entry.breaks) {
-                      if (inc > 0) {
-                        let t = toHHMM(b.startTime)
-                        while (t < toHHMM(b.endTime)) {
-                          breakSlots.add(t)
-                          t = addMinutes(t, inc)
-                        }
-                      } else {
-                        breakSlots.add(toHHMM(b.startTime))
-                      }
-                    }
-
-                    return (
-                      <tr key={entry.agentId + entry.date}>
-                        <td style={{
-                          padding: '3px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1,
-                          fontWeight: 500, color: isFailed ? '#dc2626' : '#111827',
-                        }}>
-                          {entry.agentName}
+                  {shiftGroups.map(group => (
+                    <Fragment key={group.key ?? '__no_shift__'}>
+                      <tr>
+                        <td colSpan={2 + slots.length} style={{ padding: '12px', background: '#f3f4f6' }}>
+                          {group.key === null ? (
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#9ca3af' }}>No shift assigned</span>
+                          ) : (
+                            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                              {group.templateName} · {toHHMM(group.startTime)}–{toHHMM(group.endTime)} · {group.entries.length} agent(s)
+                            </span>
+                          )}
                         </td>
-                        <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', color: '#374151', background: '#f9fafb' }}>
-                          {Number(entry.totalHours).toFixed(1)}
-                        </td>
-                        {slots.map(slot => {
-                          const isWork = workSlots.has(slot)
-                          const isBreak = breakSlots.has(slot)
-                          let bg = '#fff'
-                          let label = ''
-                          if (isWork) {
-                            const mt = matchTypes[slot]
-                            const sn = specNames[slot]
-                            bg = specColorMap[sn] || MATCH_COLORS[mt] || '#dcfce7'
-                            label = ''
-                          } else if (isBreak) {
-                            bg = '#e5e7eb'
-                            label = 'B'
-                          }
-                          return (
-                            <td key={slot} style={{
-                              padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
-                              background: bg, fontSize: '0.7rem', color: '#6b7280',
-                            }}>
-                              {label}
-                            </td>
-                          )
-                        })}
                       </tr>
-                    )
-                  })}
-                  {/* Total row */}
+                      {group.entries.map(entry => {
+                        const isFailed = failedAgentIds.has(entry.agentId)
+                        const workSlots = new Set(entry.assignments.map(a => toHHMM(a.startTime)))
+                        const matchTypes: Record<string, string> = {}
+                        const specNames: Record<string, string> = {}
+                        for (const a of entry.assignments) {
+                          matchTypes[toHHMM(a.startTime)] = a.matchType
+                          specNames[toHHMM(a.startTime)] = a.specializationName
+                        }
+
+                        const breakSlots = new Set<string>()
+                        const inc = entry.assignments.length > 0
+                          ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+                          : 0
+                        for (const b of entry.breaks) {
+                          if (inc > 0) {
+                            let t = toHHMM(b.startTime)
+                            while (t < toHHMM(b.endTime)) {
+                              breakSlots.add(t)
+                              t = addMinutes(t, inc)
+                            }
+                          } else {
+                            breakSlots.add(toHHMM(b.startTime))
+                          }
+                        }
+
+                        return (
+                          <tr key={entry.agentId + entry.date}>
+                            <td style={{
+                              padding: '3px 8px', position: 'sticky', left: 0, background: '#fff', zIndex: 1,
+                              fontWeight: 500, color: isFailed ? '#dc2626' : '#111827',
+                            }}>
+                              {entry.agentName}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '3px 6px', fontSize: '0.75rem', color: '#374151', background: '#f9fafb' }}>
+                              {Number(entry.totalHours).toFixed(1)}
+                            </td>
+                            {slots.map(slot => {
+                              const isWork = workSlots.has(slot)
+                              const isBreak = breakSlots.has(slot)
+                              let bg = '#fff'
+                              let label = ''
+                              if (isWork) {
+                                const mt = matchTypes[slot]
+                                const sn = specNames[slot]
+                                bg = specColorMap[sn] || MATCH_COLORS[mt] || '#dcfce7'
+                                label = ''
+                              } else if (isBreak) {
+                                bg = '#e5e7eb'
+                                label = 'B'
+                              }
+                              return (
+                                <td key={slot} style={{
+                                  padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
+                                  background: bg, fontSize: '0.7rem', color: '#6b7280',
+                                }}>
+                                  {label}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </Fragment>
+                  ))}
+                  {/* Total row — once, after all groups, unchanged: the per-group headcount is a
+                      finer-grained view of the same fact this row already shows, not a replacement. */}
                   <tr style={{ fontWeight: 700, background: '#f9fafb', borderTop: '2px solid #d1d5db' }}>
                     <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1 }}>
                       Total: {sortedEntries.length} agents
@@ -518,7 +714,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                       </td>
                     ))}
                   </tr>
-                  {/* Unfilled row — only shown when there are unassigned seats */}
+                  {/* Unfilled row — once, after all groups, unchanged — only shown when there are unassigned seats */}
                   {hasAnyUnfilled && (
                     <tr style={{ fontWeight: 700, background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
                       <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#fef2f2', zIndex: 1, color: '#991b1b' }}>
@@ -538,7 +734,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                 </tbody>
               </table>
             </div>
-            {/* Legend */}
+            {/* Legend — computed and applied exactly as today, independent of grouping */}
             <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
               {[...usedSpecNames].sort().map(name => (
                 <span key={name} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

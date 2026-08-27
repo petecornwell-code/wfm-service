@@ -381,6 +381,15 @@ export interface BreakDetail {
   durationMinutes: number
 }
 
+export interface ShiftDescriptor {
+  sourceTemplateId: string | null
+  templateName: string
+  startTime: string
+  endTime: string
+  bandOffsetMinutes: number | null
+  bandDurationMinutes: number | null
+}
+
 export interface AgentScheduleEntry {
   agentId: string
   agentName: string
@@ -390,6 +399,7 @@ export interface AgentScheduleEntry {
   totalHours: number
   assignments: AssignmentDetail[]
   breaks: BreakDetail[]
+  shift: ShiftDescriptor | null
 }
 
 export interface PreferenceReportEntry {
@@ -435,6 +445,7 @@ export interface ConstraintViolationEntry {
 }
 
 export interface ScheduleDetail extends ScheduleSummary {
+  schedulingMode: 'SLOT' | 'SHIFT'
   staffingSummary: StaffingSummaryEntry[]
   agentSchedule: AgentScheduleEntry[]
   preferenceReport: PreferenceReport | null

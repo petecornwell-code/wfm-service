@@ -34,6 +34,7 @@ public class ScheduleService {
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentAssignmentRepository agentAssignmentRepository;
+    private final AgentShiftAssignmentRepository agentShiftAssignmentRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
@@ -47,6 +48,7 @@ public class ScheduleService {
                            TimeslotRepository timeslotRepository,
                            StaffingRequirementRepository staffingRequirementRepository,
                            AgentAssignmentRepository agentAssignmentRepository,
+                           AgentShiftAssignmentRepository agentShiftAssignmentRepository,
                            AgentPreferenceRepository agentPreferenceRepository,
                            AgentDayOffRepository agentDayOffRepository,
                            ConstraintWeightsRepository constraintWeightsRepository,
@@ -59,6 +61,7 @@ public class ScheduleService {
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentAssignmentRepository = agentAssignmentRepository;
+        this.agentShiftAssignmentRepository = agentShiftAssignmentRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
@@ -296,6 +299,36 @@ public class ScheduleService {
             entityManager.persist(persisted);
         }
 
+        // Write the solver's shift envelope assignments — D-07's denormalised accept-time
+        // snapshot. Rows whose shiftBandPair is null are skipped, mirroring how the loop above
+        // skips seats with a null agent (SLOT-mode desks always reach this loop with an empty
+        // schedule.getShiftAssignments(), so it is a structural no-op there). The written row
+        // denormalises the resolved envelope — template name, start, end, the assigned band's
+        // offset/duration — rather than copying ShiftTemplate/ShiftTemplateBreakBand rows, so it
+        // depends on nothing mutable: a later updateShiftTemplate can never rewrite what history
+        // says this agent actually worked (D-07, discharging Phase 14's D-09 obligation).
+        for (AgentShiftAssignment shiftAssignment : schedule.getShiftAssignments()) {
+            ShiftBandPair pair = shiftAssignment.getShiftBandPair();
+            if (pair == null) continue;
+
+            ShiftTemplate template = pair.template();
+            ShiftTemplateBreakBand band = pair.band();
+
+            AgentShiftAssignment persistedShift = new AgentShiftAssignment();
+            persistedShift.setTenantId(tenantId);
+            persistedShift.setDeskId(deskId);
+            persistedShift.setScheduleId(saved.getId());
+            persistedShift.setAgent(shiftAssignment.getAgent());
+            persistedShift.setDate(shiftAssignment.getDate());
+            persistedShift.setTemplateName(template.getName());
+            persistedShift.setShiftStartTime(template.getStartTime());
+            persistedShift.setShiftEndTime(template.getEndTime());
+            persistedShift.setBandOffsetMinutes(band == null ? null : band.getOffsetMinutes());
+            persistedShift.setBandDurationMinutes(band == null ? null : band.getDurationMinutes());
+            persistedShift.setSourceTemplateId(template.getId());
+            entityManager.persist(persistedShift);
+        }
+
         // Insert accepted_schedule_date rows for all covered dates
         List<AcceptedScheduleDate> dateEntries = coveredDates.stream()
                 .map(date -> new AcceptedScheduleDate(saved.getId(), tenantId, deskId, date))
@@ -365,6 +398,24 @@ public class ScheduleService {
         List<StaffingRequirement> requirements = staffingRequirementRepository
                 .findByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
         schedule.setStaffingRequirements(requirements);
+
+        // Load the accepted schedule's shift envelope rows (D-07) so a reopened accepted
+        // schedule carries its shift rows exactly as an in-memory one carries them. Every loaded
+        // row's transient shiftBandPair is naturally null (JPA never populates @Transient
+        // fields) — display reads the denormalised scalars instead; reconstructing a live pair
+        // from the current template would reintroduce the history-rewriting hazard D-07 rejects.
+        List<AgentShiftAssignment> shiftAssignments = agentShiftAssignmentRepository
+                .findWithRelationsByTenantIdAndDeskIdAndScheduleId(tenantId, deskId, schedule.getId());
+        schedule.setShiftAssignments(shiftAssignments);
+
+        // P-32: schedulingMode records the mode THIS schedule was solved under, never a live
+        // desk read — a desk's mode can change after acceptance, and the report must still
+        // render correctly. An accepted schedule carries no persisted mode column (the value is
+        // solver-input-only for an in-memory schedule per 15-03's D-04/D-05), so it is derived
+        // from the accept-time shift snapshot itself: any accepted shift row means this schedule
+        // was solved in SHIFT mode (D-05 — one row per working agent-day), and the accept path
+        // writes zero such rows for a SLOT-mode accept (Task 1's own third assertion).
+        schedule.setSchedulingMode(shiftAssignments.isEmpty() ? SchedulingMode.SLOT : SchedulingMode.SHIFT);
 
         // Load days off for the schedule period to exclude PTO days from preferences
         List<AgentDayOff> allDaysOff = agentDayOffRepository.findByTenantIdAndDeskIdAndDateBetween(
@@ -470,6 +521,11 @@ public class ScheduleService {
         r.setBreakStartAlignment(s.getBreakStartAlignment() != null
                 ? s.getBreakStartAlignment().name() : null);
         r.setBreakClusterThresholdPct(s.getBreakClusterThresholdPct());
+        // P-32: non-nullable — every schedule was solved under exactly one mode. In-memory
+        // schedules already carry it from SolverService.buildSchedule; loadSnapshotData derives
+        // it for an accepted schedule from its own shift-row snapshot (never a live desk read).
+        // Falls back to SLOT only for the structurally-impossible case of neither path having run.
+        r.setSchedulingMode(s.getSchedulingMode() != null ? s.getSchedulingMode().name() : SchedulingMode.SLOT.name());
         r.setDefaultContractedHoursPerDay(s.getDefaultContractedHoursPerDay());
         r.setOverallocationHardLimitPct(s.getOverallocationHardLimitPct());
         r.setUnderallocationHardLimitPct(s.getUnderallocationHardLimitPct());
