@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftLibraryValidationResponse;
+import com.wfm.dto.ShiftLibraryValidationResponse.BreakConcentrationAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.CapacityAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.HoursAdvisory;
 import com.wfm.dto.TimeslotBoundsResponse;
@@ -21,9 +22,11 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -101,9 +104,11 @@ public class ShiftLibraryValidationService {
                 findUnsatisfiableWeekdays(templates, bandsByTemplateId, demand, hoursByWeekday);
         List<CapacityAdvisory> capacityAdvisories =
                 findCapacityAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+        List<BreakConcentrationAdvisory> breakConcentrationAdvisories =
+                findBreakConcentrationAdvisories(templates, bandsByTemplateId, hoursByWeekday);
 
         return new ShiftLibraryValidationResponse(hasLiveDemand, uncoveredWindows, misalignedTemplates,
-                hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories);
+                hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories);
     }
 
     /** D-08 bulk load: one query for every template's bands per {@link #validate} call. */
@@ -394,6 +399,91 @@ public class ShiftLibraryValidationService {
     private static boolean hourMatchesAnyBand(BigDecimal hours, List<BigDecimal> bandNetHours) {
         BigDecimal normalized = BigDecimals.normalize(hours);
         return bandNetHours.stream().anyMatch(net -> BigDecimals.normalize(net).compareTo(normalized) == 0);
+    }
+
+    // --- Break concentration advisory (the inverse blind spot of the shortfall check) ---
+
+    /**
+     * A shift below this headcount cannot concentrate a break in any way an operator needs warning
+     * about — three people breaking together is a normal shift, not a coverage risk.
+     */
+    private static final int MIN_HEADCOUNT_FOR_CONCENTRATION_ADVISORY = 4;
+
+    /**
+     * Flags a template whose bands permit MORE THAN HALF its admissible headcount to break in the
+     * same hour. Deliberately complements {@link #findCapacityAdvisories}, which fires only on
+     * capacity being too LOW and skips blank-capacity templates entirely — leaving the default
+     * configuration (one band, blank capacity, everybody breaks together) inspected by nothing.
+     *
+     * <p>The "more than half" threshold is chosen so a reasonably-split library stays quiet: three
+     * bands capped at 9 against a headcount of 18 permits exactly half, and does NOT warn; a single
+     * blank band against the same 18 permits all of them, and does. Strictly greater-than avoids
+     * flagging the two-band even split, which is a legitimate shape.
+     *
+     * <p>Zero bands is skipped rather than flagged: P-01 makes zero bands mean "no break at all",
+     * so there is no break to concentrate. That is a different concern ({@code hoursAdvisories}
+     * covers whether such a template's net hours are usable).
+     *
+     * <p>Advisory only, never blocking. A concentrated library is legal and can be entirely correct
+     * on a shift whose break hour carries little demand — this reports what the library PERMITS so
+     * an operator can judge it against their own demand curve, rather than discovering it as a hard
+     * score after a solve.
+     */
+    private List<BreakConcentrationAdvisory> findBreakConcentrationAdvisories(
+            List<ShiftTemplate> templates,
+            Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+        List<BreakConcentrationAdvisory> advisories = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        for (ShiftTemplate template : templates) {
+            if (template.getEffectiveTo() != null && template.getEffectiveTo().isBefore(today)) {
+                continue; // retired
+            }
+            List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+            if (bands.isEmpty()) {
+                continue; // zero bands = no break (P-01), nothing to concentrate
+            }
+            boolean anyUnlimited = bands.stream().anyMatch(b -> b.getCapacity() == null);
+            int largestBand = anyUnlimited ? Integer.MAX_VALUE
+                    : bands.stream().mapToInt(ShiftTemplateBreakBand::getCapacity).max().orElse(0);
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
+
+            for (DayOfWeek weekday : template.getValidWeekdays()) {
+                List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
+                long admissibleHeadcount = candidates.stream()
+                        .filter(h -> hourMatchesAnyBand(h, bandNetHours))
+                        .count();
+                if (admissibleHeadcount < MIN_HEADCOUNT_FOR_CONCENTRATION_ADVISORY) {
+                    continue;
+                }
+                long worstCase = Math.min(admissibleHeadcount, (long) largestBand);
+                if (worstCase * 2 > admissibleHeadcount) {
+                    advisories.add(new BreakConcentrationAdvisory(template.getId(), template.getName(),
+                            weekday, bands.size(), admissibleHeadcount, worstCase,
+                            breakConcentrationMessage(template.getName(), weekday, bands.size(),
+                                    admissibleHeadcount, worstCase, anyUnlimited)));
+                }
+            }
+        }
+        return advisories;
+    }
+
+    private static String breakConcentrationMessage(String templateName, DayOfWeek weekday, int bandCount,
+                                                      long admissibleHeadcount, long worstCase,
+                                                      boolean anyUnlimited) {
+        String cause = anyUnlimited
+                ? "at least one band has a blank (unlimited) capacity, so nothing caps how many take it"
+                : "the largest band admits " + worstCase + " of them";
+        return "On " + weekday.getDisplayName(TextStyle.FULL, Locale.ENGLISH) + ", '" + templateName
+                + "' has " + bandCount + " break band(s) for " + admissibleHeadcount
+                + " admissible agent(s), and " + cause + ". Up to " + worstCase + " of "
+                + admissibleHeadcount + " could break in the SAME hour, leaving that hour staffed by "
+                + (admissibleHeadcount - worstCase) + " of them. If that hour carries demand, the "
+                + "solver must either leave it short or seat agents through their own break. To "
+                + "spread the load: add more bands, or set each band's capacity to roughly "
+                + Math.max(1, (admissibleHeadcount + bandCount - 1) / bandCount) + ". Keep the bands' "
+                + "TOTAL capacity above " + admissibleHeadcount
+                + " — band capacity is a hard constraint, so under-sizing it makes the desk unsolvable.";
     }
 
     private static String capacityShortfallMessage(String templateName, DayOfWeek weekday, int capacityTotal,

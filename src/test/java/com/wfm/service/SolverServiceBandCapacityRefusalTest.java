@@ -39,7 +39,7 @@ class SolverServiceBandCapacityRefusalTest {
         CapacityAdvisory advisory = new CapacityAdvisory(TEMPLATE_ID, "Early", DayOfWeek.MONDAY, 4, 6, advisoryMessage);
         ShiftLibraryValidationService validationService = mock(ShiftLibraryValidationService.class);
         when(validationService.validate(DESK_ID)).thenReturn(new ShiftLibraryValidationResponse(
-                true, List.of(), List.of(), List.of(), List.of(), List.of(advisory)));
+                true, List.of(), List.of(), List.of(), List.of(), List.of(advisory), List.of()));
 
         List<ErrorDetail> errors = new ArrayList<>();
         SolverService.appendBandCapacityErrors(SchedulingMode.SHIFT, DESK_ID, validationService, errors);
@@ -60,7 +60,7 @@ class SolverServiceBandCapacityRefusalTest {
         CapacityAdvisory advisory2 = new CapacityAdvisory(UUID.randomUUID(), "Late", DayOfWeek.TUESDAY, 2, 5, "msg2");
         ShiftLibraryValidationService validationService = mock(ShiftLibraryValidationService.class);
         when(validationService.validate(DESK_ID)).thenReturn(new ShiftLibraryValidationResponse(
-                true, List.of(), List.of(), List.of(), List.of(), List.of(advisory1, advisory2)));
+                true, List.of(), List.of(), List.of(), List.of(), List.of(advisory1, advisory2), List.of()));
 
         List<ErrorDetail> errors = new ArrayList<>();
         SolverService.appendBandCapacityErrors(SchedulingMode.SHIFT, DESK_ID, validationService, errors);
@@ -83,7 +83,7 @@ class SolverServiceBandCapacityRefusalTest {
     void shiftModeDeskWithNoShortfall_noErrorsAppended() {
         ShiftLibraryValidationService validationService = mock(ShiftLibraryValidationService.class);
         when(validationService.validate(DESK_ID)).thenReturn(new ShiftLibraryValidationResponse(
-                true, List.of(), List.of(), List.of(), List.of(), List.of()));
+                true, List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
         List<ErrorDetail> errors = new ArrayList<>();
         SolverService.appendBandCapacityErrors(SchedulingMode.SHIFT, DESK_ID, validationService, errors);

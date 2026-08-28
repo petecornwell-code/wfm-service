@@ -504,6 +504,103 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.hoursAdvisories()).anyMatch(a -> a.weekday() == DayOfWeek.MONDAY);
     }
 
+    // ------------------------------------------------------------------
+    //  Break concentration advisory — the inverse of the shortfall check.
+    //
+    //  findCapacityAdvisories fires only when capacity is too LOW and skips any template with a
+    //  blank-capacity band ("unlimited by construction"). Unlimited is the DEFAULT — V40 migrates
+    //  every Phase 14 break forward with a NULL capacity — so the one-band/blank-capacity library
+    //  was inspected by nothing. Observed live on Stubhub (EN): the page reported no finding, and
+    //  the solve then gave 18 of 18 Late agents the same 16:00 break, emptied the hour, and seated
+    //  agents through their own break to hold it.
+    // ------------------------------------------------------------------
+
+    @Test
+    void validate_singleUnlimitedBand_wholeShiftCouldBreakTogether_isReported() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        // One band, capacity null — exactly what V40 produces and what the live desk had.
+        saveTemplate(deskId, "Late", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        for (int i = 0; i < 6; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        // The existing shortfall check is structurally silent here — that is the gap being closed.
+        assertThat(response.capacityAdvisories()).isEmpty();
+        assertThat(response.breakConcentrationAdvisories()).singleElement().satisfies(a -> {
+            assertThat(a.templateName()).isEqualTo("Late");
+            assertThat(a.weekday()).isEqualTo(DayOfWeek.MONDAY);
+            assertThat(a.bandCount()).isEqualTo(1);
+            assertThat(a.admissibleHeadcount()).isEqualTo(6);
+            assertThat(a.worstCaseSimultaneousBreak()).isEqualTo(6); // all of them
+            assertThat(a.message()).contains("blank (unlimited) capacity");
+            assertThat(a.message()).contains("Up to 6 of 6");
+        });
+    }
+
+    @Test
+    void validate_bandsCappedAtHalfTheShift_staysQuiet() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        ShiftTemplate t = saveTemplate(deskId, "Late", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        // saveTemplate already added an unlimited band; replace the set with capped ones.
+        shiftTemplateBreakBandRepository.deleteAll(
+                shiftTemplateBreakBandRepository.findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, t.getId()));
+        addBand(t, 180, 60, 3);
+        addBand(t, 240, 60, 3);
+        for (int i = 0; i < 6; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        // Largest band admits 3 of 6 — exactly half. The threshold is strictly greater-than, so an
+        // even split is a legitimate shape and must not nag.
+        assertThat(service.validate(deskId).breakConcentrationAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_shiftTooSmallToConcentrate_neverReported() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Late", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        // 3 agents — below the advisory floor. Three people breaking together is a normal shift.
+        for (int i = 0; i < 3; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        assertThat(service.validate(deskId).breakConcentrationAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_templateWithNoBands_neverReported() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        // Zero bands means no break at all (P-01) — there is no break to concentrate.
+        saveTemplate(deskId, "NoBreak", LocalTime.of(8, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        for (int i = 0; i < 6; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("9.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        assertThat(service.validate(deskId).breakConcentrationAdvisories()).isEmpty();
+    }
+
     @Test
     void requireShiftModeReady_advisoriesNeverThrowAndNeverAppearInDetails() {
         UUID deskId = saveDesk(TENANT_A);
@@ -729,7 +826,6 @@ class ShiftLibraryValidationServiceTest {
                                         int breakOffsetMinutes, int breakDurationMinutes,
                                         Set<DayOfWeek> weekdays, LocalDate effectiveFrom, LocalDate effectiveTo) {
         ShiftTemplate template = new ShiftTemplate();
-        template.setValidWeekdays(java.util.EnumSet.allOf(java.time.DayOfWeek.class));
         template.setTenantId(TENANT_A);
         template.setDeskId(deskId);
         template.setName(name);
