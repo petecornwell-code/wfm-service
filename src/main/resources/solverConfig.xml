@@ -66,7 +66,29 @@
          Termination is configured programmatically from the solver.time-limit property. -->
     <localSearch>
         <acceptor>
-            <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
+            <!--
+              1hard, not 0hard. A zero hard temperature makes the acceptor refuse every move that
+              worsens the hard score even transiently, so local search can only ever walk downhill
+              on hard. Escaping a hard local optimum normally requires the opposite: vacate a seat
+              (transiently worse) so another agent can take it, then reseat the first agent legally.
+              With 0hard that path is unreachable and the solver sits on a plateau it could
+              otherwise leave.
+
+              Observed live on desk Stubhub (EN): a -9 hard plateau whose NINE violations were all
+              agents seated during their own break window, on 9h-net envelopes that gave them a
+              spare legal slot and on hours carrying ample seats. Nothing structural forced those
+              seats — the swap that would clear them simply could not be reached.
+
+              Pre-registered in this phase's own diagnosis and left unactioned at the time:
+              "ZERO hard tolerance, so local search can never accept a transiently worse hard
+              score. Escaping a hard local optimum usually requires exactly that."
+
+              Kept at 1 — the smallest tolerance that admits a single-step swap — because the
+              annealer cools toward zero anyway, so this widens the early search without loosening
+              the final result. Raising it further would let the search wander across genuinely
+              worse regions before cooling.
+            -->
+            <simulatedAnnealingStartingTemperature>1hard/3000soft</simulatedAnnealingStartingTemperature>
         </acceptor>
     </localSearch>
 
