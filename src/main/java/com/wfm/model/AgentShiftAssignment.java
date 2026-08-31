@@ -85,6 +85,13 @@ public class AgentShiftAssignment {
     @Transient
     private List<ShiftBandPair> deskShiftBandPairs;
 
+    /**
+     * How many grid slots an eligible envelope may exceed this agent-day's contracted slots by
+     * (D-01 bounded slack). Zero reproduces the original exact-equality rule byte for byte.
+     */
+    @Transient
+    private int envelopeSlackSlots;
+
     @PlanningVariable(valueRangeProviderRefs = "shiftBandRange", allowsUnassigned = true)
     @Transient
     private ShiftBandPair shiftBandPair;
@@ -132,6 +139,9 @@ public class AgentShiftAssignment {
 
     public List<ShiftBandPair> getDeskShiftBandPairs() { return deskShiftBandPairs; }
     public void setDeskShiftBandPairs(List<ShiftBandPair> deskShiftBandPairs) { this.deskShiftBandPairs = deskShiftBandPairs; }
+
+    public int getEnvelopeSlackSlots() { return envelopeSlackSlots; }
+    public void setEnvelopeSlackSlots(int envelopeSlackSlots) { this.envelopeSlackSlots = envelopeSlackSlots; }
 
     public ShiftBandPair getShiftBandPair() { return shiftBandPair; }
     public void setShiftBandPair(ShiftBandPair shiftBandPair) { this.shiftBandPair = shiftBandPair; }
@@ -188,10 +198,33 @@ public class AgentShiftAssignment {
             return List.of();
         }
         BigDecimal effective = BigDecimals.normalize(dayConfig.effectiveHours());
+        // BOUNDED SLACK (reopens D-01's exact-equality rule). An envelope may exceed the agent's
+        // contracted hours by up to envelopeSlackSlots grid slots, never fall short of them.
+        //
+        // Exact equality made legal in-envelope slots EQUAL contracted slots, so an agent had to
+        // occupy 100% of their legal slots — no margin to route around a single unavailable one.
+        // Measured consequence on the live desk: Sunday 10:00 carries demand of 1, so the
+        // over-allocation ceiling admits 2 agents there, yet every agent on a 10:00-starting
+        // envelope was obliged to work it. Agents beyond the second breached their envelope to
+        // reach contracted hours, and no library shape could avoid it — a 9-hour contiguous
+        // envelope starting at 08:00, 09:00 or 10:00 necessarily contains 10:00.
+        //
+        // Widening WHERE an agent may work never widens HOW MUCH: contractedHoursOver is
+        // ofHard(1001) and contractedHoursUnder ofHard(100), so actual hours stay pinned at
+        // exactly the contracted figure. Slack buys the solver choice of slots, nothing else.
+        //
+        // Bounded, and never below: a pair whose net hours FALL SHORT stays ineligible, because
+        // an agent physically cannot reach contracted hours inside it. The upper bound stops a
+        // 4-hour agent being handed a 9-hour shift.
+        BigDecimal slackHours = BigDecimal.valueOf((long) envelopeSlackSlots * dayConfig.incrementMinutes())
+                .divide(BigDecimal.valueOf(60), 4, java.math.RoundingMode.HALF_UP);
+        BigDecimal maxNet = effective == null ? null : effective.add(slackHours);
         return deskShiftBandPairs.stream()
                 .filter(p -> {
                     BigDecimal net = BigDecimals.normalize(p.netHours());
-                    return net != null && effective != null && net.compareTo(effective) == 0;
+                    return net != null && effective != null
+                            && net.compareTo(effective) >= 0
+                            && net.compareTo(maxNet) <= 0;
                 })
                 .filter(p -> date != null && p.template().isEffectiveOn(date))
                 .filter(p -> date != null && p.template().appliesOn(date))

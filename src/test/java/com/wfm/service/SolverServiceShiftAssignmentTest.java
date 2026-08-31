@@ -121,7 +121,7 @@ class SolverServiceShiftAssignmentTest {
         configs.add(dayConfig(a3.getId(), MON, new BigDecimal("6.00")));
 
         List<AgentShiftAssignment> assignments = SolverService.buildShiftAssignments(
-                SchedulingMode.SHIFT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, List.of());
+                SchedulingMode.SHIFT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, List.of(), 0);
 
         assertThat(assignments).hasSize(4); // a1xMON, a1xTUE, a2xMON, a3xMON -- a2xTUE excluded
         assertThat(assignments).noneMatch(sa -> sa.getAgent().getId().equals(a2.getId()) && sa.getDate().equals(TUE));
@@ -136,7 +136,7 @@ class SolverServiceShiftAssignmentTest {
                 template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0), LocalDate.of(2026, 1, 1)), null));
 
         List<AgentShiftAssignment> assignments = SolverService.buildShiftAssignments(
-                SchedulingMode.SHIFT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, pairs);
+                SchedulingMode.SHIFT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, pairs, 0);
 
         assertThat(assignments).hasSize(1);
         assertThat(assignments.get(0).getDeskShiftBandPairs()).isSameAs(pairs);
@@ -149,7 +149,7 @@ class SolverServiceShiftAssignmentTest {
         List<AgentDayConfig> configs = List.of(dayConfig(a1.getId(), MON, new BigDecimal("8.00")));
 
         List<AgentShiftAssignment> assignments = SolverService.buildShiftAssignments(
-                SchedulingMode.SLOT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, List.of());
+                SchedulingMode.SLOT, 1L, UUID.randomUUID(), UUID.randomUUID(), agentById, configs, List.of(), 0);
 
         assertThat(assignments).isEmpty();
     }
@@ -187,6 +187,88 @@ class SolverServiceShiftAssignmentTest {
         sa.setDeskShiftBandPairs(List.of(pair));
 
         assertThat(sa.getEligibleShiftBandPairs()).containsExactly(pair);
+    }
+
+    // --- Bounded envelope slack (reopens D-01's exact-equality rule) ---
+    //
+    // Exact equality made legal in-envelope slots EQUAL contracted slots, so an agent had to
+    // occupy 100% of their legal slots with no margin to route around a single unavailable one.
+    // Measured on the live desk: Sunday 10:00 carries demand of 1, so the over-allocation ceiling
+    // admits 2 agents there, yet every agent on a 10:00-starting envelope was obliged to work it.
+    // Agents beyond the second breached their envelope to reach contracted hours, and no library
+    // shape avoids it — a 9-hour contiguous envelope starting 08:00, 09:00 or 10:00 necessarily
+    // contains 10:00.
+
+    @Test
+    void eligibleShiftBandPairs_slackZero_reproducesExactEqualityByteForByte() {
+        // The old rule must survive as a configuration, not merely as history: slack 0 is what a
+        // desk sets to opt out entirely.
+        ShiftTemplate nine = template("Nine", LocalTime.of(8, 0), LocalTime.of(18, 0), LocalDate.of(2026, 1, 1));
+        ShiftBandPair ninePair = new ShiftBandPair(nine, band(nine, 240, 60)); // 10h - 1h = 9.00h net
+        ShiftTemplate eight = template("Eight", LocalTime.of(8, 0), LocalTime.of(17, 0), LocalDate.of(2026, 1, 1));
+        ShiftBandPair eightPair = new ShiftBandPair(eight, band(eight, 240, 60)); // 8.00h net
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(dayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(eightPair, ninePair));
+        sa.setEnvelopeSlackSlots(0);
+
+        assertThat(sa.getEligibleShiftBandPairs()).containsExactly(eightPair);
+    }
+
+    @Test
+    void eligibleShiftBandPairs_oneSlotOfSlack_admitsTheLongerEnvelope() {
+        // 60-minute grid, slack 1 -> an 8h agent may hold a 9h-net envelope, giving them 9 legal
+        // slots to place 8 hours in: one slot of choice, which is the whole point.
+        ShiftTemplate nine = template("Nine", LocalTime.of(8, 0), LocalTime.of(18, 0), LocalDate.of(2026, 1, 1));
+        ShiftBandPair ninePair = new ShiftBandPair(nine, band(nine, 240, 60)); // 9.00h net
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(hourlyDayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(ninePair));
+        sa.setEnvelopeSlackSlots(1);
+
+        assertThat(sa.getEligibleShiftBandPairs()).containsExactly(ninePair);
+    }
+
+    @Test
+    void eligibleShiftBandPairs_slackIsBounded_doesNotAdmitAnArbitrarilyLongerEnvelope() {
+        // The upper bound is what stops a 4-hour agent being handed a 9-hour shift. Two slots
+        // beyond contracted, with only one slot of slack allowed.
+        ShiftTemplate ten = template("Ten", LocalTime.of(8, 0), LocalTime.of(19, 0), LocalDate.of(2026, 1, 1));
+        ShiftBandPair tenPair = new ShiftBandPair(ten, band(ten, 240, 60)); // 11h - 1h = 10.00h net
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(hourlyDayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(tenPair));
+        sa.setEnvelopeSlackSlots(1);
+
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+    }
+
+    @Test
+    void eligibleShiftBandPairs_neverAdmitsAnEnvelopeShorterThanContractedHours() {
+        // Slack is one-directional. An agent physically cannot reach contracted hours inside an
+        // envelope whose net hours fall short, so a short pair must stay ineligible at any slack.
+        ShiftTemplate seven = template("Seven", LocalTime.of(8, 0), LocalTime.of(16, 0), LocalDate.of(2026, 1, 1));
+        ShiftBandPair sevenPair = new ShiftBandPair(seven, band(seven, 240, 60)); // 8h - 1h = 7.00h net
+
+        AgentShiftAssignment sa = new AgentShiftAssignment();
+        sa.setDate(MON);
+        sa.setDayConfig(hourlyDayConfig(UUID.randomUUID(), MON, new BigDecimal("8.00")));
+        sa.setDeskShiftBandPairs(List.of(sevenPair));
+        sa.setEnvelopeSlackSlots(4); // generous slack must still not reach downwards
+
+        assertThat(sa.getEligibleShiftBandPairs()).isEmpty();
+    }
+
+    /** 60-minute grid, so one slack slot is exactly one hour. */
+    private static AgentDayConfig hourlyDayConfig(UUID agentId, LocalDate date, BigDecimal effectiveHours) {
+        return new AgentDayConfig(agentId, date, effectiveHours, 60, 60,
+                new BigDecimal("4.00"), new BigDecimal("1.00"), BreakAlignment.ON_HOUR, 130, 70);
     }
 
     // --- validWeekdays enforcement, per agent-day (UAT test 10, second gap-closure round) ---

@@ -8,11 +8,16 @@ import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.dto.ShiftTemplateResponse;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
+import com.wfm.model.Agent;
+import com.wfm.model.AgentShiftAssignment;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.repository.AgentRepository;
+import com.wfm.repository.AgentShiftAssignmentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,6 +69,15 @@ class ShiftTemplateServiceTest {
 
     @Autowired
     private DeskRepository deskRepository;
+
+    @Autowired
+    private ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
+
+    @Autowired
+    private AgentShiftAssignmentRepository agentShiftAssignmentRepository;
+
+    @Autowired
+    private AgentRepository agentRepository;
 
     @MockitoBean
     private TimeslotGeneratorService timeslotGeneratorService;
@@ -468,10 +482,88 @@ class ShiftTemplateServiceTest {
 
     // ---------- helpers ----------
 
+    // ------------------------------------------------------------------
+    //  Delete — the escape hatch D-10's retire-only lifecycle left missing.
+    //
+    //  Retiring is right for a template that WAS used: the row must survive so an existing roster
+    //  stays explicable. It is wrong for one that should never have existed — a typo, a duplicate,
+    //  a test row — which retiring strands in the library list permanently. This session hit that
+    //  directly: a scratch template created for probing could not be removed by any means the
+    //  application offered.
+    // ------------------------------------------------------------------
+
+    @Test
+    void deleteShiftTemplate_neverUsed_isRemovedWithItsBands() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate created = service.createShiftTemplate(deskId, request("Scratch", LocalDate.of(2026, 1, 1), null));
+        UUID id = created.getId();
+        assertThat(shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, id)).isNotEmpty();
+
+        service.deleteShiftTemplate(deskId, id);
+
+        assertThat(shiftTemplateRepository.findByIdAndTenantIdAndDeskId(id, TENANT_A, deskId)).isEmpty();
+        assertThat(shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, id)).isEmpty();
+    }
+
+    @Test
+    void deleteShiftTemplate_usedByASchedule_isRefusedAndDirectedToRetire() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate created = service.createShiftTemplate(deskId, request("Used", LocalDate.of(2026, 1, 1), null));
+
+        // One agent-day assignment referencing it — i.e. a real schedule has used this template.
+        AgentShiftAssignment used = new AgentShiftAssignment();
+        used.setTenantId(TENANT_A);
+        used.setDeskId(deskId);
+        used.setScheduleId(UUID.randomUUID());
+        used.setDate(LocalDate.of(2026, 1, 5));
+        used.setAgent(saveAgent(TENANT_A, deskId));
+        used.setSourceTemplateId(created.getId());
+        agentShiftAssignmentRepository.save(used);
+
+        assertThatThrownBy(() -> service.deleteShiftTemplate(deskId, created.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Used")
+                .hasMessageContaining("Retire it instead");
+
+        // And it must still be there — a refused delete removes nothing.
+        assertThat(shiftTemplateRepository.findByIdAndTenantIdAndDeskId(created.getId(), TENANT_A, deskId))
+                .isPresent();
+    }
+
+    @Test
+    void deleteShiftTemplate_crossTenantId_isNotFoundRatherThanDeleted() {
+        // T-14-10: a cross-tenant id must never reach a delete. Loading through
+        // findByIdAndTenantIdAndDeskId is what makes this a 404 rather than a silent cross-tenant
+        // destruction.
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate created = service.createShiftTemplate(deskId, request("Mine", LocalDate.of(2026, 1, 1), null));
+
+        TenantContext.setTenantId(TENANT_B);
+        try {
+            assertThatThrownBy(() -> service.deleteShiftTemplate(deskId, created.getId()))
+                    .isInstanceOf(EntityNotFoundException.class);
+        } finally {
+            TenantContext.setTenantId(TENANT_A);
+        }
+        assertThat(shiftTemplateRepository.findByIdAndTenantIdAndDeskId(created.getId(), TENANT_A, deskId))
+                .isPresent();
+    }
+
     private ShiftTemplateRequest request(String name, LocalDate effectiveFrom, LocalDate effectiveTo) {
         return new ShiftTemplateRequest(name, LocalTime.of(8, 0), LocalTime.of(17, 0),
                 List.of(new BreakBandRequest(240, 60, null)),
                 Set.of(DayOfWeek.MONDAY), effectiveFrom, effectiveTo);
+    }
+
+    private Agent saveAgent(long tenantId, UUID deskId) {
+        Agent agent = new Agent();
+        agent.setTenantId(tenantId);
+        agent.setDeskId(deskId);
+        agent.setBamboohrId("A" + UUID.randomUUID());
+        agent.setName("Agent");
+        return agentRepository.save(agent);
     }
 
     private UUID saveDesk(long tenantId) {

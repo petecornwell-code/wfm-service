@@ -10,6 +10,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
+import com.wfm.repository.AgentShiftAssignmentRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
@@ -30,8 +31,10 @@ import java.util.UUID;
 /**
  * Full lifecycle for the shift template library (SHLB-01..04). Create and update run through
  * one shared {@link #validate} path so the two entry points cannot drift (T-14-11). Retirement
- * is an effective_to edit through {@link #updateShiftTemplate} — there is no delete or retire
- * method (P-11, D-10): the effective date range is the sole lifecycle predicate.
+ * is an effective_to edit through {@link #updateShiftTemplate} (P-11, D-10): the effective date
+ * range is the lifecycle predicate for a template that WAS used. {@link #deleteShiftTemplate}
+ * exists alongside it for one that never was — a typo or duplicate that retiring would strand in
+ * the library forever — and refuses any template a real schedule has already used.
  */
 @Service
 public class ShiftTemplateService {
@@ -40,15 +43,18 @@ public class ShiftTemplateService {
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
     private final DeskRepository deskRepository;
+    private final AgentShiftAssignmentRepository agentShiftAssignmentRepository;
 
     public ShiftTemplateService(ShiftTemplateRepository shiftTemplateRepository,
                                  ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
                                  TimeslotGeneratorService timeslotGeneratorService,
-                                 DeskRepository deskRepository) {
+                                 DeskRepository deskRepository,
+                                 AgentShiftAssignmentRepository agentShiftAssignmentRepository) {
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
         this.deskRepository = deskRepository;
+        this.agentShiftAssignmentRepository = agentShiftAssignmentRepository;
     }
 
     /**
@@ -88,7 +94,7 @@ public class ShiftTemplateService {
      * Loads through {@code findByIdAndTenantIdAndDeskId} (never a bare {@code findById}) so a
      * cross-tenant id yields {@link EntityNotFoundException} (T-14-10). Setting {@code
      * effectiveTo} through this method is how a template is retired (P-11) — there is no
-     * separate retire method and no delete method on this service.
+     * separate retire method; {@link #deleteShiftTemplate} handles the never-used case.
      */
     @Transactional
     public ShiftTemplate updateShiftTemplate(UUID deskId, UUID id, ShiftTemplateRequest request) {
@@ -101,6 +107,47 @@ public class ShiftTemplateService {
         ShiftTemplate saved = shiftTemplateRepository.save(template);
         replaceBands(saved, request);
         return saved;
+    }
+
+    /**
+     * Deletes a template outright — the escape hatch D-10's retire-only lifecycle left missing.
+     *
+     * <p>Retiring by {@code effectiveTo} is the right operation for a template that WAS used and
+     * no longer applies: the row must survive so historical schedules remain explicable. It is the
+     * wrong operation for a template that should never have existed — a typo, a duplicate, a
+     * draft accepted by mistake — which retiring leaves in the library list forever. Both this
+     * session and any operator hit that: a scratch template created for testing could not be
+     * removed by any means the application offered.
+     *
+     * <p>Guarded on USE, not on age: a template referenced by any {@code agent_shift_assignment}
+     * row has been part of a real schedule and is refused, with the caller directed to retire it
+     * instead. That is deliberately stricter than the database requires —
+     * {@code agent_shift_assignment.source_template_id} carries no FK (D-07 denormalises
+     * template_name and the shift/band times onto the row precisely so history survives), so the
+     * delete would succeed and leave every accepted schedule still readable. The refusal exists to
+     * keep the audit trail honest, not to prevent a broken foreign key: an operator who deletes a
+     * template that shaped a real roster loses the ability to explain why that roster looks the
+     * way it does.
+     *
+     * <p>Break bands need no explicit delete — V40 declares
+     * {@code shift_template_id ... ON DELETE CASCADE}.
+     */
+    @Transactional
+    public void deleteShiftTemplate(UUID deskId, UUID id) {
+        long tenantId = TenantContext.getTenantId();
+        ShiftTemplate template = shiftTemplateRepository.findByIdAndTenantIdAndDeskId(id, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("ShiftTemplate", id));
+
+        long usages = agentShiftAssignmentRepository.countByTenantIdAndSourceTemplateId(tenantId, id);
+        if (usages > 0) {
+            throw new ConflictException("Shift template '" + template.getName() + "' cannot be deleted: it is "
+                    + "used by " + usages + " agent-day assignment(s) in one or more schedules. Retire it "
+                    + "instead by setting its effective-to date, which stops it being assigned to any new "
+                    + "schedule while keeping existing ones explicable.");
+        }
+
+        shiftTemplateBreakBandRepository.deleteByShiftTemplate_Id(id);
+        shiftTemplateRepository.delete(template);
     }
 
     private void applyScalarFields(ShiftTemplate template, ShiftTemplateRequest request) {

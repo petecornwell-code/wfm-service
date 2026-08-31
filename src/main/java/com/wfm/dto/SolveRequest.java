@@ -18,5 +18,6 @@ public record SolveRequest(
         BigDecimal defaultContractedHoursPerDay,
         Integer overallocationHardLimitPct,
         Integer underallocationHardLimitPct,
-        Integer solveTimeSeconds
+        Integer solveTimeSeconds,
+        Integer shiftEnvelopeSlackSlots
 ) {}

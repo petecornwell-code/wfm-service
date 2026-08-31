@@ -43,14 +43,27 @@ public class ShiftTemplateController {
 
     /**
      * Single endpoint for both editing and retiring (P-11): the Retire flow submits the
-     * template's current values with a new {@code effectiveTo}. There is no delete endpoint —
-     * no destructive action exists in this phase (D-10, T-14-14).
+     * template's current values with a new {@code effectiveTo}. Retiring remains the correct
+     * action for a template that WAS used; {@link #deleteShiftTemplate} covers the case D-10
+     * left with no exit — a template that never should have existed, which retiring would
+     * strand in the library list permanently.
      */
     @PutMapping("/{id}")
     public ShiftTemplateResponse updateShiftTemplate(@PathVariable UUID deskId,
                                                        @PathVariable UUID id,
                                                        @RequestBody ShiftTemplateRequest request) {
         return toResponse(shiftTemplateService.updateShiftTemplate(deskId, id, request));
+    }
+
+    /**
+     * Deletes a template that has never been used. A template a real schedule already assigned is
+     * refused with a 409 directing the caller to retire it instead (set {@code effectiveTo}), so
+     * an existing roster stays explicable. See {@code ShiftTemplateService.deleteShiftTemplate}.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteShiftTemplate(@PathVariable UUID deskId, @PathVariable UUID id) {
+        shiftTemplateService.deleteShiftTemplate(deskId, id);
+        return ResponseEntity.noContent().build();
     }
 
     private ShiftTemplateResponse toResponse(ShiftTemplate template) {

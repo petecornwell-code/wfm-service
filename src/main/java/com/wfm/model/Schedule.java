@@ -71,6 +71,14 @@ public class Schedule {
     @Column(name = "overallocation_hard_limit_pct")
     private int overallocationHardLimitPct = 130;
 
+    /**
+     * Grid slots an eligible shift envelope may exceed an agent-day's contracted slots by (D-01
+     * bounded slack). Zero reproduces the original exact-equality rule; the default of 1 gives the
+     * solver one slot of choice so a single unavailable hour cannot force an envelope breach.
+     */
+    @Column(name = "shift_envelope_slack_slots")
+    private int shiftEnvelopeSlackSlots = 1;
+
     @Column(name = "underallocation_hard_limit_pct")
     private int underallocationHardLimitPct = 70;
 
@@ -214,6 +222,9 @@ public class Schedule {
 
     public BigDecimal getDefaultContractedHoursPerDay() { return defaultContractedHoursPerDay; }
     public void setDefaultContractedHoursPerDay(BigDecimal defaultContractedHoursPerDay) { this.defaultContractedHoursPerDay = defaultContractedHoursPerDay; }
+
+    public int getShiftEnvelopeSlackSlots() { return shiftEnvelopeSlackSlots; }
+    public void setShiftEnvelopeSlackSlots(int shiftEnvelopeSlackSlots) { this.shiftEnvelopeSlackSlots = shiftEnvelopeSlackSlots; }
 
     public int getOverallocationHardLimitPct() { return overallocationHardLimitPct; }
     public void setOverallocationHardLimitPct(int overallocationHardLimitPct) { this.overallocationHardLimitPct = overallocationHardLimitPct; }

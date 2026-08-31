@@ -1,0 +1,21 @@
+-- Phase 15 UAT gap closure -- bounded envelope slack (reopens D-01's exact-equality rule).
+--
+-- AgentShiftAssignment.getEligibleShiftBandPairs admitted a (template, band) pair only when its
+-- net hours EXACTLY equalled the agent-day's contracted hours. Legal in-envelope slots therefore
+-- equalled contracted slots exactly, so an agent had to occupy 100% of their legal slots with no
+-- margin to route around a single unavailable one.
+--
+-- Measured on the live StubHub (EN) desk: Sunday 10:00 carries demand of 1, so the over-allocation
+-- ceiling admits 2 agents there, yet every agent on a 10:00-starting envelope was obliged to work
+-- it. Agents beyond the second breached their envelope to reach contracted hours. No library shape
+-- avoids this -- a 9-hour contiguous envelope starting 08:00, 09:00 or 10:00 necessarily contains
+-- 10:00 -- so it could only be fixed in the eligibility rule.
+--
+-- Slack widens WHERE an agent may work, never HOW MUCH: contractedHoursOver (ofHard(1001)) and
+-- contractedHoursUnder (ofHard(100)) still pin actual hours to the contracted figure exactly.
+--
+-- DEFAULT 1: one grid slot of choice. Deliberately not 0 -- zero reproduces the exact-equality
+-- behaviour this migration exists to relax, and the desks that need it cannot discover it. Kept
+-- small so a 4-hour agent is never handed a 9-hour shift; override per solve via SolveRequest.
+ALTER TABLE schedule
+    ADD COLUMN shift_envelope_slack_slots INTEGER NOT NULL DEFAULT 1;

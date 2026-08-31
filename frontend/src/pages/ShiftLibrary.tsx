@@ -476,6 +476,32 @@ export default function ShiftLibrary() {
     setRetiringId(null)
   }
 
+  // Delete — the escape hatch retire-only left missing. Retiring is right for a template that WAS
+  // used: the row must survive so an existing roster stays explicable. It is wrong for one that
+  // should never have existed (a typo, a duplicate, a test row), which retiring strands in this
+  // list forever. The server enforces that distinction and refuses with 409 if any schedule has
+  // used the template, so this control cannot destroy history even if clicked in error — the
+  // confirm() below guards against the slip, not against data loss.
+  const confirmDelete = async (t: ShiftTemplate) => {
+    if (!deskId) return
+    if (!window.confirm(
+      `Delete "${t.name}" permanently?\n\n`
+      + 'This cannot be undone. If any schedule has used this template the server will refuse — '
+      + 'retire it instead so the roster it shaped stays explicable.'
+    )) return
+    setSubmitting(true)
+    try {
+      await shiftTemplatesApi.remove(deskId, t.id)
+      setTemplates(templates.filter(x => x.id !== t.id))
+      showToast('success', 'Shift template deleted')
+      await fetchValidation()
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const confirmRetire = async (t: ShiftTemplate) => {
     if (!deskId) return
     setSubmitting(true)
@@ -957,6 +983,13 @@ export default function ShiftLibrary() {
                       <div style={{ display: 'flex', gap: '0.25rem' }}>
                         <button onClick={() => startEdit(t)}>Edit</button>
                         <button onClick={() => startRetire(t)}>Retire</button>
+                        <button
+                          onClick={() => confirmDelete(t)}
+                          disabled={submitting}
+                          title="Permanently remove this template. Only possible if no schedule has ever used it — otherwise retire it instead."
+                        >
+                          Delete
+                        </button>
                       </div>
                     )}
                   </td>

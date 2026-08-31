@@ -302,7 +302,8 @@ public class SolverService {
         Map<UUID, Agent> eligibleAgentsById = eligibleAgents.stream()
                 .collect(Collectors.toMap(Agent::getId, a -> a, (a, b) -> a));
         List<AgentShiftAssignment> shiftAssignments = buildShiftAssignments(desk.getSchedulingMode(),
-                tenantId, deskId, schedule.getId(), eligibleAgentsById, agentDayConfigs, shiftBandPairs);
+                tenantId, deskId, schedule.getId(), eligibleAgentsById, agentDayConfigs, shiftBandPairs,
+                schedule.getShiftEnvelopeSlackSlots());
 
         // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();
@@ -534,6 +535,7 @@ public class SolverService {
         }
 
         if (request.overallocationHardLimitPct() != null) s.setOverallocationHardLimitPct(request.overallocationHardLimitPct());
+        if (request.shiftEnvelopeSlackSlots() != null && request.shiftEnvelopeSlackSlots() >= 0) s.setShiftEnvelopeSlackSlots(request.shiftEnvelopeSlackSlots());
         if (request.underallocationHardLimitPct() != null) s.setUnderallocationHardLimitPct(request.underallocationHardLimitPct());
 
         return s;
@@ -738,7 +740,8 @@ public class SolverService {
      */
     static List<AgentShiftAssignment> buildShiftAssignments(SchedulingMode schedulingMode,
             long tenantId, UUID deskId, UUID scheduleId, Map<UUID, Agent> agentById,
-            List<AgentDayConfig> agentDayConfigs, List<ShiftBandPair> deskShiftBandPairs) {
+            List<AgentDayConfig> agentDayConfigs, List<ShiftBandPair> deskShiftBandPairs,
+            int envelopeSlackSlots) {
         if (schedulingMode != SchedulingMode.SHIFT) {
             return List.of();
         }
@@ -760,6 +763,7 @@ public class SolverService {
             sa.setDate(config.date());
             sa.setDayConfig(config);
             sa.setDeskShiftBandPairs(deskShiftBandPairs);
+            sa.setEnvelopeSlackSlots(envelopeSlackSlots);
             assignments.add(sa);
         }
         return assignments;

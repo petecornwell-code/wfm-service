@@ -20,6 +20,14 @@ public interface AgentShiftAssignmentRepository extends JpaRepository<AgentShift
     List<AgentShiftAssignment> findByTenantIdAndDeskIdAndScheduleId(long tenantId, UUID deskId, UUID scheduleId);
 
     /**
+     * Backs {@code ShiftTemplateService.deleteShiftTemplate}'s use guard. Counts rather than
+     * fetches: the caller needs only whether a template has ever been part of a real schedule, and
+     * the message quotes the figure. Tenant-scoped like every other method here — a cross-tenant
+     * id must never influence a delete decision.
+     */
+    long countByTenantIdAndSourceTemplateId(long tenantId, UUID sourceTemplateId);
+
+    /**
      * Relations-fetching variant for the output path (Plan 07 Task 2) — eagerly loads the agent
      * association, mirroring {@code AgentAssignmentRepository
      * .findWithRelationsByTenantIdAndDeskIdAndScheduleId}. Ordered by date then agent name so a

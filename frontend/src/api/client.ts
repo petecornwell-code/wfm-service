@@ -196,6 +196,10 @@ export const shiftTemplates = {
     request<ShiftTemplate>(`/desks/${deskId}/shift-templates`, { method: 'POST', body: JSON.stringify(body) }),
   update: (deskId: string, id: string, body: ShiftTemplateBody) =>
     request<ShiftTemplate>(`/desks/${deskId}/shift-templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  // Deletes a template outright. The server refuses with 409 if any schedule has used it —
+  // retire that one instead (set effectiveTo) so the roster it shaped stays explicable.
+  remove: (deskId: string, id: string) =>
+    request<void>(`/desks/${deskId}/shift-templates/${id}`, { method: 'DELETE' }),
 }
 
 // --- Shift Library Validation & Generation (SHLB-07) ---
