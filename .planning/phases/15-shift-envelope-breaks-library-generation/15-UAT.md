@@ -74,7 +74,27 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-[testing paused — 8 pending, 1 issue, 1 blocked]
+number: 3
+name: No Phase 14 desk's validation verdict moved
+expected: |
+  For a desk that existed before this phase and uses single-break templates, the Shift Library
+  validation result — coverage verdict, net hours, grid-alignment verdict — is identical to before.
+awaiting: user response
+
+<!--
+  SESSION 2026-08-31 (resumed). Deployment re-derived per the standing rule BEFORE any testing:
+  branch fully pushed (@{u}..HEAD empty); newest successful deploy.yml run 33431842459 on 9cd4703;
+  `git diff 9cd4703..HEAD -- . ':!.planning/'` EMPTY — the only commit since is .planning-only.
+  Dev IS serving current HEAD. /actuator/health UP, db UP on PostgreSQL.
+  Not in the image: src/main/resources/sample-data/preferences.xlsx (uncommitted, sample data).
+
+  Gap reconciliation on resume: 0 resolved, 4 open. No gap carries `status: failed`, so none was
+  re-diagnosable. G-15-10 remains closed_pending_retest; G-15-21/22/23 have no fix plans yet.
+
+  TESTABILITY PROBLEM FOUND AT RESUME — test 3 may no longer be observable. See test 3's
+  observability_problem block. The live desk's Phase-14-era single-break state no longer exists.
+-->
+
 
 <!--
   SESSION 2026-08-27 .. 2026-08-31. Test 10 was retested end to end and its mechanism drove the
@@ -167,6 +187,43 @@ reported: "Evidenced by deploy history, not by manual test: four successful dev 
 
 expected: For a desk that existed before this phase and uses single-break templates, the Shift Library validation result — coverage verdict, net hours, grid-alignment verdict — is identical to before. This is the phase's own stated invariant: a one-band template must reproduce its single-offset predecessor exactly.
 result: [pending]
+observability_problem: |
+  RAISED 2026-08-31 at resume, BEFORE presenting the test. The test as written may no longer be
+  answerable against live data, and it is better to say so than to record a meaningless verdict.
+
+  Live state read this session (X-Tenant-ID: 1, dev on HEAD):
+    - Stubhub (EN) is still the tenant's ONLY desk, so it is the only candidate for "a desk that
+      existed before this phase".
+    - It now carries 12 templates, and EVERY ONE has 3 bands. NO single-band template remains
+      anywhere on the desk.
+
+  The Phase 14 baseline recorded in 14-UAT.md was a FOUR-template, one-band-each library (Early
+  08:00-17:00, Late 12:00-21:00 Mon-Fri; Weekend Early 10:00-19:00, Weekend Late 11:00-20:00
+  Sat-Sun) validating hasLiveDemand=true, uncoveredWindows []. That configuration was deliberately
+  dismantled during test 12 and the test 10 retest — 3 bands added to each original template, then
+  8 further templates (Morning, Mid, Daytime, Weekend Morning/Opening/Closing/Flex, and the
+  ZZ-UAT-SCRATCH probe). The "before" side of this comparison no longer exists to be re-measured.
+
+  IMPORTANT: this is NOT evidence the invariant broke. It is loss of the observation, caused by
+  UAT's own deliberate edits, and the loss was inevitable once test 12 required multi-band data on
+  the only desk available.
+
+  WHAT CAN STILL BE SAID (current validation, read live this session):
+    uncoveredWindows []      misalignedTemplates []      unsatisfiableWeekdays []
+    hoursAdvisories — fire ONLY on Weekend Flex (9.00h net, added this session). None of the four
+      original Phase 14 templates appears in any advisory list.
+  So the four Phase-14-era templates, which still exist under their original names, spans and
+  weekdays, still draw a clean coverage verdict and a clean grid-alignment verdict. What cannot be
+  isolated is whether that verdict is IDENTICAL to Phase 14's, because eight additional templates
+  now contribute to the same desk-wide computation.
+
+  ROUTES, for the operator to choose between:
+    (a) Accept the partial evidence above — original templates present, all verdicts clean, no
+        advisory naming them — as sufficient, and pass with that caveat recorded.
+    (b) Create a scratch desk with a single one-band template reproducing a Phase 14 shape and
+        confirm its validation matches the single-offset predecessor. Tests the INVARIANT properly;
+        does not test "no Phase 14 desk moved", because the Phase 14 desk has moved by our own hand.
+    (c) Mark it unobservable and close it, recording that UAT consumed its own baseline.
 
 ### 4. Break-band editor saves and reads back multiple bands
 
@@ -626,6 +683,23 @@ expected: |
     - tooltips and the extended legend are legible.
 
 result: [pending]
+amended: 2026-08-31 — see expectation_correction below. The test's ORIGINAL wording is preserved above; read the correction before judging the `x` marker.
+expectation_correction: |
+  This test was written BEFORE bounded envelope slack shipped (81117e3, V44), and one of its
+  premises expired at that commit.
+
+  WHAT CHANGED: under the old zero-slack rule an agent's legal in-envelope slots equalled their
+  contracted slots exactly, so a surrendered legal slot (`x`) meant the agent could not have
+  reached contracted hours — it was a DEFECT SIGNAL. With bounded slack (default 1 slot) an agent
+  holding a 9h-net envelope against 8 contracted hours has one legal slot they are SUPPOSED to
+  leave unworked. Some `x` cells are now the system working correctly.
+
+  HOW TO JUDGE IT NOW: `x` is a rendering question, not a correctness question. Check that `x` is
+  drawn, is legible, and is visually distinct from `E!`. Do NOT treat the presence of `x` cells —
+  or their count — as a failure. `E!` (a seat OUTSIDE the envelope) remains a true defect signal
+  and is the one to count.
+
+  The other four bullets are unaffected by this correction.
 source: 15-VERIFICATION.md human_verification
 why_human: |
   This project has no frontend test framework (Phase 13 P-11, a standing constraint). 15-12-SUMMARY.md
@@ -1006,6 +1080,117 @@ blocked: 1
     best score, so continuing SOFT improvement resets the timer while HARD sits frozen. A run can
     therefore burn its entire window chasing soft score with a permanently stuck hard score and
     never self-terminate early. Observed directly here: hard flat 15m -> 20m41s, still RUNNING.
+
+- gap_id: G-15-24
+  truth: "Raising the over-allocation limit is NOT a safe remedy on a desk where unassigned seats are hard"
+  status: open
+  severity: major
+  found_by: edge-band experiment, 2026-08-31 (resumed session)
+  retracted_claim: |
+    THIS ENTRY ORIGINALLY CLAIMED the desk runs at 130% and that test 10's "seats are NOT scarce"
+    pillar was therefore computed at the wrong ceiling. THAT CLAIM WAS WRONG and is withdrawn.
+    130% is only the desk's STORED default; the baseline -9 run explicitly overrode it per-request
+    with overallocationHardLimitPct=250, underallocationHardLimitPct=50 (read back off schedule
+    e6728aab). Test 10's 250% arithmetic was correct for the run it described. No correction to
+    the remaining_9 pillars follows from this, and none should be made on the strength of it.
+  detail: |
+    WHAT IS ACTUALLY TRUE, and it is a different and more dangerous fact.
+
+    The live desk overrides ConstraintWeights, and two overrides invert the source-default
+    reasoning that this file (and my own analysis) had been using:
+
+        unassignedAssignmentWeight   source ofSoft(1000)  ->  LIVE ofHard(10000)
+        contractedHoursUnderWeight   source ofHard(100)   ->  LIVE ofHard(10)
+        minStaffingWeight            source ofSoft(1000)  ->  LIVE ofHard(10)
+
+    Seat COUNT scales with overallocationHardLimitPct. On this desk every seat no agent can fill
+    is worth 10,000 HARD. So raising the ceiling manufactures hard liability directly.
+
+    MEASURED. Same period/library, ceiling 250->150 (underalloc 50->70):
+
+        Unassigned assignment        2 violations   -20,000 hard   <-- dominates everything
+        Contracted hours (under)    18 violations      -280
+        Shift envelope compliance   49 violations       -49        <-- was 9 at the baseline
+        Bulk under-allocation hard   2 violations         -9
+
+    Envelope violations went 9 -> 49 and the total went -9 -> -20,338.
+
+    THE GATE RECOMMENDS THIS. requireShiftEnvelopeSeatSupply's refusal text says "To fix it: raise
+    the desk's over-allocation limit (currently N%)" as its FIRST suggestion. On a desk weighted
+    like this one, following that advice is the single most destructive available action. The gate
+    has no knowledge of unassignedAssignmentWeight and cannot know its own advice is unsafe.
+  fix: "Two parts. (1) The refusal text must not recommend raising the over-allocation limit
+    without checking unassignedAssignmentWeight — where unassigned seats are hard, that advice
+    should be suppressed or inverted. (2) Any analysis of this desk must read the desk's LIVE
+    weights, not ConstraintWeights.java defaults; they differ on at least five constraints."
+  also_observed: |
+    GET on an ACCEPTED schedule returns constraintViolations with "Shift envelope compliance"
+    violationCount 1104 / penalty -1104 while the stored score reads hardScore -9. The two cannot
+    both be right. 1104 is the desk's total staffed agent-hours, so the read path looks to be
+    re-deriving violations against the CURRENT library rather than the accepted one. Same read-path
+    family as CR-04 (test 20). Not chased this session.
+
+- gap_id: G-15-26
+  truth: "A completed solve must always be clearable, so the desk can start another one"
+  status: open
+  severity: blocker
+  found_by: edge-band experiment, 2026-08-31 (resumed session)
+  blocks: "Test 10 and any further solve on Stubhub (EN). The dev desk is currently WEDGED."
+  detail: |
+    Schedule bf3e533f-a9b4-411f-b0a1-6a5987c86d4a reached status COMPLETED (hard -20338). It is
+    returned by GET /schedules, and it gates new solves — POST /solve refuses with "A schedule
+    already exists for this desk. Stop it (if running) and accept or reject it before starting a
+    new solve." But every route the message names is broken for it:
+
+        POST /{id}/stop     -> 500 INTERNAL_ERROR
+        POST /{id}/reject   -> 500 INTERNAL_ERROR
+        POST /{id}/accept   -> 500 INTERNAL_ERROR
+        DELETE /{id}        -> 404 NOT_FOUND ("Schedule not found")
+
+    The 404-vs-500 split localises it. accept/reject read `inMemoryStore.get(scheduleId)`
+    (ScheduleService:230, :406) and DO find the row — they fail later in the method. deleteSchedule
+    reads `scheduleRepository.findByIdAndTenantIdAndDeskId` (:382) and does NOT find it. So the
+    schedule exists in the in-memory store and NOT in the database, and the only endpoint that
+    could clear it is the one looking in the wrong place.
+
+    Net effect: a solve that completes without being persisted permanently blocks the desk. There
+    is no API route out. Recovery requires restarting the service to clear InMemoryScheduleStore.
+  fix: "deleteSchedule must fall back to the in-memory store when the DB lookup misses, and the
+    500s on stop/accept/reject need their real exception surfaced (currently swallowed into
+    INTERNAL_ERROR by GlobalExceptionHandler's catch-all at :105). Independently: the
+    active-schedule guard should not treat an unpersisted COMPLETED schedule as blocking."
+  note: "Related to CR-04's finding that InMemoryScheduleStore.get returns the live object by
+    reference. The store's relationship to the DB is under-specified in more than one place."
+
+- gap_id: G-15-25
+  truth: "The seat-supply gate must respond to band composition, not just to the union of envelopes"
+  status: open
+  severity: major
+  found_by: edge-band experiment, 2026-08-31 (resumed session)
+  related_to: G-15-21 (same method, same calendar-blind predicate)
+  detail: |
+    MEASURED, not inferred. Five break bands were added at the envelope edges of the three live
+    weekend templates (Weekend Early +offset 0/480, Weekend Flex +offset 0/540, Weekend Late
+    +offset 480), the solve was attempted, then the ORIGINAL bands were restored and the solve
+    attempted again. Both runs produced BYTE-IDENTICAL gate output — same five dates, same
+    figures, 2026-01-11 "reaches 136" in both.
+
+    The cause is structural (SolverService.requireShiftEnvelopeSeatSupply, ~1184):
+
+        coveredTimeslots = timeslots(date).filter(ts -> pairs.stream().anyMatch(p -> p.covers(ts)))
+        librarySupplySlots = sum of existing seats over coveredTimeslots
+
+    `anyMatch` is a UNION over the desk-wide pair list. Each band pair excludes only its own break
+    hour, so a template with 3+ bands already unions to its FULL envelope. Adding further bands can
+    never change the union once it is saturated — the gate cannot see band composition at all.
+
+    Why that matters: the union models "some agent could work this hour", but the solver binds each
+    agent to ONE pair. Two libraries with identical envelopes and completely different break
+    structure — one solvable, one not — are indistinguishable to this gate. It is measuring the
+    wrong quantity, not merely measuring it on the wrong calendar.
+  fix: "Compute supply per-agent-day against each agent's OWN eligible pairs and take the
+    achievable assignment, rather than unioning the desk-wide pair list. Fixing G-15-21's date
+    filter alone will NOT fix this — the two defects are independent and share only the method."
 
 - gap_id: G-15-21
   truth: "The seat-supply gate must not count hours only a weekday template reaches when solving a weekend"
