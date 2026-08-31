@@ -215,6 +215,111 @@ class ShiftLibraryGenerationServiceTest {
         }
     }
 
+    // ---------- Demand-shape clustering ----------
+    //
+    // Keyed on the SHAPE of the demand curve, never on the calendar. A single template set
+    // spanning every weekday must straddle shapes that want different envelopes: on the live desk
+    // it proposed weekend envelopes starting at 08:00 and 09:00 where weekend demand is ZERO, and
+    // a 12:00-21:00 envelope that missed the 11:00 weekend peak while covering two dead hours.
+
+    @Test
+    void generateSuggestion_daysWithDifferentDemandShapes_getSeparateTemplateSets() {
+        // Two shapes deliberately assigned to days that CUT ACROSS the Mon-Fri / weekend
+        // convention: an early shape on Mon/Tue/Sat and a late shape on Wed/Thu/Sun. If clustering
+        // keyed on the calendar rather than the curve, this fixture would split the wrong way.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+
+        List<DayOfWeek> earlyDays = List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.SATURDAY);
+        List<DayOfWeek> lateDays = List.of(DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.SUNDAY);
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            DayOfWeek dow = date.getDayOfWeek();
+            int from, to;
+            if (earlyDays.contains(dow)) {
+                from = 8; to = 17;      // early shape
+            } else if (lateDays.contains(dow)) {
+                from = 12; to = 21;     // late shape
+            } else {
+                continue;               // Friday carries no demand
+            }
+            for (int hour = from; hour < to; hour++) {
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            Agent a = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, a, weekday, new BigDecimal("8.00"));
+            }
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        // Every template must be valid ONLY on days sharing its shape — never on both groups.
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            boolean touchesEarly = t.validWeekdays().stream().anyMatch(earlyDays::contains);
+            boolean touchesLate = t.validWeekdays().stream().anyMatch(lateDays::contains);
+            assertThat(touchesEarly && touchesLate)
+                    .as("template %s-%s spans two different demand shapes: %s",
+                            t.startTime(), t.endTime(), t.validWeekdays())
+                    .isFalse();
+        }
+        // And both shapes must actually be served.
+        assertThat(response.templates()).anySatisfy(t ->
+                assertThat(t.validWeekdays()).anyMatch(earlyDays::contains));
+        assertThat(response.templates()).anySatisfy(t ->
+                assertThat(t.validWeekdays()).anyMatch(lateDays::contains));
+    }
+
+    @Test
+    void generateSuggestion_everyDaySameShape_staysOneClusterAndIsUnchanged() {
+        // Degenerate case: uniform demand must not be split. Clustering has to be inert where it
+        // has nothing to say, or it would fragment a library that was already correct.
+        UUID deskId = deskWithFullWeekDemandAndAgents(4);
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        // One shape across all seven days -> every template valid on all seven.
+        assertThat(response.templates()).allSatisfy(t ->
+                assertThat(t.validWeekdays()).hasSize(7));
+    }
+
+    @Test
+    void generateSuggestion_clusteredDraft_coversEveryWindowAcrossAllShapes() {
+        // Splitting the cover per cluster must not lose coverage anywhere: each cluster covers its
+        // own windows, and the union must still cover the desk.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            boolean weekendish = date.getDayOfWeek() == DayOfWeek.SATURDAY
+                    || date.getDayOfWeek() == DayOfWeek.SUNDAY;
+            int from = weekendish ? 11 : 8;
+            int to = weekendish ? 20 : 17;
+            for (int hour = from; hour < to; hour++) {
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            Agent a = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, a, weekday, new BigDecimal("8.00"));
+            }
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            saveGeneratedTemplate(deskId, t);
+        }
+        assertThat(validationService.validate(deskId).uncoveredWindows()).isEmpty();
+    }
+
     // ---------- Supply-aware expansion beyond minimal cover ----------
     //
     // greedyCover answers "smallest library that covers demand". On an OVER-SUPPLIED desk that is

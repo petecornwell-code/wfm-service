@@ -33,6 +33,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -131,27 +132,49 @@ public class ShiftLibraryGenerationService {
                 .collect(Collectors.groupingBy(AgentDayHours::getDayOfWeek,
                         Collectors.mapping(AgentDayHours::getHours, Collectors.toList())));
 
-        Set<DayOfWeek> demandedWeekdays = windows.stream()
-                .map(w -> w.date().getDayOfWeek())
-                .collect(Collectors.toCollection(() -> EnumSet.noneOf(DayOfWeek.class)));
+        // One template set PER DEMAND SHAPE, not one per desk. A single set spanning every weekday
+        // has to straddle shapes that want different envelopes: on the live desk it proposed
+        // weekend envelopes starting at 08:00 and 09:00, where weekend demand is ZERO, and a
+        // 12:00-21:00 envelope that misses the 11:00 weekend peak entirely while covering two dead
+        // hours. Clusters are derived from the demand curve, never from the calendar.
+        List<Set<DayOfWeek>> shapeClusters = clusterWeekdaysByDemandShape(demand, bounds);
 
-        List<Candidate> candidates =
-                enumerateCandidates(windows, bounds, breakConfig, hoursByWeekday, demandedWeekdays);
+        List<Candidate> selected = new ArrayList<>();
+        int totalCandidates = 0;
+        for (Set<DayOfWeek> cluster : shapeClusters) {
+            List<ShiftLibraryValidationService.Window> clusterWindows = windows.stream()
+                    .filter(w -> cluster.contains(w.date().getDayOfWeek()))
+                    .toList();
+            if (clusterWindows.isEmpty()) {
+                continue;
+            }
+            List<StaffingRequirement> clusterDemand = demand.stream()
+                    .filter(sr -> cluster.contains(sr.getTimeslot().getDate().getDayOfWeek()))
+                    .toList();
 
-        // P-08's named refusal: exceeding the declared candidate cap is reported, never silently
-        // truncated -- a desk whose data shape breaks the "tens, not thousands" sizing assumption
-        // says so out loud instead of quietly returning a worse answer.
-        if (candidates.size() > MAX_CANDIDATE_COUNT) {
-            String message = "Candidate enumeration produced " + candidates.size()
-                    + " candidates, exceeding the cap of " + MAX_CANDIDATE_COUNT
-                    + ". Reduce the desk's demand time range or contracted-hours variety before "
-                    + "requesting a suggested library.";
-            throw new PreSolveValidationException(message, List.of(new ErrorDetail("candidates", message, null)));
+            List<Candidate> clusterCandidates =
+                    enumerateCandidates(clusterWindows, bounds, breakConfig, hoursByWeekday, cluster);
+            totalCandidates += clusterCandidates.size();
+
+            // P-08's named refusal: exceeding the declared candidate cap is reported, never
+            // silently truncated -- a desk whose data shape breaks the "tens, not thousands"
+            // sizing assumption says so out loud instead of quietly returning a worse answer.
+            // Counted across ALL clusters so clustering cannot be used to slip past the cap.
+            if (totalCandidates > MAX_CANDIDATE_COUNT) {
+                String message = "Candidate enumeration produced " + totalCandidates
+                        + " candidates, exceeding the cap of " + MAX_CANDIDATE_COUNT
+                        + ". Reduce the desk's demand time range or contracted-hours variety before "
+                        + "requesting a suggested library.";
+                throw new PreSolveValidationException(message,
+                        List.of(new ErrorDetail("candidates", message, null)));
+            }
+
+            List<Candidate> clusterSelected = greedyCover(clusterCandidates, clusterWindows);
+            clusterSelected = expandForSupply(clusterSelected, clusterCandidates, clusterWindows,
+                    demandHours(clusterDemand), supplyHours(clusterDemand, hoursByWeekday));
+            selected.addAll(clusterSelected);
         }
 
-        List<Candidate> selected = greedyCover(candidates, windows);
-        selected = expandForSupply(selected, candidates, windows,
-                demandHours(demand), supplyHours(demand, hoursByWeekday));
         List<ShiftLibraryValidationService.Window> uncovered = stillUncovered(selected, windows);
 
         // D-12: do not refuse outright when full coverage is impossible -- the desk that most
@@ -318,6 +341,111 @@ public class ShiftLibraryGenerationService {
 
         BigDecimal netHours = template.getNetHours(duration);
         candidates.add(new Candidate(template, bands, spanStart, spanLength, offset, duration, netHours));
+    }
+
+    // --- Demand-shape clustering ---
+
+    /**
+     * Cosine similarity above which two weekdays are treated as carrying the SAME demand shape.
+     *
+     * <p>Not fitted to one dataset — chosen to sit in the gap that real data leaves. On the live
+     * desk, weekdays resemble each other at 0.949–0.991 and weekends at 0.986, while every
+     * cross-pair falls between 0.680 and 0.788. There is 0.16 of clear air between the two bands,
+     * so any threshold in roughly [0.80, 0.94] produces the identical split; 0.90 sits in the
+     * middle of it. A desk whose days genuinely form a continuum degrades gracefully to one
+     * cluster, which is exactly the pre-clustering behaviour.
+     */
+    private static final double SAME_SHAPE_SIMILARITY = 0.90;
+
+    /**
+     * Partitions the demanded weekdays by the SHAPE of their demand curve, never by the calendar.
+     *
+     * <p>Deliberately shape-keyed rather than weekday-keyed: a "weekend" is not a property of the
+     * calendar but of the demand, and datasets change. If a desk's Wednesday looks like its
+     * Saturday, they belong in one cluster and will get one template set; nothing here encodes
+     * Mon-Fri versus Sat/Sun. On the live desk that split falls out anyway — weekdays run
+     * 08:00-20:00 peaking at 17:00, weekends run 10:00-19:00 peaking at 11:00 — but it falls out
+     * of the data rather than being assumed.
+     *
+     * <p>Profiles are compared on SHAPE, not scale: each weekday's hourly FTE vector is compared
+     * by cosine similarity, which is invariant to magnitude. A quiet Sunday with the same contour
+     * as a busy Saturday clusters with it, and correctly so — they want the same ENVELOPES, and
+     * they differ only in how many agents those envelopes must seat, which supply-aware expansion
+     * already handles per cluster.
+     *
+     * <p>Clustering is at WEEKDAY granularity, not per-date, because {@code
+     * ShiftTemplate.validWeekdays} is a weekly mask — a template cannot be made to apply to one
+     * specific date. Aggregating each weekday's dates first guarantees every weekday lands in
+     * exactly one cluster, so the result is always expressible.
+     *
+     * <p>Complete linkage (a weekday joins only if it is similar to EVERY existing member, not
+     * merely to one) prevents a chain of pairwise-similar days from silently merging two genuinely
+     * different shapes. Weekdays are considered in natural order and clusters kept in creation
+     * order, so the partition is deterministic.
+     */
+    private List<Set<DayOfWeek>> clusterWeekdaysByDemandShape(List<StaffingRequirement> demand,
+                                                                TimeslotBoundsResponse bounds) {
+        int increment = Math.max(1, bounds.incrementMinutes());
+        Map<DayOfWeek, Map<LocalTime, Integer>> byWeekday = new TreeMap<>();
+        for (StaffingRequirement sr : demand) {
+            byWeekday.computeIfAbsent(sr.getTimeslot().getDate().getDayOfWeek(), k -> new TreeMap<>())
+                    .merge(sr.getTimeslot().getStartTime(), sr.getRequiredFTEs(), Integer::sum);
+        }
+
+        List<LocalTime> slots = byWeekday.values().stream()
+                .flatMap(m -> m.keySet().stream())
+                .distinct().sorted().toList();
+
+        Map<DayOfWeek, double[]> profiles = new TreeMap<>();
+        for (Map.Entry<DayOfWeek, Map<LocalTime, Integer>> e : byWeekday.entrySet()) {
+            double[] v = new double[slots.size()];
+            for (int i = 0; i < slots.size(); i++) {
+                v[i] = e.getValue().getOrDefault(slots.get(i), 0);
+            }
+            if (norm(v) > 0) {
+                profiles.put(e.getKey(), v);
+            }
+        }
+
+        List<Set<DayOfWeek>> clusters = new ArrayList<>();
+        for (Map.Entry<DayOfWeek, double[]> entry : profiles.entrySet()) {
+            Set<DayOfWeek> home = null;
+            for (Set<DayOfWeek> cluster : clusters) {
+                boolean similarToAll = cluster.stream()
+                        .allMatch(m -> cosine(entry.getValue(), profiles.get(m)) >= SAME_SHAPE_SIMILARITY);
+                if (similarToAll) {
+                    home = cluster;
+                    break;
+                }
+            }
+            if (home == null) {
+                home = new LinkedHashSet<>();
+                clusters.add(home);
+            }
+            home.add(entry.getKey());
+        }
+        return clusters;
+    }
+
+    private static double norm(double[] v) {
+        double sum = 0;
+        for (double x : v) {
+            sum += x * x;
+        }
+        return Math.sqrt(sum);
+    }
+
+    private static double cosine(double[] a, double[] b) {
+        double na = norm(a);
+        double nb = norm(b);
+        if (na == 0 || nb == 0) {
+            return 0;
+        }
+        double dot = 0;
+        for (int i = 0; i < a.length && i < b.length; i++) {
+            dot += a[i] * b[i];
+        }
+        return dot / (na * nb);
     }
 
     // --- Supply-aware expansion beyond minimal cover ---
