@@ -67,28 +67,31 @@
     <localSearch>
         <acceptor>
             <!--
-              1hard, not 0hard. A zero hard temperature makes the acceptor refuse every move that
-              worsens the hard score even transiently, so local search can only ever walk downhill
-              on hard. Escaping a hard local optimum normally requires the opposite: vacate a seat
-              (transiently worse) so another agent can take it, then reseat the first agent legally.
-              With 0hard that path is unreachable and the solver sits on a plateau it could
-              otherwise leave.
+              0hard, and this is load-bearing. A 1hard starting temperature was tried and REVERTED:
+              on the live desk it took a settled -9 to -66 while soft improved from -67 to -43, so
+              the search traded away hard score wholesale and had not reconverged after 17 minutes.
 
-              Observed live on desk Stubhub (EN): a -9 hard plateau whose NINE violations were all
-              agents seated during their own break window, on 9h-net envelopes that gave them a
-              spare legal slot and on hours carrying ample seats. Nothing structural forced those
-              seats — the swap that would clear them simply could not be reached.
+              The reason is the weight scale. shiftEnvelopeComplianceWeight is ofHard(1), so a
+              temperature of 1hard is not a small tolerance. It is exactly one whole violation, and
+              there are a great many single-violation moves available; the annealer accepts them
+              freely and effectively random-walks on envelope compliance. HardSoftScore is integral,
+              so no fractional temperature exists between 0 and 1. At this weight scale 0hard is the
+              only workable setting.
 
-              Pre-registered in this phase's own diagnosis and left unactioned at the time:
-              "ZERO hard tolerance, so local search can never accept a transiently worse hard
-              score. Escaping a hard local optimum usually requires exactly that."
+              The plateau this was meant to escape is REAL: a -9 hard floor whose nine violations
+              were all agents seated in their own break window, on envelopes with a spare legal slot
+              and hours carrying ample seats, none of them structurally forced. The diagnosis that
+              predicted it stands; the acceptor temperature is simply the wrong lever. A genuine fix
+              needs either a different acceptor (late acceptance, tabu) or a weight scale on which
+              one hard unit is small relative to the total. Both are larger changes than this file,
+              and neither should be attempted without measuring against this same desk: the whole
+              fixture suite passed with the setting that regressed the live desk sevenfold.
 
-              Kept at 1 — the smallest tolerance that admits a single-step swap — because the
-              annealer cools toward zero anyway, so this widens the early search without loosening
-              the final result. Raising it further would let the search wander across genuinely
-              worse regions before cooling.
+              NOTE FOR EDITORS: a double hyphen is illegal inside an XML comment. Introducing one
+              here makes solverConfig.xml unparseable, which fails every @SpringBootTest at context
+              load rather than anywhere near the solver.
             -->
-            <simulatedAnnealingStartingTemperature>1hard/3000soft</simulatedAnnealingStartingTemperature>
+            <simulatedAnnealingStartingTemperature>0hard/3000soft</simulatedAnnealingStartingTemperature>
         </acceptor>
     </localSearch>
 
