@@ -21,9 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -148,6 +150,8 @@ public class ShiftLibraryGenerationService {
         }
 
         List<Candidate> selected = greedyCover(candidates, windows);
+        selected = expandForSupply(selected, candidates, windows,
+                demandHours(demand), supplyHours(demand, hoursByWeekday));
         List<ShiftLibraryValidationService.Window> uncovered = stillUncovered(selected, windows);
 
         // D-12: do not refuse outright when full coverage is impossible -- the desk that most
@@ -314,6 +318,117 @@ public class ShiftLibraryGenerationService {
 
         BigDecimal netHours = template.getNetHours(duration);
         candidates.add(new Candidate(template, bands, spanStart, spanLength, offset, duration, netHours));
+    }
+
+    // --- Supply-aware expansion beyond minimal cover ---
+
+    /**
+     * {@link #greedyCover} answers "what is the SMALLEST library that covers demand". On a desk
+     * whose rostered hours EXCEED its demand, that is the wrong question, and the gap is not
+     * academic: on the live desk a minimal 3-template cover left an irreducible hard score that
+     * only additional envelope variety could clear. Measured there — going from 3 distinct
+     * envelope spans to 5 took the residual from -18 to -6, and neither added span was needed for
+     * COVERAGE. Both were needed for ABSORPTION.
+     *
+     * <p>The mechanism is the zero-slack identity in {@code AgentShiftAssignment
+     * #getEligibleShiftBandPairs}: a pair is eligible only when its net hours EXACTLY equal the
+     * agent-day's contracted hours, so an agent must occupy 100% of their legal in-envelope slots.
+     * With few distinct envelopes, every agent's legal slots are the same slots; the thin hours run
+     * out of seats; and any agent who cannot fill one is forced OUTSIDE their envelope to reach
+     * contracted hours. More distinct envelopes means more distinct legal-slot sets, so the surplus
+     * has somewhere legal to sit.
+     *
+     * <p>Target span count is {@code ceil(coverSpans * supply / demand)} — the cover's own size
+     * scaled by how over-supplied the desk is. A desk at or below 100% supply keeps the minimal
+     * cover unchanged, so this is strictly additive to existing behaviour. On the live desk (789
+     * demand hours against 1104 supply, 3 cover spans) it yields {@code ceil(3 * 1.399) = 5},
+     * which is exactly the five stagger positions that desk was found to need by hand.
+     *
+     * <p>Additions are constrained to spans lying INSIDE the demanded time range. Enumeration's
+     * grid-alignment check is modular and does not bound a span to the operating window, so
+     * without this an expansion could propose an envelope running past the last demanded hour.
+     * Candidates are consumed in their existing deterministic sort order, so repeated requests
+     * against an unchanged desk still return an identical draft.
+     */
+    private List<Candidate> expandForSupply(List<Candidate> selected, List<Candidate> candidates,
+                                             List<ShiftLibraryValidationService.Window> windows,
+                                             BigDecimal demandHours, BigDecimal supplyHours) {
+        if (demandHours.signum() <= 0 || supplyHours.compareTo(demandHours) <= 0) {
+            return selected; // not over-supplied — minimal cover is the right answer
+        }
+
+        Set<String> chosenSpans = selected.stream().map(ShiftLibraryGenerationService::spanKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        int targetSpans = supplyHours
+                .divide(demandHours, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(chosenSpans.size()))
+                .setScale(0, RoundingMode.CEILING)
+                .intValue();
+        if (targetSpans <= chosenSpans.size()) {
+            return selected;
+        }
+
+        LocalTime earliestStart = windows.stream().map(ShiftLibraryValidationService.Window::startTime)
+                .min(Comparator.naturalOrder()).orElseThrow();
+        LocalTime latestEnd = windows.stream().map(ShiftLibraryValidationService.Window::endTime)
+                .max(Comparator.naturalOrder()).orElseThrow();
+
+        List<Candidate> expanded = new ArrayList<>(selected);
+        for (Candidate candidate : candidates) {
+            if (chosenSpans.size() >= targetSpans) {
+                break;
+            }
+            if (chosenSpans.contains(spanKey(candidate))) {
+                continue;
+            }
+            LocalTime start = candidate.template().getStartTime();
+            LocalTime end = candidate.template().getEndTime();
+            if (start.isBefore(earliestStart) || end.isAfter(latestEnd)) {
+                continue; // never propose an envelope reaching outside the demanded range
+            }
+            chosenSpans.add(spanKey(candidate));
+            expanded.add(candidate);
+        }
+        return expanded;
+    }
+
+    private static String spanKey(Candidate candidate) {
+        return candidate.template().getStartTime() + "-" + candidate.template().getEndTime();
+    }
+
+    /** Total demanded person-hours: each requirement's FTEs multiplied by its timeslot length. */
+    private BigDecimal demandHours(List<StaffingRequirement> demand) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (StaffingRequirement sr : demand) {
+            long minutes = ChronoUnit.MINUTES.between(sr.getTimeslot().getStartTime(),
+                    sr.getTimeslot().getEndTime());
+            total = total.add(BigDecimal.valueOf(minutes)
+                    .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(sr.getRequiredFTEs())));
+        }
+        return total;
+    }
+
+    /**
+     * Total rostered person-hours over the DATES that actually carry demand — contracted hours are
+     * a weekly pattern, so each demanded date contributes its own weekday's roster. Counting
+     * weekday patterns once instead would undercount any week containing a repeated weekday.
+     */
+    private BigDecimal supplyHours(List<StaffingRequirement> demand,
+                                    Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+        Set<LocalDate> demandedDates = demand.stream()
+                .map(sr -> sr.getTimeslot().getDate())
+                .collect(Collectors.toCollection(TreeSet::new));
+        BigDecimal total = BigDecimal.ZERO;
+        for (LocalDate date : demandedDates) {
+            for (BigDecimal hours : hoursByWeekday.getOrDefault(date.getDayOfWeek(), List.of())) {
+                BigDecimal normalized = BigDecimals.normalize(hours);
+                if (normalized != null && normalized.signum() > 0) {
+                    total = total.add(normalized);
+                }
+            }
+        }
+        return total;
     }
 
     // --- Greedy-then-verify cover (P-09) ---

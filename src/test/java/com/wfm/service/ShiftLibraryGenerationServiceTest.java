@@ -215,6 +215,100 @@ class ShiftLibraryGenerationServiceTest {
         }
     }
 
+    // ---------- Supply-aware expansion beyond minimal cover ----------
+    //
+    // greedyCover answers "smallest library that covers demand". On an OVER-SUPPLIED desk that is
+    // the wrong question. Measured on the live desk: going from 3 distinct envelope spans to 5
+    // took the residual hard score from -18 to -6, and neither added span was needed for coverage
+    // — both were needed to absorb 315 surplus contracted hours. The zero-slack eligibility rule
+    // forces every agent to fill 100% of their legal slots, so with few distinct envelopes they
+    // all compete for the same hours and the losers are pushed outside their envelope.
+
+    @Test
+    void generateSuggestion_overSuppliedDesk_proposesMoreEnvelopeVarietyThanCoverageAlone() {
+        // 1 FTE/hour of demand, but 6 agents x 8h — roughly double the hours demand needs.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 21; hour++) {
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        for (int i = 0; i < 6; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        long distinctSpans = response.templates().stream()
+                .map(t -> t.startTime() + "-" + t.endTime()).distinct().count();
+        assertThat(distinctSpans)
+                .as("an over-supplied desk needs distinct legal-slot sets, not a minimal cover")
+                .isGreaterThan(1);
+        // Expansion must never cost coverage — it only ever ADDS templates.
+        assertThat(response.uncoveredWindows()).isEmpty();
+    }
+
+    @Test
+    void generateSuggestion_widensOnlyWhenSupplyExceedsDemand() {
+        // 13 hours of 1-FTE demand against a single 8h agent — supply BELOW demand. The expansion
+        // must be strictly additive to existing behaviour and do nothing here.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 21; hour++) {
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A1"),
+                WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+        long lowSupplySpans = distinctSpanCount(response);
+
+        // 13 demand-hours against 8 supply-hours: not over-supplied, so expansion must not fire.
+        // Asserted against the SAME fixture with the roster multiplied, so the only variable is
+        // supply. Note template count is NOT the measure here: greedyCover legitimately picks two
+        // templates sharing one span with different band offsets, so each covers the other's break
+        // hour (D-02 self-cover). Expansion dedupes by SPAN, so span count is what it moves.
+        for (int i = 0; i < 7; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "B" + i),
+                    WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+        }
+        long highSupplySpans = distinctSpanCount(generationService.generateSuggestion(deskId));
+
+        assertThat(highSupplySpans)
+                .as("same demand, 8x the roster — the draft must widen")
+                .isGreaterThan(lowSupplySpans);
+    }
+
+    private long distinctSpanCount(ShiftLibrarySuggestionResponse response) {
+        return response.templates().stream().map(t -> t.startTime() + "-" + t.endTime()).distinct().count();
+    }
+
+    @Test
+    void generateSuggestion_expansionNeverProposesAnEnvelopeOutsideTheDemandedRange() {
+        // Enumeration's grid-alignment check is modular and does NOT bound a span to the operating
+        // window, so an unguarded expansion could propose an envelope running past the last
+        // demanded hour. Every emitted template must sit inside the demanded range.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 21; hour++) {
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        for (int i = 0; i < 8; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.templates()).allSatisfy(t -> {
+            assertThat(t.startTime()).isAfterOrEqualTo(LocalTime.of(8, 0));
+            assertThat(t.endTime()).isBeforeOrEqualTo(LocalTime.of(21, 0));
+        });
+    }
+
     /** Full week of hourly 08:00-21:00 demand, and {@code agentCount} agents contracted 8h daily. */
     private UUID deskWithFullWeekDemandAndAgents(int agentCount) {
         UUID deskId = saveDesk(TENANT_A);
