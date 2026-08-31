@@ -2,6 +2,8 @@ package com.wfm.dto;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,7 +19,8 @@ public record ShiftLibraryValidationResponse(
         List<HoursAdvisory> hoursAdvisories,
         List<String> unsatisfiableWeekdays,
         List<CapacityAdvisory> capacityAdvisories,
-        List<BreakConcentrationAdvisory> breakConcentrationAdvisories
+        List<BreakConcentrationAdvisory> breakConcentrationAdvisories,
+        List<PeakShortfallAdvisory> peakShortfallAdvisories
 ) {
     /** SHLB-06 advisory (D-06/D-07): never blocking, except folded into unsatisfiableWeekdays. */
     public record HoursAdvisory(
@@ -70,6 +73,37 @@ public record ShiftLibraryValidationResponse(
             int bandCount,
             long admissibleHeadcount,
             long worstCaseSimultaneousBreak,
+            String message
+    ) {}
+
+    /**
+     * A single hour whose demand EXCEEDS every agent who could possibly be working it.
+     *
+     * <p>The gap this closes: every other supply check on this desk is a per-DATE aggregate.
+     * {@code SolverService.requireShiftEnvelopeSeatSupply} compares a day's contracted slots
+     * against its library-covered seat supply, and the staffing summary reports daily coverage
+     * percentages. Both can report a comfortable surplus while one hour inside that day is
+     * unmeetable — and they did. Observed live: the desk ran 143 demand-hours against 200 staffed
+     * (140% coverage, every aggregate check clean) while Saturday 11:00 required 44 FTE against
+     * 25 agents on the entire desk. Short by 19 people, invisible to everything.
+     *
+     * <p>{@code reachableAgents} is a deliberate UPPER bound: every agent rostered that weekday
+     * whose contracted hours match at least one (template, band) pair covering this hour, ignoring
+     * that those same agents must also cover other hours. A real schedule can only do worse. So a
+     * shortfall reported here is PROVABLE — no library edit and no amount of solve time can close
+     * it — which is what makes it worth blocking an operator's attention rather than another
+     * number to weigh.
+     *
+     * <p>Advisory, never blocking. An unmeetable peak is a staffing fact, not a reason to refuse a
+     * solve: the operator still wants the best partial schedule that hour admits.
+     */
+    public record PeakShortfallAdvisory(
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime,
+            int requiredFTEs,
+            long reachableAgents,
+            long shortfall,
             String message
     ) {}
 }

@@ -6,6 +6,7 @@ import com.wfm.dto.ShiftLibraryValidationResponse;
 import com.wfm.dto.ShiftLibraryValidationResponse.BreakConcentrationAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.CapacityAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.HoursAdvisory;
+import com.wfm.dto.ShiftLibraryValidationResponse.PeakShortfallAdvisory;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.AgentDayHours;
@@ -106,9 +107,12 @@ public class ShiftLibraryValidationService {
                 findCapacityAdvisories(templates, bandsByTemplateId, hoursByWeekday);
         List<BreakConcentrationAdvisory> breakConcentrationAdvisories =
                 findBreakConcentrationAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+        List<PeakShortfallAdvisory> peakShortfallAdvisories =
+                findPeakShortfalls(templates, bandsByTemplateId, demand, hoursByWeekday);
 
         return new ShiftLibraryValidationResponse(hasLiveDemand, uncoveredWindows, misalignedTemplates,
-                hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories);
+                hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories,
+                peakShortfallAdvisories);
     }
 
     /** D-08 bulk load: one query for every template's bands per {@link #validate} call. */
@@ -399,6 +403,94 @@ public class ShiftLibraryValidationService {
     private static boolean hourMatchesAnyBand(BigDecimal hours, List<BigDecimal> bandNetHours) {
         BigDecimal normalized = BigDecimals.normalize(hours);
         return bandNetHours.stream().anyMatch(net -> BigDecimals.normalize(net).compareTo(normalized) == 0);
+    }
+
+    // --- Peak-hour shortfall (the blind spot every PER-DATE aggregate shares) ---
+
+    /**
+     * Finds hours whose demand exceeds every agent who could possibly work them.
+     *
+     * <p>Every other supply check on a shift desk aggregates over a DATE.
+     * {@code SolverService.requireShiftEnvelopeSeatSupply} compares a day's contracted slots
+     * against its library-covered seat supply; the staffing summary reports daily coverage. Both
+     * can report comfortable surplus while one hour inside that day is unmeetable, because a
+     * daily total says nothing about its distribution. Observed live: 143 demand-hours against 200
+     * staffed (140% coverage, every aggregate check clean) while Saturday 11:00 needed 44 FTE
+     * against 25 agents on the whole desk.
+     *
+     * <p>{@code reachableAgents} is computed as a deliberate UPPER bound — every agent rostered
+     * that weekday whose contracted hours match at least one {@code (template, band)} pair
+     * covering the hour, ignoring that those same agents must also staff every other hour of their
+     * shift. A real schedule can only do worse. Reporting only PROVABLE shortfalls is what makes
+     * this worth an operator's attention: if it fires, no library edit and no amount of solve time
+     * can close it, so it is a staffing conversation rather than a tuning one.
+     *
+     * <p>Coverage is decided by {@link #covers} with a SINGLE band, not the template's whole band
+     * list. {@code covers} is any-band, so passing the full list would ask "could someone on this
+     * template work this hour on some band", whereas the question here is per-agent: the agent
+     * holds ONE band, and their net hours must match THAT band's. Passing one band at a time keeps
+     * the coverage predicate and the hours match describing the same pair.
+     */
+    private List<PeakShortfallAdvisory> findPeakShortfalls(List<ShiftTemplate> templates,
+                                                             Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                                             List<StaffingRequirement> demand,
+                                                             Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+        List<PeakShortfallAdvisory> advisories = new ArrayList<>();
+        for (StaffingRequirement sr : demand) {
+            LocalDate date = sr.getTimeslot().getDate();
+            Window window = new Window(date, sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
+
+            // Net-hours values an agent could hold and still be working THIS hour.
+            List<BigDecimal> coveringNetHours = new ArrayList<>();
+            for (ShiftTemplate template : templates) {
+                List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+                if (bands.isEmpty()) {
+                    if (covers(template, List.of(), window)) {
+                        coveringNetHours.add(template.getNetHours(0));
+                    }
+                    continue;
+                }
+                for (ShiftTemplateBreakBand band : bands) {
+                    if (covers(template, List.of(band), window)) {
+                        coveringNetHours.add(template.getNetHours(band.getDurationMinutes()));
+                    }
+                }
+            }
+            if (coveringNetHours.isEmpty()) {
+                continue; // no envelope reaches this hour at all — that is uncoveredWindows' job
+            }
+
+            long reachable = hoursByWeekday.getOrDefault(date.getDayOfWeek(), List.of()).stream()
+                    .filter(h -> {
+                        BigDecimal normalized = BigDecimals.normalize(h);
+                        return normalized != null
+                                && coveringNetHours.stream().anyMatch(n -> normalized.compareTo(n) == 0);
+                    })
+                    .count();
+
+            if (sr.getRequiredFTEs() > reachable) {
+                long shortfall = sr.getRequiredFTEs() - reachable;
+                advisories.add(new PeakShortfallAdvisory(date, window.startTime(), window.endTime(),
+                        sr.getRequiredFTEs(), reachable, shortfall,
+                        peakShortfallMessage(date, window, sr.getRequiredFTEs(), reachable, shortfall)));
+            }
+        }
+        advisories.sort(Comparator.comparingLong(PeakShortfallAdvisory::shortfall).reversed()
+                .thenComparing(PeakShortfallAdvisory::date)
+                .thenComparing(PeakShortfallAdvisory::startTime));
+        return advisories;
+    }
+
+    private static String peakShortfallMessage(LocalDate date, Window window, int required,
+                                                 long reachable, long shortfall) {
+        return date + " " + window.startTime() + "-" + window.endTime() + " needs " + required
+                + " agent(s), but only " + reachable + " rostered agent(s) that "
+                + date.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+                + " could be working it at all — short by " + shortfall + ". This counts every "
+                + "agent whose contracted hours match a shift covering that hour, ignoring that "
+                + "they must also staff the rest of their shift, so the real figure can only be "
+                + "lower. No library change or longer solve can close this: it needs more rostered "
+                + "agents that day, or a lower forecast for that hour.";
     }
 
     // --- Break concentration advisory (the inverse blind spot of the shortfall check) ---

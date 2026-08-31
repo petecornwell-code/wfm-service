@@ -601,6 +601,103 @@ class ShiftLibraryValidationServiceTest {
         assertThat(service.validate(deskId).breakConcentrationAdvisories()).isEmpty();
     }
 
+    // ------------------------------------------------------------------
+    //  Peak-hour shortfall — the blind spot every PER-DATE aggregate shares.
+    //
+    //  Observed live: 143 demand-hours against 200 staffed (140% coverage, every aggregate check
+    //  clean) while Saturday 11:00 needed 44 FTE against 25 agents on the entire desk. Short by 19
+    //  people and invisible to everything, because a daily total says nothing about how that day's
+    //  demand is distributed across its hours.
+    // ------------------------------------------------------------------
+
+    @Test
+    void validate_hourNeedingMoreAgentsThanExist_isReportedWithTheShortfall() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Day", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        // Only 3 agents on the desk...
+        for (int i = 0; i < 3; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        // ...against an hour demanding 10. Unmeetable by every agent working at once.
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(10, 0), 10, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.peakShortfallAdvisories()).singleElement().satisfies(a -> {
+            assertThat(a.startTime()).isEqualTo(LocalTime.of(9, 0));
+            assertThat(a.requiredFTEs()).isEqualTo(10);
+            assertThat(a.reachableAgents()).isEqualTo(3);
+            assertThat(a.shortfall()).isEqualTo(7);
+            assertThat(a.message()).contains("short by 7");
+            assertThat(a.message()).contains("more rostered agents");
+        });
+    }
+
+    @Test
+    void validate_hourWithinReach_isNotReported() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Day", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        for (int i = 0; i < 5; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(10, 0), 4, null);
+
+        assertThat(service.validate(deskId).peakShortfallAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_agentsWhoseShiftIsOnBreakThatHour_doNotCountAsReachable() {
+        // The distinction that makes this check honest. The template's ONLY band puts every agent
+        // on break 12:00-13:00, so nobody holding it can be working 12:00 — the hour is out of
+        // reach even though the envelope spans it. Counting the envelope rather than the (template,
+        // band) pair would report these agents as available and hide the shortfall.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Day", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        for (int i = 0; i < 5; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(12, 0), LocalTime.of(13, 0), 2, null);
+
+        // 12:00 is inside 08:00-17:00 but is the band's break window, so no template/band pair
+        // covers it -> the hour has no reach at all, which is uncoveredWindows' finding, not this
+        // one. This check must not double-report it.
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+        assertThat(response.uncoveredWindows()).isNotEmpty();
+        assertThat(response.peakShortfallAdvisories()).isEmpty();
+    }
+
+    @Test
+    void validate_shortfallsAreOrderedWorstFirst() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Day", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        for (int i = 0; i < 2; i++) {
+            saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A" + i),
+                    DayOfWeek.MONDAY, new BigDecimal("8.00"));
+        }
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(10, 0), 5, null);   // short by 3
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), 20, null); // short by 18
+
+        assertThat(service.validate(deskId).peakShortfallAdvisories())
+                .extracting(ShiftLibraryValidationResponse.PeakShortfallAdvisory::shortfall)
+                .containsExactly(18L, 3L);
+    }
+
     @Test
     void requireShiftModeReady_advisoriesNeverThrowAndNeverAppearInDetails() {
         UUID deskId = saveDesk(TENANT_A);
