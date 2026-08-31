@@ -1455,7 +1455,23 @@ public class SolverService {
             if (have > 0) {
                 continue; // a TimeslotDemandConfig row already governs this hour
             }
-            boolean covered = shiftBandPairs.stream().anyMatch(pair -> pair.covers(ts));
+            // "Reaches this hour" must be answered for THIS TIMESLOT'S DATE, not by clock times
+            // alone. ShiftBandPair.covers(Timeslot) compares only envelope/break TIMES — it is
+            // deliberately calendar-blind, because the constraint that uses it is already scoped to
+            // an assignment's own eligible pair. Applied to the DESK-WIDE pair list, though, that
+            // blindness manufactures seats on hours the library genuinely does not reach: on a
+            // Saturday 08:00 the weekday-only "Early" (08:00-17:00, Mon-Fri) reports covered purely
+            // on times, so a filler seat appears on an hour no WEEKEND template touches. Any agent
+            // seated there breaches their envelope by construction.
+            //
+            // Observed live after weekday enforcement landed: 9 of 12 residual violations sat on
+            // weekend 08:00/09:00/20:00 — all zero-demand hours, all reachable only by a weekday
+            // template. Same calendar-blindness class as the validWeekdays eligibility defect, in
+            // the seat-supply path rather than the value range.
+            LocalDate tsDate = ts.getDate();
+            boolean covered = shiftBandPairs.stream()
+                    .filter(pair -> pair.template().isEffectiveOn(tsDate) && pair.template().appliesOn(tsDate))
+                    .anyMatch(pair -> pair.covers(ts));
             if (!covered) {
                 continue; // OR-1: the library does not reach this hour -- no seat
             }

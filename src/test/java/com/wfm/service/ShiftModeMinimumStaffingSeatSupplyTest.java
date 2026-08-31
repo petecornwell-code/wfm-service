@@ -204,6 +204,73 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
     }
 
     // ------------------------------------------------------------------
+    //  "Covered" must be answered for the timeslot's DATE, not by clock times alone.
+    //
+    //  ShiftBandPair.covers(Timeslot) compares only envelope/break TIMES — deliberately
+    //  calendar-blind, because the constraint using it is already scoped to an assignment's own
+    //  eligible pair. Applied to the DESK-WIDE pair list it manufactures seats on hours the
+    //  library does not reach: on a Saturday, a Mon-Fri template reports "covered" purely on
+    //  times, so a filler seat appears on an hour no weekend template touches, and any agent
+    //  seated there breaches their envelope by construction.
+    //
+    //  Observed live once weekday enforcement landed: 9 of 12 residual hard violations sat on
+    //  weekend 08:00/09:00/20:00 — all zero-demand hours reachable only by a weekday template.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SHIFT: a template not valid on that weekday does not make the hour 'covered'")
+    void weekdayOnlyTemplateDoesNotCoverAWeekendHour() {
+        Specialization english = spec("English");
+        ShiftTemplate weekdayOnly = template();
+        weekdayOnly.setValidWeekdays(java.util.EnumSet.of(
+                java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.TUESDAY, java.time.DayOfWeek.WEDNESDAY,
+                java.time.DayOfWeek.THURSDAY, java.time.DayOfWeek.FRIDAY));
+        ShiftBandPair pair = new ShiftBandPair(weekdayOnly, band(weekdayOnly));
+
+        // DAY is 2026-01-12, a Monday. Solve a SATURDAY instead, where this template must not apply.
+        LocalDate saturday = LocalDate.of(2026, 1, 17);
+        assertThat(saturday.getDayOfWeek()).isEqualTo(java.time.DayOfWeek.SATURDAY);
+        List<Timeslot> window = operatingWindow().stream().map(ts -> {
+            Timeslot copy = new Timeslot();
+            copy.setId(UUID.randomUUID());
+            copy.setTenantId(TENANT);
+            copy.setDeskId(DESK);
+            copy.setDate(saturday);
+            copy.setStartTime(ts.getStartTime());
+            copy.setEndTime(ts.getEndTime());
+            return copy;
+        }).toList();
+
+        List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
+                TENANT, DESK, SCHEDULE, window, new ArrayList<>(),
+                List.of(), List.of(english),
+                SchedulingMode.SHIFT, List.of(pair), Map.of(saturday, 3));
+
+        // Every hour the template's TIMES span is uncovered on a Saturday, so no seat may exist —
+        // before the fix these hours were seeded purely on the clock and forced envelope breaches.
+        assertThat(extra)
+                .as("a Mon-Fri template cannot make a Saturday hour reachable")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("SHIFT: a retired template does not make the hour 'covered' either")
+    void retiredTemplateDoesNotCoverTheHour() {
+        Specialization english = spec("English");
+        ShiftTemplate retired = template();
+        retired.setEffectiveFrom(LocalDate.of(2025, 1, 1));
+        retired.setEffectiveTo(LocalDate.of(2025, 12, 31)); // entirely before DAY
+        ShiftBandPair pair = new ShiftBandPair(retired, band(retired));
+
+        List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
+                TENANT, DESK, SCHEDULE, operatingWindow(), new ArrayList<>(),
+                List.of(), List.of(english),
+                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3));
+
+        assertThat(extra).as("a retired template reaches no hour").isEmpty();
+    }
+
+    // ------------------------------------------------------------------
     //  Test 3 -- SHIFT, covered hour that already has demand seats: unchanged
     // ------------------------------------------------------------------
 
