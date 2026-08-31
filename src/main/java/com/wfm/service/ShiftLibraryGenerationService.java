@@ -157,7 +157,7 @@ public class ShiftLibraryGenerationService {
                 .map(w -> new ErrorDetail("coverage", w.date() + " " + w.startTime() + "-" + w.endTime(), null))
                 .toList();
 
-        return buildResponse(selected, uncoveredDetails);
+        return buildResponse(selected, uncoveredDetails, hoursByWeekday, bounds.incrementMinutes());
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
@@ -392,21 +392,127 @@ public class ShiftLibraryGenerationService {
 
     // --- Response assembly (P-10/P-11) ---
 
-    private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected, List<ErrorDetail> uncoveredDetails) {
+    /**
+     * The break bands a suggested template is emitted with. Chosen so a draft an operator accepts
+     * unchanged is one the solver can actually use.
+     *
+     * <p>THREE, not one. Coverage enumeration reasons about ONE band because a band's only role
+     * there is which hour it leaves unworked. But a single band means every agent on that shift
+     * breaks in the SAME hour. Observed live: a one-band library gave 18 of 18 agents a 16:00
+     * break, emptied the hour, and forced agents to work through their own break to hold it — 13
+     * hard violations from a draft that passed every validation check. Splitting into three bands
+     * removed all of them.
+     */
+    private static final int SUGGESTED_BAND_COUNT = 3;
+
+    private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected,
+                                                          List<ErrorDetail> uncoveredDetails,
+                                                          Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                          int incrementMinutes) {
         LocalDate today = LocalDate.now();
         List<SuggestedTemplate> templates = new ArrayList<>();
         int index = 1;
         for (Candidate candidate : selected) {
-            List<SuggestedBand> bands = candidate.bands().stream()
-                    .sorted(Comparator.comparingInt(ShiftTemplateBreakBand::getOffsetMinutes))
-                    .map(b -> new SuggestedBand(b.getOffsetMinutes(), b.getDurationMinutes(), null))
-                    .toList();
             List<DayOfWeek> validWeekdays = candidate.template().getValidWeekdays().stream().sorted().toList();
+            List<SuggestedBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday, incrementMinutes);
             templates.add(new SuggestedTemplate("Suggested " + index, candidate.template().getStartTime(),
                     candidate.template().getEndTime(), bands, validWeekdays, today, null, candidate.netHours()));
             index++;
         }
         return new ShiftLibrarySuggestionResponse(templates, uncoveredDetails);
+    }
+
+    /**
+     * Expands the selected candidate's single coverage-bearing band into {@link
+     * #SUGGESTED_BAND_COUNT} grid-aligned, capacity-capped bands.
+     *
+     * <p>Done HERE rather than during enumeration for three reasons. Band count does not affect
+     * {@code netHours} (duration is unchanged), so eligibility — an exact net-hours match against
+     * contracted hours — is untouched. {@code covers()} is ANY-band, so additional bands can only
+     * ADD coverage, never remove it, and the cover guarantee {@code greedyCover} established is
+     * preserved by construction. And expanding during enumeration would multiply an already
+     * capped candidate space for no gain in the cover search.
+     *
+     * <p>A zero-band candidate stays zero-band: that is the break-less template the enumeration
+     * deliberately admits only below the desk's {@code breakMinShiftHours} threshold, and it means
+     * "no break", which has nothing to spread.
+     *
+     * <p><b>Reverses P-11's "capacity always blank on a generated band".</b> That rule made the
+     * generator's own output invisible to {@code ShiftLibraryValidationService}: its capacity check
+     * skips any template carrying a blank-capacity band as "unlimited by construction", so a
+     * generated draft could not be assessed by the very validator meant to guard it. Blank capacity
+     * is also precisely what permits a whole shift to break at once.
+     */
+    private List<SuggestedBand> suggestedBands(Candidate candidate, List<DayOfWeek> validWeekdays,
+                                                Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                int incrementMinutes) {
+        if (candidate.durationMinutes() == 0 || candidate.bands().isEmpty()) {
+            return List.of(); // break-less template: no break to spread
+        }
+
+        int duration = candidate.durationMinutes();
+        // Same bounds enumerateCandidates uses, so every emitted band is one
+        // ShiftTemplateService.validateGridAlignment would accept.
+        int minOffset = incrementMinutes;
+        int maxOffset = candidate.spanLengthMinutes() - duration - incrementMinutes;
+
+        Set<Integer> offsets = new TreeSet<>();
+        offsets.add(candidate.offsetMinutes()); // the coverage-bearing band is always kept
+        for (int step = 1; offsets.size() < SUGGESTED_BAND_COUNT; step++) {
+            int before = candidate.offsetMinutes() - step * incrementMinutes;
+            int after = candidate.offsetMinutes() + step * incrementMinutes;
+            boolean progressed = false;
+            if (after <= maxOffset) {
+                offsets.add(after);
+                progressed = true;
+            }
+            if (offsets.size() < SUGGESTED_BAND_COUNT && before >= minOffset) {
+                offsets.add(before);
+                progressed = true;
+            }
+            if (!progressed) {
+                break; // span too short to hold more bands — emit what fits
+            }
+        }
+
+        Integer capacity = suggestedCapacity(candidate, validWeekdays, hoursByWeekday, offsets.size());
+        return offsets.stream().map(o -> new SuggestedBand(o, duration, capacity)).toList();
+    }
+
+    /**
+     * Per-band capacity: {@code floor(headcount / 2)}, floored at 1.
+     *
+     * <p>Satisfies both constraints that bound this number, which pull in opposite directions.
+     * TOTAL capacity must EXCEED the headcount — {@code bandCapacityWeight} is {@code ofHard(1)},
+     * so under-sizing does not merely degrade a schedule, it makes the desk unsolvable; with three
+     * bands, {@code 3 * floor(h/2) >= h} for every {@code h >= 2}. And no SINGLE band may admit
+     * more than half the shift, which is the threshold {@code ShiftLibraryValidationService}'s
+     * break-concentration advisory warns at; {@code 2 * floor(h/2) <= h} always. So a draft
+     * accepted unchanged is one that validator reports clean.
+     *
+     * <p>Headcount is the MAXIMUM across the template's valid weekdays, not the sum or the mean:
+     * capacity must hold on the busiest day the template serves, not on an average day that may
+     * never occur.
+     */
+    private Integer suggestedCapacity(Candidate candidate, List<DayOfWeek> validWeekdays,
+                                       Map<DayOfWeek, List<BigDecimal>> hoursByWeekday, int bandCount) {
+        long headcount = 0;
+        for (DayOfWeek weekday : validWeekdays) {
+            long onThisDay = hoursByWeekday.getOrDefault(weekday, List.of()).stream()
+                    .filter(h -> BigDecimals.normalize(h).compareTo(candidate.netHours()) == 0)
+                    .count();
+            headcount = Math.max(headcount, onThisDay);
+        }
+        if (headcount <= 0) {
+            return null; // no agent can hold this template; leave unlimited rather than invent a cap
+        }
+        long perBand = Math.max(1, headcount / 2);
+        // Defensive: with fewer bands than intended (a short span), still keep the total above the
+        // headcount so the hard capacity constraint cannot be the thing that breaks the desk.
+        while ((long) bandCount * perBand < headcount) {
+            perBand++;
+        }
+        return (int) perBand;
     }
 
     private record BreakConfig(int breakDurationMinutes, BigDecimal breakMinShiftHours) {}

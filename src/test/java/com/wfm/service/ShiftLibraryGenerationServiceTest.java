@@ -139,6 +139,102 @@ class ShiftLibraryGenerationServiceTest {
         assertThat(anyMultiBand || anySingleBand).isTrue();
     }
 
+    // ---------- Generated drafts must be usable, not merely covering ----------
+    //
+    // The generator previously emitted ONE band per template with capacity always blank (P-11).
+    // That draft passed every validation check and was the exact shape that, on the live desk,
+    // gave 18 of 18 agents the same 16:00 break, emptied the hour, and forced agents to work
+    // through their own break to hold it — 13 hard violations from an accepted suggestion.
+    //
+    // Blank capacity also made the generator's own output invisible to the validator: the capacity
+    // check skips any template carrying a blank-capacity band as "unlimited by construction".
+
+    @Test
+    void generateSuggestion_bandedTemplates_emitMultipleBandsWithARealCapacity() {
+        UUID deskId = deskWithFullWeekDemandAndAgents(12);
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.templates()).isNotEmpty();
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            if (t.bands().isEmpty()) {
+                continue; // break-less template: nothing to spread (covered by its own test)
+            }
+            assertThat(t.bands()).as("a single band means the whole shift breaks together").hasSize(3);
+            assertThat(t.bands()).allSatisfy(b -> {
+                assertThat(b.capacity()).as("blank capacity hides the template from the validator").isNotNull();
+                assertThat(b.capacity()).isPositive();
+            });
+            // Distinct offsets, all sharing the candidate's duration so netHours is unchanged.
+            assertThat(t.bands()).extracting(ShiftLibrarySuggestionResponse.SuggestedBand::offsetMinutes)
+                    .doesNotHaveDuplicates();
+            assertThat(t.bands()).extracting(ShiftLibrarySuggestionResponse.SuggestedBand::durationMinutes)
+                    .containsOnly(t.bands().get(0).durationMinutes());
+        }
+    }
+
+    @Test
+    void generateSuggestion_acceptedUnchanged_isReportedCleanByTheValidator() {
+        // The round trip that matters: a draft an operator accepts without editing must come back
+        // clean from the validator that guards it — including the break-concentration check.
+        UUID deskId = deskWithFullWeekDemandAndAgents(12);
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            saveGeneratedTemplate(deskId, t);
+        }
+
+        var validation = validationService.validate(deskId);
+        assertThat(validation.uncoveredWindows()).isEmpty();
+        assertThat(validation.capacityAdvisories())
+                .as("total band capacity must clear headcount — bandCapacity is a HARD constraint")
+                .isEmpty();
+        assertThat(validation.breakConcentrationAdvisories())
+                .as("the generator must not emit the shape its own validator warns about")
+                .isEmpty();
+    }
+
+    @Test
+    void generateSuggestion_bandCapacityTotal_exceedsTheHeadcountItMustSeat() {
+        // bandCapacityWeight is ofHard(1): under-sizing does not degrade a schedule, it makes the
+        // desk unsolvable. Sizing must therefore err high, never low.
+        int agents = 12;
+        UUID deskId = deskWithFullWeekDemandAndAgents(agents);
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            if (t.bands().isEmpty()) {
+                continue;
+            }
+            int total = t.bands().stream().mapToInt(ShiftLibrarySuggestionResponse.SuggestedBand::capacity).sum();
+            int largest = t.bands().stream().mapToInt(ShiftLibrarySuggestionResponse.SuggestedBand::capacity).max().orElseThrow();
+            assertThat(total).as("total capacity must seat every admissible agent").isGreaterThanOrEqualTo(agents);
+            assertThat(largest * 2).as("no single band may admit more than half the shift")
+                    .isLessThanOrEqualTo(agents);
+        }
+    }
+
+    /** Full week of hourly 08:00-21:00 demand, and {@code agentCount} agents contracted 8h daily. */
+    private UUID deskWithFullWeekDemandAndAgents(int agentCount) {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            for (int hour = 8; hour < 21; hour++) {
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+            }
+        }
+        for (int i = 0; i < agentCount; i++) {
+            Agent agent = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, agent, weekday, new BigDecimal("8.00"));
+            }
+        }
+        return deskId;
+    }
+
     // ---------- Task 2: partial coverage and refusal ----------
 
     @Test
