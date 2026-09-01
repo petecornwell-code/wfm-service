@@ -444,6 +444,156 @@ class SolverQualityGuardTest {
     }
 
     // ------------------------------------------------------------------
+    //  Task 2 (plan 15-15) -- the thesis proof (score-derived evidence goes blind to a defect
+    //  the structural walker still sees) and the failure-report content proof
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("thesis proof: at zero weight, the violation-count table goes blind to a defect the walker still sees")
+    void thesisProof_atZeroWeightTheViolationCountTableGoesBlind_butTheWalkerStillSeesTheSplit() {
+        Schedule solved = solveCleanFixture();
+        Map<String, List<AgentAssignment>> seatsByAgentDate = seatsByAgentDate(solved);
+
+        AgentShiftAssignment target = solved.getShiftAssignments().stream()
+                .filter(sa -> sa.getShiftBandPair() != null)
+                .filter(sa -> heldStartCount(seatsByAgentDate, sa) >= 3)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no agent-day with >= 3 held slots found to corrupt"));
+
+        List<AgentAssignment> seats = seatsByAgentDate.get(target.getAgent().getId() + "@" + target.getDate());
+        ShiftTemplate template = target.getShiftBandPair().template();
+        ShiftTemplateBreakBand band = target.getShiftBandPair().band();
+        LocalTime breakStart = template.getStartTime().plusMinutes(band.getOffsetMinutes());
+        LocalTime breakEnd = breakStart.plusMinutes(band.getDurationMinutes());
+
+        List<LocalTime> heldStarts = seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().sorted().toList();
+        LocalTime first = heldStarts.get(0);
+        LocalTime last = heldStarts.get(heldStarts.size() - 1);
+        LocalTime victimSlot = heldStarts.stream()
+                .filter(t -> t.isAfter(first) && t.isBefore(last))
+                .filter(t -> t.isBefore(breakStart) || !t.isBefore(breakEnd))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no interior non-break slot to corrupt"));
+
+        // ONE solve only -- solveCleanFixture() above. Everything from here mutates the
+        // already-solved schedule and its constraint weights; nothing ever re-solves.
+        unseat(solved, target.getAgent().getId(), target.getDate(), victimSlot);
+
+        Map<String, Integer> countsAtLiveWeight = hardMatchCountsByConstraint(solved);
+        assertThat(countsAtLiveWeight)
+                .as("at the fixture's live weight, the violation-count table must show the corrupted "
+                        + "constraint with a count of 1: %s", countsAtLiveWeight)
+                .containsEntry("Shift work contiguity", 1);
+
+        List<SplitShift> splitsAtLiveWeight = findSplitShifts(solved);
+        assertThat(splitsAtLiveWeight)
+                .as("the structural walker must see exactly the one injected hole at the live weight")
+                .hasSize(1);
+
+        solved.getConstraintWeights().setShiftWorkContiguityWeight(HardSoftScore.ofHard(0));
+
+        Map<String, Integer> countsAtZeroWeight = hardMatchCountsByConstraint(solved);
+        assertThat(countsAtZeroWeight)
+                .as("at zero weight, the SAME defect must have vanished from the violation-count table -- "
+                        + "the mechanical demonstration of G-15-29's thesis: %s", countsAtZeroWeight)
+                .doesNotContainKey("Shift work contiguity");
+
+        List<SplitShift> splitsAtZeroWeight = findSplitShifts(solved);
+        assertThat(splitsAtZeroWeight)
+                .as("the structural walker must report the IDENTICAL single hole after the weight change "
+                        + "-- it is a function of the schedule alone, never of the weights")
+                .isEqualTo(splitsAtLiveWeight);
+    }
+
+    @Test
+    @DisplayName("the failure report names the broken invariant and carries the violation-count comparison guidance (G-15-29)")
+    void failureReport_namesTheBrokenInvariantAndCarriesTheComparisonGuidance() {
+        Schedule solved = solveCleanFixture();
+        Map<String, List<AgentAssignment>> seatsByAgentDate = seatsByAgentDate(solved);
+
+        AgentShiftAssignment target = solved.getShiftAssignments().stream()
+                .filter(sa -> sa.getShiftBandPair() != null)
+                .filter(sa -> heldStartCount(seatsByAgentDate, sa) >= 3)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no agent-day with >= 3 held slots found to corrupt"));
+
+        List<AgentAssignment> seats = seatsByAgentDate.get(target.getAgent().getId() + "@" + target.getDate());
+        ShiftTemplate template = target.getShiftBandPair().template();
+        ShiftTemplateBreakBand band = target.getShiftBandPair().band();
+        LocalTime breakStart = template.getStartTime().plusMinutes(band.getOffsetMinutes());
+        LocalTime breakEnd = breakStart.plusMinutes(band.getDurationMinutes());
+        List<LocalTime> heldStarts = seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().sorted().toList();
+        LocalTime first = heldStarts.get(0);
+        LocalTime last = heldStarts.get(heldStarts.size() - 1);
+        LocalTime victimSlot = heldStarts.stream()
+                .filter(t -> t.isAfter(first) && t.isBefore(last))
+                .filter(t -> t.isBefore(breakStart) || !t.isBefore(breakEnd))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no interior non-break slot to corrupt"));
+        unseat(solved, target.getAgent().getId(), target.getDate(), victimSlot);
+
+        List<SplitShift> splits = findSplitShifts(solved);
+        List<EdgeBreak> edgeBreaks = findEdgeBreaks(solved);
+        List<UnstaffedEdgeHour> unstaffed = findUnstaffedEdgeHours(solved, LiveShapeShiftDeskFixture.EDGE_HOURS);
+        assertThat(splits).as("sanity: the corruption must actually produce exactly one split shift").hasSize(1);
+
+        long seed = SEEDS[0];
+        String reportInv1 = buildQualityReport("INV-1 SPLIT SHIFTS", seed, solved, splits, edgeBreaks, unstaffed);
+        String reportInv3 = buildQualityReport("INV-3 EDGE-HOUR COVERAGE", seed, solved, splits, edgeBreaks, unstaffed);
+
+        assertThat(reportInv1.startsWith("INV-1 SPLIT SHIFTS"))
+                .as("the report built for the split-shift invariant must start with a line naming it")
+                .isTrue();
+        assertThat(reportInv3.startsWith("INV-3 EDGE-HOUR COVERAGE"))
+                .as("the report built for the edge-hour-coverage invariant must start with a line naming it")
+                .isTrue();
+
+        assertThat(reportInv1)
+                .as("the report must carry the run's reproduction parameters -- seed and step-count limit")
+                .contains("seed=" + seed)
+                .contains("stepCountLimit=");
+
+        assertThat(reportInv1)
+                .as("the report must carry the four pinned weight values")
+                .contains("shiftEnvelopeCompliance=10hard")
+                .contains("shiftWorkContiguity=10hard")
+                .contains("bandCapacity=1hard")
+                .contains("unassignedAssignment=10000soft");
+
+        assertThat(reportInv1)
+                .as("the report must name the corrupted agent's id as a substring")
+                .contains(target.getAgent().getId().toString());
+
+        assertThat(reportInv1)
+                .as("the report must name the offending date as a substring")
+                .contains(target.getDate().toString());
+
+        assertThat(reportInv1)
+                .as("the report must carry a per-constraint table row pairing the corrupted constraint's "
+                        + "name with its violation count")
+                .contains("Shift work contiguity | 1");
+
+        assertThat(reportInv1)
+                .as("the report must direct the reader to compare violation counts per constraint, never "
+                        + "raw hard scores, across weight changes")
+                .contains("compare violation counts per constraint");
+
+        assertThat(reportInv1)
+                .as("the report must carry the G-15-29 pointer")
+                .contains("G-15-29");
+
+        String hardScoreContextLine = "(reported hard score, CONTEXT ONLY, never asserted on directly: "
+                + solved.getScore() + ")";
+        assertThat(reportInv1)
+                .as("the report must carry the reported hard score exactly once, on a line labelled as "
+                        + "context rather than as a criterion")
+                .contains(hardScoreContextLine);
+        assertThat(countOccurrences(reportInv1, hardScoreContextLine))
+                .as("the hard-score context line must appear exactly once in the report")
+                .isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------
     //  Task 3 reporting -- markdown tables printed to stdout, transcribed verbatim into the SUMMARY
     // ------------------------------------------------------------------
 
@@ -582,6 +732,17 @@ class SolverQualityGuardTest {
     private static long heldStartCount(Map<String, List<AgentAssignment>> seatsByAgentDate, AgentShiftAssignment sa) {
         List<AgentAssignment> seats = seatsByAgentDate.getOrDefault(sa.getAgent().getId() + "@" + sa.getDate(), List.of());
         return seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().count();
+    }
+
+    /** Number of non-overlapping occurrences of {@code needle} in {@code haystack}. */
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) != -1) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
     }
 
     // ------------------------------------------------------------------
