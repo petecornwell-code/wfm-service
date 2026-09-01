@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T00:20:00Z"
+updated: "2026-09-02T00:30:00Z"
 ---
 
 <!--
@@ -89,11 +89,11 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 11
-name: No agent is seated outside their assigned shift envelope
+number: 13
+name: Agent Allocation groups by shift on a shift desk
 expected: |
-  Every agent works only within the envelope of the single shift assigned to them that day; each
-  working agent-day has exactly one shift. This is the phase's core hard-constraint guarantee.
+  On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their
+  assigned shift, each group naming the shift and its headcount.
 awaiting: user response
 
 <!--
@@ -901,11 +901,17 @@ session_2026_09_01: |
 ### 11. No agent is seated outside their assigned shift envelope
 
 expected: Every agent works only within the envelope of the single shift assigned to them that day; each working agent-day has exactly one shift. This is the phase's core hard-constraint guarantee.
-result: [pending]
-awaiting_verdict: |
-  MEASURED 2026-09-01 from the API, not read off the UI. The SUBSTANCE passes cleanly. The
-  operator's call is whether a guarantee an operator CANNOT SEE through the product counts as a
-  pass — the same shape of question test 10's session_2026_09_01 left open. Recommendation below.
+result: pass
+verdict: |
+  PASSED on substance by operator ruling, 2026-09-01 ("pass it"). Both limbs hold on the schedule
+  the desk is live on, verified two independent ways. The reporting defect found while measuring
+  it is filed SEPARATELY as G-15-32 and does NOT attach to this test — deliberately, because it is
+  a read-path defect that would equally misreport a clean schedule or a broken one, and pinning it
+  to test 11 would re-open a constraint this file has already exonerated.
+  Recorded caveat: an operator running this test through the UI today would still SEE
+  "Violated hard constraints: Shift envelope compliance". Test 11 is verified BELOW that display,
+  not through it, and does not become false if the display is later fixed.
+measured_from: API, not the UI — the display is the thing that is wrong here.
 method: |
   An INDEPENDENT structural walker, deliberately sharing no code with the score director — the
   G-15-29 methodology applied to a read path instead of to a solve. For every agent-day it takes
@@ -1136,18 +1142,18 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 10
+passed: 11
 issues: 1
-pending: 7
+pending: 6
 skipped: 1
 blocked: 1
 
 <!--
-  passed : 1, 2, 3, 4, 5, 6, 7, 8, 9, 12
+  passed : 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12
   issue  : 10 (major, was blocker — search plateau, all structural causes fixed)
   skipped: 5b (probe artefact bookkeeping, now closed by the delete control)
   blocked: 18 (production deploy, unchanged)
-  pending: 11, 13, 14, 15, 16, 17, 19
+  pending: 13, 14, 15, 16, 17, 19
 
   TEST 3 CLOSED 2026-09-01 via operator-chosen route (b) — a throwaway DESK (created and deleted
   in-session, cascade disposal verified) carrying a one-band template in the Phase 14 shape. The
