@@ -630,6 +630,57 @@ ab_experiment_2026_09_01: |
   -1 as ratified until someone rules on that.
   residual_1: "One envelope violation remains, plus 39 unworked legal slots (normal under bounded
     slack — see test 19's expectation_correction)."
+weekend_edge_coverage_2026_09_01: |
+  OPERATOR RULING, and it QUALIFIES OR-1. Asked about weekend 08:00-09:00 sitting empty, the
+  operator ruled: "they need to be staffed by at least ONE agent." OR-1 said an hour the library
+  does not reach is deliberately unstaffed and renders as such. That remains true as a RENDERING
+  rule, but it is NOT a licence for the library to stop reaching an hour the desk actually opens.
+  Unstaffed-by-design must be a decision, not a side effect of a retirement nobody re-examined.
+
+  WHAT WAS ACTUALLY EMPTY (accepted schedule aa17cc3c, both weekend days):
+    08:00 -> 0 agents, 09:00 -> 0 agents, AND 20:00 -> 0 agents (the operator asked about 08-10;
+    20:00 was found alongside it, same cause, and was fixed in the same change).
+
+  CAUSE: three weekend templates carried effectiveFrom 2026-01-01 AND effectiveTo 2026-01-01 —
+  live for exactly one day, retired for the whole schedule period:
+      Weekend Opening 08:00-17:00   was the ONLY weekend template reaching 08:00 and 09:00
+      Weekend Morning 09:00-18:00   09:00
+      Weekend Closing 12:00-21:00   was the ONLY weekend template reaching 20:00
+  With none live, no band reached those hours; date-aware seat expansion (6c82241) therefore
+  created no seat; minimumStaffing groups by timeslot over AgentAssignment rows, so with ZERO rows
+  it emits no tuple and never fires. An hour with no seat is silently exempt from the very
+  constraint meant to guarantee it — on this desk minStaffing is ofHard(10), so the guarantee looks
+  strong and is simply absent where it is most needed.
+
+  FIX APPLIED: un-retired Weekend Opening and Weekend Closing (effectiveTo -> null). Break offsets
+  set deliberately, NOT copied:
+      Weekend Opening 08:00-17:00  offsets 300/360/420 = breaks 13:00/14:00/15:00
+        — offset 0/60 REJECTED: a break at 08:00 or 09:00 would vacate the exact hours being fixed.
+        — the default 180 REJECTED: that is 11:00, the demand peak (44 FTE Sat, 32 Sun).
+      Weekend Closing 12:00-21:00  offsets 180/240/300 = breaks 15:00/16:00/17:00, clear of 20:00.
+  Weekend Morning left retired — Opening covers 08:00 and 09:00 together, and one Opening holder
+  (net 8.0, zero slack) must work every legal slot, so it necessarily staffs both.
+
+  RESULT — Run D 1c93a7a5, ACCEPTED as 709fd8b4. Same params as the A/B (250/50, 300s):
+      hard -1   soft -70   feasible false
+      Sat 2026-01-10   08:00 = 1   09:00 = 1   20:00 = 2
+      Sun 2026-01-11   08:00 = 3   09:00 = 3   20:00 = 2
+  Requirement met on every hour. Hard score unchanged from Run B; the cost is SOFT, -58 -> -70,
+  which is the honest price of seating agents on hours carrying no forecast demand.
+
+  RESIDUAL -1: Tekla Davitashvili, 2026-01-11 20:00-21:00. Structurally the SAME pattern as the
+  Tuesday 08:00 case — the boundary hour is reachable by exactly one template (Weekend Closing),
+  too few agents hold it, so one agent covers it from outside their envelope. The general lesson:
+  wherever a single template is the sole route to a boundary hour, its headcount becomes a hard
+  constraint nothing in the UI surfaces.
+
+  0 HARD IS REACHABLE ON THIS DESK — schedule bff23a47 (hard 0, soft -66, feasible TRUE) was
+  observed this session, on the pre-fix library and therefore WITHOUT the weekend edge coverage.
+  It is not a valid answer to the operator's requirement, but it settles a question the phase has
+  carried since G-15-10 was filed: feasibility is attainable, so the -1 residuals are search
+  misses, not a structural floor. PROVENANCE UNCONFIRMED — that solve was not started by this
+  session; it appeared mid-session and may have been launched from the UI. Do not cite it as a
+  controlled result without re-deriving it.
 
 ### 11. No agent is seated outside their assigned shift envelope
 
