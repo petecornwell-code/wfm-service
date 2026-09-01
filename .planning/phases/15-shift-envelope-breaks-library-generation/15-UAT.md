@@ -1240,6 +1240,61 @@ blocked: 1
     re-deriving violations against the CURRENT library rather than the accepted one. Same read-path
     family as CR-04 (test 20). Not chased this session.
 
+- gap_id: G-15-27
+  truth: "An agent's working hours must be contiguous apart from their break"
+  status: open
+  severity: blocker
+  found_by: operator, 2026-09-01 — "it breaks the need for an agent to work contiguous hours. That's a no-no."
+  regression_introduced_by: "81117e3 / V44 bounded envelope slack — this phase's own gap-closure fix"
+  detail: |
+    MEASURED on the accepted schedule 709fd8b4: 24 of 138 agent-days (17%) contain a NON-BREAK
+    hole in the working day — a split shift. Some contain two, fragmenting the day into three
+    pieces, e.g. Darien Speranza 2026-01-10 on 10:00-20:00: works 10,11 / GAP 12 / 13 / BREAK 14 /
+    15,16,17,18,19.
+
+    THE CAUSE IS SLACK, and the correlation is one-for-one:
+
+        shift          net hours          agent-days   split
+        10:00-20:00    9.0  SLACK = 1         30         23      <-- 77%
+        10:00-19:00    8.0  zero slack        12          0
+        11:00-20:00    8.0  zero slack        30          0
+        12:00-21:00    8.0  zero slack        40          0
+        09:00-18:00    8.0  zero slack        10          0
+        08:00-17:00    8.0  zero slack        16          1
+
+    Every split is on the ONE template whose net hours exceed contracted hours. Zero-slack
+    templates cannot split, because the agent must occupy 100% of their legal slots.
+
+    WHY NOTHING CAUGHT IT. In SHIFT mode all four break-geometry constraints are gated off
+    (ScheduleConstraintProvider, `ifExists cfg.schedulingMode() != SHIFT`), and NO constraint
+    requires an agent's worked slots to be contiguous. Under the ORIGINAL zero-slack rule that did
+    not matter: legal slots equalled contracted slots exactly, so contiguity was guaranteed BY
+    ACCIDENT. V44 relaxed the equality to fix D1 and thereby removed a guarantee nobody had
+    written down, in a mode where nothing else enforces it.
+
+    This is the second time this phase has been bitten by the same shape: a property held
+    incidentally by a constraint, then lost when that constraint was relaxed for an unrelated
+    reason. The first was G-15-10's zero-slack identity itself.
+
+    UI FRAMING MAKES IT WORSE. The hole surfaces as "Legal slot left unworked", which after V44
+    reads as benign — test 19's own expectation was amended this session to say exactly that. That
+    amendment is now known to be INCOMPLETE: an unworked legal slot at the envelope BOUNDARY is
+    benign (a shorter contiguous day); an unworked legal slot in the INTERIOR is a split shift and
+    is not acceptable. The marker cannot be judged without knowing which it is.
+  fix: |
+    PROPER FIX (code): a hard constraint in SHIFT mode that an agent-day's worked slots form at
+    most two contiguous runs separated only by the assigned break — equivalently, no unworked
+    legal slot may lie strictly between two worked slots unless it is the break. Slack should be
+    spendable only at the envelope boundary (late start / early finish), never in the interior.
+
+    IMMEDIATE OPERATOR LEVER, no code, no data change: `shiftEnvelopeSlackSlots: 0` is exposed on
+    SolveRequest.java:25. Setting it to 0 restores contiguity by construction. COST: it also makes
+    Weekend Flex (net 9.0) ineligible for 8h agents entirely, and 30 agent-days currently sit on
+    it — they would redistribute across Opening/Early/Late/Closing. Whether that is acceptable is
+    an operator call, and it should be MEASURED before being recommended.
+  test_gap: "No test asserts contiguity in SHIFT mode. Add one before fixing, so the fix is
+    guarded — this is the same omission that let the acceptor regression ship green (G-15-22)."
+
 - gap_id: G-15-26
   truth: "An unsupported HTTP method must return 405, not 500 INTERNAL_ERROR"
   status: open
