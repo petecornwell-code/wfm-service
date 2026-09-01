@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-01T23:55:00Z"
+updated: "2026-09-02T00:20:00Z"
 ---
 
 <!--
@@ -902,6 +902,60 @@ session_2026_09_01: |
 
 expected: Every agent works only within the envelope of the single shift assigned to them that day; each working agent-day has exactly one shift. This is the phase's core hard-constraint guarantee.
 result: [pending]
+awaiting_verdict: |
+  MEASURED 2026-09-01 from the API, not read off the UI. The SUBSTANCE passes cleanly. The
+  operator's call is whether a guarantee an operator CANNOT SEE through the product counts as a
+  pass — the same shape of question test 10's session_2026_09_01 left open. Recommendation below.
+method: |
+  An INDEPENDENT structural walker, deliberately sharing no code with the score director — the
+  G-15-29 methodology applied to a read path instead of to a solve. For every agent-day it takes
+  the authoritative ShiftDescriptor (templateName, startTime, endTime, bandOffsetMinutes,
+  bandDurationMinutes), derives legal slots = envelope MINUS the assigned band's break window, and
+  counts held seats outside that set. Limb 2 is checked separately: an agent-day with assignments
+  but a null `shift` would be a working day with no shift.
+walker_validation: |
+  THE WALKER IS ITSELF VALIDATED, which matters more than any single number it produced. Run
+  against all six ACCEPTED schedules on the desk, it reproduces EVERY hard score this file has
+  recorded, exactly:
+
+      9bd158dd  walker 12   <-> "-12 after bounded slack + Weekend Flex"   (test 10 progression)
+      e6728aab  walker  9   <-> "-9" the baseline the whole session cites
+      709fd8b4  walker  1   <-> "-1" Run D (weekend_edge_coverage)
+      523c8785  walker  0   <-> "hard 0, FEASIBLE"
+      b88cc98f  walker  0   <-> "0 HARD / -60 soft, FEASIBLE" (session_2026_09_01 Run 1)
+      6a10afa1  walker  0   <-> newest accepted, undocumented until now
+
+  Six for six, across values 12/9/1/0/0/0. A walker that agreed only where the answer is 0 would
+  prove nothing; one that reproduces the non-zero history too is measuring the same quantity the
+  solver scored. It also AGREES exactly with the server's own per-agent-day `divergence` field
+  (which is built from the D-07 denormalised columns) on every schedule.
+evidence: |
+  NEWEST ACCEPTED SCHEDULE 6a10afa1 (2026-09-01T22:06:23Z — created AFTER HANDOFF.md §8 was
+  written, which still names b88cc98f as newest; §8 needs that correction):
+
+      working agent-days                 138
+      working agent-days with NO shift     0     <-- limb 2 holds
+      out-of-envelope seats (walker)       0     <-- limb 1 holds
+      out-of-envelope seats (server)       0     <-- independent agreement
+      feasible                          true
+
+  Both limbs of test 11 hold on the schedule the desk is actually live on.
+blocked_by_reporting: |
+  AND YET THE PRODUCT SAYS THE OPPOSITE. The same GET reports:
+      violatedHardConstraints  ['Shift envelope compliance']
+      constraintViolations     'Shift envelope compliance' HARD violationCount 1104
+  1104 == 138 agent-days x 8 contracted hours == EVERY STAFFED SEAT ON THE DESK. Confirmed by
+  walking a named row: Armaz Dugashvili 2026-01-05, shift `Mid 11:00-20:00` band offset 300
+  (break 16:00-17:00), seats 11,12,13,14,15,17,18,19 — every seat inside the envelope, none in the
+  break window, `divergence: null` — and all eight reported as violations.
+  Filed as G-15-32. An operator running test 11 through the UI would fail it.
+recommendation: |
+  PASS on substance and take the misreport as its own gap (G-15-32), because they are different
+  defects with different fixes: the guarantee is met and provably met, while the READ PATH is
+  broken in a way that would equally misreport a schedule that was genuinely clean OR genuinely
+  broken. Marking test 11 as an issue would attach the phase's headline guarantee to a defect that
+  is not in the solver at all, and would re-open a constraint this file has already spent a whole
+  session exonerating.
 
 ### 12. Breaks are distributed across bands, not simultaneous
 
@@ -1852,6 +1906,71 @@ blocked: 1
     Until this is fixed, over-allocation at 250% on this desk fails SILENTLY — no refusal, ~8
     minutes burned, three hard constraints violated, and nothing on screen names the limit as the
     cause. The 500% in HANDOFF.md §3 is load-bearing and the UI default is not it.
+
+- gap_id: G-15-32
+  truth: "An accepted schedule's reported constraint violations must describe that schedule"
+  status: open
+  severity: major
+  found_by: test 11 measurement, 2026-09-01
+  promotes: >
+    G-15-24's `also_observed` paragraph, which recorded "violationCount 1104 / penalty -1104 while
+    the stored score reads hardScore -9 — the two cannot both be right" and closed with "Not chased
+    this session." It has now been chased. Which one is right is settled: the divergence field and
+    the independent walker (0) are right; constraintViolations (1104) is wrong.
+  detail: |
+    ON EVERY ACCEPTED SCHEDULE ON THE DESK — all six, spanning true violation counts of 12, 9, 1,
+    0, 0 and 0 — `constraintViolations` reports `Shift envelope compliance` with
+    violationCount 1104. That number is CONSTANT and equals 138 agent-days x 8 contracted hours:
+    every staffed seat on the desk. It carries no information about the schedule it describes.
+
+    NAMED-ROW PROOF, so this is not an aggregate artefact. Armaz Dugashvili, 2026-01-05, on
+    schedule 6a10afa1: shift `Mid 11:00-20:00`, bandOffset 300 => break 16:00-17:00; held seats
+    11,12,13,14,15,17,18,19. Every seat inside the envelope, none in the break window, and the
+    server's OWN `divergence` for that agent-day is `null` (= clean). All eight seats appear in
+    constraintViolations as violations.
+
+    IT PROPAGATES TO THE HEADLINE. ScheduleService:159 derives `violatedHardConstraints` FROM
+    `constraintViolations`, so schedule 6a10afa1 reports `feasible: true` AND
+    `violatedHardConstraints: ['Shift envelope compliance']` in the same response — self-
+    contradictory on its face. This is what an operator sees on the results page, and it says the
+    phase's headline guarantee is broken on a schedule where it demonstrably holds.
+  mechanism: |
+    ScheduleOutputService.buildConstraintViolations (:421) calls `solutionManager.explain(schedule)`
+    and counts `total.getConstraintMatchSet()`. Its own javadoc says "accepted (DB) schedules should
+    not call this method", but the GUARD IS A PROXY for that intent:
+
+        if (schedule.getConstraintWeights() == null) return List.of();
+
+    The proxy does not hold — accepted schedules reach the explain() call anyway. Explaining a
+    schedule whose shift problem facts are not reconstituted makes every seat fail the coverage
+    predicate, which is exactly the file's own DISCRIMINATOR IDENTITY for a null band pair
+    ("maximally asymmetric"): with no band pair, every held seat reads as out-of-envelope. Hence
+    "every seat", hence the constant 1104.
+  falsified_prediction: |
+    RECORDED BECAUSE THE FALSIFICATION IS THE USEFUL PART, per this file's standing methodology.
+    Predicted: the 1104 comes from schedules still resident in InMemoryScheduleStore (which would
+    retain weights), so schedules predating the 18:44Z ECS task roll should trip the null-weights
+    guard and return `[]`. TESTED across all six schedules, two after the roll and four before.
+    ALL SIX returned 1104. The prediction was WRONG and store residency is not the discriminator —
+    the behaviour is unconditional on the accepted path. Do not re-run this experiment.
+  fix: |
+    Replace the null-weights proxy with the real question — whether the schedule is an accepted/DB
+    schedule — and on that path either (a) return no constraintViolations at all, as the javadoc
+    already intends, or (b) derive them from the persisted ShiftDescriptor/AgentShiftAssignment
+    columns, which is the same source the `divergence` field already reads correctly. (b) is
+    preferable: the data to report violations accurately demonstrably exists, because divergence
+    computes it right on every one of the six schedules.
+    Whichever is chosen, `violatedHardConstraints` (ScheduleService:159) must stop being derivable
+    into a state that contradicts `feasible`.
+  test_gap: |
+    Nothing asserts that a FEASIBLE schedule reports no violated hard constraints. That single
+    invariant — `feasible == true` implies `violatedHardConstraints` is empty — would have caught
+    this, and it is cheap. It belongs with SolverQualityGuardTest's INV-1/2/3 family (G-15-22), but
+    on the READ path rather than the solve path, which is a gap that family does not currently cover.
+  not_implicated_in: >
+    The schedule data itself. Every accepted schedule's assignments, shift descriptors and
+    divergence fields are correct; only the explain-derived violation report is wrong. No
+    re-solve is needed to fix this and no live schedule needs replacing.
 
 - gap_id: G-15-21
   truth: "The seat-supply gate must not count hours only a weekday template reaches when solving a weekend"
