@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-01T19:20:00Z"
+updated: "2026-09-01T23:55:00Z"
 ---
 
 <!--
@@ -89,12 +89,41 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 3
-name: No Phase 14 desk's validation verdict moved
+number: 11
+name: No agent is seated outside their assigned shift envelope
 expected: |
-  For a desk that existed before this phase and uses single-break templates, the Shift Library
-  validation result — coverage verdict, net hours, grid-alignment verdict — is identical to before.
+  Every agent works only within the envelope of the single shift assigned to them that day; each
+  working agent-day has exactly one shift. This is the phase's core hard-constraint guarantee.
 awaiting: user response
+
+<!--
+  SESSION 2026-09-01 (resumed, second sitting). Deployment re-derived per the standing rule BEFORE
+  any testing — and the derivation has a WRINKLE worth stating precisely, because a naive reading
+  of the standing rule would have HALTED here for no reason:
+
+    `git log @{u}..HEAD -- . ':!.planning/'` is NOT empty — 5 unpushed source commits.
+    BUT all five are TEST-ONLY: SolverQualityGuardTest.java + LiveShapeShiftDeskFixture.java,
+    +1,559 lines, ZERO files under src/main or frontend/src. The decisive check is therefore
+    `git diff a320ca7..HEAD -- . ':!.planning/' ':!src/test/'`, which IS empty.
+    So dev's RUNTIME code equals HEAD's runtime code; only the guard tests are local-only.
+
+    Deploy run 33543912228 on a320ca7 — success. ECS task def wfm-service-dev:65, PRIMARY, 1/1,
+    rolloutState COMPLETED. /actuator/health UP, db UP on PostgreSQL.
+
+  REFINEMENT TO THE STANDING RULE, earned here: the rule says the unpushed-source log must be
+  EMPTY. That is the safe default, but it is too strong — it cannot distinguish a test-only commit
+  (which cannot change live behaviour) from a src/main commit (which does). Exclude ':!src/test/'
+  from the diff and the rule becomes exact instead of merely conservative. Keep the conservative
+  form as the first check; only relax it after LOOKING at the file list, never on the commit
+  subjects alone.
+
+  Gap reconciliation on resume: 0 newly reconciled. No gap carries `status: failed`, so the
+  reconcile pass had nothing to act on — G-15-22, G-15-27, G-15-29 and G-15-30 were already
+  written up as `resolved` with their evidence by the 15-14/15-15 round. Standing: 4 resolved,
+  1 closed_pending_retest (G-15-10), 7 open (G-15-21, -23, -24, -25, -26, -28, -31).
+
+  Resuming at test 3, still carrying the observability problem raised at the last resume.
+-->
 
 <!--
   SESSION 2026-08-31 (resumed). Deployment re-derived per the standing rule BEFORE any testing:
@@ -201,8 +230,96 @@ reported: "Evidenced by deploy history, not by manual test: four successful dev 
 ### 3. No Phase 14 desk's validation verdict moved
 
 expected: For a desk that existed before this phase and uses single-break templates, the Shift Library validation result — coverage verdict, net hours, grid-alignment verdict — is identical to before. This is the phase's own stated invariant: a one-band template must reproduce its single-offset predecessor exactly.
-result: [pending]
+result: pass
+resolved_via: |
+  ROUTE (b), chosen by the operator 2026-09-01 ("I like (b) - do it now"). The literal test — "no
+  Phase 14 desk's verdict MOVED" — remains permanently unobservable (see observability_problem
+  below; UAT consumed its own baseline). What route (b) tests instead is the INVARIANT the test
+  exists to protect, stated in the test's own second sentence: *a one-band template must reproduce
+  its single-offset predecessor exactly.* That is now demonstrated, and demonstrated as a FUNCTION
+  of the offset rather than at a single point.
+tested_against: |
+  A throwaway DESK — `ZZ-UAT3-SCRATCH-phase14-invariant` (3d0a0df8-b785-4206-ba2b-956618905205),
+  created and DELETED within this session. Deliberately a desk and not a template: test 5b's
+  process failure was writing disposable rows into a live desk whose disposal route was documented
+  as absent. DeskController CAN delete, and `DeskService.deleteDesk` leaves shift_template to V39's
+  DB-level ON DELETE CASCADE (with V40's band FK cascading onto that in turn), so the disposal is
+  complete rather than merely tidy. VERIFIED, not assumed: after DELETE, GET desk -> 404 and GET
+  its shift-templates -> `[]`. Live desk Stubhub (EN) re-listed after: still 11 templates, untouched.
+  Setup: 9 hourly timeslots Mon 2026-01-05 08:00-17:00, demand 1 FTE on every hour, one
+  specialization. No agents — deliberately, see scope_note.
+the_mechanism: |
+  ShiftLibraryValidationService's own class javadoc states the claim being tested:
+    "a template with exactly one band produces the byte-identical verdict Phase 14's single offset
+     produced, because the any-band quantifier over a one-element set is the element itself."
+  `covers()` (:227) ends `return bands.stream().anyMatch(band -> !overlapsBreak)`. Over a singleton
+  that reduces to the predicate on that one element — which IS Phase 14's rule ("covered iff the
+  window does not overlap the break"). The argument is sound by inspection; the runs below are what
+  turn it from an argument into a measurement.
+evidence: |
+  COVERAGE VERDICT — the uncovered set tracks the single band exactly, and nothing else moves:
+
+    bands                         uncoveredWindows
+    ---------------------------   --------------------------------
+    one, offset 240 (12:00-13:00) ['2026-01-05 12:00-13:00']   <-- exactly the break hour
+    three, 180/240/300            []                          <-- D-02 self-cover
+    one, offset 240 (again)       ['2026-01-05 12:00-13:00']   <-- reversible, deterministic
+    ZERO bands                    []                          <-- Phase 14's "no break"
+    one, offset 60  (09:00-10:00) ['2026-01-05 09:00-10:00']   <-- tracks the offset
+
+  The three-band and zero-band rows are the CONTROLS, and they are what make the one-band rows
+  meaningful: they prove the quantifier genuinely varies with band composition, so "exactly the
+  break hour" is a measured property and not vacuously true of any library on this desk.
+  misalignedTemplates was [] throughout; hasLiveDemand true throughout.
+
+  NET HOURS — envelope 08:00-17:00 = 9h:
+    one band, duration 60   -> netHours 8.0     (9h - 1h, the Phase 14 formula)
+    bands 60 and 120        -> netHours 8.0 and 7.0
+  netHours is now PER BAND (it moved into BreakBandResponse; Phase 14 carried one per template),
+  so for a ONE-band template it reduces to Phase 14's single value by the same singleton argument.
+  CORROBORATION: test 1 recorded the four Phase-14-era live templates at "net 8.0h" on exactly this
+  9h-envelope/60m-break shape. The scratch reproduction returns the same 8.0.
+
+  GRID-ALIGNMENT VERDICT — one-band path, off-grid offset 250:
+    HTTP 400 "Shift template times must align to the desk's timeslot grid"
+      bands[0].breakStartTime  value 12:10
+      bands[0].breakEndTime    value 13:10
+  Both derived boundaries named, never silently rounded, and the refused PUT left the template on
+  its previous state (re-read after: still one band 240/60) — no partial write.
+bonus_finding: |
+  D-08's "the report and the refusal can never disagree" was exercised for free and HOLDS. With the
+  one-band library leaving 12:00-13:00 uncovered, PUT /scheduling-mode {SHIFT} was REFUSED:
+    "1 demand window(s) have no covering shift template"
+      coverage -> "2026-01-05 12:00-13:00"
+  The refusal names the IDENTICAL window the report listed — same computation, two presentations,
+  as D-08 claims. This was not asked for by test 3 and is recorded because it was observed.
+scope_note: |
+  STATED PLAINLY so nobody over-reads this pass. This is NOT a byte-for-byte diff against a running
+  Phase 14 — that code path no longer exists (V40 dropped break_offset_minutes and
+  break_duration_minutes, and test 1 already established the source columns are gone). It is a
+  demonstration that the Phase 15 one-band path produces Phase 14's single-offset SEMANTICS,
+  argued from the singleton reduction and confirmed behaviourally at three offsets plus the
+  zero-band and multi-band controls. That is the strongest evidence still available, and it is
+  strictly stronger than route (a)'s "the original templates draw a clean verdict" — but it is not
+  the literal claim in the test's first sentence, and it does not resurrect the lost baseline.
+  No agents were created on the scratch desk, so the agent-hours-dependent advisories
+  (hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories) were
+  NOT exercised here. Deliberate: those are Phase 15 ADDITIONS, not Phase 14 verdicts, so they fall
+  outside the invariant this test names. The SHIFT-switch refusal in bonus_finding did surface a
+  contractedHours detail for exactly that reason (no agents => no weekday satisfiable) and it is an
+  artefact of the minimal fixture, not a finding.
+incidental_observation: |
+  NOT a test 3 finding and deliberately NOT filed as a gap — recorded for the operator to route.
+  After the scratch desk was deleted, `GET /desks/{deadId}/shift-templates` returns 200 `[]` and
+  `GET /desks/{deadId}/shift-library/validation` returns 200 with an all-empty verdict, while
+  `GET /desks/{deadId}` correctly returns 404. A mistyped or stale desk id therefore reads as
+  "a desk with a clean, empty library" rather than as an error. Cosmetic today; it is the same
+  degenerate-empty-verdict shape that made test 3's own baseline loss hard to notice.
 observability_problem: |
+  PRESERVED AS THE RECORD OF WHY ROUTE (b) WAS NEEDED. Re-measured live 2026-09-01 before choosing
+  a route and STILL TRUE: Stubhub (EN) is still the tenant's only desk and now carries 11
+  templates, EVERY ONE with 3 bands — zero single-band templates remain anywhere.
+
   RAISED 2026-08-31 at resume, BEFORE presenting the test. The test as written may no longer be
   answerable against live data, and it is better to say so than to record a meaningless verdict.
 
@@ -232,7 +349,8 @@ observability_problem: |
   isolated is whether that verdict is IDENTICAL to Phase 14's, because eight additional templates
   now contribute to the same desk-wide computation.
 
-  ROUTES, for the operator to choose between:
+  ROUTES — RESOLVED: the operator chose (b) on 2026-09-01 and it was executed the same session.
+  See resolved_via / evidence above. Routes (a) and (c) preserved for the reasoning only:
     (a) Accept the partial evidence above — original templates present, all verdicts clean, no
         advisory naming them — as sufficient, and pass with that caveat recorded.
     (b) Create a scratch desk with a single one-band template reproducing a Phase 14 shape and
@@ -964,18 +1082,26 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 9
+passed: 10
 issues: 1
-pending: 8
+pending: 7
 skipped: 1
 blocked: 1
 
 <!--
-  passed : 1, 2, 4, 5, 6, 7, 8, 9, 12
+  passed : 1, 2, 3, 4, 5, 6, 7, 8, 9, 12
   issue  : 10 (major, was blocker — search plateau, all structural causes fixed)
   skipped: 5b (probe artefact bookkeeping, now closed by the delete control)
   blocked: 18 (production deploy, unchanged)
-  pending: 3, 11, 13, 14, 15, 16, 17, 19  — none reached this round; the session ran end-to-end
+  pending: 11, 13, 14, 15, 16, 17, 19
+
+  TEST 3 CLOSED 2026-09-01 via operator-chosen route (b) — a throwaway DESK (created and deleted
+  in-session, cascade disposal verified) carrying a one-band template in the Phase 14 shape. The
+  invariant holds: the uncovered set tracks the single band's offset exactly, with zero-band and
+  three-band controls proving the result is not vacuous. The literal "no Phase 14 desk MOVED"
+  claim stays unobservable — UAT consumed its own baseline — and the pass is scoped accordingly.
+
+  PRIOR NOTE (2026-08-31), still accurate for tests 11/13-17/19: none reached that round; the session ran end-to-end
            on test 10's mechanism instead, which produced 6 code fixes and 4 new advisories.
            Tests 11 and 19 are the highest-value of the remainder: 11 is the phase's core
            guarantee (currently violated 9 times on one date, see test 10), and 19 covers the
