@@ -150,6 +150,30 @@ public class ConstraintWeights {
     @Column(name = "band_capacity_weight")
     private HardSoftScore bandCapacityWeight = HardSoftScore.ofHard(1);
 
+    /**
+     * Weight for "Shift work contiguity" (Phase 15 follow-up, G-15-27) — an agent's working hours
+     * on a shift-scheduled desk must be contiguous apart from their break.
+     *
+     * <p>This restores for SHIFT mode a guarantee that used to hold BY ACCIDENT. D-01's
+     * exact-equality eligibility rule made legal in-envelope slots equal contracted slots, so an
+     * agent had to occupy every one of them and no hole was representable. V44's bounded slack
+     * relaxed that equality for good reasons (see {@code AgentShiftAssignment
+     * .getEligibleShiftBandPairs}) and silently took the contiguity guarantee with it — in the one
+     * mode where nothing else enforces it, because {@code exactlyOneBreak}, {@code breakDuration},
+     * {@code breakBlockedWindow} and {@code breakStartAlignment} are all mode-gated off in SHIFT
+     * mode (the band defines the break, so seat-derived break geometry is the wrong instrument).
+     *
+     * <p>Hard, and weighted 100 to match {@code exactlyOneBreakWeight} — the SLOT-mode constraint
+     * whose guarantee this reproduces — rather than {@code shiftEnvelopeComplianceWeight}'s
+     * ofHard(1). Deliberate: at equal weight the solver would happily split a working day to save
+     * one out-of-envelope seat, and a fragmented roster is categorically worse than a mis-placed
+     * hour. The gap between 100 and 1 is what stops that trade.
+     */
+    @ConstraintWeight("Shift work contiguity")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "shift_work_contiguity_weight")
+    private HardSoftScore shiftWorkContiguityWeight = HardSoftScore.ofHard(100);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -223,4 +247,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getBandCapacityWeight() { return bandCapacityWeight; }
     public void setBandCapacityWeight(HardSoftScore bandCapacityWeight) { this.bandCapacityWeight = bandCapacityWeight; }
+
+    public HardSoftScore getShiftWorkContiguityWeight() { return shiftWorkContiguityWeight; }
+    public void setShiftWorkContiguityWeight(HardSoftScore shiftWorkContiguityWeight) { this.shiftWorkContiguityWeight = shiftWorkContiguityWeight; }
 }

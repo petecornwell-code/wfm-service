@@ -187,12 +187,16 @@ class ScheduleConstraintClassificationTest {
      * permits an owner on any classification.
      */
     @Test
-    void thePhase15ModeGatedSetIsExactlyTheTenExpectedRows() {
+    void thePhase15ModeGatedSetIsExactlyTheElevenExpectedRows() {
         Set<String> expected = Set.of(
                 "Exactly one break", "Break duration", "Break blocked window", "Break start alignment",
                 "Honour preferred start time", "Honour preferred break time",
                 "Shift envelope compliance", "Break clustering", "Band capacity",
-                "Minimum staffing");
+                "Minimum staffing",
+                // G-15-27: restores for SHIFT mode the contiguity guarantee V44's bounded slack
+                // removed. MODE_GATED for the same reason as "Shift envelope compliance" -- it
+                // filters to SHIFT and a SLOT desk has no AgentShiftAssignment rows anyway.
+                "Shift work contiguity");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -205,8 +209,9 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the ten constraints whose behaviour depends on "
-                        + "SchedulingMode after Phase 15 (plans 15-06 and 15-09)")
+                .as("MODE_GATED must be exactly the eleven constraints whose behaviour depends "
+                        + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09) and its G-15-27 "
+                        + "follow-up")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

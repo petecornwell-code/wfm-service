@@ -1,0 +1,24 @@
+-- Phase 15 follow-up (G-15-27): the weight column for the new "Shift work contiguity" hard
+-- constraint.
+--
+-- WHY THIS EXISTS. V44 introduced bounded envelope slack to relax D-01's exact-equality rule,
+-- which had forced an agent to occupy 100% of their legal in-envelope slots. That equality was
+-- also, incidentally, the only thing guaranteeing an agent's working hours were CONTIGUOUS: with
+-- zero spare slots there was nowhere to put a hole. V44 removed the rigidity and removed the
+-- guarantee with it, in a mode where nothing else enforces contiguity -- all four break-geometry
+-- constraints are gated off in SHIFT mode because the band, not the seat pattern, defines the
+-- break.
+--
+-- Measured consequence on the live desk before this constraint existed: 24 of 138 agent-days
+-- (17%) contained a non-break hole, some fragmenting a day into three pieces. Every one of them
+-- was on the single template whose net hours exceeded contracted hours -- i.e. the only template
+-- carrying slack. Zero-slack templates were all clean, which is the same fact from the other side.
+--
+-- Hard by default: a split shift is an illegal roster, not a preference. Weight 100 matches
+-- exactly_one_break_weight, the SLOT-mode constraint whose contiguity guarantee this restores for
+-- SHIFT mode, rather than the ofHard(1) of shift_envelope_compliance -- breaking a working day in
+-- half is a categorically worse outcome than a single mis-placed seat, and the two must not trade
+-- against each other one-for-one. Hard-vs-soft stays this column's value, never a code decision,
+-- per V37/V38/V41/V42's shared precedent.
+ALTER TABLE constraint_weights
+    ADD COLUMN shift_work_contiguity_weight VARCHAR(50) NOT NULL DEFAULT '100hard/0soft';

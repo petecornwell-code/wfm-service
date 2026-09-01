@@ -178,6 +178,21 @@ public final class ScheduleConstraintClassification {
                         + "structural-inertness shape as 'Shift envelope compliance'.",
                 null));
 
+        map.put("Shift work contiguity", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 15 follow-up (G-15-27): joins the (agent, date) seat grouping to "
+                        + "AgentShiftAssignment, filters to SHIFT mode, and penalises every unworked "
+                        + "slot strictly inside the agent's worked span that is not their assigned "
+                        + "band's break window. Restores for SHIFT mode the contiguity guarantee that "
+                        + "D-01's exact-equality eligibility used to provide by accident and that V44's "
+                        + "bounded slack removed; the four break-geometry constraints that would "
+                        + "otherwise own it are all gated off in SHIFT mode because the band, not the "
+                        + "seat pattern, defines the break. Inert on a SLOT desk both structurally (no "
+                        + "AgentShiftAssignment rows exist) and explicitly (SHIFT-mode filter), the same "
+                        + "double-inertness shape as 'Shift envelope compliance' -- and redundant there "
+                        + "anyway, since 'Exactly one break' enforces a stricter rule on SLOT desks.",
+                null));
+
         map.put("Prefer primary specialization", new Entry(
                 ModeClassification.MODE_AGNOSTIC,
                 "Pure agent-attribute soft preference (primary vs. secondary specialization); "

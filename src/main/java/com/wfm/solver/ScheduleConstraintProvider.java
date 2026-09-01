@@ -71,6 +71,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             breakStartAlignment(factory),
             shiftEnvelopeCompliance(factory),
             bandCapacity(factory),
+            shiftWorkContiguity(factory),
             preferPrimarySpecialization(factory),
             honourPreferredStartTime(factory),
             honourPreferredBreakTime(factory),
@@ -440,6 +441,127 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * #shiftEnvelopeCompliance}'s performance contract (commit {@code 90bf3d2}) — a SLOT-mode
      * desk has zero shift rows, so this constraint's node network is dead there by construction.
      */
+    /**
+     * (Phase 15 follow-up, G-15-27) Shift work contiguity — on a shift-scheduled desk an agent's
+     * working hours must be contiguous apart from their break.
+     *
+     * <p>WHY THIS IS NEEDED AT ALL, given SLOT mode never wanted it as a separate rule. Under
+     * D-01's original exact-equality eligibility, legal in-envelope slots equalled contracted
+     * slots, so an agent had to occupy 100% of them and a hole was not representable — contiguity
+     * held by accident. V44's bounded slack relaxed that equality (correctly: the rigidity was
+     * G-15-10's precondition) and removed the accidental guarantee, in the one mode where nothing
+     * replaces it. {@link #exactlyOneBreak}, {@link #breakDuration}, {@link #breakBlockedWindow}
+     * and {@link #breakStartAlignment} are all gated OFF in SHIFT mode, deliberately: there the
+     * band defines the break, so seat-derived break geometry is the wrong instrument. Correct, but
+     * it left contiguity owned by nobody.
+     *
+     * <p>Measured before this constraint existed: 24 of 138 agent-days on the live desk carried a
+     * non-break hole, some fragmenting a day into three pieces. All but one were on the single
+     * template whose net hours exceeded contracted hours — the only one carrying slack.
+     *
+     * <p>The rule: every unworked slot lying strictly INSIDE the agent's worked span must be their
+     * break. Anything else is a hole, and each one is penalised.
+     *
+     * <p>A gap COUNT is not sufficient, and this was caught by the guard test rather than by
+     * reasoning. "At most one interior gap" looks equivalent and is not: when the assigned band
+     * puts the break at the envelope boundary, the break creates no interior gap at all, so the
+     * one gap the rule would permit is a genuine hole. That is exactly the live shape from
+     * accepted schedule 709fd8b4 — Adaeze Dawari, band break at 10:00 (the first hour), working
+     * 11:00, idle 12:00, then 13:00-19:00. A counting rule scores that zero. So the constraint
+     * resolves the break window from the assigned {@link ShiftBandPair} and asks of each interior
+     * hole whether it is THAT window.
+     *
+     * <p>Slack therefore stays spendable, but only at the envelope BOUNDARY — a later start or an
+     * earlier finish shortens the span and adds no interior hole — never in the middle. That is
+     * precisely the freedom V44 was introduced to provide, minus the fragmentation it also allowed.
+     *
+     * <p>An agent-day whose {@code shiftBandPair} is null is NOT exempt. Exempting it was the
+     * first implementation's second bug, caught by {@code ShiftDeskEndToEndRegressionTest} rather
+     * than by reasoning: a null pair costs only {@code shiftEnvelopeComplianceWeight} ofHard(1)
+     * per seat — roughly 8 for a working day — against ofHard(100) for a single hole here, so
+     * dropping the shift assignment altogether became the cheapest way to launder a split shift,
+     * and the solver duly started leaving pairs unassigned. That is the same cheapest-hard-
+     * violation arbitrage G-15-10 diagnosed at ofHard(1), reappearing the moment a heavier
+     * constraint was placed beside it. With no band there is no break window to identify, so such
+     * a day falls back to the weaker "at most one interior gap" rule — enough to close the
+     * loophole without inventing a break position that was never chosen.
+     *
+     * <p>Gated {@code == SHIFT}, mirroring {@link #shiftEnvelopeCompliance} rather than the
+     * {@code != SHIFT} of the break-geometry constraints — a SLOT desk has {@link #exactlyOneBreak}
+     * enforcing the stricter "exactly one gap, of the right length, in the right place" already,
+     * so applying this there would be redundant, not additive.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint shiftWorkContiguity(ConstraintFactory factory) {
+        // MUST lead with forEachIncludingUnassigned. join(AgentShiftAssignment.class, ...) carries
+        // forEach semantics, which silently drops entities whose genuine planning variable is null
+        // -- i.e. exactly the null-shiftBandPair rows the fallback below exists to catch. Leading
+        // from the seat grouping and joining the shift row therefore made the loophole
+        // unreachable, which is what ShiftDeskEndToEndRegressionTest was reporting.
+        // shiftEnvelopeCompliance leads the same way for the same reason.
+        return factory.forEachIncludingUnassigned(AgentShiftAssignment.class)
+                .join(AgentAssignment.class,
+                        equal(sa -> sa.getAgent().getId(), a -> a.getAgent().getId()),
+                        equal(AgentShiftAssignment::getDate, a -> a.getTimeslot().getDate()))
+                .groupBy((sa, a) -> sa, toList((sa, a) -> a))
+                .ifExists(ScheduleConfig.class,
+                        filtering((sa, seats, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT))
+                .filter((sa, seats) -> countNonBreakHoles(seats, sa) > 0)
+                .penalizeConfigurable((sa, seats) -> countNonBreakHoles(seats, sa))
+                .asConstraint("Shift work contiguity");
+    }
+
+    /**
+     * Unworked slots strictly inside an agent-day's worked span that are NOT covered by the
+     * assigned band's break window. Zero for a legal day; one per hole otherwise.
+     *
+     * <p>The slot length is derived from the timeslots themselves rather than carried in from
+     * {@code AgentDayConfig}, which keeps {@link #shiftWorkContiguity} at an arity Timefold's
+     * join API supports while still gating on {@link ScheduleConfig}.
+     */
+    private int countNonBreakHoles(List<AgentAssignment> assignments, AgentShiftAssignment shift) {
+        if (assignments == null || assignments.size() < 2) {
+            return 0;
+        }
+        ShiftBandPair pair = shift == null ? null : shift.getShiftBandPair();
+        if (pair == null || pair.template() == null || pair.band() == null) {
+            // No band, so no identifiable break window. Fall back to "at most one interior gap"
+            // rather than exempting the day — see this constraint's javadoc on the arbitrage that
+            // exemption opened up.
+            int increment = slotMinutes(assignments);
+            if (increment <= 0) {
+                return 0;
+            }
+            return Math.max(0, countContiguousGaps(assignments, increment) - 1);
+        }
+
+        TreeSet<LocalTime> worked = new TreeSet<>();
+        for (AgentAssignment a : assignments) {
+            worked.add(a.getTimeslot().getStartTime());
+        }
+        int incrementMinutes = slotMinutes(assignments);
+        if (incrementMinutes <= 0) {
+            return 0;
+        }
+
+        LocalTime breakStart = pair.template().getStartTime()
+                .plusMinutes(pair.band().getOffsetMinutes());
+        LocalTime breakEnd = breakStart.plusMinutes(pair.band().getDurationMinutes());
+
+        int holes = 0;
+        for (LocalTime t = worked.first(); t.isBefore(worked.last()); t = t.plusMinutes(incrementMinutes)) {
+            if (worked.contains(t)) {
+                continue;
+            }
+            LocalTime slotEnd = t.plusMinutes(incrementMinutes);
+            boolean isBreak = t.isBefore(breakEnd) && slotEnd.isAfter(breakStart);
+            if (!isBreak) {
+                holes++;
+            }
+        }
+        return holes;
+    }
+
     // Package-private so ConstraintVerifier can target this constraint in isolation.
     Constraint bandCapacity(ConstraintFactory factory) {
         return factory.forEach(AgentShiftAssignment.class)
@@ -855,6 +977,17 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     // Expected-work-slot arithmetic lives on AgentDayConfig.expectedWorkSlots() (Phase 15 plan
     // 15-11, Task 1) — the constraints above call it directly rather than a local re-derivation,
     // so this class and SolverService's shift-mode seat-supply gate can never disagree.
+
+    /**
+     * Slot length in minutes, read off the timeslots themselves rather than carried in from
+     * {@code AgentDayConfig} — see {@link #countNonBreakHoles} for why that arity matters.
+     */
+    private int slotMinutes(List<AgentAssignment> assignments) {
+        if (assignments == null || assignments.isEmpty()) return 0;
+        Timeslot ts = assignments.get(0).getTimeslot();
+        if (ts == null || ts.getStartTime() == null || ts.getEndTime() == null) return 0;
+        return (int) java.time.Duration.between(ts.getStartTime(), ts.getEndTime()).toMinutes();
+    }
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();
