@@ -1479,7 +1479,21 @@ blocked: 1
 
 - gap_id: G-15-27
   truth: "An agent's working hours must be contiguous apart from their break"
-  status: open
+  status: resolved
+  resolved_by: "a02d150 — V45 + the shiftWorkContiguity hard constraint, deployed and live at a320ca7"
+  resolved_evidence: |
+    The `fix:` block below specified a hard constraint in SHIFT mode forbidding an unworked legal
+    slot strictly between two worked slots unless it is the break. That is what a02d150 shipped
+    (10 guard tests), and V46 later corrected its weight from 100 to 10 (G-15-30).
+
+    MEASURED 2026-09-01 on three independent live solves at the current commit, computed from the
+    API response rather than read off the UI:
+        b88cc98f    0 hard    0 split shifts / 138 agent-days
+        60523b98  -20 hard    0 split shifts / 138 agent-days
+        2eeb2ca9 -120 hard    0 split shifts / 138 agent-days
+    Zero splits held even on the -120 run at the wrong over-allocation limit — the property is
+    enforced by the constraint, not by a lucky search. Compare the 24-of-138 (17%) splits measured
+    on 709fd8b4 when this gap was filed.
   severity: blocker
   found_by: operator, 2026-09-01 — "it breaks the need for an agent to work contiguous hours. That's a no-no."
   regression_introduced_by: "81117e3 / V44 bounded envelope slack — this phase's own gap-closure fix"
