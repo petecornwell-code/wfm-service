@@ -206,3 +206,14 @@ None — no external service configuration required.
 ---
 *Phase: 15-shift-envelope-breaks-library-generation*
 *Completed: 2026-09-01*
+
+## Self-Check: PASSED
+
+- FOUND: `src/test/java/com/wfm/solver/LiveShapeShiftDeskFixture.java`
+- FOUND: `src/test/java/com/wfm/solver/SolverQualityGuardTest.java`
+- FOUND: `.planning/phases/15-shift-envelope-breaks-library-generation/15-14-SUMMARY.md`
+- FOUND commit `8ade3f9` (Task 1)
+- FOUND commit `ec84ed3` (Task 2)
+- FOUND commit `8d7e411` (Task 3)
+- FOUND commit `9c85b5b` (docs: plan summary)
+- `./gradlew test --tests "com.wfm.solver.SolverQualityGuardTest"` — BUILD SUCCESSFUL, re-verified after SUMMARY write

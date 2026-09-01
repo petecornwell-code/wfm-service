@@ -208,7 +208,7 @@ configuration gave 0 hard and -20 hard twenty minutes apart on 2026-09-01). Scop
 narrow by operator decision on 2026-09-01 — G-15-21, G-15-23, G-15-24, G-15-25, G-15-26, G-15-28 and
 G-15-31 are excluded from this round:*
 
-- [ ] 15-14-PLAN.md — Solver quality guard: live-shape synthetic fixture, five seeded step-count-terminated solves through the shipped `solverConfig.xml`, three structural invariants (zero split shifts, zero edge breaks, every edge hour staffed) walked outside the score director, a median violation-COUNT ceiling, and the shipped weight defaults pinned — in the default suite, ungated (wave 1)
+- [x] 15-14-PLAN.md — Solver quality guard: live-shape synthetic fixture, five seeded step-count-terminated solves through the shipped `solverConfig.xml`, three structural invariants (zero split shifts, zero edge breaks, every edge hour staffed) walked outside the score director, a median violation-COUNT ceiling, and the shipped weight defaults pinned — in the default suite, ungated (wave 1)
 - [ ] 15-15-PLAN.md — Red-proofs that each walker can fail on exactly its own injected defect, a mechanical demonstration that a zero weight blinds the violation-count table while the walker still sees the split, plus the documented solver comparison rule and closure of both gap entries (wave 2)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The

@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-13-PLAN.md
-last_updated: "2026-08-27T18:21:07.055Z"
-last_activity: 2026-08-27
+stopped_at: Completed 15-14-PLAN.md
+last_updated: "2026-09-01T20:43:21.674Z"
+last_activity: 2026-09-01
 last_activity_desc: Phase 15 execution started
-state_head: 5f9f935f4ff415dcf0d89c58ead1a6997361a131
+state_head: 9c85b5bb9f805648dba0088bbd771c21f7f9df6d
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 21
+  completed_plans: 20
   percent: 25
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 6 of 13
+Plan: 2 of 15
 Status: Ready to execute
-Last activity: 2026-08-27 — Phase 15 execution started
+Last activity: 2026-09-01 — Phase 15 execution started
 
 Progress: [███░░░░░░░] 25% (1/4 phases — Phase 14 complete, 6/6 plans)
 
@@ -225,6 +225,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: Phase 15 Plan 12: Agent Allocation envelope containment test is deliberately NOT band-aware -- break-window rejection surfaces via per-cell divergence marks instead, per explicit plan comment requirement
 - [Phase 15]: Phase 15 Plan 13: shape-complete demand curve engineered against a template-independent 'core' window so the multi-template fixture stays achievable regardless of the solver's own per-agent template choice; refusal case uniformly thins demand (not agent/template counts) since any nonzero demand blocks production's filler top-up; step budget reduced 20000->2000 after measuring convergence, per the plan's instruction to reduce budget/scale rather than shape
 - [Phase 15]: Phase 15 Plan 13: break-geometry guard keeps the scattered/edge case but re-labels it -- flatness is real but cosmetic to an already-infeasible solve, not the cause; restoring gated slot-mode break constraints considered and rejected (fights envelope model, could make under-supplied desks unsolvable); report-layer case dropped, superseded by plan 15-10's ScheduleOutputServiceShiftReportingTest
+- [Phase 15]: Escape hatch applied jointly for plan 15-14's solver quality guard: DAY_COUNT 3->2 AND STEP_COUNT_LIMIT 2000->5000 -- neither rung alone cleared a genuine interior hole the unmodified fixture left at the plan's initial budget
+- [Phase 15]: TOTAL_VIOLATION_CEILING (INV-4, plan 15-14) set to 3 from the observed five-seed baseline (median 1.0 + headroom 2), per the pre-committed rule
 
 ### Blockers/Concerns
 
@@ -237,11 +239,12 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **⚠ [Phase 11] BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517` but the parser reads back the JSON key `customWorkingdays`. If the tenant has no Field Alias configured, the value is always null in production and MRG-03 window arbitration + MRG-06 gap-fill/replace reporting never activate — while every unit test still passes, because the fixtures hand-construct `BambooEmployee`. Confirmed by operator at UAT 2026-08-21 (test 5); re-check after any BambooHR account change. Origin: code review IN-03.
 - **DEFERRED — Backlog 999.1/999.2/999.3:** IAM blocker remains. 9 AWS resources unprovisioned. Resume when root/admin AWS access is available.
 - **Phase 12 must-pass threshold FAILED — phase goal not achieved.** 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Operator ruling (2026-08-13): keep the atomic shift move as committed code (correct, improves hard score, breaks nothing), but do NOT claim the phase goal — record threshold 1 as FAILED rather than the "more hours assigned" goal achieved. Cross-agent seat displacement filed as follow-up (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`, `resolves_phase: 12`) since the 130% conservative-variant data shows seat capacity, not move selection, is the binding constraint at realistic over-allocation. Phase 12 should not be marked complete against its original success criteria on this ruling.
+- Plan 15-14: full-suite runtime-budget delta for the new SolverQualityGuardTest could not be cleanly measured in-session (two consecutive ./gradlew test runs showed +147s then +235s deltas against HANDOFF.md's 8m08s baseline, confounded by cumulative machine load from three back-to-back ~10-12min suite runs on a fanless dev laptop). Isolated guard-class cost is 20-31s, well under the 90s budget. A human should confirm the next CI deploy gate's Test job duration does not regress materially past the 12m53s recorded in HANDOFF.md.
 
 ## Session Continuity
 
-Last session: 2026-08-27T18:21:06.616Z
-Stopped at: Completed 15-13-PLAN.md
+Last session: 2026-09-01T20:43:21.543Z
+Stopped at: Completed 15-14-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -275,3 +278,4 @@ Resume file: None
 | Phase 15 P11 | 40 min | 3 tasks | 6 files |
 | Phase 15 P12 | 6 min | 2 tasks | 2 files |
 | Phase 15 P13 | 33min | 3 tasks | 4 files |
+| Phase 15 P14 | 41min | 3 tasks | 2 files |
