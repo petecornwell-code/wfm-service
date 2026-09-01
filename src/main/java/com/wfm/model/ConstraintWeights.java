@@ -163,16 +163,19 @@ public class ConstraintWeights {
      * {@code breakBlockedWindow} and {@code breakStartAlignment} are all mode-gated off in SHIFT
      * mode (the band defines the break, so seat-derived break geometry is the wrong instrument).
      *
-     * <p>Hard, and weighted 100 to match {@code exactlyOneBreakWeight} — the SLOT-mode constraint
-     * whose guarantee this reproduces — rather than {@code shiftEnvelopeComplianceWeight}'s
-     * ofHard(1). Deliberate: at equal weight the solver would happily split a working day to save
-     * one out-of-envelope seat, and a fragmented roster is categorically worse than a mis-placed
-     * hour. The gap between 100 and 1 is what stops that trade.
+     * <p>Hard, and weighted 10 (V46) — strictly above {@code shiftEnvelopeComplianceWeight} so a
+     * split shift still outranks a single out-of-envelope seat, but not so far above that it
+     * dominates the model. This shipped at 100 in V45 and was WRONG at that scale: against an
+     * envelope weight of 1, a 100:1 ratio makes it rational to breach the envelope 99 times to
+     * avoid one split, and the live desk produced 52 envelope violations doing so. Measured on
+     * that desk, holding every operator requirement fixed and varying only the ratio:
+     * 100:1 gave 52 violations, 100:100 gave 1 but was too rigid to place agents, 10:1 gave 6,
+     * and 10:10 gave 3 — the best measured. See G-15-30.
      */
     @ConstraintWeight("Shift work contiguity")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "shift_work_contiguity_weight")
-    private HardSoftScore shiftWorkContiguityWeight = HardSoftScore.ofHard(100);
+    private HardSoftScore shiftWorkContiguityWeight = HardSoftScore.ofHard(10);
 
     public ConstraintWeights() {}
 
