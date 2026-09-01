@@ -63,6 +63,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * established) and is seeded and step-count terminated, never wall-clock terminated (P-44) — the
  * property whose absence makes {@code BreakAwareConstructionTest} machine-load sensitive
  * ({@code deferred-items.md}). Elapsed time is printed for observability and asserted nowhere.
+ *
+ * <p><strong>Plan 15-15 -- the guard proven able to fail.</strong> A guard that has only ever
+ * passed is exactly as trustworthy as the acceptor test suite that shipped a sevenfold regression
+ * green (G-15-22) -- which is to say, not at all. The red-proofs and thesis proof below corrupt an
+ * ALREADY-SOLVED clean schedule (never re-solving under a changed configuration) so every proof is
+ * deterministic and carries no search variance of its own -- the same variance this guard exists to
+ * be immune to. Corruption is always subtractive (an agent unseated from a held slot, or a
+ * shift-band pair nulled), matching {@link ShiftEnvelopeGroundTruthTest} Task 2's discipline: "a
+ * check that has never failed proves nothing about its ability to fail."
  */
 class SolverQualityGuardTest {
 
@@ -235,6 +244,206 @@ class SolverQualityGuardTest {
     }
 
     // ------------------------------------------------------------------
+    //  Task 1 (plan 15-15) -- red-proofs: each invariant walker demonstrated able to go red,
+    //  exactly once, on exactly its own injected defect -- plus the negative control that the
+    //  break window itself is never mistaken for a hole.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("INV-1 red-proof: a non-break hole between an agent's first and last held slot is flagged once, on the right agent-day")
+    void redProof_INV1_aNonBreakHoleIsFlaggedOnceOnTheRightAgentDay() {
+        Schedule solved = solveCleanFixture();
+        Map<String, List<AgentAssignment>> seatsByAgentDate = seatsByAgentDate(solved);
+
+        AgentShiftAssignment target = solved.getShiftAssignments().stream()
+                .filter(sa -> sa.getShiftBandPair() != null
+                        && "Weekend Flex".equals(sa.getShiftBandPair().template().getName()))
+                .findFirst()
+                .or(() -> solved.getShiftAssignments().stream()
+                        .filter(sa -> sa.getShiftBandPair() != null)
+                        .filter(sa -> heldStartCount(seatsByAgentDate, sa) >= 3)
+                        .findFirst())
+                .orElseThrow(() -> new IllegalStateException("no agent-day with >= 3 held slots found to corrupt"));
+
+        List<AgentAssignment> seats = seatsByAgentDate.get(target.getAgent().getId() + "@" + target.getDate());
+        ShiftTemplate template = target.getShiftBandPair().template();
+        ShiftTemplateBreakBand band = target.getShiftBandPair().band();
+        LocalTime breakStart = template.getStartTime().plusMinutes(band.getOffsetMinutes());
+        LocalTime breakEnd = breakStart.plusMinutes(band.getDurationMinutes());
+
+        List<LocalTime> heldStarts = seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().sorted().toList();
+        assertThat(heldStarts.size())
+                .as("sanity: the chosen agent-day must hold at least 3 slots for an interior non-break hole to exist")
+                .isGreaterThanOrEqualTo(3);
+
+        LocalTime first = heldStarts.get(0);
+        LocalTime last = heldStarts.get(heldStarts.size() - 1);
+        LocalTime victimSlot = heldStarts.stream()
+                .filter(t -> t.isAfter(first) && t.isBefore(last))
+                .filter(t -> t.isBefore(breakStart) || !t.isBefore(breakEnd))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no interior non-break slot found to corrupt on agent="
+                        + target.getAgent().getId() + " date=" + target.getDate()));
+
+        unseat(solved, target.getAgent().getId(), target.getDate(), victimSlot);
+
+        List<SplitShift> splits = findSplitShifts(solved);
+        assertThat(splits)
+                .as("exactly one split shift must be flagged for the corrupted agent-day: %s", splits)
+                .hasSize(1);
+        SplitShift split = splits.get(0);
+        assertThat(split.agentId()).as("the flagged split must name the corrupted agent").isEqualTo(target.getAgent().getId());
+        assertThat(split.date()).as("the flagged split must name the corrupted date").isEqualTo(target.getDate());
+        assertThat(split.holes()).as("the flagged split's holes must be exactly the one unseated hour").containsExactly(victimSlot);
+    }
+
+    @Test
+    @DisplayName("INV-1 negative control: the assigned break window itself is never flagged as a split-shift hole")
+    void redProof_INV1_theBreakWindowItselfIsNotAHole() {
+        Schedule solved = solveCleanFixture();
+        Map<String, List<AgentAssignment>> seatsByAgentDate = seatsByAgentDate(solved);
+
+        AgentShiftAssignment target = solved.getShiftAssignments().stream()
+                .filter(sa -> sa.getShiftBandPair() != null && sa.getShiftBandPair().band() != null)
+                .filter(sa -> {
+                    LocalTime breakStart = sa.getShiftBandPair().template().getStartTime()
+                            .plusMinutes(sa.getShiftBandPair().band().getOffsetMinutes());
+                    List<AgentAssignment> seats = seatsByAgentDate.getOrDefault(
+                            sa.getAgent().getId() + "@" + sa.getDate(), List.of());
+                    return seats.stream().noneMatch(a -> a.getTimeslot().getStartTime().equals(breakStart));
+                })
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no agent-day found whose break slot is genuinely unheld"));
+
+        ShiftTemplate template = target.getShiftBandPair().template();
+        ShiftTemplateBreakBand band = target.getShiftBandPair().band();
+        LocalTime breakStart = template.getStartTime().plusMinutes(band.getOffsetMinutes());
+
+        List<AgentAssignment> seats = seatsByAgentDate.get(target.getAgent().getId() + "@" + target.getDate());
+        List<LocalTime> heldStarts = seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().sorted().toList();
+        assertThat(heldStarts)
+                .as("sanity: the agent's break slot must genuinely be unheld -- the negative control requires "
+                        + "a real gap, not a coincidentally full day")
+                .doesNotContain(breakStart);
+
+        assertThat(findSplitShifts(solved))
+                .as("a clean solve's break-window gap must never be flagged as a split shift -- the trap "
+                        + "ShiftWorkContiguityConstraintTest documents (a rule that merely counts interior gaps "
+                        + "mistakes the break for a hole, or permits a hole by calling it the break)")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("INV-1 red-proof: a null shift-band pair is flagged with the (no shift assigned) marker")
+    void redProof_INV1_aNullShiftPairIsFlagged() {
+        Schedule solved = solveCleanFixture();
+
+        AgentShiftAssignment target = solved.getShiftAssignments().get(0);
+        UUID agentId = target.getAgent().getId();
+        LocalDate date = target.getDate();
+
+        target.setShiftBandPair(null);
+
+        List<SplitShift> splits = findSplitShifts(solved);
+        assertThat(splits)
+                .as("exactly one split shift must be flagged for the null-pair agent-day: %s", splits)
+                .hasSize(1);
+        SplitShift split = splits.get(0);
+        assertThat(split.agentId()).as("the flagged split must name the corrupted agent").isEqualTo(agentId);
+        assertThat(split.date()).as("the flagged split must name the corrupted date").isEqualTo(date);
+        assertThat(split.templateName())
+                .as("a null shift-band pair must be recorded with the (no shift assigned) marker, closing "
+                        + "the null-pair laundering loophole ShiftDeskEndToEndRegressionTest caught in the "
+                        + "production constraint")
+                .isEqualTo("(no shift assigned)");
+    }
+
+    @Test
+    @DisplayName("INV-2 red-proof: unseating every held slot on one side of the break window is flagged as an operational edge break")
+    void redProof_INV2_aBreakWithNoWorkOnOneSideIsFlagged() {
+        Schedule solved = solveCleanFixture();
+        Map<String, List<AgentAssignment>> seatsByAgentDate = seatsByAgentDate(solved);
+
+        AgentShiftAssignment target = solved.getShiftAssignments().stream()
+                .filter(sa -> sa.getShiftBandPair() != null && sa.getShiftBandPair().band() != null)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no agent-day carries a band to corrupt"));
+
+        ShiftTemplate template = target.getShiftBandPair().template();
+        ShiftTemplateBreakBand band = target.getShiftBandPair().band();
+        LocalTime breakStart = template.getStartTime().plusMinutes(band.getOffsetMinutes());
+        LocalTime breakEnd = breakStart.plusMinutes(band.getDurationMinutes());
+
+        List<AgentAssignment> seats = seatsByAgentDate.get(target.getAgent().getId() + "@" + target.getDate());
+        List<LocalTime> beforeBreakStarts = seats.stream()
+                .map(a -> a.getTimeslot().getStartTime())
+                .filter(t -> t.isBefore(breakStart))
+                .distinct()
+                .toList();
+        List<LocalTime> afterBreakStarts = seats.stream()
+                .map(a -> a.getTimeslot().getStartTime())
+                .filter(t -> !t.isBefore(breakEnd))
+                .distinct()
+                .toList();
+        assertThat(beforeBreakStarts)
+                .as("sanity: the chosen agent-day must hold at least one slot before the break")
+                .isNotEmpty();
+        assertThat(afterBreakStarts)
+                .as("sanity: the chosen agent-day must also hold at least one slot after the break, so "
+                        + "removing only the before-break slots leaves a meaningful one-sided corruption")
+                .isNotEmpty();
+
+        for (LocalTime t : beforeBreakStarts) {
+            unseat(solved, target.getAgent().getId(), target.getDate(), t);
+        }
+
+        List<EdgeBreak> edgeBreaks = findEdgeBreaks(solved);
+        assertThat(edgeBreaks)
+                .as("exactly one edge break must be flagged: %s", edgeBreaks)
+                .hasSize(1);
+        EdgeBreak edgeBreak = edgeBreaks.get(0);
+        assertThat(edgeBreak.agentId()).as("the flagged edge break must name the corrupted agent").isEqualTo(target.getAgent().getId());
+        assertThat(edgeBreak.date()).as("the flagged edge break must name the corrupted date").isEqualTo(target.getDate());
+        assertThat(edgeBreak.reason())
+                .as("the flagged reason must identify the operational case (no worked slot on one side), "
+                        + "not the structural case")
+                .contains("operational");
+    }
+
+    @Test
+    @DisplayName("INV-3 red-proof: unstaffing every agent at one edge hour on one date is flagged for that date and hour only")
+    void redProof_INV3_anUnstaffedEdgeHourIsFlaggedForThatDateAndHourOnly() {
+        Schedule solved = solveCleanFixture();
+
+        LocalDate targetDate = LiveShapeShiftDeskFixture.BASE_DATE;
+        LocalTime targetHour = LocalTime.of(8, 0);
+
+        Set<UUID> agentsAt0800 = solved.getAssignments().stream()
+                .filter(a -> a.getAgent() != null
+                        && a.getTimeslot().getDate().equals(targetDate)
+                        && a.getTimeslot().getStartTime().equals(targetHour))
+                .map(a -> a.getAgent().getId())
+                .collect(Collectors.toSet());
+        assertThat(agentsAt0800)
+                .as("sanity: at least one agent must genuinely hold the 08:00 seat on the target date -- "
+                        + "sole-routed to Weekend Opening -- for unseating all of them to be a meaningful corruption")
+                .isNotEmpty();
+
+        for (UUID agentId : agentsAt0800) {
+            unseat(solved, agentId, targetDate, targetHour);
+        }
+
+        List<UnstaffedEdgeHour> unstaffed = findUnstaffedEdgeHours(solved, LiveShapeShiftDeskFixture.EDGE_HOURS);
+        assertThat(unstaffed)
+                .as("exactly one unstaffed edge hour must be flagged: %s", unstaffed)
+                .hasSize(1);
+        UnstaffedEdgeHour hour = unstaffed.get(0);
+        assertThat(hour.date()).as("the flagged cell must name the corrupted date").isEqualTo(targetDate);
+        assertThat(hour.hour()).as("the flagged cell must name the corrupted hour").isEqualTo(targetHour);
+        assertThat(hour.agentsWorking()).as("the flagged cell's agentsWorking must be zero").isZero();
+    }
+
+    // ------------------------------------------------------------------
     //  Task 3 reporting -- markdown tables printed to stdout, transcribed verbatim into the SUMMARY
     // ------------------------------------------------------------------
 
@@ -297,6 +506,82 @@ class SolverQualityGuardTest {
         assertThat(seatedCount)
                 .as("at least one seat must actually be filled -- a walker over zero seats is a vacuous pass")
                 .isGreaterThan(0L);
+    }
+
+    // ------------------------------------------------------------------
+    //  Task 1/2 (plan 15-15) -- corruption helpers, both modelled on
+    //  ShiftEnvelopeGroundTruthTest's Task 2 helpers of the same names
+    // ------------------------------------------------------------------
+
+    /**
+     * Builds a fresh live-shape fixture, solves it at {@code SEEDS[0]}, and asserts as a
+     * PRECONDITION that all three structural walkers return empty before anything is corrupted --
+     * every red-proof and thesis proof in this class starts from this, so a proof can never
+     * accidentally be measuring a pre-existing defect rather than the one it just injected.
+     */
+    private static Schedule solveCleanFixture() {
+        LiveShapeShiftDeskFixture.Fixture fixture =
+                LiveShapeShiftDeskFixture.build(AGENT_COUNT, LiveShapeShiftDeskFixture.DAY_COUNT);
+        Schedule solved = solve(fixture.schedule(), SEEDS[0]);
+        assertNonVacuouslyFeasible(solved);
+        assertThat(findSplitShifts(solved))
+                .as("solveCleanFixture precondition: zero split shifts before any corruption")
+                .isEmpty();
+        assertThat(findEdgeBreaks(solved))
+                .as("solveCleanFixture precondition: zero edge breaks before any corruption")
+                .isEmpty();
+        assertThat(findUnstaffedEdgeHours(solved, LiveShapeShiftDeskFixture.EDGE_HOURS))
+                .as("solveCleanFixture precondition: every edge hour staffed before any corruption")
+                .isEmpty();
+        return solved;
+    }
+
+    /**
+     * Removes {@code agentId}'s held seat at {@code (date, slotStart)} by setting its agent to
+     * null -- punches a hole without moving any other agent's data, unlike {@link #relocateSeat}.
+     * Fails loudly if no such seat is currently held, so a red-proof can never silently corrupt
+     * nothing and report a false pass.
+     */
+    private static void unseat(Schedule solved, UUID agentId, LocalDate date, LocalTime slotStart) {
+        AgentAssignment seat = solved.getAssignments().stream()
+                .filter(a -> a.getAgent() != null
+                        && a.getAgent().getId().equals(agentId)
+                        && a.getTimeslot().getDate().equals(date)
+                        && a.getTimeslot().getStartTime().equals(slotStart))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("no held seat found for agent=" + agentId
+                        + " date=" + date + " slotStart=" + slotStart));
+        seat.setAgent(null);
+    }
+
+    /**
+     * Reassigns {@code seat} to a brand-new synthetic {@link Timeslot} at {@code newStart} --
+     * never mutates an existing shared {@link Timeslot} instance in place, since multiple seats
+     * (one per agent) reference the SAME timeslot object at any given slot in this fixture
+     * (mirrors {@code ShiftEnvelopeGroundTruthTest.relocateSeat} and its documented reason: seats
+     * share {@link Timeslot} instances, so an in-place mutation corrupts every other agent's seat
+     * at that slot too). None of this plan's red-proofs need to MOVE a seat -- every one either
+     * removes a seat ({@link #unseat}) or nulls a shift-band pair -- so this helper is not called
+     * by any test in this class today; it exists so a future corruption case that DOES need
+     * relocation does not reinvent the in-place-mutation mistake it avoids.
+     */
+    @SuppressWarnings("unused")
+    private static void relocateSeat(AgentAssignment seat, LocalDate date, LocalTime newStart) {
+        Timeslot moved = new Timeslot();
+        moved.setId(UUID.randomUUID());
+        moved.setTenantId(seat.getTenantId());
+        moved.setDeskId(seat.getDeskId());
+        moved.setScheduleId(seat.getScheduleId());
+        moved.setDate(date);
+        moved.setStartTime(newStart);
+        moved.setEndTime(newStart.plusMinutes(LiveShapeShiftDeskFixture.INCREMENT_MINUTES));
+        seat.setTimeslot(moved);
+    }
+
+    /** Count of distinct held slot-start times for one agent-day, read from a precomputed map. */
+    private static long heldStartCount(Map<String, List<AgentAssignment>> seatsByAgentDate, AgentShiftAssignment sa) {
+        List<AgentAssignment> seats = seatsByAgentDate.getOrDefault(sa.getAgent().getId() + "@" + sa.getDate(), List.of());
+        return seats.stream().map(a -> a.getTimeslot().getStartTime()).distinct().count();
     }
 
     // ------------------------------------------------------------------
