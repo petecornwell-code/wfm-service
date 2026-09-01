@@ -1281,6 +1281,62 @@ blocked: 1
         CONFOUNDED (underallocationHardLimitPct was changed from 50 to 70 in the same run). A
         clean raise, measured here, was beneficial rather than destructive.
 
+- gap_id: G-15-29
+  truth: "Solver weights must be compared by violation COUNT, and a single run is not evidence"
+  status: open
+  severity: major
+  found_by: the contiguity weight-tuning session, 2026-09-01
+  detail: |
+    ~12 live solves were run on Stubhub (EN) to tune the new contiguity constraint against
+    shiftEnvelopeCompliance. Most of that effort produced no usable signal, for two reasons that
+    should be written down before anyone repeats them.
+
+    1. HARD SCORES ARE NOT COMPARABLE ACROSS WEIGHT CHANGES. Run U scored -4 with envelope at
+       weight 1; run V scored -30 with envelope at 10. V looks five times worse and is actually
+       BETTER: 3 envelope violations against U's 4. Only violation counts compare.
+
+    2. THIS DESK'S SEARCH IS INTERMITTENT AT THE FEASIBILITY BOUNDARY. Measured spread across
+       runs that all met every operator requirement (0 splits, 0 edge breaks, full coverage):
+           envelope violations: 2, 3, 3, 4, 6, 8
+       with no consistent ordering by configuration. Two runs of ONE configuration earlier in the
+       session gave 0 and -1. Differences of 2-8 on a 1104-seat schedule are noise.
+
+    THE COST OF NOT KNOWING THIS: a forecast edit by the operator was blamed for a collapse that
+    was actually caused by a weight change, and the operator was asked to delete demand rows
+    twice on the strength of uncontrolled comparisons. Run R -- the first properly controlled
+    comparison, changing only the weights -- exonerated the data immediately. That control should
+    have come first.
+
+    This is G-15-22 restated with evidence. It is not a nice-to-have.
+  fix: "A benchmark-shaped test that solves a realistic fixture through the real solverConfig.xml
+    and asserts a hard-score ceiling, plus a documented rule that solver comparisons report
+    violation counts per constraint, never raw hard scores, whenever weights differ between runs."
+
+- gap_id: G-15-30
+  truth: "Contiguity and envelope compliance must be weighted on a comparable scale"
+  status: resolved
+  severity: major
+  found_by: the contiguity weight-tuning session, 2026-09-01
+  detail: |
+    shiftWorkContiguity shipped at ofHard(100) (V45's default) against shiftEnvelopeCompliance's
+    ofHard(1) -- a 100:1 ratio under which the solver will rationally breach the envelope up to 99
+    times to avoid one split shift. It did exactly that: 52 envelope violations, 43 on one date,
+    with spans like 08:00-20:00 that no template provides.
+
+    Levelling both to 100 removed the arbitrage but made the model too rigid; 10/10 is the setting
+    that holds every operator requirement with the smallest residual.
+
+    SETTINGS NOW LIVE ON THE DESK, and the recommended default:
+        shiftEnvelopeComplianceWeight  10
+        shiftWorkContiguityWeight      10
+        unassignedAssignmentWeight  10000   (feasibility REQUIRES empty seats be intolerable;
+                                             lowering it to 1000 told the solver 3-8 empty seats
+                                             were acceptable and coverage collapsed)
+        bandCapacityWeight              1
+    Solve: overallocation 500, underallocation 50, shiftEnvelopeSlackSlots 0, 900s.
+  note: "V45's ofHard(100) default should be changed to ofHard(10) so a fresh desk does not
+    inherit the arbitrage. Not done -- it needs a migration and the live desk is already set."
+
 - gap_id: G-15-27
   truth: "An agent's working hours must be contiguous apart from their break"
   status: open
