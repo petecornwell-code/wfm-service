@@ -174,7 +174,8 @@ composing one by hand.
 
 **Research needed at plan time**: Yes — the coupling *mechanism* is settled (see Notes), but the exact `ConstructionHeuristicPhaseConfig`/`QueuedEntityPlacerConfig`/`EntitySelectorConfig` XML nesting for two sequential CH phases is only MEDIUM confidence per ARCHITECTURE.md, and the spike found the `EntitySelectorConfig` needs both `entityClass` and `id` set or the mimic-selector reference resolves to the wrong entity. Verify against a fixture before writing the real `solverConfig.xml`.
 
-**Plans**: 8/8 executed, plus 5 gap-closure plans (15-09…15-13, waves 1–3) addressing UAT gap
+**Plans**: 8/8 executed, plus 5 gap-closure plans (15-09…15-13, waves 1–3) and 2 further gap-closure
+plans (15-14…15-15, waves 1–2) for G-15-22 / G-15-29. The 15-09…15-13 set addresses UAT gap
 **G-15-10** (blocker). Test 10 reached an irreducible hard score of -19 entirely on Shift envelope
 compliance on the live Stubhub (EN) desk. Diagnosis is settled across three debug lanes
 (`.planning/debug/`): envelope-blind minimum-staffing seat supply, a zero-slack value range with no
@@ -199,6 +200,16 @@ Plans:
 - [x] 15-11-PLAN.md — Pre-solve in-envelope seat-supply gate: refuse with named shortfall and levers rather than returning an unlabelled residual; zero-slack pinned as a deliberate invariant (wave 2)
 - [x] 15-12-PLAN.md — Agent Schedule reads the authoritative shift; envelope breach and deliberately-unstaffed hours rendered visibly in Agent Allocation (wave 2)
 - [x] 15-13-PLAN.md — Shape-complete end-to-end regression, characterising-test disposition, deferral record for the two latent defects left out of scope (wave 3)
+
+*Gap closure for G-15-22 / G-15-29 (major, the same gap stated twice) — no automated guard exists on
+solver quality, so a tuning change that wrecks convergence is discovered on a live desk. The guard
+must be invariant-based, not score-based: a hard-score ceiling would itself be flaky (byte-identical
+configuration gave 0 hard and -20 hard twenty minutes apart on 2026-09-01). Scoped deliberately
+narrow by operator decision on 2026-09-01 — G-15-21, G-15-23, G-15-24, G-15-25, G-15-26, G-15-28 and
+G-15-31 are excluded from this round:*
+
+- [ ] 15-14-PLAN.md — Solver quality guard: live-shape synthetic fixture, five seeded step-count-terminated solves through the shipped `solverConfig.xml`, three structural invariants (zero split shifts, zero edge breaks, every edge hour staffed) walked outside the score director, a median violation-COUNT ceiling, and the shipped weight defaults pinned — in the default suite, ungated (wave 1)
+- [ ] 15-15-PLAN.md — Red-proofs that each walker can fail on exactly its own injected defect, a mechanical demonstration that a zero weight blinds the violation-count table while the walker still sees the split, plus the documented solver comparison rule and closure of both gap entries (wave 2)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
 first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the
