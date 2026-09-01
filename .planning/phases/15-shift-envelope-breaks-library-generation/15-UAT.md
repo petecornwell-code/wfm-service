@@ -1364,7 +1364,49 @@ blocked: 1
 
 - gap_id: G-15-29
   truth: "Solver weights must be compared by violation COUNT, and a single run is not evidence"
-  status: open
+  status: resolved
+  resolved_by: "15-BENCHMARK.md's new 'Solver Comparison Rule (G-15-29)' section (the documented
+    rule this gap asked for), plan 15-14's SolverQualityGuardTest (the invariant-based guard the
+    rule's own argument justifies), and plan 15-15's thesisProof test (the rule's argument reduced
+    to a single deterministic assertion)"
+  resolved_evidence: |
+    THE RULE, WRITTEN DOWN. `15-BENCHMARK.md`'s new "Solver Comparison Rule (G-15-29)" section
+    states, as five numbered items each carrying its own measured evidence, that violation COUNTS
+    per constraint -- never raw hard scores -- are the only valid comparison whenever two runs
+    differ in any constraint weight; that a single run is never evidence on this desk (byte-
+    identical configuration produced `b88cc98f 0 hard FEASIBLE`, `60523b98 -20 hard NOT FEASIBLE`
+    and `aaf17313 -20 hard NOT FEASIBLE`, three readings under the same config); that a recurring
+    violation LOCATION (weekday 08:00, sole-routed to `Weekend Opening`) is stronger evidence than
+    a recurring score; and that structural invariants beat scores as a pass/fail gate. This rule is
+    printed inside `SolverQualityGuardTest`'s own failure report (`buildQualityReport`), so a red
+    run surfaces it directly rather than assuming the reader already knows it.
+
+    THE MECHANICAL DEMONSTRATION. `thesisProof_atZeroWeightTheViolationCountTableGoesBlind_
+    butTheWalkerStillSeesTheSplit` (plan 15-15) reduces the rule's argument to one deterministic
+    assertion on one fixed corrupted schedule (single solve, no re-solve): at the fixture's live
+    weight, `hardMatchCountsByConstraint` reports the corrupted constraint (`Shift work
+    contiguity`) with count 1; at `ConstraintWeights.shiftWorkContiguityWeight =
+    HardSoftScore.ofHard(0)`, the SAME key is absent from that map entirely; `findSplitShifts`
+    (the independent structural walker, sharing no code with the score director) returns the
+    identical single hole in both readings. Score-derived evidence is provably a function of the
+    weights AND the schedule; the structural walker is provably a function of the schedule alone
+    -- which is why `SolverQualityGuardTest`'s pass/fail gate (plan 15-14) is invariant-based, with
+    violation counts used only as a median-of-five trip-wire, never a single run's raw score.
+
+    THE UNDERLYING GUARD AND ITS BASELINE (full detail in `15-BENCHMARK.md`'s "Solver Quality
+    Guard (G-15-22)" section and G-15-22's own `resolved_evidence` in this file): five seeded,
+    step-count-terminated solves through the shipped `solverConfig.xml`; `totalHardViolations` per
+    seed 3, 1, 2, 0, 1, median 1.0, ceiling 3, committed before the number was read; INV-1/2/3 hold
+    on every seed; five red-proofs (plan 15-15) demonstrate each walker can go red on exactly its
+    own injected defect. `./gradlew test --tests "com.wfm.solver.SolverQualityGuardTest"` -- 10/10
+    pass, 0 failures, 0 errors.
+
+    POINTER, Test 10 `session_2026_09_01`. That verdict block (recorded above in this file)
+    recommends restating Test 10's criterion (a) ("reaches 0 hard") against the same operator
+    invariants (0 splits, 0 edge breaks, every edge hour non-zero) plus a violation-count ceiling,
+    because on this desk's search "reaches 0 hard" is a coin-flip property of one run, not a
+    property of the build. This guard now supplies exactly that measurement, in automated form.
+    The restatement of Test 10 itself remains the operator's call and is NOT applied by this plan.
   severity: major
   found_by: the contiguity weight-tuning session, 2026-09-01
   detail: |
@@ -1697,7 +1739,62 @@ blocked: 1
 
 - gap_id: G-15-22
   truth: "A solver-tuning change that wrecks convergence must fail locally, not on a live desk"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-14 -- SolverQualityGuardTest (LiveShapeShiftDeskFixture + three
+    independent structural walkers + INV-4 violation-count ceiling), and plan 15-15 -- seven
+    red-proofs demonstrating the guard is able to fail, plus the thesis proof showing why the
+    gate is invariant-based rather than score-based"
+  resolved_evidence: |
+    THE GUARD. `SolverQualityGuardTest` (`src/test/java/com/wfm/solver/`) solves a live-shape
+    synthetic desk five times (seeded, step-count-terminated, through the shipped
+    `solverConfig.xml`) in the DEFAULT `./gradlew test` suite -- ungated, no
+    `-Dwfm.benchmark=true` -- so the deploy gate picks it up automatically, unlike the existing
+    `ShiftModelBenchmarkTest` which sits behind that flag and guarded nothing. Full parameters,
+    the per-seed table, and the per-constraint table are recorded verbatim in `15-BENCHMARK.md`'s
+    new "Solver Quality Guard (G-15-22)" section.
+
+    THE CEILING AND ITS BASELINE. Five seeds, `totalHardViolations` = 3, 1, 2, 0, 1 -- sorted
+    [0, 1, 1, 2, 3], median 1.0. `TOTAL_VIOLATION_CEILING = median + headroom(2) = 3`, committed
+    BEFORE the number was read (plan 15-14's P-42). All five seeds: 0 split shifts, 0 edge
+    breaks, 0 unstaffed edge hours -- the three structural invariants (INV-1/2/3), asserted
+    per-seed and absolute, are the real gate; INV-4 (the ceiling) is a coarse trip-wire on top.
+
+    THE GUARD CAN FAIL -- proven, not assumed. Plan 15-15 added five red-proofs and a thesis proof
+    that corrupt an already-solved clean schedule (single solve, no re-solve, so no proof carries
+    search variance of its own) and assert each structural walker flags EXACTLY its own injected
+    defect: a non-break interior hole named by exact agent/date/hole (INV-1), the break window
+    itself proven NOT flagged as a negative control, a null shift-band pair closing the
+    `ShiftDeskEndToEndRegressionTest` laundering loophole (INV-1), a one-sided break with the
+    exact operational reason string (INV-2), and one unstaffed edge hour scoped to exactly its own
+    date and hour with every other cell untouched (INV-3). A sixth test
+    (`thesisProof_atZeroWeightTheViolationCountTableGoesBlind_butTheWalkerStillSeesTheSplit`) is
+    the mechanical form of G-15-29's argument: at the live weight the corrupted constraint shows
+    count 1 in `hardMatchCountsByConstraint`; at weight `ofHard(0)` the same key vanishes from
+    that map while `findSplitShifts` still returns the identical hole. A seventh proves the
+    failure report's every load-bearing element (invariant name, run parameters, offending rows,
+    per-constraint table, comparison guidance, the `G-15-29` pointer) individually, on the
+    returned string. All ten tests in `SolverQualityGuardTest` pass:
+    `./gradlew test --tests "com.wfm.solver.SolverQualityGuardTest"` -- BUILD SUCCESSFUL, 10/10,
+    0 failures, 0 errors.
+
+    WHAT THIS PROVES AND WHAT IT DOES NOT. The guard proves a solver-tuning change that
+    reintroduces the SHAPE of regression G-15-22 describes -- broken convergence on a realistic,
+    live-weight-shaped fixture -- now fails `./gradlew test`, the same command the deploy gate
+    runs, via structural invariants immune to the run-to-run score noise that let the original
+    regression hide. It does NOT prove every possible tuning regression is caught -- only ones
+    that manifest as a split shift, an edge break, an unstaffed edge hour, or a median
+    violation-count breach on THIS fixture's shape and scale.
+
+    BACK-TEST STATUS -- stated plainly, not implied. This guard has NOT been run against the
+    original failing acceptor commit that caused the -9 -> -66 regression. That acceptor change
+    was already reverted before this guard existed -- test 10's `failed_experiment` above records
+    it explicitly ("-66 after acceptor 0hard -> 1hard -- a REAL regression, reverted" / "-9 after
+    reverting the acceptor"), and the revert predates plan 15-14 by weeks. No checkout of the
+    pre-revert acceptor configuration was performed as part of plan 15-14 or plan 15-15 to confirm
+    the guard would have failed on it, and doing so now would require restoring a specific
+    historical commit's solver config rather than a documented parameter change. This is a genuine
+    gap in the evidence, not a technicality: the guard is verified against SYNTHETIC corruption of
+    the SAME shape as the original regression, never against the original regression itself.
   severity: major
   found_by: the failed acceptor experiment, 2026-08-31
   detail: |

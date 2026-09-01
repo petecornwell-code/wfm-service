@@ -152,3 +152,28 @@ throughput observation) was re-read against this round's changes. None reference
 seat supply, break geometry, or minimum-staffing seat expansion — the surface this round's five
 plans (15-09 through 15-13) touched — so none is made stale by this round. No correction was
 needed.
+
+## 15-14 / 15-15 (gap closure G-15-22, G-15-29)
+
+**The `BreakAwareConstructionTest` wall-clock threshold recommendation is still open, and is now
+BETTER SUPPORTED, not superseded.** `SolverQualityGuardTest` (plan 15-14, extended by plan 15-15's
+red-proofs) demonstrates in the default `./gradlew test` suite that a step-count-terminated,
+seeded solver test — five seeds, `StepCountTermination` on the trailing local-search phase only,
+never `withSpentLimit` — is stable and reproducible even on a 180-entity fixture, adding ~20-31s
+isolated cost. That is exactly the change this file's 15-01 entry already recommends for
+`BreakAwareConstructionTest` (currently wall-clock bounded, "measures hardware as well as solver
+quality"). This round did NOT fold that recommendation into `BreakAwareConstructionTest` itself —
+it is a different test, in a different file, with its own history (the SUPERSEDED retraction
+above) and its own threshold to re-derive; conflating the two risks losing that history. The
+recommendation stands, now with a concrete worked example of the pattern it asks for.
+
+**Staleness check (per plan 15-13's Task 3 instruction, re-applied here).** Every entry above this
+section was re-read against plans 15-14 and 15-15's actual changes: a new test file
+(`SolverQualityGuardTest.java`), a new fixture file (`LiveShapeShiftDeskFixture.java`), and prose
+additions to `15-BENCHMARK.md`, `15-UAT.md`, and this file — no production source file was touched
+by either plan (15-15's threat model confirms no trust boundary was crossed; 15-14 touched none
+either). None of the entries above reference shift-envelope seat supply, break geometry, or
+minimum-staffing seat expansion (the surface 15-09 through 15-13 touched, already checked stale-
+free above), and none references solver-quality guarding or benchmark infrastructure in a way this
+round's additive, test-only changes could contradict. **No entry above is made stale by this
+round.** No correction was needed.

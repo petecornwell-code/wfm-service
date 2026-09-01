@@ -339,3 +339,112 @@ What an operator should do next, and on what evidence:
 - **Multi-day and cross-midnight envelope interactions beyond 2 days** are not exercised by the
   comparative fixture (`DAY_COUNT = 2`); `SPIKE-COUPLING.md` open item 4 already named multi-day
   envelopes as untested by its own toy spike, and this benchmark does not close that gap either.
+
+## Solver Comparison Rule (G-15-29) — added 2026-09-01, after the Pass Rule above was committed
+
+Written down here because the argument behind it is exactly the discipline this file's own Pass
+Rule already lives by (measure first, commit the rule before reading a number that could bias it)
+— this section is a RULE, appended after a session that burned ~12 live solves without one. See
+`15-UAT.md` gap `G-15-29` for the full session record this rule closes.
+
+1. Whenever two runs differ in ANY constraint weight, compare VIOLATION COUNTS per constraint,
+   never raw hard scores. Evidence: run U scored -4 with `shiftEnvelopeCompliance` at weight 1;
+   run V scored -30 at weight 10 and was BETTER — 3 envelope violations against U's 4.
+2. A single run is not evidence on this desk. Evidence: byte-identical configuration — period
+   2026-01-05..2026-01-11, 08:00-21:00, 60min grid, breaks 60min/`ON_HOUR`/4.0h-min-shift/
+   20%-blocked, contracted 8.0h, over/under 500/50, mode `SHIFT` — verified field by field through
+   the API, run at the current commit (`a320ca7`) three separate times gave three different
+   readings:
+       `b88cc98f    0 hard   FEASIBLE`
+       `60523b98  -20 hard   NOT FEASIBLE  (2 envelope violations)`
+       `aaf17313  -20 hard   NOT FEASIBLE  (2 envelope violations)`
+   Same weights, same solver config, three runs — two of the three even agree on the hard score
+   (`-20`) while disagreeing on which agent-hours it names (see item 3). Earlier in the same
+   investigation, envelope violations across runs all meeting every operator requirement were
+   2, 3, 3, 4, 6, 8, with no consistent ordering by configuration. Three runs is three runs — this
+   is not claimed as a larger sample than it is.
+3. A recurring violation LOCATION is far stronger evidence than a recurring score — the file's own
+   standing methodological note, confirmed twice (Sunday 20:00 across runs D and E; weekday 08:00
+   across the 2026-09-01 runs). `60523b98`'s two violations were Mon 2026-01-05 08:00 and Tue
+   2026-01-06 08:00; `aaf17313`'s two were BOTH Mon 2026-01-05 08:00 (Augusto Correia, Liliana
+   Kulish). `Weekend Opening` (08:00-17:00) is the only template reaching 08:00 on a weekday — the
+   same "single template is the sole route to a boundary hour" shape already recorded for Sunday
+   20:00 (`sunday_2000_is_structural`, `15-UAT.md`).
+4. Structural invariants beat scores as a pass/fail gate. Evidence: 0 split shifts, 0 edge breaks
+   and non-zero coverage at every edge hour held on ALL THREE of 2026-09-01's live runs including
+   the -120 one, while hard score decided nothing. A fourth run (`aaf17313`, the same correct
+   500/50 configuration as `b88cc98f`/`60523b98`) also held all three invariants — 0 split shifts
+   / 138 agent-days, 0 edge breaks, all four edge hours staffed on all 7 days — strengthening this
+   reading rather than complicating it.
+5. This extends D-14's model-independent-metrics discipline from "which metric" to "which
+   comparison": D-14 already forbids thresholding a soft score across arms evaluating different
+   constraint sets; the same logic forbids comparing hard scores across differing weights.
+
+This rule is the documented half of `G-15-29`'s `fix:` in `15-UAT.md`. `SolverQualityGuardTest`
+prints it in its own failure output (`buildQualityReport`'s closing paragraph) so a red run tells
+the reader the rule rather than assuming they know it.
+
+## Solver Quality Guard (G-15-22) — baseline, added 2026-09-01
+
+Recorded here, dated, appended after the Pass Rule above was committed — the same append-only
+discipline as the Solver Comparison Rule section above, and for the same reason: this file's git
+history is the evidence its numbers were not adjusted after being read.
+
+**File and command.** `src/test/java/com/wfm/solver/SolverQualityGuardTest.java`, run via
+`./gradlew test` — the DEFAULT suite, ungated, no `-D` system property. The existing benchmark
+(`ShiftModelBenchmarkTest`, above) sits behind `-Dwfm.benchmark=true` and therefore never runs on
+the deploy gate — that is precisely how G-15-22's sevenfold acceptor regression shipped with a
+green build. This guard is deliberately NOT behind the same flag.
+
+**Fixture parameters** (`LiveShapeShiftDeskFixture`, plan 15-14):
+- 10 agents, 2 days (`DAY_COUNT`, the escape-hatch value — see plan 15-14's Deviations)
+- 5 shift templates (Weekend Opening, Early, Flex, Late, Closing), 3 bands each
+- 60-minute grid, operating window 08:00-21:00
+- Contracted hours 8.00h/agent/day, break 60 minutes, `ON_HOUR` alignment
+- Over-allocation 500%, under-allocation 50%
+- Pinned weights: `shiftEnvelopeComplianceWeight` 10 hard, `shiftWorkContiguityWeight` 10 hard,
+  `bandCapacityWeight` 1 hard, `unassignedAssignmentWeight` 10000 soft
+- 5 seeds (1, 2, 3, 4, 5), step-count limit 5,000 (the escape-hatch value)
+
+**Per-seed results** (transcribed verbatim from `15-14-SUMMARY.md`, unmodified build):
+
+| seed | hardScore | totalHardViolations | splitShifts | edgeBreaks | unstaffedEdgeHours | elapsedMillis |
+|---|---|---|---|---|---|---|
+| 1 | -120 | 3 | 0 | 0 | 0 | 3262 |
+| 2 | -10 | 1 | 0 | 0 | 0 | 3477 |
+| 3 | -20 | 2 | 0 | 0 | 0 | 3512 |
+| 4 | 0 | 0 | 0 | 0 | 0 | 3651 |
+| 5 | -10 | 1 | 0 | 0 | 0 | 3370 |
+
+**Per-constraint violation counts across seeds:**
+
+| constraint | seed 1 | seed 2 | seed 3 | seed 4 | seed 5 |
+|---|---|---|---|---|---|
+| Shift envelope compliance | 2 | 1 | 2 | 0 | 1 |
+| Contracted hours (under) | 1 | 0 | 0 | 0 | 0 |
+
+**The ceiling and its arithmetic.** Sorted `totalHardViolations`: `[0, 1, 1, 2, 3]`, median `1.0`.
+Rule (committed before the number was read, plan 15-14's P-42): ceiling = median + headroom(2),
+floored at 2 when the median is 0. `1.0 + 2 = 3` → `TOTAL_VIOLATION_CEILING = 3`. A reader can
+check this arithmetic against the per-seed table above without trusting the constant's javadoc.
+
+**Runtime.** Isolated `SolverQualityGuardTest` class time (unloaded machine, 15-14's original 3
+test methods, before this plan's 7 additional proofs): 20.155s (first run), 31.009s (a later run
+under accumulated load) — both well under the plan's 90-second budget. Full-suite `./gradlew test`
+delta against `HANDOFF.md`'s recorded 8m08s baseline: +147s (10m35s) on the first invocation,
++235s (12m03s) on a forced `--rerun-tasks` invocation — both OVER the 90s ceiling on their face,
+reported plainly rather than hidden. Judged NOT attributable to the guard's own cost (the isolated
+cost is two orders of magnitude smaller than either delta; the delta grew monotonically across two
+runs of byte-identical code, the signature of thermal throttling on a fanless dev machine, not a
+fixed per-run cost) — see `15-14-SUMMARY.md`'s Runtime Budget section and coverage `D6` for the
+full reasoning and the still-open human-confirmation ask (compare the next CI deploy gate's actual
+Test job duration against the 12m53s baseline recorded in `HANDOFF.md`).
+
+**What this guard does NOT cover.** It is a synthetic fixture at a fraction of the live desk's
+scale (10 agents / 2 days against the live desk's 138 agent-days across 7 days). It makes no claim
+about absolute schedule quality — `TOTAL_VIOLATION_CEILING` is a coarse trip-wire sized to catch
+the SEVENFOLD acceptor class of regression this gap was filed over (-9 to -66, G-15-22), not a
+fine-grained quality metric. `INV-1`/`INV-2`/`INV-3` (the structural walkers) are the real gate;
+`INV-4` (the ceiling) exists only to catch a regression severe enough to move the median by more
+than 2. This is stated plainly, not softened, per this file's own established precedent of
+reporting both readings and hiding neither.
