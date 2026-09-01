@@ -1240,6 +1240,47 @@ blocked: 1
     re-deriving violations against the CURRENT library rather than the accepted one. Same read-path
     family as CR-04 (test 20). Not chased this session.
 
+- gap_id: G-15-28
+  truth: "Weekend demand at the day's edges is forecast far below the roster actually working"
+  status: open
+  severity: major
+  owner: operator ("ok I'll fix the weekend demand forecast", 2026-09-01)
+  found_by: the 0-hard experiment, 2026-09-01
+  detail: |
+    THE ROOT CAUSE BEHIND MOST OF THIS SESSION'S SYMPTOMS, and the operator identified it
+    independently before this entry was written.
+
+    Live weekend forecast against a roster of 18-25 agents on those days:
+      Sat 2026-01-10  NO demand row at all before 11:00, none at 20:00. Peak 11:00 = 44.
+      Sun 2026-01-11  10:00 = 1 FTE, nothing at 08:00/09:00/20:00. Peak 11:00 = 32.
+
+    `bulkOverallocationLimit` derives its ceiling as demand x overallocationHardLimitPct / 100, so
+    a forecast of 1 FTE at Sunday 10:00 admits 2 agents at the desk's 250% setting. Weekend Opening
+    (08:00-17:00) has zero slack, so EVERY holder must work 10:00 — five held it, two could sit
+    there, three were forced out of envelope. Sunday 18:00 (demand 4, ceiling 10) forced the other
+    three. Those six were the entire residual hard score.
+
+    PROVEN BY EXPERIMENT. Raising overallocationHardLimitPct 250 -> 500 (which is purely a way of
+    saying "trust the forecast less at the edges"), with everything else held constant, took the
+    live desk to hard 0, FEASIBLE — the first feasible solve this desk has produced. Same library,
+    same roster, same period. Nothing about the schedule changed except the ceiling the forecast
+    implies.
+
+    So the residual was never a solver defect. It was the forecast asserting that ~1 agent is
+    needed at hours when the operator rosters ~20 and requires the desk staffed.
+  fix: "Operator is correcting the weekend forecast. Once corrected, RE-RUN AT 250% — the 500%
+    ceiling is a workaround for the bad data and should not be left in place, because it also
+    disables the over-allocation guard everywhere else in the week."
+  consequences_for_this_file: |
+    Several earlier conclusions were reasoning around this data defect without naming it:
+      - test 10's remaining_9 "seats are NOT scarce" pillar: seats were scarce, because the
+        ceiling is derived from a forecast that understates the edges.
+      - the Tuesday 08:00 residual and the Sunday 20:00 residual, both diagnosed as "a boundary
+        hour reachable by exactly one template", are the same mechanism seen at other edges.
+      - G-15-24's warning about raising the ceiling: that measurement is now known to be
+        CONFOUNDED (underallocationHardLimitPct was changed from 50 to 70 in the same run). A
+        clean raise, measured here, was beneficial rather than destructive.
+
 - gap_id: G-15-27
   truth: "An agent's working hours must be contiguous apart from their break"
   status: open
