@@ -96,6 +96,15 @@ public class ConstraintWeightsService {
         if (updates.getMinStaffingWeight() != null) {
             weights.setMinStaffingWeight(toScore(updates.getMinStaffingWeight()));
         }
+        if (updates.getShiftEnvelopeComplianceWeight() != null) {
+            weights.setShiftEnvelopeComplianceWeight(toScore(updates.getShiftEnvelopeComplianceWeight()));
+        }
+        if (updates.getBandCapacityWeight() != null) {
+            weights.setBandCapacityWeight(toScore(updates.getBandCapacityWeight()));
+        }
+        if (updates.getShiftWorkContiguityWeight() != null) {
+            weights.setShiftWorkContiguityWeight(toScore(updates.getShiftWorkContiguityWeight()));
+        }
 
         ConstraintWeights saved = constraintWeightsRepository.save(weights);
         return toDto(saved);
@@ -121,6 +130,9 @@ public class ConstraintWeightsService {
         dto.setBulkUnderallocationSoftWeight(fromScore(w.getBulkUnderallocationSoftWeight()));
         dto.setBulkUnderallocationHardWeight(fromScore(w.getBulkUnderallocationHardWeight()));
         dto.setMinStaffingWeight(fromScore(w.getMinStaffingWeight()));
+        dto.setShiftEnvelopeComplianceWeight(fromScore(w.getShiftEnvelopeComplianceWeight()));
+        dto.setBandCapacityWeight(fromScore(w.getBandCapacityWeight()));
+        dto.setShiftWorkContiguityWeight(fromScore(w.getShiftWorkContiguityWeight()));
         return dto;
     }
 

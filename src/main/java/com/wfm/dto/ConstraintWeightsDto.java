@@ -22,6 +22,15 @@ public class ConstraintWeightsDto {
     private ScoreDto bulkUnderallocationHardWeight;
     private ScoreDto minStaffingWeight;
 
+    // Phase 15 weights. Absent from this DTO until now, which meant the three constraints the
+    // shift model rests on could be neither read nor tuned through the API -- directly against the
+    // intent their own migrations state ("hard-vs-soft is this column's value, never a code
+    // decision"). Their omission is how a 100:1 ratio between shiftWorkContiguity and
+    // shiftEnvelopeCompliance became untunable without a deploy.
+    private ScoreDto shiftEnvelopeComplianceWeight;
+    private ScoreDto bandCapacityWeight;
+    private ScoreDto shiftWorkContiguityWeight;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -59,4 +68,10 @@ public class ConstraintWeightsDto {
     public void setBulkUnderallocationHardWeight(ScoreDto v) { this.bulkUnderallocationHardWeight = v; }
     public ScoreDto getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(ScoreDto v) { this.minStaffingWeight = v; }
+    public ScoreDto getShiftEnvelopeComplianceWeight() { return shiftEnvelopeComplianceWeight; }
+    public void setShiftEnvelopeComplianceWeight(ScoreDto v) { this.shiftEnvelopeComplianceWeight = v; }
+    public ScoreDto getBandCapacityWeight() { return bandCapacityWeight; }
+    public void setBandCapacityWeight(ScoreDto v) { this.bandCapacityWeight = v; }
+    public ScoreDto getShiftWorkContiguityWeight() { return shiftWorkContiguityWeight; }
+    public void setShiftWorkContiguityWeight(ScoreDto v) { this.shiftWorkContiguityWeight = v; }
 }
