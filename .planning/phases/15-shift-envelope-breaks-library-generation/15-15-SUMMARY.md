@@ -230,3 +230,15 @@ None — no external service configuration required.
 ---
 *Phase: 15-shift-envelope-breaks-library-generation*
 *Completed: 2026-09-01*
+
+## Self-Check: PASSED
+
+- FOUND: `src/test/java/com/wfm/solver/SolverQualityGuardTest.java`
+- FOUND: `.planning/phases/15-shift-envelope-breaks-library-generation/15-BENCHMARK.md`
+- FOUND: `.planning/phases/15-shift-envelope-breaks-library-generation/15-UAT.md`
+- FOUND: `.planning/phases/15-shift-envelope-breaks-library-generation/deferred-items.md`
+- FOUND commit `5b19307` (Task 1)
+- FOUND commit `c243d78` (Task 2)
+- FOUND commit `f452da6` (Task 3)
+- FOUND commit `81ca305` (docs: plan summary)
+- `./gradlew test --tests "com.wfm.solver.SolverQualityGuardTest"` — 10/10 pass, re-verified under full-suite load (`./gradlew test`: 600 tests, 0 failures, 0 errors, 2 skipped)
