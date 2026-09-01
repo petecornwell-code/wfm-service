@@ -588,6 +588,48 @@ verdict: |
   fixed and deployed, and the desk produces a usable schedule. What remains is a search plateau
   worth 9 agent-hours in 1104, plus one unfixed instance of the calendar-blindness class (B, third
   site) which is not implicated in the residual but is a live over-counting risk in the gate.
+ab_experiment_2026_09_01: |
+  A CONTROLLED A/B RESOLVED THE RESIDUAL ALMOST ENTIRELY, and it was an OPERATOR lever — a shift
+  library edit — not a solver change. Both arms: period 2026-01-05..11, 08:00-21:00, 60min,
+  overallocation 250 / underallocation 50, solveTimeSeconds 300. Only the bands differed.
+
+    Run A  f1f82a8f  ORIGINAL bands (offsets 180/240/300 on every template)
+                     hard  -10   soft -62   envelope violations 10   converged ~4 min
+    Run B  3a72f0c4  + FIVE EDGE BANDS
+                     hard   -1   soft -58   envelope violations  1   converged ~1 min
+
+  Run A reproduces the -9 baseline within search variance, so it is a sound control.
+  Run B ACCEPTED as aa17cc3c (PUT .../accept?version=0).
+
+  THE EDGE BANDS ADDED (chosen against the live demand curve, deliberately avoiding the 11:00
+  peak of 44 FTE Saturday / 32 Sunday):
+    Weekend Early 10:00-19:00  + offset 0 (break 10:00) and 480 (18:00)
+    Weekend Flex  10:00-20:00  + offset 0 (break 10:00) and 540 (19:00)
+    Weekend Late  11:00-20:00  + offset 480 (break 19:00)   [no offset 0 — that is the peak]
+
+  WHY IT WORKS. Every template previously carried bands ONLY at offsets 180/240/300 — a three-hour
+  window in the middle of the shift. Sunday 10:00 carries demand 1, so its over-allocation ceiling
+  is tiny, yet Weekend Early (net 8.0 against 8 contracted hours) has no spare slot and every agent
+  holding it was OBLIGED to work 10:00. An offset-0 band puts the break exactly on that bottleneck,
+  converting a violation the solver had to pay into a single strictly-improving ChangeMove it finds
+  at once. The 4x faster convergence is the signature of that: the fix is reachable in one move
+  instead of an unreachable multi-move sequence.
+
+  BEARING ON THE 'SEARCH PLATEAU' VERDICT ABOVE: the residual was NOT purely a search-quality
+  problem. It was substantially a LIBRARY SHAPE problem — break positions clustered where they
+  could not relieve the binding hours — and the plateau reading pointed at acceptors and weight
+  scales, which is where the failed experiment went. remaining_9's claim that library shape was
+  ruled out ("zero uncovered windows, every advisory clean") is now falsified: coverage and
+  advisory cleanliness do not detect a library whose break OFFSETS are all in the wrong place.
+
+  CAVEAT — the offset-0 and trailing-edge bands mean an agent's break sits at the very start or
+  end of their envelope, i.e. effectively a late start or early finish, producing an unbroken
+  working day. That is exactly the shape D5 warns is ungoverned in SHIFT mode
+  (breakBlockedHours has no enforcement point). The score is better; whether these shifts are
+  OPERATIONALLY acceptable is an operator judgement that has NOT been made. Do not treat the
+  -1 as ratified until someone rules on that.
+  residual_1: "One envelope violation remains, plus 39 unworked legal slots (normal under bounded
+    slack — see test 19's expectation_correction)."
 
 ### 11. No agent is seated outside their assigned shift envelope
 
@@ -1131,12 +1173,45 @@ blocked: 1
     family as CR-04 (test 20). Not chased this session.
 
 - gap_id: G-15-26
-  truth: "A completed solve must always be clearable, so the desk can start another one"
+  truth: "An unsupported HTTP method must return 405, not 500 INTERNAL_ERROR"
   status: open
-  severity: blocker
-  found_by: edge-band experiment, 2026-08-31 (resumed session)
-  blocks: "Test 10 and any further solve on Stubhub (EN). The dev desk is currently WEDGED."
-  detail: |
+  severity: minor
+  found_by: edge-band experiment, 2026-08-31/09-01 (resumed session)
+  RETRACTED_ORIGINAL_CLAIM: |
+    THIS ENTRY ORIGINALLY READ "A completed solve must always be clearable" at severity BLOCKER,
+    and asserted the dev desk was WEDGED with no API route out — that a COMPLETED schedule living
+    in InMemoryScheduleStore but not the DB permanently blocked new solves, "reproduced
+    deterministically" across two schedules and a task replacement.
+
+    ALL OF THAT WAS WRONG, and it was my error, not a product defect. accept/reject/stop are
+    @PutMapping (ScheduleController:63, :69, :77); I was calling them with POST. Spring answered
+    HttpRequestMethodNotSupportedException, which the catch-all mapped to 500 INTERNAL_ERROR, and
+    I read the 500 as a broken lifecycle. The CloudWatch log settled it in one line:
+      "HttpRequestMethodNotSupportedException: Request method 'POST' is not supported"
+    Issued correctly as `PUT /schedules/{id}/accept?version=0`, accept returned 200 immediately.
+
+    CONSEQUENCES OF THE BAD DIAGNOSIS, recorded so the next reader can discount them:
+      - An ECS force-new-deployment was run to "recover" a desk that was never stuck.
+      - A deploy re-run was attempted for the same reason (it failed on ECR tag immutability —
+        that finding is real and independent, see below).
+      - The "one solve per task lifetime" claim was an artefact of my using POST every time.
+    The DELETE 404 is ALSO not a defect: a COMPLETED schedule is not yet persisted, so the
+    repository lookup correctly misses. Nothing about the store/DB split is broken.
+  detail_actual: |
+    WHAT REMAINS, and it is much smaller. GlobalExceptionHandler has no handler for
+    HttpRequestMethodNotSupportedException, so its catch-all (:105) returns
+    500 / "An unexpected error occurred" for what is a plain 405. That is what made a trivial
+    client mistake look like a server fault and cost this session a great deal of time.
+  fix_actual: "Add an @ExceptionHandler for HttpRequestMethodNotSupportedException returning 405
+    METHOD_NOT_ALLOWED with the supported methods, so a wrong verb is self-diagnosing."
+  unrelated_real_finding: |
+    ECR TAG IMMUTABILITY. `gh run rerun` on a deploy can NEVER succeed: the image is tagged with
+    the commit SHA and ECR refuses to overwrite an existing tag —
+    "tag invalid: The image tag '<sha>' already exists ... and cannot be overwritten because the
+    tag is immutable." Re-running a deploy to restart the service is not available; a redeploy
+    needs a commit touching something outside `.planning/**`. The test gate and frontend deploy
+    both passed in that run, so nothing regressed.
+  superseded_detail: |
     Schedule bf3e533f-a9b4-411f-b0a1-6a5987c86d4a reached status COMPLETED (hard -20338). It is
     returned by GET /schedules, and it gates new solves — POST /solve refuses with "A schedule
     already exists for this desk. Stop it (if running) and accept or reject it before starting a
@@ -1155,6 +1230,25 @@ blocked: 1
 
     Net effect: a solve that completes without being persisted permanently blocks the desk. There
     is no API route out. Recovery requires restarting the service to clear InMemoryScheduleStore.
+  reproduced_deterministically: |
+    CONFIRMED TWICE, on two different schedules, either side of a task replacement. After the task
+    was replaced (which cleared the first wedge), a clean solve was run to completion — Run A,
+    f1f82a8f, COMPLETED at hard -10 — and the desk wedged again IMMEDIATELY on the same three
+    failures: accept 500, reject 500, DELETE 404.
+
+    So this is not a corrupted-schedule edge case. The desk can run EXACTLY ONE solve per task
+    lifetime, then locks until ECS replaces the task. Any UAT session doing more than one solve
+    will hit it, which is why the A/B in this session could not be completed.
+  severity_note: |
+    Escalated from the initial reading. Two ACCEPTED schedules for the SAME desk and SAME period
+    (2026-01-05..11) already exist, from before the current task. A leading hypothesis for the 500
+    is that accept tries to persist a third schedule over that pair and trips a DB constraint,
+    with GlobalExceptionHandler's catch-all (:105) hiding the real exception. Worth checking
+    whether accept ever succeeded on a desk that already had an accepted schedule for the period.
+  recovery: "aws ecs update-service --cluster wfm-service-dev --service wfm-service
+    --region eu-west-2 --force-new-deployment  (rolls the task, clears the in-memory store, no
+    code change). NOTE: `gh run rerun` on the last deploy CANNOT work — ECR tags are immutable and
+    the image is tagged with the commit SHA, so the push step always fails with `tag invalid`."
   fix: "deleteSchedule must fall back to the in-memory store when the DB lookup misses, and the
     500s on stop/accept/reject need their real exception surfaced (currently swallowed into
     INTERNAL_ERROR by GlobalExceptionHandler's catch-all at :105). Independently: the
