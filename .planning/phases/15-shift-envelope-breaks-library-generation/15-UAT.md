@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-08-31T00:00:00Z"
+updated: "2026-09-01T19:20:00Z"
 ---
 
 <!--
@@ -13,6 +13,21 @@ Phase 15 is deployed to the dev environment:
 
   https://d2bbtcc80peap7.cloudfront.net        (/actuator/health -> UP, Postgres connected)
 
+>>> CURRENT AS OF 2026-09-01T19:00Z — commit `a320ca7` is live (V45 contiguity constraint +
+>>> V46 default of 10 + the UI weights page). Re-derived from infrastructure, not from any
+>>> recorded claim, per the standing rule below:
+>>>     ECS image tag   wfm-service:a320ca77b7d45a0111bcfa1f21c7a01229d41876  (task def :65)
+>>>     rollout         PRIMARY, 1/1 running, COMPLETED 18:46:28Z
+>>>     Flyway          "now at version v46", applied 18:44:35Z
+>>>     frontend        bundle index-B6kWCkcj.js carries the three new weight labels
+>>> HANDOFF.md §1 previously recorded this deploy as FAILED. That was wrong — it was written
+>>> mid-run; the run passed on attempt 1. See HANDOFF.md §1 for the correction.
+>>>
+>>> TWO API NOTES for anyone testing by curl rather than the UI:
+>>>   - /api/v1/** returns a bare 400 with no message unless you send `X-Tenant-ID: 1`.
+>>>   - /actuator/info returns INTERNAL_ERROR, so there is no build-info endpoint; the ECS
+>>>     task definition's image tag is the only reliable way to read the deployed SHA.
+>>>
 >>> CORRECTED 2026-08-27T21:22Z. The paragraph below is preserved because its REASONING is
 >>> still sound, but its CONCLUSION expired the moment the gap-closure round landed. What it
 >>> asserted was true of the main phase and is NOT true of the phase as it now stands. Read
@@ -699,6 +714,72 @@ weekend_edge_coverage_2026_09_01: |
   in the session: the operator and this session were driving the same desk concurrently. Those
   were correct guard behaviour, NOT the defect the retracted G-15-26 claimed.
 
+session_2026_09_01: |
+  THREE runs on dev at commit a320ca7 (V45 contiguity constraint + V46 default of 10, both live —
+  deploy verified against the ECS image tag, not a recorded claim). Library unchanged from §2 of
+  HANDOFF.md. This is the first exercise of Test 10 with the contiguity constraint in place.
+
+  RUN 1 — 8d67825c, accepted as b88cc98f. Started by the previous session's parked chained task,
+  not by hand. 0 HARD / -60 soft, FEASIBLE, terminated 7m33s into a 900s budget on unimproved
+  steps.
+      0 split shifts / 138 agent-days     0 edge breaks     violatedHardConstraints []
+      edge-hour coverage, all 7 days non-zero on 08:00, 09:00, 10:00 and 20:00
+
+  THIS IS THE FIRST RUN EVER TO SATISFY TEST 10'S CRITERION (a) WITH THE OPERATOR'S REQUIREMENTS
+  INTACT. The earlier 0-hard run (bff23a47) reached 0 only on the pre-un-retire library, which
+  left 08:00/09:00/20:00 empty and was explicitly "not a valid answer to the operator's
+  requirement". This one holds both at once.
+
+  RUN 2 — 60523b98, operator-run from the UI. CONFIG BYTE-IDENTICAL TO RUN 1 (verified field by
+  field via the API: same period, 08:00-21:00, 60min, breaks 60/ON_HOUR/4.0h/20%, contracted 8.0,
+  500/50, SHIFT). Result:
+      -20 HARD / -61 soft, NOT FEASIBLE — 2 Shift envelope compliance violations
+      0 split shifts     0 edge breaks     all four edge hours still non-zero on all 7 days
+
+  So the SAME configuration gave 0 hard and -20 hard within twenty minutes of each other. This is
+  the variance already recorded at the head of this file (Run B -1 vs bff23a47 0), reproduced at
+  the current commit. Criterion (a) — "reaches 0 hard" — is satisfied by one run and failed by the
+  other, with no difference between them that anyone can name.
+
+  RUN 3 — 2eeb2ca9, operator-run at overallocationHardLimitPct 250 (the form default, not a
+  deliberate choice). -120 hard, NOT FEASIBLE, three constraints violated (contracted hours under,
+  envelope compliance, contiguity). Rejected, not accepted. Its value is diagnostic only, and it is
+  the evidence behind G-15-31 below — the run was NOT refused by the seat-supply gate despite
+  failing on exactly what that gate exists to pre-empt.
+
+  WHERE THE VIOLATIONS LANDED — recorded because this file's own methodological note says a
+  recurring LOCATION is far stronger evidence than a recurring score:
+      Run 2 violation 1   Juan Diego Dieguez     2026-01-05 (Mon) 08:00-09:00
+      Run 2 violation 2   Melina Noemi Aparicio  2026-01-06 (Tue) 08:00-09:00
+  Both weekday 08:00. Dieguez holds `Morning` (09:00-18:00) and is seated at 08:00 from outside it
+  (`divergence.outOfEnvelopeSeats: ["08:00"]`, surrendering 17:00 inside it). `Early` (08:00-17:00,
+  MON-FRI) is the ONLY weekday template reaching 08:00 — confirmed against the live template list.
+
+  That is the SAME SHAPE as sunday_2000_is_structural, now on weekdays: a boundary hour reachable
+  by exactly one template, too few agents holding it, so the hour is covered from outside an
+  envelope at a cost of 1 hard each. The general lesson recorded there — "wherever a single
+  template is the sole route to a boundary hour, its headcount becomes a hard constraint nothing in
+  the UI surfaces" — now has a second, independent instance.
+
+  BEARING ON sunday_2000_is_structural: Sunday 20:00 did NOT violate in either of today's runs.
+  Run 1 staffed it with 2 agents and Run 2 with 1, both legally, both at 0 violations there. This
+  does NOT falsify that finding — it was measured before `Weekend Closing` (12:00-21:00, the sole
+  route to Sunday 20:00) was un-retired, and un-retiring it is essentially option (b) from the
+  options list there. The structural analysis was correct for the library it described, and the
+  library change resolved it. Recorded so nobody re-opens it as a contradiction.
+
+  VERDICT — NOT SET HERE, operator's call. The evidence supports two readings and they lead
+  different places:
+    (a) PASS. Criterion (a) has now been met with requirements intact, and the desk is live on that
+        schedule. The -20 run is search noise of the size this file already documents (2,3,3,4,6,8).
+    (b) STILL ISSUE. The stated criterion is "reaches 0 hard", and 1 of 2 identical runs fails it.
+  The honest observation is that CRITERION (a) IS ITSELF THE PROBLEM. On a search with this
+  variance, "reaches 0 hard" is a coin-flip property of a run, not a property of the build — so it
+  cannot decide a UAT test either way. What WAS stable across all three of today's runs, including
+  the -120 one, is the operator-requirement set: 0 splits, 0 edge breaks, every edge hour non-zero.
+  Re-stating Test 10 against those invariants plus a violation-count ceiling would make it decidable
+  and is the same measurement G-15-22's automated guard needs. Recommended, not applied.
+
 ### 11. No agent is seated outside their assigned shift envelope
 
 expected: Every agent works only within the envelope of the single shift assigned to them that day; each working agent-day has exactly one shift. This is the phase's core hard-constraint guarantee.
@@ -1308,9 +1389,26 @@ blocked: 1
     have come first.
 
     This is G-15-22 restated with evidence. It is not a nice-to-have.
+
+    CONFIRMED AGAIN 2026-09-01, at the current commit, on two runs rather than twelve. Runs 1 and 2
+    of Test 10's session_2026_09_01 used BYTE-IDENTICAL configuration — verified field by field
+    through the API, not assumed — twenty minutes apart on the same build and the same library:
+        run 1  b88cc98f    0 hard   FEASIBLE
+        run 2  60523b98  -20 hard   NOT FEASIBLE  (2 envelope violations)
+    Neither of the two people looking at it could tell noise from regression without hand-computing
+    the operator invariants from the API response. That is the whole gap, reproduced cheaply.
+
+    AND A DESIGN CONSTRAINT THE FIX MUST RESPECT, learned from those same runs: a benchmark
+    asserting a HARD-SCORE CEILING WILL ITSELF BE FLAKY, for exactly the reason run 2 was -20. What
+    was stable across all three of 2026-09-01's runs — including the -120 one at the wrong
+    over-allocation limit — was the operator-requirement set: 0 split shifts, 0 edge breaks, every
+    edge hour non-zero on every day. Those are the invariants worth asserting. A score ceiling, if
+    used at all, belongs on violation COUNTS and over several runs, never on one run's raw score.
   fix: "A benchmark-shaped test that solves a realistic fixture through the real solverConfig.xml
-    and asserts a hard-score ceiling, plus a documented rule that solver comparisons report
-    violation counts per constraint, never raw hard scores, whenever weights differ between runs."
+    and asserts the STABLE operator invariants (0 split shifts, 0 edge breaks, every edge hour
+    non-zero) rather than a single run's hard score; any score-based assertion must be on violation
+    counts across repeated runs. Plus a documented rule that solver comparisons report violation
+    counts per constraint, never raw hard scores, whenever weights differ between runs."
 
 - gap_id: G-15-30
   truth: "Contiguity and envelope compliance must be weighted on a comparable scale"
@@ -1505,6 +1603,73 @@ blocked: 1
   fix: "Compute supply per-agent-day against each agent's OWN eligible pairs and take the
     achievable assignment, rather than unioning the desk-wide pair list. Fixing G-15-21's date
     filter alone will NOT fix this — the two defects are independent and share only the method."
+
+- gap_id: G-15-31
+  truth: "The seat-supply gate must compare supply where the shortfall bites, not as a day-wide total"
+  status: open
+  severity: major
+  found_by: operator run at 250% over-allocation, 2026-09-01 (see Test 10 session_2026_09_01 Run 3)
+  related_to: >
+    G-15-25 (same method, same line) and G-15-21 (same method). DISTINCT FROM BOTH and neither fix
+    resolves it. G-15-21 says the supply NUMBER is wrong (calendar-blind, over-counts). G-15-25 says
+    the supply MODEL is wrong (unions desk-wide pairs, blind to band composition). This gap says the
+    COMPARISON is wrong: even given a perfectly correct per-date supply total, a sum-vs-sum test
+    cannot see distribution within the day. Fix G-15-21 and G-15-25 in full and this still stands.
+  detail: |
+    MEASURED on a live run, not inferred. The operator solved at overallocationHardLimitPct 250
+    (the form default) instead of the 500 that HANDOFF.md §3 records as load-bearing. The solve was
+    NOT refused. It ran to -120 hard, NOT FEASIBLE, violating contracted-hours-under, envelope
+    compliance AND contiguity — precisely the class of outcome the gate exists to pre-empt.
+
+    The blocking check is one comparison (SolverService.requireShiftEnvelopeSeatSupply, ~1194):
+
+        if (contractedSlots > librarySupplySlots) { refuse }
+
+    Both sides are DAY TOTALS — contractedSlots sums every rostered agent's expected work slots for
+    the date; librarySupplySlots sums seats across every covered timeslot. Distribution within the
+    day is invisible to it.
+
+    The run was not a near miss. Seats scale linearly with the limit (expandOverflowAssignments:
+    maxAgents = ceil(requiredFTEs * pct / 100)), so halving 500 -> 250 halves supply, and even
+    halved it dwarfs contracted demand on every date:
+
+        date        contracted   supply@500   supply@250   headroom@250
+        2026-01-05     144          530          268          +124
+        2026-01-06     152          535          270          +118
+        2026-01-08     144          510          259          +115
+        2026-01-10     200          735          371          +171
+        2026-01-11     144          520          264          +120
+
+    ~1.8x contracted at 250%, ~3.6x at 500%. The gate is nowhere near firing in EITHER case, yet one
+    solves to 0 hard and the other collapses. The entire difference lives in the dimension the
+    comparison aggregates away.
+
+    CAVEAT ON THESE FIGURES: they assume every timeslot is covered by some live pair, being derived
+    from the staffing-requirements API rather than from the desk's actual envelope coverage. Under
+    partial coverage both the gate's real supply and the figures above fall together, so the
+    conclusion is unaffected at this margin — but do not quote them as exact. The seat arithmetic
+    itself IS exact: this model reproduces both runs' live "tightest at HH:MM with N seat(s)"
+    advisories byte for byte (25/30/15/15/25/5/5 at 500%, 13/15/8/8/13/3/3 at 250%).
+
+    THE SHARPEST PART: the system COMPUTES the number that predicts the failure and declines to act
+    on it. The tightest-hour advisory at ~1281 sees per-hour distribution exactly — it is what
+    printed "tightest at 08:00-09:00 with 3 seat(s)" on the failing run — and it is non-blocking BY
+    EXPLICIT DESIGN, pinned by a passing test named `advisoryOnThinTimeslotDoesNotBlock`
+    (ShiftEnvelopeSupplyGateTest.java:405).
+  fix: |
+    NOT a mechanical change, and DO NOT simply make the tightest-hour advisory blocking. That test
+    name is not an accident — advisory-only may well have been a deliberate call, and promoting a
+    thin-hour warning to a refusal risks false refusals on desks that currently solve fine. Nobody
+    has done that analysis; it is the actual work here.
+
+    Read the 15-11 discussion before changing behaviour. The likely shape is a per-hour (or
+    per-agent-day, per G-15-25's fix) achievable-assignment check rather than a day-wide sum, with
+    the false-refusal rate measured against desks known to solve — but that is a design proposal,
+    not a settled answer.
+  operator_note: |
+    Until this is fixed, over-allocation at 250% on this desk fails SILENTLY — no refusal, ~8
+    minutes burned, three hard constraints violated, and nothing on screen names the limit as the
+    cause. The 500% in HANDOFF.md §3 is load-bearing and the UI default is not it.
 
 - gap_id: G-15-21
   truth: "The seat-supply gate must not count hours only a weekday template reaches when solving a weekend"
