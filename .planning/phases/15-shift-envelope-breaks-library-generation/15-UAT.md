@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T00:30:00Z"
+updated: "2026-09-02T00:45:00Z"
 ---
 
 <!--
@@ -89,12 +89,17 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 13
-name: Agent Allocation groups by shift on a shift desk
-expected: |
-  On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their
-  assigned shift, each group naming the shift and its headcount.
-awaiting: user response
+[testing paused — 6 items outstanding: tests 13, 14, 15, 16, 17, 19]
+
+PAUSED 2026-09-02 by operator decision ("fix everything") after test 11 passed. UAT did not stop
+because it was blocked — it stopped because the open GAPS were routed to a planned gap-closure
+round in preference to continuing to accumulate findings against un-fixed code.
+
+RESUME AT TEST 13. Its expected Agent Allocation grouping was already computed from the API for
+schedule 6a10afa1 and is recorded in test 13's `precomputed_expectation` block below, so whoever
+resumes compares against a table rather than re-deriving it. NOTE: if the gap-closure round
+changes the solver or the library, RE-COMPUTE that table before using it — it describes schedule
+6a10afa1 specifically, not whatever is newest at resume time.
 
 <!--
   SESSION 2026-09-01 (resumed, second sitting). Deployment re-derived per the standing rule BEFORE
@@ -997,6 +1002,36 @@ note: |
 
 expected: On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their assigned shift, each group naming the shift and its headcount.
 result: [pending]
+precomputed_expectation: |
+  COMPUTED FROM THE API 2026-09-01 for schedule 6a10afa1 (newest ACCEPTED) so that resuming this
+  test is a COMPARISON against a table, not a judgement from memory. Re-compute if the library or
+  solver changes — this describes 6a10afa1, not "whatever is newest".
+
+    2026-01-05 (18)  Late 12:00-21:00 x9 · Early 08:00-17:00 x4 · Mid 11:00-20:00 x3
+                     · Daytime 10:00-19:00 x1 · Morning 09:00-18:00 x1
+    2026-01-06 (19)  Late x8 · Daytime x4 · Early x3 · Mid x2 · Morning x2
+    2026-01-07 (18)  Late x8 · Mid x4 · Morning x3 · Daytime x2 · Early x1
+    2026-01-08 (18)  Late x8 · Daytime x4 · Mid x4 · Early x2      <-- FOUR groups, no Morning
+    2026-01-09 (22)  Mid x9 · Late x6 · Early x3 · Morning x3 · Daytime x1
+    2026-01-10 (25)  Wknd Flex 10:00-20:00 x10 · Wknd Late 11:00-20:00 x10 · Wknd Closing x2
+                     · Wknd Early x2 · Wknd Opening 08:00-17:00 x1
+    2026-01-11 (18)  Wknd Late x8 · Wknd Flex x7 · Wknd Closing x1 · Wknd Early x1 · Wknd Opening x1
+
+  10 distinct groups, 138 working agent-days, every one carrying a shift.
+what_to_watch: |
+  1. GROUP HEADER TIMES MUST BE THE TEMPLATE'S, not derived from held seats. This is the exact
+     disagreement that surfaced G-15-10's D4 (same agent-day reading "Late 12:00-21:00" in the
+     header and "09:00-21:00" in the table). ScheduleResults.tsx:632 uses the authoritative values,
+     so the header is the trustworthy side; if the two disagree at resume, THAT is the finding.
+  2. 2026-01-08 has FOUR groups. An empty "Morning" group rendered there would be a defect the API
+     data does not show.
+  3. No weekday template on Sat/Sun and no weekend template on Mon-Fri. The data is clean on this
+     — it is validWeekdays enforcement (b2dd702) visible in the grouping — so confirm it survives
+     to the screen.
+caveat_at_pause: |
+  Until G-15-32 is fixed, the results page for ANY accepted schedule also shows
+  "Violated hard constraints: Shift envelope compliance" and 1104 violations. That is the G-15-32
+  misreport, NOT a test 13 finding, and it should not be recorded as one.
 
 ### 14. A slot-scheduled desk is completely unchanged
 
