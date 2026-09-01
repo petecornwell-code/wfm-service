@@ -12,6 +12,7 @@ import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
@@ -28,10 +29,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -82,6 +85,24 @@ class SolverQualityGuardTest {
     private static final int AGENT_COUNT =
             LiveShapeShiftDeskFixture.TEMPLATE_SPECS.size() * LiveShapeShiftDeskFixture.IDEAL_HOLDERS_PER_TEMPLATE;
 
+    /**
+     * INV-4's ceiling (P-42), committed as a RULE before any number was read: the baseline median of
+     * {@code totalHardViolations} across the five seeds, observed at THIS commit, plus a headroom of
+     * 2, floored at 2 when the baseline median is 0. This is a coarse trip-wire sized to catch the
+     * sevenfold acceptor class of regression (-9 to -66, G-15-22) -- not a fine-grained quality
+     * metric; INV-1/2/3 above are the real gate. The median is taken across seeds precisely so one
+     * noisy seed can never fail it (median-of-five, never a mean, per the standing 15-BENCHMARK.md
+     * discipline).
+     *
+     * <p><strong>Observed per-seed baseline this constant was set from</strong> (unmodified build,
+     * this commit, {@code STEP_COUNT_LIMIT = 5_000}, {@code DAY_COUNT = 2} as declared above -- the
+     * per-seed table printed by {@code liveShapeDesk_fiveSeeds_holdEveryStructuralInvariant},
+     * transcribed verbatim into {@code 15-14-SUMMARY.md}): seed 1 -&gt; 3, seed 2 -&gt; 1, seed 3
+     * -&gt; 2, seed 4 -&gt; 0, seed 5 -&gt; 1 -- sorted {@code [0, 1, 1, 2, 3]}, median 1.0, ceiling
+     * = 1 + 2 = 3.
+     */
+    private static final int TOTAL_VIOLATION_CEILING = 3;
+
     // ------------------------------------------------------------------
     //  Task 1/2 -- the tracer, widened: one seed, all three structural invariants, the failure
     //  report wired into every assertion's description
@@ -114,6 +135,151 @@ class SolverQualityGuardTest {
         assertThat(unstaffed)
                 .as(buildQualityReport("INV-3 EDGE-HOUR COVERAGE", SEEDS[0], solved, splits, edgeBreaks, unstaffed))
                 .isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    //  Task 3 -- five seeds, the median violation-count ceiling, the pinned shipped defaults
+    // ------------------------------------------------------------------
+
+    /** One seed's outcome from the five-seed sweep. */
+    record GuardRun(long seed, int hardScore, int totalHardViolations, Map<String, Integer> violationsByConstraint,
+                     int splitShifts, int edgeBreaks, int unstaffedEdgeHours, long elapsedMillis) {}
+
+    @Test
+    @DisplayName("live-shape desk, five seeds: every structural invariant holds on every seed, and the median violation count sits under the pre-committed ceiling")
+    void liveShapeDesk_fiveSeeds_holdEveryStructuralInvariant() {
+        List<GuardRun> runs = new ArrayList<>(SEEDS.length);
+        long sweepStartMillis = System.currentTimeMillis();
+
+        for (long seed : SEEDS) {
+            // A FRESH fixture per seed -- never reuse a solved Schedule across seeds.
+            LiveShapeShiftDeskFixture.Fixture fixture =
+                    LiveShapeShiftDeskFixture.build(AGENT_COUNT, LiveShapeShiftDeskFixture.DAY_COUNT);
+
+            long startMillis = System.currentTimeMillis();
+            Schedule solved = solve(fixture.schedule(), seed);
+            long elapsedMillis = System.currentTimeMillis() - startMillis;
+
+            assertNonVacuouslyFeasible(solved);
+
+            List<SplitShift> splits = findSplitShifts(solved);
+            List<EdgeBreak> edgeBreaks = findEdgeBreaks(solved);
+            List<UnstaffedEdgeHour> unstaffed = findUnstaffedEdgeHours(solved, LiveShapeShiftDeskFixture.EDGE_HOURS);
+            Map<String, Integer> violationsByConstraint = hardMatchCountsByConstraint(solved);
+            int totalHardViolations = violationsByConstraint.values().stream().mapToInt(Integer::intValue).sum();
+
+            runs.add(new GuardRun(seed, solved.getScore().hardScore(), totalHardViolations, violationsByConstraint,
+                    splits.size(), edgeBreaks.size(), unstaffed.size(), elapsedMillis));
+
+            // INV-1/2/3: per-seed, absolute, structural -- the -120 live run held all three.
+            assertThat(splits)
+                    .as(buildQualityReport("INV-1 SPLIT SHIFTS", seed, solved, splits, edgeBreaks, unstaffed))
+                    .isEmpty();
+            assertThat(edgeBreaks)
+                    .as(buildQualityReport("INV-2 EDGE BREAKS", seed, solved, splits, edgeBreaks, unstaffed))
+                    .isEmpty();
+            assertThat(unstaffed)
+                    .as(buildQualityReport("INV-3 EDGE-HOUR COVERAGE", seed, solved, splits, edgeBreaks, unstaffed))
+                    .isEmpty();
+        }
+
+        long sweepElapsedMillis = System.currentTimeMillis() - sweepStartMillis;
+        printPerSeedTable(runs);
+        printPerConstraintAcrossSeedsTable(runs);
+        System.out.println();
+        System.out.println("[G-15-22 guard] five-seed sweep total elapsedMillis=" + sweepElapsedMillis);
+
+        // INV-4: the ONLY score-shaped assertion, on the MEDIAN of totalHardViolations across seeds
+        // (P-42) -- never a single seed's hardScore.
+        List<Double> totalViolationsSorted = runs.stream()
+                .map(r -> (double) r.totalHardViolations())
+                .sorted()
+                .toList();
+        double median = median(totalViolationsSorted);
+        System.out.println("[G-15-22 guard] median totalHardViolations across " + SEEDS.length
+                + " seeds=" + median + " ceiling=" + TOTAL_VIOLATION_CEILING);
+
+        assertThat(median)
+                .as("INV-4 VIOLATION-COUNT CEILING: median totalHardViolations across %d seeds is %s, "
+                                + "must be <= %d (see TOTAL_VIOLATION_CEILING's javadoc for the pre-committed "
+                                + "rule) -- compare violation COUNTS per constraint, never raw hard scores "
+                                + "across weight changes (G-15-29) -- per-seed runs: %s",
+                        SEEDS.length, median, TOTAL_VIOLATION_CEILING, runs)
+                .isLessThanOrEqualTo((double) TOTAL_VIOLATION_CEILING);
+    }
+
+    @Test
+    @DisplayName("the four Phase 15 ConstraintWeights defaults are pinned to their current shipped values")
+    void defaultConstraintWeights_areTheDocumentedShippedValues() {
+        // Solve-free (P-41): the counterweight to LiveShapeShiftDeskFixture pinning its OWN weights
+        // to HANDOFF.md's live values -- without this, a silent change to a shipped default would be
+        // invisible to the guard, which is the G-15-30 shape.
+        ConstraintWeights defaults = new ConstraintWeights();
+
+        assertThat(defaults.getShiftEnvelopeComplianceWeight())
+                .as("shiftEnvelopeComplianceWeight's shipped default changed -- update this assertion "
+                        + "deliberately, or this is a silent regression of the G-15-30 shape")
+                .isEqualTo(HardSoftScore.ofHard(1));
+        assertThat(defaults.getShiftWorkContiguityWeight())
+                .as("shiftWorkContiguityWeight's shipped default changed -- update this assertion "
+                        + "deliberately, or this is a silent regression of the G-15-30 shape")
+                .isEqualTo(HardSoftScore.ofHard(10));
+        assertThat(defaults.getBandCapacityWeight())
+                .as("bandCapacityWeight's shipped default changed -- update this assertion "
+                        + "deliberately, or this is a silent regression of the G-15-30 shape")
+                .isEqualTo(HardSoftScore.ofHard(1));
+        assertThat(defaults.getUnassignedAssignmentWeight())
+                .as("unassignedAssignmentWeight's shipped default changed -- update this assertion "
+                        + "deliberately, or this is a silent regression of the G-15-30 shape")
+                .isEqualTo(HardSoftScore.ofSoft(1000));
+    }
+
+    // ------------------------------------------------------------------
+    //  Task 3 reporting -- markdown tables printed to stdout, transcribed verbatim into the SUMMARY
+    // ------------------------------------------------------------------
+
+    private static void printPerSeedTable(List<GuardRun> runs) {
+        System.out.println();
+        System.out.println("Per-seed results:");
+        System.out.println("| seed | hardScore | totalHardViolations | splitShifts | edgeBreaks | "
+                + "unstaffedEdgeHours | elapsedMillis |");
+        System.out.println("|---|---|---|---|---|---|---|");
+        for (GuardRun r : runs) {
+            System.out.println("| " + r.seed() + " | " + r.hardScore() + " | " + r.totalHardViolations()
+                    + " | " + r.splitShifts() + " | " + r.edgeBreaks() + " | " + r.unstaffedEdgeHours()
+                    + " | " + r.elapsedMillis() + " |");
+        }
+    }
+
+    private static void printPerConstraintAcrossSeedsTable(List<GuardRun> runs) {
+        System.out.println();
+        System.out.println("Per-constraint violation counts across seeds:");
+        Set<String> constraintNames = new LinkedHashSet<>();
+        runs.forEach(r -> constraintNames.addAll(r.violationsByConstraint().keySet()));
+
+        String header = "| constraint | " + runs.stream().map(r -> "seed " + r.seed())
+                .collect(Collectors.joining(" | ")) + " |";
+        System.out.println(header);
+        System.out.println("|---|" + "---|".repeat(runs.size()));
+        for (String name : constraintNames) {
+            StringBuilder row = new StringBuilder("| ").append(name).append(" | ");
+            for (GuardRun r : runs) {
+                row.append(r.violationsByConstraint().getOrDefault(name, 0)).append(" | ");
+            }
+            System.out.println(row);
+        }
+    }
+
+    /** Never a mean -- median only, per the standing 15-BENCHMARK.md discipline (D-16). */
+    private static double median(List<Double> sortedAscending) {
+        int n = sortedAscending.size();
+        if (n == 0) {
+            throw new IllegalStateException("cannot compute median of an empty run set");
+        }
+        if (n % 2 == 1) {
+            return sortedAscending.get(n / 2);
+        }
+        return (sortedAscending.get(n / 2 - 1) + sortedAscending.get(n / 2)) / 2.0;
     }
 
     // ------------------------------------------------------------------
