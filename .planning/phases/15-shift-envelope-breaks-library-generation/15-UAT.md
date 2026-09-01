@@ -678,9 +678,26 @@ weekend_edge_coverage_2026_09_01: |
   observed this session, on the pre-fix library and therefore WITHOUT the weekend edge coverage.
   It is not a valid answer to the operator's requirement, but it settles a question the phase has
   carried since G-15-10 was filed: feasibility is attainable, so the -1 residuals are search
-  misses, not a structural floor. PROVENANCE UNCONFIRMED — that solve was not started by this
-  session; it appeared mid-session and may have been launched from the UI. Do not cite it as a
-  controlled result without re-deriving it.
+  misses, not a structural floor.
+
+  PROVENANCE CONFIRMED by the operator: bff23a47 was started by them from the UI. Its library
+  state was edge-bands-applied but pre-un-retire (it holds no Opening/Closing agent-day and leaves
+  08:00/09:00/20:00 empty), so it is the SAME configuration as Run B.
+
+  THAT MAKES IT A VARIANCE MEASUREMENT, and a sharp one:
+      Run B     3a72f0c4   edge bands, no weekend edge coverage   hard -1
+      operator  bff23a47   SAME configuration                     hard  0   FEASIBLE
+  Identical library, identical 250/50 params, different outcome. So this desk sits right at the
+  boundary of feasibility and the search reaches it only sometimes. Two consequences:
+    1. A single solve is NOT evidence of an irreducible floor. Test 10's whole history reads
+       single-run hard scores as structural facts; at this variance that inference is unsafe, and
+       several of its recorded steps (-19, -12, -11, -6) deserve the same scepticism.
+    2. Run D's -1 (WITH the weekend coverage) looked like it might also be a search miss. IT IS
+       NOT — that prediction was TESTED AND FALSIFIED. See sunday_2000_is_structural below.
+
+  This also explains, benignly, several "A schedule already exists for this desk" refusals earlier
+  in the session: the operator and this session were driving the same desk concurrently. Those
+  were correct guard behaviour, NOT the defect the retracted G-15-26 claimed.
 
 ### 11. No agent is seated outside their assigned shift envelope
 
@@ -1398,3 +1415,37 @@ blocked: 1
        the busiest weekend hour (44 FTE Saturday, 32 Sunday). The hand-set bands were kept instead.
        Fix: bias offsets away from the highest-demand hours the envelope spans; the demand curve
        is already loaded in that method.
+
+sunday_2000_is_structural: |
+  PREDICTION MADE AND FALSIFIED, recorded because the falsification is the useful part. Having
+  seen 0 hard on the same config as Run B, this file predicted Run D's -1 was likewise a search
+  miss and that a plain re-run would reach 0 with coverage intact.
+
+  Run E (e620d8f8) — identical library to accepted 709fd8b4, identical params, nothing changed:
+      hard -1, soft -73 (worse soft than Run D's -70), coverage still met.
+      Run D violation: Tekla Davitashvili   2026-01-11 20:00-21:00
+      Run E violation: Nutsa Kipshidze      2026-01-11 20:00-21:00
+  Different agent, SAME SLOT, across two independent runs. That is not variance. Sunday
+  20:00-21:00 is structurally tight and the earlier prediction was wrong.
+
+  MECHANISM, from the two runs side by side (both 18 Sunday agent-days):
+      Run D  Weekend Closing holders = 1  ->  20:00 staffed by 2  ->  1 legal, 1 violating
+      Run E  Weekend Closing holders = 0  ->  20:00 staffed by 1  ->  0 legal, 1 violating
+  Sunday 20:00 carries NO forecast demand; its seat exists only because of the min-staffing floor
+  of one. Weekend Closing (12:00-21:00) is the only template reaching it, and holding it costs an
+  agent a full 9-hour envelope that misses the 11:00 peak — where Sunday is already short (needs
+  32 agents, has 18). The solver therefore declines to staff Closing and pays 1 hard instead.
+  That is a rational trade under the current weights, not a defect.
+
+  OPTIONS, none taken this session:
+    (a) Accept -1. One agent-hour in ~1104, with a named and understood cause.
+    (b) Extend Weekend Late 11:00-20:00 to 11:00-21:00 so more than one template reaches 20:00.
+        Changes its net hours to 9.0, so it becomes eligible only under bounded slack — verify
+        against contracted hours before applying.
+    (c) Add forecast demand at Sunday 20:00 if the desk genuinely trades then. If it does not,
+        (a) is the honest answer and the hour is unstaffed-by-design in OR-1's sense.
+
+  METHODOLOGICAL NOTE, the durable lesson of this session: single-run hard scores on this desk are
+  not reliable evidence. Two runs of one configuration gave 0 and -1; two runs of another both gave
+  -1 on the same slot. Repeat before concluding, and treat a recurring VIOLATION LOCATION as far
+  stronger evidence than a recurring score.
