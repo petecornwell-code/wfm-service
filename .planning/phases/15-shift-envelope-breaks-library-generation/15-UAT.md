@@ -1266,6 +1266,58 @@ structural_argument: |
   branches are gated on `e.divergence &&`, which is null here.
   Backend gating is symmetric in ScheduleConstraintProvider — shift constraints filter
   `== SchedulingMode.SHIFT`, slot constraints filter `!= SchedulingMode.SHIFT`.
+scratch_desk_built_2026_09_02: |
+  BUILT ON OPERATOR INSTRUCTION ("build it"). Live on dev, awaiting the operator's visual check.
+
+    desk    ZZ-UAT14-SCRATCH-slot-mode  33ab13db-0379-4aba-b930-f807928fc7bc   mode SLOT
+    spec    English  e33ed7eb-6ed2-4137-bca2-13614f8a183f
+    period  Mon 2026-01-05, 09 hourly timeslots 08:00-17:00, demand 2 FTE every hour (18 FTE-slots)
+    roster  9 agents borrowed from the 14 UNASSIGNED; the live desk's 28 were never touched
+    solve   5e27329f-837c-4b15-aa73-5c404f1c67b6
+
+  MODE WAS NOT SET BY HAND — the desk was created with no mode field and read back `SLOT`, which is
+  the documented default (`desk_savedWithoutModeSet_readsBackAsSlot`). So this is the real default
+  path, not a desk forced into slot mode.
+
+  API-SIDE RESULT — every invariant clean, on a FEASIBLE solve:
+    schedulingMode                  SLOT
+    score                           0 hard / 0 soft, feasible=true
+    agentSchedule entries           3
+    entries with .shift != null     0
+    entries with .divergence != null 0
+    warnings                        0
+    violatedHardConstraints         []
+    constraintViolations            NONE AT ALL
+    shift/envelope/band/contiguity constraints scored   none
+    coverage                        18 predicted vs 24 actual = 133.33%
+
+  A 0-hard/0-soft feasible solve is worth more here than a merely-clean one: it shows the slot path
+  still SOLVES, not just that the shift features stayed quiet. "Same solve behaviour" is the half
+  of this test the structural argument could not reach.
+
+  ROSTER NOTE, so the 9-vs-3 gap is not misread as a defect. Only 3 of the 9 assigned agents are
+  solver-eligible, and `SolverService.filterEligible` (:2066) says why — it requires active + job
+  title on the tenant allowlist + a primary specialization + `workingDaysKnown`. Chantelle Abel-Obi
+  is a "Subject Matter Expert" (not allowlisted); Lizi Arkania shares Elene Tsakadze's allowlisted
+  "Customer Support Representative" title, so she is excluded on `workingDaysKnown`. Pre-existing
+  roster data, nothing to do with this phase.
+
+  WARNINGS DID NOT GROW across 5 polls of a RUNNING schedule (5 polls, warnings stayed 0; the
+  earlier 3-agent solve held at 1 across its 5 polls). Weak evidence for test 20's CR-04 fix rather
+  than strong — on a SLOT desk `publishDivergenceWarning` finds zero out-of-envelope seats and
+  publishes nothing — but it is consistent, and it is free.
+
+  DISPOSAL PLAN, to run after the operator's visual check: remove the 9 agents (restores deskId to
+  null, their prior state exactly), then DELETE the desk, then verify as test 3 did — GET desk ->
+  404, and confirm the live desk still holds its 28 agents and 11 templates.
+awaiting: |
+  OPERATOR VISUAL CHECK on desk ZZ-UAT14-SCRATCH-slot-mode. What must be TRUE:
+    - Schedule Results shows the SLOT rendering: a plain per-date agent table, NO shift group
+      headers, no "· HH:MM–HH:MM · N agent(s)" bars.
+    - No E! marks, no × marks, no "unstaffed by design" treatment, and no envelope legend.
+    - The Agent Schedule tab shows no ⚠ badge and no grey "legal slot unworked" badge.
+    - The Shift Library page offers the SLOT-mode state (mode switch available, no live library
+      being enforced).
 
 ### 14b. (incidental) GET /api/v1/agents returns 500 unless `search` is supplied
 
