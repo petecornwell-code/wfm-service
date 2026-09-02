@@ -780,6 +780,54 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.unsatisfiableWeekdays()).containsExactly("MONDAY", "TUESDAY");
     }
 
+    @Test
+    void validate_agentsWithNoDayHoursRows_fallBackToTheDeskDefault_weekdayIsSatisfiable() {
+        // UAT test 17b. An agent whose per-day hours were never edited has NO agent_day_hours row,
+        // and their contracted hours are the desk default -- which is what the solver uses
+        // (SolverService.resolveEffectiveHours falls through dayHoursMap to the schedule default)
+        // and what the agent screen displays (DeskAgentResponse.dayHours.X.effectiveHours). The
+        // validator read only the rows and applied no fallback, so a desk whose agents had never
+        // had per-day hours edited reported EVERY weekday unsatisfiable and could not be switched
+        // into SHIFT mode at all -- with a message naming "contracted hours" the UI already showed
+        // as correct.
+        //
+        // Desk default is 8.00; the template's net is 9h envelope - 1h band = 8.00h, so it matches
+        // exactly. The contrast with the zero-agents test directly above is the point: no agents
+        // still means no hours and an unsatisfiable weekday, and that must not change.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        saveAgent(TENANT_A, deskId, "A1"); // deliberately NO saveAgentDayHours
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.unsatisfiableWeekdays()).isEmpty();
+        assertThat(response.hoursAdvisories()).isEmpty();
+        assertThatCode(() -> service.requireShiftModeReady(deskId)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void validate_agentWithADayHoursRow_stillWinsOverTheDeskDefault() {
+        // The fallback must not override an explicit row. This agent's Monday row says 7.75h
+        // against a desk default of 8.00 and a template net of 8.00, so Monday stays unsatisfiable
+        // exactly as it did before the fallback existed -- the row is authoritative where present.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("7.75"));
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.unsatisfiableWeekdays()).containsExactly("MONDAY");
+    }
+
     // ---------- Capacity shortfall advisory (D-03 residual risk, Task 3) ----------
 
     @Test
