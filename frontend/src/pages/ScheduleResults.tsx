@@ -919,12 +919,33 @@ function AgentScheduleTab({ data, specs }: { data: AgentScheduleEntry[]; specs: 
                   <td style={{ padding: '4px 8px' }}>{e.date}</td>
                   <td style={{ padding: '4px 8px' }}>
                     {e.shift ? `${toHHMM(e.shift.startTime)} — ${toHHMM(e.shift.endTime)}` : `${e.shiftStart} — ${e.shiftEnd}`}
-                    {e.divergence && (e.divergence.outOfEnvelopeSeats.length > 0 || e.divergence.unworkedLegalSlots.length > 0) && (
+                    {/* The ⚠ is a DEFECT signal, so it is gated on out-of-envelope seats ALONE.
+                        It used to fire on `outOfEnvelopeSeats > 0 || unworkedLegalSlots > 0`,
+                        which predates bounded envelope slack (81117e3, V44, default 1 slot).
+                        Under slack an agent whose envelope's net hours exceed their contracted
+                        hours leaves a legal slot unworked BY CONSTRUCTION — e.g. Weekend Flex
+                        10:00-20:00 is 9 legal slots against 8 contracted — so the warning fired
+                        on every such agent-day, on every date, permanently. Measured on accepted
+                        schedule 7cc71bf5: 16 of 19 markers were that false positive, burying the
+                        3 real violations. An unworked slot is still shown, in neutral styling,
+                        because this table has no per-cell × grid to carry it the way the Agent
+                        Allocation view does. */}
+                    {e.divergence && e.divergence.outOfEnvelopeSeats.length > 0 && (
                       <div
-                        title={`Out-of-envelope seats: ${e.divergence.outOfEnvelopeSeats.length > 0 ? e.divergence.outOfEnvelopeSeats.map(toHHMM).join(', ') : 'none'}\nUnworked legal slots: ${e.divergence.unworkedLegalSlots.length > 0 ? e.divergence.unworkedLegalSlots.map(toHHMM).join(', ') : 'none'}`}
+                        title={`Out-of-envelope seats: ${e.divergence.outOfEnvelopeSeats.map(toHHMM).join(', ')}\nUnworked legal slots: ${e.divergence.unworkedLegalSlots.length > 0 ? e.divergence.unworkedLegalSlots.map(toHHMM).join(', ') : 'none'}`}
                         style={{ marginTop: '2px', fontSize: '0.7rem', color: '#92400e', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '3px', padding: '1px 4px', display: 'inline-block' }}
                       >
-                        ⚠ {e.divergence.outOfEnvelopeSeats.length} outside envelope, {e.divergence.unworkedLegalSlots.length} unworked
+                        ⚠ {e.divergence.outOfEnvelopeSeats.length} outside envelope
+                        {e.divergence.unworkedLegalSlots.length > 0 && `, ${e.divergence.unworkedLegalSlots.length} unworked`}
+                      </div>
+                    )}
+                    {e.divergence && e.divergence.outOfEnvelopeSeats.length === 0
+                      && e.divergence.unworkedLegalSlots.length > 0 && (
+                      <div
+                        title={`Legal slot(s) inside the envelope left unworked: ${e.divergence.unworkedLegalSlots.map(toHHMM).join(', ')}\nThis is normal where the shift's net hours exceed the agent's contracted hours.`}
+                        style={{ marginTop: '2px', fontSize: '0.7rem', color: '#6b7280', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '3px', padding: '1px 4px', display: 'inline-block' }}
+                      >
+                        {e.divergence.unworkedLegalSlots.length} legal slot{e.divergence.unworkedLegalSlots.length === 1 ? '' : 's'} unworked
                       </div>
                     )}
                   </td>

@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T17:02:00Z"
+updated: "2026-09-02T17:30:00Z"
 ---
 
 <!--
@@ -89,13 +89,16 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 13
-name: Agent Allocation groups by shift on a shift desk
+number: 14
+name: A slot-scheduled desk is completely unchanged
 expected: |
-  On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their
-  assigned shift, each group naming the shift and its headcount. Compare against the re-computed
-  table in test 13's precomputed_expectation (2026-09-02, shipped build, schedule 6a10afa1).
+  A desk still in slot mode behaves exactly as before — same Agent Allocation rendering, same
+  solve behaviour, same validation. No shift-mode UI appears on it.
 awaiting: user response
+
+NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
+is no slot-mode desk to observe. Test 3 established the pattern for this — create a throwaway desk,
+verify, delete it, confirm the cascade. Expect that route rather than a live comparison.
 
 <!-- PREVIOUSLY: [testing paused — 6 items outstanding: tests 13, 14, 15, 16, 17, 19]
      Resumed 2026-09-02T17:05Z against deploy 33656348187 / task def :66 / image 64bafd8. -->
@@ -1099,7 +1102,51 @@ note: |
 ### 13. Agent Allocation groups by shift on a shift desk
 
 expected: On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their assigned shift, each group naming the shift and its headcount.
-result: [pending]
+result: pass
+tested_against: |
+  dev (https://d2bbtcc80peap7.cloudfront.net) on the SHIPPED gap-closure build — deploy 33656348187,
+  image tag 64bafd8, ECS task def wfm-service-dev:66. Accepted schedule 7cc71bf5, all seven dates
+  read off the Agent Allocation tab by the operator and compared against the table computed
+  independently from the API before it was shown.
+evidence: |
+  EXACT MATCH ON ALL SEVEN DATES — every group, every headcount, every daily total:
+
+    2026-01-05  Early 1 · Morning 3 · Mid 4 · Late 10                    total 18   FOUR groups
+    2026-01-06  Early 3 · Morning 2 · Daytime 2 · Mid 2 · Late 10        total 19
+    2026-01-07  Early 1 · Morning 2 · Daytime 4 · Mid 4 · Late 7         total 18
+    2026-01-08  Early 3 · Daytime 5 · Mid 3 · Late 7                     total 18   FOUR groups
+    2026-01-09  Early 2 · Morning 4 · Daytime 3 · Mid 5 · Late 8         total 22
+    2026-01-10  Wknd Opening 1 · Wknd Flex 9 · Wknd Late 14 · Wknd Closing 1   total 25   FOUR groups
+    2026-01-11  Wknd Opening 1 · Wknd Early 2 · Wknd Flex 7 · Wknd Late 7 · Wknd Closing 1   total 18
+
+  The prediction was made from the API and recorded in this file BEFORE the operator opened the
+  tab, so this is a genuine comparison rather than a post-hoc reading.
+
+  GROUP HEADERS carry all three required facts — "Morning · 09:00–18:00 · 3 agent(s)" names the
+  shift, its envelope and its headcount.
+
+  ALL FOUR what_to_watch ITEMS CLEAN:
+    1. Header times are the TEMPLATE's. The decisive case is 2026-01-05: Augusto Correia, Cindy
+       Rodriguez and Juan Diego Dieguez each hold an 08:00 seat, yet their group header still reads
+       "Morning · 09:00–18:00" and the stray seat is marked E! rather than the header being widened
+       to 08:00–18:00 to swallow it. That is exactly the G-15-10 D4 disagreement NOT happening.
+    2. No empty group on any of the three four-group dates (05, 08, 10).
+    3. No weekday template on Sat/Sun, no weekend template on Mon-Fri.
+    4. No "No shift assigned" group anywhere.
+
+  SORT ORDER matches ScheduleResults.tsx:592 — start time ascending (Early 08:00, Morning 09:00,
+  Daytime 10:00, Mid 11:00, Late 12:00; Weekend Opening 08:00 ... Weekend Closing 12:00).
+bonus_evidence_for_test_19: |
+  Not asked for by test 13 and recorded because it was observed — the allocation grid carries most
+  of what test 19 asks about, and it renders correctly:
+    - E! and × are BOTH present and visually distinct (E! on the three 08:00 seats, × on the
+      Weekend Flex slack slots).
+    - The extended legend is complete and legible: "E! = seat outside assigned envelope",
+      "× = legal slot left unworked", "No shift covers this hour (unstaffed by design)",
+      "Unfilled seat(s)", "Break B", "Red name = allocation violation".
+  This does NOT close test 19 — its first bullet (Shift column agreeing with the group header) and
+  its tooltip legibility bullet are Agent-Schedule-tab items — but it retires most of the doubt.
+reported: "[operator pasted the full Agent Allocation tab for all seven dates]"
 precomputed_expectation: |
   RE-COMPUTED 2026-09-02T17:00Z against the SHIPPED gap-closure round (deploy 33656348187, image
   tag 64bafd8, ECS task def wfm-service-dev:66). The previous table was computed 2026-09-01 against
@@ -1301,6 +1348,34 @@ finding_surfaced_early_2026_09_02: |
   alone and surface unworked legal slots without warning styling, since the per-cell `x` treatment
   already communicates them. That keeps both facts visible while restoring the marker as a defect
   signal. Whether unworked slots deserve any row-level indicator at all is an operator call.
+fixed_2026_09_02: |
+  FIXED on operator instruction ("fix the divergence marker"), same session.
+
+  SCOPE — frontend only, ScheduleResults.tsx. The backend was checked first and is NOT at fault:
+  `ScheduleOutputService.publishDivergenceWarning` already gates the schedule-level headline on
+  `if (outOfEnvelopeSeatCount > 0)` (:278), so the "N agent-day seat(s) fall outside..." line only
+  publishes on real violations. Leaving the API contract alone also leaves
+  `ScheduleOutputServiceShiftReportingTest`'s three guards (test 20's fix) untouched.
+
+  THE CHANGE — the single `||` at :922 became two separate, differently-styled indicators:
+    - out-of-envelope seats > 0  -> amber ⚠ badge, unchanged styling, now appending the unworked
+      count only when there is one ("⚠ 1 outside envelope, 1 unworked").
+    - out-of-envelope seats == 0 and unworked > 0 -> NEUTRAL grey badge, no ⚠, reading
+      "1 legal slot unworked", with a tooltip stating the slack rule explicitly.
+
+  Kept rather than deleted because the Agent Schedule tab has no per-cell × grid — unlike the
+  Agent Allocation view, it is the only place that row's unworked slot is visible at all, so
+  removing the indicator outright would have lost information rather than de-escalated it.
+
+  EFFECT on the measured case: the 16 Weekend Flex false positives lose the ⚠ and read as neutral
+  fact; the 3 genuine Mon-01-05 violations keep it. Warning markers on 7cc71bf5 go 19 -> 3, and
+  every remaining one is real.
+
+  VERIFIED: `npm run build` (tsc -b && vite build) passes. NOT verified by automated test — this
+  project has no frontend test framework (Phase 13 P-11, standing constraint), which is the same
+  reason test 19 exists as a human checkpoint. Confirm visually on the Agent Schedule tab: the
+  Weekend Flex rows on 2026-01-10/11 should show a grey "1 legal slot unworked", and only Augusto
+  Correia / Cindy Rodriguez / Juan Diego Dieguez on 2026-01-05 should still show amber ⚠.
 
 ### 20. Warning list does not grow while a schedule is running
 
@@ -1365,9 +1440,9 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 11
+passed: 12
 issues: 1
-pending: 6
+pending: 5
 skipped: 1
 blocked: 1
 
