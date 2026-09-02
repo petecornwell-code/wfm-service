@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T20:45:00Z"
+updated: "2026-09-02T21:05:00Z"
 ---
 
 <!--
@@ -89,12 +89,13 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 15
-name: UPCOMING and RETIRED templates are not assignable (CR-01 fix)
+number: 16
+name: Accepted schedule keeps its true mode (CR-02 fix)
 expected: |
-  A template whose effectiveFrom is in the FUTURE is not assigned to any agent-day before that
-  date; if it becomes effective mid-period it is assignable only from effectiveFrom onward. A
-  RETIRED template (past effectiveTo) is never assignable.
+  Accept a shift-mode schedule, reopen it — Schedule Results reports SHIFT and renders the shift
+  view. Must hold even for a schedule accepted with few or NO placed shifts, and must not change
+  if the desk's mode is switched afterwards. Pre-deploy accepts are backfilled by inference and
+  are out of scope.
 awaiting: user response
 
 NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
@@ -1440,7 +1441,68 @@ reason: |
 ### 15. UPCOMING and RETIRED templates are not assignable (CR-01 fix)
 
 expected: A template whose `effectiveFrom` is in the FUTURE is not assigned to any agent-day before that date. If it becomes effective partway through the schedule period, it is assignable only from `effectiveFrom` onward — not on earlier days of the same schedule. A RETIRED template (past `effectiveTo`) is likewise never assignable. *Newly written code, fixed after the main phase, with the least field exposure of anything here.*
-result: [pending]
+result: pass
+tested_against: |
+  dev, live desk Stubhub (EN), on the shipped build (image 8f61493, task def :67). Operator
+  authorised the live-library route. Probe schedule c45054f5 over 2026-01-05..11, then fully
+  reverted — see disposal below.
+method: |
+  A CONTROLLED EXPERIMENT rather than an observation, because "the template was not used" is
+  ambiguous on its own — the solver might simply not have wanted that shape. Each era template was
+  created as an EXACT CLONE of a heavily-used live template, identical in envelope, valid weekdays
+  and all three bands (180/60/9, 240/60/9, 300/60/9, net 8.00h). The ONLY difference between a
+  clone and its twin is the effective range, so any difference in usage is attributable to that
+  and nothing else.
+
+    ZZ-UAT15-UPCOMING   clone of Late          12:00-21:00 Mon-Fri   effectiveFrom 2027-01-01
+    ZZ-UAT15-RETIRED    clone of Weekend Late  11:00-20:00 Sat/Sun   effectiveFrom 2025-01-01,
+                                                                     effectiveTo   2025-12-31
+    ZZ-UAT15-MIDPERIOD  clone of Late          12:00-21:00 Mon-Fri   effectiveFrom 2026-01-08
+                                                                     (Thursday, mid-period)
+  eraStatus read back as UPCOMING / PAST / CURRENT respectively, so the API agreed about their
+  lifecycle before the solve ran.
+evidence: |
+  138 agent-days. Usage of each era template against its twin:
+
+    ZZ-UAT15-UPCOMING     0 agent-days   <-- its twin "Late" got 34
+    ZZ-UAT15-RETIRED      0 agent-days   <-- its twin "Weekend Late" got 20
+    ZZ-UAT15-MIDPERIOD    7 agent-days   <-- ACTIVELY CHOSEN, and only where it is effective
+
+  THE MID-PERIOD RESULT IS THE DECISIVE ONE, and it settles the claim no unit test can reach in the
+  field — that enforcement is PER AGENT-DAY rather than per desk:
+
+    2026-01-05  0      2026-01-08  3     <-- effectiveFrom
+    2026-01-06  0      2026-01-09  4
+    2026-01-07  0      2026-01-10/11  0  (Sat/Sun — Mon-Fri template, validWeekdays)
+
+  A desk-level filter could only have produced 0 everywhere (excluded outright) or assignments on
+  01-05..07 too (included for the whole period). Exactly 01-08 and 01-09 is reachable ONLY by
+  evaluating the effective range against each row's own date. It also rules out the alternative
+  reading of the two zeroes — the solver plainly WILL use a ZZ- template, 7 times, when it is
+  effective, so the zeroes are the date filter working and not the solver ignoring new rows.
+corroborating_natural_experiment: |
+  Free, from data that already existed, and checked BEFORE anything was written. The live library
+  already carried a retired template — "Weekend Morning" 09:00-18:00 Sat/Sun, effectiveTo
+  2026-01-01, era PAST — retired before the 2026-01-05..11 period every schedule covers. Across
+  ALL SEVEN accepted schedules (966 agent-days) it appears ZERO times, while 8-10 distinct
+  templates are used in each. Weaker than the clone experiment on its own (no control proving the
+  solver wanted that shape), which is exactly why the clone experiment was run.
+not_a_regression_signal: |
+  The probe solve scored hard -40 against the -30 of 7cc71bf5. That is NOT a regression reading:
+  the library differed (three extra templates), it is a single run, and G-15-29's own rule says
+  weights and scores are comparable only by violation COUNT across repeated runs. -40 is 4
+  violations at the ofHard(10) envelope weight. Recorded so the number is not mistaken for one.
+disposal: |
+  FULLY REVERTED, verified against the baseline captured before any write:
+    probe schedule c45054f5   REJECTED (204) — never accepted, so nothing persisted
+    3 templates DELETED       204, 204, 204
+    library                   14 -> 11, ZZ-UAT15 remaining 0
+    schedules                 7, all ACCEPTED — exactly the pre-probe set
+  THE THREE 204s ARE THEMSELVES EVIDENCE. `DELETE /shift-templates/{id}` refuses with 409 when any
+  agent_shift_assignment references the template (81117e3, deliberately stricter than the FK
+  requires). A clean 204 on all three is an independent confirmation, from a different code path
+  than the report, that no persisted assignment ever referenced them.
+reported: "[operator authorised the live-desk route; result measured from the API]"
 
 ### 16. Accepted schedule keeps its true mode (CR-02 fix)
 
@@ -1642,9 +1704,9 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 13
+passed: 14
 issues: 1
-pending: 4
+pending: 3
 skipped: 2
 blocked: 1
 
