@@ -1234,6 +1234,72 @@ caveat_at_pause: |
 
 expected: A desk still in slot mode behaves exactly as before — same Agent Allocation rendering, same solve behaviour, same validation. No shift-mode UI appears on it.
 result: [pending]
+setup_problem: |
+  The tenant has ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there is no slot-mode desk to
+  observe. Same shape of problem as test 3, and the same answer: a throwaway DESK, which
+  DeskController can delete and whose cascade test 3 already verified end to end.
+
+  ROSTER IS AVAILABLE AND SAFE TO USE. Checked before proposing it: the tenant has 42 agents, 28 on
+  the live desk and 14 UNASSIGNED (deskId null). `DeskAgentService.assignAgents` REFUSES any agent
+  that already holds a desk ("Agent '...' is already assigned to a desk"), so the live desk's 28
+  cannot be stolen even by mistake — the guard is in the code, not in my care. Assigning some of
+  the 14 and removing them afterwards restores their prior state exactly (deskId back to null).
+  This is why test 14 CAN exercise real solve behaviour where test 3 deliberately could not.
+automated_coverage_already_held: |
+  Run locally on HEAD before touching anything live — 6 classes, 67 tests, 0 failures. Slot-mode
+  invariance is already pinned BELOW the UI:
+    ScheduleOutputServiceShiftReportingTest.buildAgentSchedule_slotMode_producesByteIdenticalEntriesToToday
+    ScheduleServiceShiftSnapshotTest.buildAgentSchedule_slotMode_returnsNullShiftOnEveryEntryAndOtherFieldsUnchanged
+    ScheduleServiceShiftSnapshotTest.acceptSchedule_slotMode_writesZeroShiftRowsAndLeavesAssignmentSnapshotUnchanged
+    ShiftModeMinimumStaffingSeatSupplyTest.slotModeOutputIsInvariantToShiftContext
+    ZeroDemandTimeslotCeilingTest.slotMode_zeroDemandTimeslot_seatAndMissingCeilingUnchanged
+    + slotMode_* cases across 4 constraint tests
+structural_argument: |
+  What is left for a human is the SCREEN, and the code says the screen cannot diverge:
+    ScheduleResults.tsx:419-422  the mode branch is the FIRST statement of the rendering decision,
+      with its own comment — "a slot-scheduled desk renders the exact table below, byte-for-byte,
+      no restructuring whatsoever; no Phase 15 grouping code executes on this branch (T-15-28)".
+    ScheduleOutputService.java:197-215  on a slot desk shiftDescriptor is null, so `divergence`
+      stays null and the else-branch takes the seat-derived span and gap-derived breaks — commented
+      "Keep today's behaviour exactly".
+  That also means the 2026-09-02 divergence-marker fix cannot reach a slot desk: BOTH of its
+  branches are gated on `e.divergence &&`, which is null here.
+  Backend gating is symmetric in ScheduleConstraintProvider — shift constraints filter
+  `== SchedulingMode.SHIFT`, slot constraints filter `!= SchedulingMode.SHIFT`.
+
+### 14b. (incidental) GET /api/v1/agents returns 500 unless `search` is supplied
+
+expected: n/a — NOT a Phase 15 test. Recorded because it was found while setting up test 14.
+result: skipped
+reason: |
+  OUT OF PHASE 15 SCOPE — `git log` shows AgentService.java and AgentRepository.java were last
+  touched in phase 09 (32a8bfc), and nothing in this phase goes near them. Filed here for the
+  operator to route rather than as a Phase 15 gap, following test 3's incidental_observation
+  precedent.
+
+  SYMPTOM, measured on dev:
+    GET /api/v1/agents                     -> 500 INTERNAL_ERROR
+    GET /api/v1/agents?limit=10            -> 500 INTERNAL_ERROR
+    GET /api/v1/agents?unassigned=true     -> 500 INTERNAL_ERROR
+    GET /api/v1/agents?search=             -> 200, 42 agents      <-- empty string, not absent
+    GET /api/v1/agents?unassigned=true&search=  -> 200, 14 agents
+  So the DEFAULT call — no parameters — is the one that fails.
+
+  ROOT CAUSE, read from the ECS logs rather than inferred:
+    ERROR: function lower(bytea) does not exist
+  AgentRepository.findFiltered carries `(:search IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%',
+  :search, '%')))`. When `search` is null the driver sends an UNTYPED null, Postgres types it as
+  `bytea`, and `lower(bytea)` has no overload. An empty string types fine, which is exactly why
+  `?search=` works and omitting it does not.
+
+  WHY NO TEST CAUGHT IT: the suite runs on H2, which tolerates the untyped null. This is precisely
+  the H2-vs-Postgres blind spot this file's own header warns about for the migrations — the same
+  gap, in a query rather than a migration.
+
+  LIKELY FIX (not applied, not in scope): type the parameter — `CAST(:search AS string)` in the
+  JPQL, or split into two query methods, or pass "" instead of null from AgentService.listAgents.
+  findFilteredAfterCursor carries the identical predicate and will fail the same way on the
+  cursor path.
 
 ### 15. UPCOMING and RETIRED templates are not assignable (CR-01 fix)
 
