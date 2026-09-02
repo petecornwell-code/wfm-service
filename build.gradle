@@ -13,6 +13,23 @@ java {
     }
 }
 
+// Two separate traps, both of which cost real time to find — leave this pinned.
+//
+// 1. Spring Boot's dependency-management plugin pins Testcontainers (3.4.2 -> 1.20.4), and that
+//    managed version WINS over a platform()/BOM declaration in `dependencies`, SILENTLY. Without
+//    this line the build appears to use the requested version while the test JVM logs
+//    "Testcontainers version: 1.20.4". `ext` is the only place the plugin honours.
+//
+// 2. The version floor is 1.21.4 for Docker 29 support. Docker 29 dropped every Engine API version
+//    below v1.40 (/v1.39/info answers 400, /v1.40 answers 200), and Testcontainers <= 1.21.3
+//    negotiates an older default, so EVERY client strategy fails with
+//    "BadRequestException (Status 400)". Testcontainers then reports "Could not find a valid Docker
+//    environment" on a machine where `docker info` works perfectly — and because
+//    PostgresBackedTest sets disabledWithoutDocker = true, that surfaces as a silent SKIP rather
+//    than a failure. Neither DOCKER_API_VERSION nor an api.version property overrides it; only the
+//    library version does.
+ext['testcontainers.version'] = '1.21.4'
+
 repositories {
     mavenCentral()
 }
@@ -43,6 +60,16 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'ai.timefold.solver:timefold-solver-test'
     testRuntimeOnly 'com.h2database:h2'
+
+    // Postgres-backed tests. The rest of the suite runs on H2 with ddl-auto: create-drop, which
+    // cannot see anything Postgres-specific: it tolerates untyped null parameters (the
+    // `lower(bytea)` 500 on GET /agents) and it never executes a Flyway migration, so V40-V43
+    // shipped without a single test running them. Tests extending PostgresBackedTest run against
+    // a real Postgres with the real migrations applied. See that class for the contract.
+    testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+    testRuntimeOnly 'org.postgresql:postgresql'
 }
 
 tasks.named('test') {
@@ -55,6 +82,7 @@ tasks.named('test') {
     // `-D` on the Gradle command line (including credentials) into test output and CI logs.
     // Re-added after being removed at 299c42c alongside the Phase 12 harness it gated.
     systemProperty 'wfm.benchmark', System.getProperty('wfm.benchmark', 'false')
+
 }
 
 tasks.register('generateFteSpreadsheet', JavaExec) {
