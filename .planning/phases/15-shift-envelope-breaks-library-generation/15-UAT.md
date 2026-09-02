@@ -1769,7 +1769,33 @@ blocked: 1
 
 - gap_id: G-15-26
   truth: "An unsupported HTTP method must return 405, not 500 INTERNAL_ERROR"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-16 Task 3 -- test(15-16) 7eb77cf (RED) then feat(15-16) 614f8f0 (GREEN):
+    an @ExceptionHandler for HttpRequestMethodNotSupportedException in GlobalExceptionHandler,
+    placed above the catch-all"
+  resolved_evidence: |
+    THE FIX MATCHES `fix_actual` EXACTLY. `GlobalExceptionHandler.handleMethodNotSupported` returns
+    405 METHOD_NOT_ALLOWED through the existing `buildResponse`-shaped `ErrorResponse`, with an
+    `Allow` header built as ONE comma-joined value from `ex.getSupportedMethods()` (the server's own
+    knowledge of the endpoint) -- not one header entry per method, since `HttpHeaders.getAllow()`
+    only reads the first `Allow` value and tokenizes it, which a naive varargs `.header(ALLOW,
+    array)` call would have silently truncated to the first method only. The message names the
+    supported methods and never echoes `ex.getMethod()` (the client-supplied verb), following this
+    file's own `handleTypeMismatch` T-13-25/26 precedent named in this gap's `detail_actual`.
+
+    THE EMPTY-SUPPORTED-METHODS CASE IS COVERED, not assumed benign:
+    `handleMethodNotSupported_emptySupportedMethods_stillReturns405WithoutMalformedAllowHeader`
+    constructs the exception with zero supported methods and asserts 405 with no malformed
+    (blank-valued) `Allow` header entry.
+
+    PRE-EXISTING MAPPINGS PROVEN UNDISTURBED. `preExistingMappings_stillReturnTheirOriginalStatuses`
+    was broadened (not duplicated) to also cover `handleNotFound`/`handleConflict` alongside the
+    pre-existing `handleIllegalArgument`/`handleUncaught` checks -- the catch-all still returns 500
+    with its fixed, non-leaking string for a genuine unhandled exception, exactly as this gap's
+    `detail_actual` and the plan's `<behavior>` block required.
+
+    `./gradlew test --tests "com.wfm.controller.GlobalExceptionHandlerTest"` -- 5/5 pass, 0
+    failures, 0 errors (2 pre-existing + 3 new).
   severity: minor
   found_by: edge-band experiment, 2026-08-31/09-01 (resumed session)
   RETRACTED_ORIGINAL_CLAIM: |
@@ -1950,7 +1976,55 @@ blocked: 1
 
 - gap_id: G-15-32
   truth: "An accepted schedule's reported constraint violations must describe that schedule"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-16 Task 1 (579b090) -- ScheduleOutputService.buildConstraintViolations
+    takes an explicit isAcceptedSnapshot parameter threaded from ScheduleService.getScheduleDetail's
+    own fromDb local, replacing the null-weights proxy this gap's mechanism identified. The accepted
+    path never calls solutionManager.explain and instead derives the report from the persisted
+    snapshot via a new buildAcceptedConstraintViolations, reusing resolveShiftDescriptor and
+    computeDivergence's coverage walk (factored into outOfEnvelopeAssignments, D-08 one-predicate
+    discipline). Plan 15-16 Task 2 (e07d036) added the regression, constant-1104 pin, and red-proof
+    this gap's own test_gap named."
+  resolved_evidence: |
+    NAMED-ROW PROOF REPRODUCED AND CLOSED. The exact shape this gap's `detail` recorded (Armaz
+    Dugashvili, 2026-01-05, shift `Mid 11:00-20:00`, bandOffset 300 => break 16:00-17:00, held
+    seats 11,12,13,14,15,17,18,19) is now a permanent regression test
+    (`ScheduleOutputServiceShiftReportingTest.buildConstraintViolations_acceptedNamedRowShape_reportsNoEnvelopeViolation`
+    and `ScheduleServiceShiftSnapshotTest.getScheduleDetail_acceptedNamedRowShape_feasibleTrueImpliesNoViolatedHardConstraints`).
+    Before the fix: all eight seats reported as violations (the constant-1104 arithmetic, N*H for
+    N agent-days x H legal seats). After the fix: zero violations, `violatedHardConstraints` empty,
+    matching the schedule's own `feasible: true` and its already-correct `divergence: null`.
+
+    THE CONSTANT-1104 ARITHMETIC IS NOW PINNED AS IMPOSSIBLE, not merely absent:
+    `buildConstraintViolations_acceptedCleanMultiAgentDay_countIsZeroNeverTheStaffedSeatConstant`
+    asserts the reported count for two clean agent-days (N=2, H=8) is explicitly NOT N*H (16), and
+    is zero.
+
+    THE READ-PATH INVARIANT THIS GAP'S OWN `test_gap` NAMED NOW EXISTS AND IS APPLIED EVERYWHERE:
+    `assertFeasibleImpliesNoViolatedHardConstraints` (`feasible == true` implies
+    `violatedHardConstraints` is empty) is asserted on every accepted-schedule and live-schedule
+    case in `ScheduleServiceShiftSnapshotTest`, not only the two new dedicated cases.
+
+    THE RED-PROOF (the accepted path can still go non-empty) is load-bearing and was verified
+    manually before commit: relocating one seat outside its persisted envelope reports exactly one
+    violation naming that agent and timeslot
+    (`buildConstraintViolations_acceptedRedProof_oneRelocatedSeatReportsExactlyOneViolationNamingIt`,
+    `getScheduleDetail_acceptedRedProof_oneOutOfEnvelopeSeatReportsExactlyOneNamedViolation`).
+    Forcing the accepted path to return an unconditionally empty list failed both red-proofs;
+    restoring the pre-fix unconditional `explain()` call failed the named-row/constant-1104
+    regressions. Both reverted before committing -- confirmed via `git diff` showing no residual
+    change to `ScheduleOutputService.java` from the check.
+
+    DEVIATION FROM PLAN SCOPE, RECORDED HERE FOR VISIBILITY: Task 1's commit (579b090) also touched
+    `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java`, which 15-16-PLAN.md's
+    `files_modified` frontmatter did not list. The change exposes
+    `SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME` as a public constant and swaps the pre-existing
+    literal `"Shift envelope compliance"` string in `.asConstraint(...)` for that constant --
+    same string value, same registered constraint name, no solver behaviour change. It was
+    necessary to satisfy the plan's own action text ("take the constant from
+    ScheduleConstraintProvider rather than retyping the string"). `git diff --stat` against the
+    solver package is therefore NOT empty for this plan, contrary to the plan's `<verification>`
+    expectation -- see 15-16-SUMMARY.md deviations for the full accounting.
   severity: major
   found_by: test 11 measurement, 2026-09-01
   promotes: >

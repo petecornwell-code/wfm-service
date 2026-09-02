@@ -5,15 +5,15 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-15-PLAN.md
-last_updated: "2026-09-01T22:28:03.984Z"
+stopped_at: Completed 15-16-PLAN.md
+last_updated: "2026-09-02T12:32:35.017Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 15 execution started
-state_head: 83438771ce714270a9a20ab9aa201fa27edbeb1c
+state_head: 614f8f05163c6c9a62ef9302136bf8b976555141
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 21
+  total_plans: 26
   completed_plans: 21
   percent: 25
 ---
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 3 of 15
+Plan: 2 of 20
 Status: Ready to execute
 Last activity: 2026-09-01 — Phase 15 execution started
 
@@ -229,6 +229,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: TOTAL_VIOLATION_CEILING (INV-4, plan 15-14) set to 3 from the observed five-seed baseline (median 1.0 + headroom 2), per the pre-committed rule
 - [Phase 15]: Plan 15-15: SolverQualityGuardTest proven able to fail -- five red-proofs plus a thesis proof (score-derived evidence goes blind at zero weight while the structural walker still sees the split) plus a failure-report content proof; 10/10 tests green in isolation and under full-suite load
 - [Phase 15]: G-15-22 and G-15-29 closed in 15-UAT.md with measured resolved_evidence; G-15-22 states explicitly the guard was NOT back-tested against the original reverted acceptor commit
+- [Phase 15]: Plan 15-16 (G-15-32/G-15-26 gap closure): the accepted-path violation report is derived from the persisted snapshot (reusing resolveShiftDescriptor/computeDivergence, D-08 discipline) rather than calling solutionManager.explain, discriminated by an explicit isAcceptedSnapshot parameter threaded from getScheduleDetail's own fromDb -- never by the null-weights proxy, which does not hold for accepted schedules.
+- [Phase 15]: Plan 15-16 Task 3 (G-15-26): a wrong HTTP verb answers 405 with an Allow header built as one comma-joined value (not one header entry per method) because HttpHeaders.getAllow() reads only the first Allow value and tokenizes it -- a varargs .header(ALLOW, array) call would have silently truncated to the first supported method.
 
 ### Blockers/Concerns
 
@@ -246,8 +248,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-01T22:28:03.845Z
-Stopped at: Completed 15-15-PLAN.md
+Last session: 2026-09-02T12:32:34.878Z
+Stopped at: Completed 15-16-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -283,3 +285,4 @@ Resume file: None
 | Phase 15 P13 | 33min | 3 tasks | 4 files |
 | Phase 15 P14 | 41min | 3 tasks | 2 files |
 | Phase 15 P15 | 45min | 3 tasks | 4 files |
+| Phase 15 P16 | ~25min (continuation; Task 1 579b090 from prior interrupted session) | 3 tasks | 7 files |

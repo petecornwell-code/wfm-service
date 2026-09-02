@@ -220,7 +220,7 @@ operator, who is correcting it; G-15-10 remains a retest obligation, not new wor
 deferred items (breakBlockedHours enforcement, envelope-vs-operating-window validation) stay
 deferred:*
 
-- [ ] 15-16-PLAN.md — The read path stops lying: accepted schedules report envelope violations derived from their own persisted snapshot instead of a mis-explained score director, `feasible` can no longer coexist with a named violated hard constraint, and a wrong HTTP verb answers 405 (G-15-32, G-15-26) (wave 1)
+- [x] 15-16-PLAN.md — The read path stops lying: accepted schedules report envelope violations derived from their own persisted snapshot instead of a mis-explained score director, `feasible` can no longer coexist with a named violated hard constraint, and a wrong HTTP verb answers 405 (G-15-32, G-15-26) (wave 1)
 - [ ] 15-17-PLAN.md — Suggested library stops emitting duplicate templates and stops placing breaks on the demand peak, with a round-trip guard tying the generator to the validator that judges it (G-15-23) (wave 1)
 - [ ] 15-18-PLAN.md — Seat-supply gate: one date-aware definition of covered supply shared by the blocking check and the advisory, plus refusal advice the gate has actually checked against the desk's live `unassignedAssignmentWeight` (G-15-21, G-15-24) (wave 1)
 - [ ] 15-19-PLAN.md — The analysis nobody has done: candidate within-day blocking rules evaluated against a labelled corpus with measured false-refusal counts, producing `15-SEAT-SUPPLY-GATE-ANALYSIS.md`. Changes no production behaviour by design (G-15-31) (wave 2)
