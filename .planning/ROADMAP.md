@@ -174,8 +174,9 @@ composing one by hand.
 
 **Research needed at plan time**: Yes — the coupling *mechanism* is settled (see Notes), but the exact `ConstructionHeuristicPhaseConfig`/`QueuedEntityPlacerConfig`/`EntitySelectorConfig` XML nesting for two sequential CH phases is only MEDIUM confidence per ARCHITECTURE.md, and the spike found the `EntitySelectorConfig` needs both `entityClass` and `id` set or the mimic-selector reference resolves to the wrong entity. Verify against a fixture before writing the real `solverConfig.xml`.
 
-**Plans**: 8/8 executed, plus 5 gap-closure plans (15-09…15-13, waves 1–3) and 2 further gap-closure
-plans (15-14…15-15, waves 1–2) for G-15-22 / G-15-29. The 15-09…15-13 set addresses UAT gap
+**Plans**: 8/8 executed, plus 5 gap-closure plans (15-09…15-13, waves 1–3), 2 further gap-closure
+plans (15-14…15-15, waves 1–2) for G-15-22 / G-15-29, and 5 more (15-16…15-20, waves 1–3) for the
+seven remaining open gaps. The 15-09…15-13 set addresses UAT gap
 **G-15-10** (blocker). Test 10 reached an irreducible hard score of -19 entirely on Shift envelope
 compliance on the live Stubhub (EN) desk. Diagnosis is settled across three debug lanes
 (`.planning/debug/`): envelope-blind minimum-staffing seat supply, a zero-slack value range with no
@@ -210,6 +211,20 @@ G-15-31 are excluded from this round:*
 
 - [x] 15-14-PLAN.md — Solver quality guard: live-shape synthetic fixture, five seeded step-count-terminated solves through the shipped `solverConfig.xml`, three structural invariants (zero split shifts, zero edge breaks, every edge hour staffed) walked outside the score director, a median violation-COUNT ceiling, and the shipped weight defaults pinned — in the default suite, ungated (wave 1)
 - [x] 15-15-PLAN.md — Red-proofs that each walker can fail on exactly its own injected defect, a mechanical demonstration that a zero weight blinds the violation-count table while the walker still sees the split, plus the documented solver comparison rule and closure of both gap entries (wave 2)
+
+*Gap closure for the seven remaining open gaps (G-15-21, G-15-23, G-15-24, G-15-25, G-15-26, G-15-31,
+G-15-32). Sequenced safest-first: the self-contained read-path and generator defects land in wave 1
+alongside the gate's written-down calendar fix; the two gaps needing design work follow behind the
+analysis that measures them. G-15-28 (weekend demand forecast) is excluded — it is DATA owned by the
+operator, who is correcting it; G-15-10 remains a retest obligation, not new work; and OR-2's two
+deferred items (breakBlockedHours enforcement, envelope-vs-operating-window validation) stay
+deferred:*
+
+- [ ] 15-16-PLAN.md — The read path stops lying: accepted schedules report envelope violations derived from their own persisted snapshot instead of a mis-explained score director, `feasible` can no longer coexist with a named violated hard constraint, and a wrong HTTP verb answers 405 (G-15-32, G-15-26) (wave 1)
+- [ ] 15-17-PLAN.md — Suggested library stops emitting duplicate templates and stops placing breaks on the demand peak, with a round-trip guard tying the generator to the validator that judges it (G-15-23) (wave 1)
+- [ ] 15-18-PLAN.md — Seat-supply gate: one date-aware definition of covered supply shared by the blocking check and the advisory, plus refusal advice the gate has actually checked against the desk's live `unassignedAssignmentWeight` (G-15-21, G-15-24) (wave 1)
+- [ ] 15-19-PLAN.md — The analysis nobody has done: candidate within-day blocking rules evaluated against a labelled corpus with measured false-refusal counts, producing `15-SEAT-SUPPLY-GATE-ANALYSIS.md`. Changes no production behaviour by design (G-15-31) (wave 2)
+- [ ] 15-20-PLAN.md — Supply computed against each agent-day's own eligible pairs rather than a desk-wide union, proven band-composition-sensitive by the experiment that proved the old one blind, and the analysis's recommendation implemented or declined in writing (G-15-25, G-15-31) (wave 3)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
 first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the
