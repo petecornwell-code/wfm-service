@@ -9,11 +9,15 @@ import com.wfm.dto.ShiftLibraryValidationResponse.HoursAdvisory;
 import com.wfm.dto.ShiftLibraryValidationResponse.PeakShortfallAdvisory;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
+import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
+import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.repository.AgentDayHoursRepository;
+import com.wfm.repository.AgentRepository;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.StaffingRequirementRepository;
@@ -26,6 +30,7 @@ import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,17 +70,23 @@ public class ShiftLibraryValidationService {
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
+    private final AgentRepository agentRepository;
+    private final DeskRepository deskRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
 
     public ShiftLibraryValidationService(ShiftTemplateRepository shiftTemplateRepository,
                                           ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
                                           StaffingRequirementRepository staffingRequirementRepository,
                                           AgentDayHoursRepository agentDayHoursRepository,
+                                          AgentRepository agentRepository,
+                                          DeskRepository deskRepository,
                                           TimeslotGeneratorService timeslotGeneratorService) {
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
+        this.agentRepository = agentRepository;
+        this.deskRepository = deskRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
     }
 
@@ -281,10 +292,52 @@ public class ShiftLibraryValidationService {
 
     // --- Hours match (D-06/D-07) ---
 
+    /**
+     * The contracted-hours values in play on each weekday, one entry per agent on the desk.
+     *
+     * <p>Resolution mirrors {@code SolverService.resolveEffectiveHours} — an
+     * {@code agent_day_hours} row wins where one exists, otherwise the DESK DEFAULT applies. The
+     * per-date exception tier that method also consults has no analogue here, because this check
+     * is per WEEKDAY rather than per date.
+     *
+     * <p>The fallback is the fix for UAT 17b. Reading only the rows meant an agent whose per-day
+     * hours had never been edited contributed NOTHING, so a newly created desk — where no agent
+     * has rows yet — reported every weekday unsatisfiable and could not be switched into SHIFT
+     * mode at all, while {@code DeskAgentResponse.dayHours.X.effectiveHours} showed the desk
+     * default on screen and the solver would happily have scheduled against it. The validator was
+     * stricter than the solver about the same fact, and the validator is what gates mode entry.
+     *
+     * <p>An agent with NO rows is therefore assumed available on every weekday at the desk
+     * default, which is exactly what the solver assumes: {@code computeAgentDayConfigs} walks
+     * every date in the period and falls through to the schedule default for any weekday the
+     * agent has no row for. A desk with no agents at all still yields an empty map and so still
+     * reports every demanded weekday unsatisfiable — no agents means no hours, which is a
+     * different statement from "hours not recorded yet".
+     */
     private Map<DayOfWeek, List<BigDecimal>> loadHoursByWeekday(long tenantId, UUID deskId) {
-        List<AgentDayHours> agentDayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        return agentDayHours.stream().collect(Collectors.groupingBy(
-                AgentDayHours::getDayOfWeek, Collectors.mapping(AgentDayHours::getHours, Collectors.toList())));
+        Map<UUID, Map<DayOfWeek, BigDecimal>> rowsByAgent =
+                agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId).stream()
+                        .collect(Collectors.groupingBy(
+                                adh -> adh.getAgent().getId(),
+                                Collectors.toMap(AgentDayHours::getDayOfWeek, AgentDayHours::getHours,
+                                        (first, second) -> first)));
+
+        BigDecimal deskDefaultHours = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .map(Desk::getDefaultContractedHoursPerDay)
+                .orElse(null);
+
+        Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = new EnumMap<>(DayOfWeek.class);
+        for (Agent agent : agentRepository.findByTenantIdAndDeskId(tenantId, deskId)) {
+            Map<DayOfWeek, BigDecimal> rows = rowsByAgent.getOrDefault(agent.getId(), Map.of());
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                BigDecimal hours = rows.containsKey(weekday) ? rows.get(weekday) : deskDefaultHours;
+                if (hours == null) {
+                    continue;
+                }
+                hoursByWeekday.computeIfAbsent(weekday, w -> new ArrayList<>()).add(hours);
+            }
+        }
+        return hoursByWeekday;
     }
 
     /**
