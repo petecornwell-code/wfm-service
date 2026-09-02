@@ -1310,14 +1310,49 @@ scratch_desk_built_2026_09_02: |
   DISPOSAL PLAN, to run after the operator's visual check: remove the 9 agents (restores deskId to
   null, their prior state exactly), then DELETE the desk, then verify as test 3 did — GET desk ->
   404, and confirm the live desk still holds its 28 agents and 11 templates.
-awaiting: |
-  OPERATOR VISUAL CHECK on desk ZZ-UAT14-SCRATCH-slot-mode. What must be TRUE:
-    - Schedule Results shows the SLOT rendering: a plain per-date agent table, NO shift group
+torn_down_2026_09_02: |
+  DISPOSED on operator instruction ("tear it down"), and verified rather than assumed:
+
+    9 agents removed          all 204; desk roster -> 0
+    agents released cleanly   tenant unassigned 14 -> 5 while borrowed -> 14 again, the exact
+                              pre-borrow count, so every borrowed agent went back to deskId null
+    desk DELETE (1st try)     409 "Cannot delete desk with accepted schedules"
+    accepted schedule deleted 204   (58f21bae — see note below)
+    desk DELETE (2nd try)     204
+    GET desk                  404
+    cascade                   timeslots [], specializations 0, staffing-requirements 0, schedules 0
+
+  LIVE DESK UNTOUCHED, checked against the baseline taken before teardown began:
+    Stubhub (EN)  28 agents (was 28) · 11 templates (was 11) · mode SHIFT · 7 schedules · health UP
+    tenant desks 2 -> 1
+
+  THE 409 IS A FINDING ABOUT THE TEST, NOT A DEFECT. `DeskService.deleteDesk` (:132) refuses while
+  any ACCEPTED schedule exists — correct behaviour, and the same protective instinct as the shift
+  template delete control (test 5b). But it means "create a throwaway desk, use it, delete it" is
+  NOT a complete disposal route on its own: accepting anything on the scratch desk strands it until
+  the schedule is deleted first. Test 3's disposal was clean only because it never accepted
+  anything. Worth knowing before the next scratch desk.
+
+  SCHEDULE 58f21bae WAS NOT MINE. My three solves were ce41f5b1, 48966bfd and 5e27329f; 58f21bae
+  was created 20:22:17Z, during the operator's visual check, and accepting a schedule mints a new
+  persisted id (the same rename seen on the live desk when cf6f516e became 7cc71bf5). So it is the
+  operator's acceptance of solve 5e27329f. Recorded because it is the only evidence in this file
+  that the scratch desk was actually opened in the UI — and it is NOT a substitute for a verdict.
+ui_half_unobserved: |
+  STATED PLAINLY so this test is not over-read. The API half is verified above and is strong. The
+  SCREEN half was never reported: the operator was asked for a visual verdict, and the next
+  instruction was "tear it down" with no verdict given. The desk is now deleted, so the four visual
+  checks below cannot be run without rebuilding the fixture:
+    - Schedule Results shows the SLOT rendering — plain per-date agent table, no shift group
       headers, no "· HH:MM–HH:MM · N agent(s)" bars.
-    - No E! marks, no × marks, no "unstaffed by design" treatment, and no envelope legend.
-    - The Agent Schedule tab shows no ⚠ badge and no grey "legal slot unworked" badge.
-    - The Shift Library page offers the SLOT-mode state (mode switch available, no live library
-      being enforced).
+    - No E! marks, no × marks, no "unstaffed by design" treatment, no envelope legend.
+    - Agent Schedule tab shows no ⚠ badge and no grey "legal slot unworked" badge.
+    - Shift Library page offers the SLOT-mode state.
+  What DOES stand without them: ScheduleResults.tsx:419-422 makes the mode branch the first
+  statement of the rendering decision and no Phase 15 grouping code executes on it, and the API
+  proves `.shift` and `.divergence` are null on every entry — so the shift-mode UI has no data to
+  render even if it were reached. That is a strong structural argument, not an observation.
+  Rebuilding the fixture takes about ten minutes if the visual check is wanted.
 
 ### 14b. (incidental) GET /api/v1/agents returns 500 unless `search` is supplied
 
