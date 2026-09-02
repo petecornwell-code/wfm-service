@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T22:20:00Z"
+updated: "2026-09-02T22:45:00Z"
 ---
 
 <!--
@@ -1662,7 +1662,7 @@ disposal: |
   11 templates / 7 schedules.
 reported: "[measured from the API on a throwaway desk]"
 
-### 17b. (incidental) A desk whose agents rely on the default contracted hours cannot enter SHIFT mode
+### 17b. (incidental, FIXED) A desk whose agents rely on the default contracted hours cannot enter SHIFT mode
 
 expected: n/a — NOT a Phase 15 test. Found while building test 17's fixture.
 result: skipped
@@ -1699,6 +1699,53 @@ reason: |
   UI already shows as correct. Workaround is straightforward (set day hours), so it is friction
   rather than breakage — but it is friction at exactly the moment a new desk adopts the phase's
   headline feature.
+fixed_2026_09_02: |
+  FIXED on operator instruction ("Also fix bug - where new desk cant have shift mode"), RED first
+  per this repo's convention:
+    cd1a71e  test(15) — the failing test. RED: `Expecting empty but was: ["MONDAY"]`
+    14f0868  fix(15)  — loadHoursByWeekday now mirrors SolverService.resolveEffectiveHours:
+                        an agent_day_hours row wins where one exists, otherwise the DESK DEFAULT.
+
+  TWO PROPERTIES DELIBERATELY PRESERVED, each with a test:
+    - A desk with NO agents still reports every demanded weekday unsatisfiable. No agents means no
+      hours, which is a different statement from "hours not recorded yet". The pre-existing
+      validate_liveDemandAndTemplatesButZeroAgents test still passes and now reads as the
+      deliberate contrast to the new one.
+    - An explicit row still beats the default: validate_agentWithADayHoursRow_stillWinsOverTheDeskDefault
+      (7.75h row against an 8.00h default and an 8.00h template keeps MONDAY unsatisfiable). It
+      passes both before and after the fix, so it is a genuine non-regression guard.
+
+  NO EXISTING DESK CAN CHANGE VERDICT. Checked before writing the fix, not asserted after: all 28
+  of Stubhub (EN)'s agents carry rows for all 7 weekdays, so the fallback cannot fire there. It
+  only fires for an (agent, weekday) pair that has no row.
+
+  Full suite after the change: 90 classes, 637 tests, 0 failures.
+verified_live_2026_09_02: |
+  END-TO-END on the deployed fix — deploy run 33685883299, ECS task def wfm-service-dev:68, image
+  tag 14f0868 (re-derived from the task definition, not from the green tick), health UP.
+
+  A fresh desk taken down exactly the path that used to fail:
+    desk created with no mode field            -> read back SLOT, default 8.00
+    9 hourly timeslots Mon 2026-01-05, 2 FTE/hour
+    one template, net 8.00h — matching ONLY the desk default, no explicit agent row anywhere
+    5 agents assigned and specialised, every day-hours row CLEARED
+    PRECONDITION ASSERTED: 0 day-hours rows across all agents and all 7 days
+    API still displayed dayHours.MONDAY.effectiveHours = 8.00 — the fallback, visible
+
+    unsatisfiableWeekdays   []      (was ["MONDAY"])
+    PUT /scheduling-mode {SHIFT}    HTTP 200 -> SHIFT      (was HTTP 400)
+
+  Desk deleted afterwards; 1 desk remaining, unassigned agents back to 14.
+
+  THE FIRST ATTEMPT WAS INVALID AND IS RECORDED BECAUSE THE TRAP IS REUSABLE. It ran against
+  borrowed agents that still carried MONDAY rows created by test 17's own workaround, so it
+  reported 200 without the fallback ever firing — a green result that proved nothing. The cause is
+  worth knowing before building any future scratch-desk fixture: **AgentDayHours hangs off the
+  AGENT, not the desk** (the repository's desk scoping is a join through agent.deskId), so per-day
+  hours FOLLOW an agent onto whatever desk they are next assigned to and survive both removal from
+  a desk and that desk's deletion. Only the precondition assert caught it. Clearing the rows also
+  restored those agents to the state they were in before this UAT borrowed them — test 14 recorded
+  them as hasRow=false originally.
 
 ### 18. Production migration executed safely
 
