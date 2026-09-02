@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T22:45:00Z"
+updated: "2026-09-02T23:30:00Z"
 ---
 
 <!--
@@ -1428,7 +1428,7 @@ ui_half_unobserved: |
   render even if it were reached. That is a strong structural argument, not an observation.
   Rebuilding the fixture takes about ten minutes if the visual check is wanted.
 
-### 14b. (incidental) GET /api/v1/agents returns 500 unless `search` is supplied
+### 14b. (incidental, FIXED) GET /api/v1/agents returns 500 unless `search` is supplied
 
 expected: n/a — NOT a Phase 15 test. Recorded because it was found while setting up test 14.
 result: skipped
@@ -1598,6 +1598,27 @@ coverage_gap_found: |
   an existing passing test into a real guard without writing a new one.
   Recorded as an observation for the operator to route; NOT filed as a Phase 15 gap, since the
   shipped behaviour meets the phase's stated requirement.
+closed_2026_09_02: |
+  CLOSED on operator instruction ("fix the ScheduleSnapshot gap too") — commit 883a103.
+
+  THE OBVIOUS FIX WOULD HAVE BEEN A DUD, and this is the part worth remembering. Adding
+  `schedulingMode` to the record is necessary but NOT sufficient: `saveSchedule` leaves the
+  schedule at the SLOT entity default and the desk round-trips SLOT -> SHIFT -> SLOT, so the
+  assertion would have compared SLOT against SLOT. A regression that copied the desk's mode onto
+  accepted schedules ends on SLOT too — the guard would have passed while the behaviour was
+  broken, which is the same shape of false comfort the original omission created.
+
+  So the accepted schedule is now deliberately SHIFT while the desk ends on SLOT. The MISMATCH is
+  the mechanism: only a write-through can turn SHIFT into SLOT, and that is exactly what must fail.
+
+  PROVEN TO BITE, not assumed. The regression was simulated (writing the desk's final mode onto the
+  accepted schedule after the round trip) and the test failed with precisely:
+      expected: schedulingMode = SHIFT
+      but was:  schedulingMode = SLOT
+  then the simulation was removed and the suite re-run green — 92 classes, 645 tests, 0 failures.
+
+  Test 16's claim 3 is now guarded by the suite rather than resting on the one-off live round-trip
+  recorded above.
 reported: "[operator authorised the live mode round-trip; result measured from the API]"
 
 ### 17. Deleting an accepted shift schedule leaves no orphans (CR-03 fix)
