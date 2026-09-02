@@ -3,19 +3,23 @@ package com.wfm.service;
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.dto.ScheduleDetailResponse.AgentScheduleEntry;
 import com.wfm.dto.ScheduleDetailResponse.BreakDetail;
+import com.wfm.dto.ScheduleDetailResponse.ConstraintViolationEntry;
 import com.wfm.dto.ScheduleDetailResponse.PreferenceReport;
 import com.wfm.dto.ScheduleDetailResponse.PreferenceReportEntry;
 import com.wfm.dto.ScheduleDetailResponse.ShiftEnvelopeDivergence;
+import com.wfm.dto.ScheduleDetailResponse.ViolationDetail;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentPreference;
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.Timeslot;
+import com.wfm.solver.ScheduleConstraintProvider;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -310,6 +314,158 @@ class ScheduleOutputServiceShiftReportingTest {
         PreferenceReportEntry entry = report.entries().get(0);
         assertThat(entry.actualBreakTime()).isEqualTo(LocalTime.of(16, 0));
         assertThat(entry.breakTimeHonoured()).isFalse();
+    }
+
+    // ------------------------------------------------------------------
+    //  Task 2 (G-15-32 gap closure) — accepted-path constraint violation report
+    // ------------------------------------------------------------------
+    //
+    //  Named-row shape from 15-UAT.md's G-15-32 proof: Armaz Dugashvili, 2026-01-05, shift
+    //  "Mid 11:00-20:00", bandOffset 300 (break 16:00-17:00), held seats 11,12,13,14,15,17,18,19
+    //  -- every seat inside the envelope, none in the break window, server divergence null. Before
+    //  the fix ALL EIGHT were wrongly reported as violations (the constant "every staffed seat"
+    //  arithmetic); this section pins the fix at the ScheduleOutputService level directly.
+
+    private static final LocalTime NAMED_ROW_ENVELOPE_START = LocalTime.of(11, 0);
+    private static final LocalTime NAMED_ROW_ENVELOPE_END = LocalTime.of(20, 0);
+    private static final int NAMED_ROW_BAND_OFFSET_MINUTES = 300; // break 16:00
+    private static final int NAMED_ROW_BAND_DURATION_MINUTES = 60; // .. to 17:00
+    private static final List<LocalTime> NAMED_ROW_HELD_SEATS =
+            times(11, 12, 13, 14, 15, 17, 18, 19);
+
+    @Test
+    void buildConstraintViolations_acceptedNamedRowShape_reportsNoEnvelopeViolation() {
+        Schedule schedule = acceptedScheduleWithEnvelope(NAMED_ROW_ENVELOPE_START, NAMED_ROW_ENVELOPE_END,
+                NAMED_ROW_BAND_OFFSET_MINUTES, NAMED_ROW_BAND_DURATION_MINUTES,
+                new AgentDayFixture("Armaz Dugashvili", DAY, NAMED_ROW_HELD_SEATS));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, true);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void buildConstraintViolations_acceptedCleanMultiAgentDay_countIsZeroNeverTheStaffedSeatConstant() {
+        // Constant-1104 regression: 1104 == 138 agent-days x 8 contracted hours, i.e. N*H where N
+        // is agent-day count and H is legal-seat count -- exactly the impossible arithmetic every
+        // held seat failing the coverage predicate produces. Two agent-days (N=2) each legally
+        // holding the same 8-seat named-row shape (H=8) must report 0, explicitly pinned as NOT
+        // N*H (16), not merely "some number other than 1104".
+        Schedule schedule = acceptedScheduleWithEnvelope(NAMED_ROW_ENVELOPE_START, NAMED_ROW_ENVELOPE_END,
+                NAMED_ROW_BAND_OFFSET_MINUTES, NAMED_ROW_BAND_DURATION_MINUTES,
+                new AgentDayFixture("Armaz Dugashvili", DAY, NAMED_ROW_HELD_SEATS),
+                new AgentDayFixture("Beso Kapanadze", DAY.plusDays(1), NAMED_ROW_HELD_SEATS));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, true);
+
+        int impossibleConstant = 2 * NAMED_ROW_HELD_SEATS.size(); // N*H = 16
+        int reportedCount = violations.stream().mapToInt(ConstraintViolationEntry::violationCount).sum();
+        assertThat(reportedCount).isNotEqualTo(impossibleConstant);
+        assertThat(reportedCount).isZero();
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void buildConstraintViolations_acceptedRedProof_oneRelocatedSeatReportsExactlyOneViolationNamingIt() {
+        Schedule schedule = acceptedScheduleWithEnvelope(NAMED_ROW_ENVELOPE_START, NAMED_ROW_ENVELOPE_END,
+                NAMED_ROW_BAND_OFFSET_MINUTES, NAMED_ROW_BAND_DURATION_MINUTES,
+                new AgentDayFixture("Armaz Dugashvili", DAY, NAMED_ROW_HELD_SEATS));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        // Sanity: clean before relocation -- the red-proof means nothing without a green start.
+        assertThat(service.buildConstraintViolations(schedule, true)).isEmpty();
+
+        // Relocate ONE seat (11:00) to sit BEFORE the envelope start, via a NEW synthetic Timeslot
+        // on that one assignment only -- never mutate a Timeslot other seats might share, the trap
+        // ShiftEnvelopeGroundTruthTest.relocateSeat documents.
+        AgentAssignment victim = schedule.getAssignments().get(0);
+        UUID expectedAgentId = victim.getAgent().getId();
+        Timeslot relocated = new Timeslot();
+        relocated.setId(UUID.randomUUID());
+        relocated.setDate(DAY);
+        relocated.setStartTime(LocalTime.of(9, 0));
+        relocated.setEndTime(LocalTime.of(10, 0));
+        victim.setTimeslot(relocated);
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, true);
+
+        assertThat(violations).hasSize(1);
+        ConstraintViolationEntry entry = violations.get(0);
+        assertThat(entry.constraintName())
+                .isEqualTo(ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME);
+        assertThat(entry.level()).isEqualTo("HARD");
+        assertThat(entry.violationCount()).isEqualTo(1);
+        assertThat(entry.violations()).hasSize(1);
+        ViolationDetail detail = entry.violations().get(0);
+        assertThat(detail.agentId()).isEqualTo(expectedAgentId);
+        assertThat(detail.timeslotId()).isEqualTo(relocated.getId());
+        assertThat(detail.timeslotLabel()).contains("09:00");
+    }
+
+    @Test
+    void buildConstraintViolations_liveUnaccepted_nullWeightsGuardStaysScopedToLivePath() {
+        // The demoted safety net (Task 1): with isAcceptedSnapshot=false and no ConstraintWeights,
+        // the pre-existing guard must still return empty rather than attempting to explain() —
+        // proving the guard survived being moved to AFTER the provenance branch, not just removed.
+        Schedule schedule = scheduleWithLiveDescriptor(SANE);
+        assertThat(schedule.getConstraintWeights()).isNull();
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, false);
+
+        assertThat(violations).isEmpty();
+    }
+
+    private record AgentDayFixture(String agentName, LocalDate date, List<LocalTime> heldSeatStarts) {}
+
+    /**
+     * Accepted/reloaded-shaped schedule fixture for the constraint-violation-report tests: every
+     * agent-day carries the D-07 denormalised scalars (no live transient {@code shiftBandPair}),
+     * exactly as {@link #scheduleWithAcceptedDescriptor} does for the agent-schedule tests above.
+     * {@code buildAcceptedConstraintViolations} reads only assignments + shiftAssignments +
+     * constraintWeights, so no timeslot grid is needed here.
+     */
+    private Schedule acceptedScheduleWithEnvelope(LocalTime envelopeStart, LocalTime envelopeEnd,
+            int bandOffsetMinutes, int bandDurationMinutes, AgentDayFixture... agentDays) {
+        Specialization spec = specialization("Chat");
+        java.util.Map<String, Agent> agentsByName = new java.util.HashMap<>();
+
+        List<AgentAssignment> allAssignments = new ArrayList<>();
+        List<AgentShiftAssignment> allShiftRows = new ArrayList<>();
+
+        for (AgentDayFixture day : agentDays) {
+            Agent agent = agentsByName.computeIfAbsent(day.agentName(), this::agent);
+
+            for (LocalTime start : day.heldSeatStarts()) {
+                Timeslot ts = new Timeslot();
+                ts.setId(UUID.randomUUID());
+                ts.setDate(day.date());
+                ts.setStartTime(start);
+                ts.setEndTime(start.plusMinutes(INCREMENT));
+                allAssignments.add(assignment(agent, ts, spec));
+            }
+
+            AgentShiftAssignment shiftRow = new AgentShiftAssignment();
+            shiftRow.setId(UUID.randomUUID());
+            shiftRow.setAgent(agent);
+            shiftRow.setDate(day.date());
+            shiftRow.setShiftBandPair(null);
+            shiftRow.setTemplateName("Mid");
+            shiftRow.setShiftStartTime(envelopeStart);
+            shiftRow.setShiftEndTime(envelopeEnd);
+            shiftRow.setBandOffsetMinutes(bandOffsetMinutes);
+            shiftRow.setBandDurationMinutes(bandDurationMinutes);
+            shiftRow.setSourceTemplateId(UUID.randomUUID());
+            allShiftRows.add(shiftRow);
+        }
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setAssignments(new ArrayList<>(allAssignments));
+        schedule.setShiftAssignments(new ArrayList<>(allShiftRows));
+        schedule.setTimeslots(new ArrayList<>());
+        return schedule;
     }
 
     // ------------------------------------------------------------------

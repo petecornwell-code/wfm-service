@@ -1,13 +1,17 @@
 package com.wfm.service;
 
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.ScheduleDetailResponse;
+import com.wfm.dto.ScheduleDetailResponse.ConstraintViolationEntry;
+import com.wfm.dto.ScheduleDetailResponse.ViolationDetail;
 import com.wfm.dto.ShiftTemplateRequest;
 import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
@@ -19,6 +23,7 @@ import com.wfm.model.Specialization;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.AgentShiftAssignmentRepository;
+import com.wfm.repository.ConstraintWeightsRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.SpecializationRepository;
@@ -43,6 +48,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.when;
 
 /**
@@ -95,6 +102,9 @@ class ScheduleServiceShiftSnapshotTest {
 
     @Autowired
     private AgentShiftAssignmentRepository agentShiftAssignmentRepository;
+
+    @Autowired
+    private ConstraintWeightsRepository constraintWeightsRepository;
 
     @MockitoBean
     private TimeslotGeneratorService timeslotGeneratorService;
@@ -523,6 +533,7 @@ class ScheduleServiceShiftSnapshotTest {
         ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
 
         assertThat(response.getSchedulingMode()).isEqualTo("SHIFT");
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
     }
 
     @Test
@@ -571,6 +582,7 @@ class ScheduleServiceShiftSnapshotTest {
         ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
 
         assertThat(response.getSchedulingMode()).isEqualTo("SHIFT");
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
     }
 
     @Test
@@ -588,6 +600,208 @@ class ScheduleServiceShiftSnapshotTest {
         ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
 
         assertThat(response.getSchedulingMode()).isEqualTo("SLOT");
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
+    }
+
+    // ---------- Task 2 (G-15-32 gap closure): read-path invariant + red-proof ----------
+    //
+    // End-to-end through getScheduleDetail, exercising the REAL ScheduleOutputService accepted
+    // path (Task 1) rather than the @MockitoBean default — scheduleOutputService.
+    // buildConstraintViolations is stubbed to DELEGATE to a real instance so this DB-backed
+    // accept+reload round trip genuinely proves the fix, not just the derivation logic in
+    // ScheduleService (which was never broken).
+
+    /**
+     * G-15-32's own invariant: a schedule that reads {@code feasible: true} must never also name
+     * a violated hard constraint. Applied to every accepted-schedule assertion in this class
+     * (including the pre-existing ones above) so a future regression anywhere in the accepted
+     * read path trips this, not only the two dedicated cases below.
+     */
+    private static void assertFeasibleImpliesNoViolatedHardConstraints(ScheduleDetailResponse response) {
+        if (Boolean.TRUE.equals(response.getFeasible())) {
+            assertThat(response.getViolatedHardConstraints())
+                    .as("G-15-32: a feasible schedule must never report a violated hard constraint")
+                    .isEmpty();
+        }
+    }
+
+    /** Delegates the mocked buildConstraintViolations to a real instance for this test only. */
+    private void stubRealConstraintViolations() {
+        ScheduleOutputService real = realOutputService();
+        when(scheduleOutputService.buildConstraintViolations(any(), anyBoolean()))
+                .thenAnswer(inv -> real.buildConstraintViolations(inv.getArgument(0), inv.getArgument(1)));
+    }
+
+    private void saveDefaultConstraintWeights(long tenantId, UUID deskId) {
+        ConstraintWeights weights = new ConstraintWeights();
+        weights.setTenantId(tenantId);
+        weights.setDeskId(deskId);
+        constraintWeightsRepository.save(weights);
+    }
+
+    private List<Timeslot> saveTimeslots(UUID deskId, LocalDate date, List<LocalTime> starts) {
+        List<Timeslot> saved = new ArrayList<>();
+        for (LocalTime start : starts) {
+            Timeslot ts = new Timeslot();
+            ts.setTenantId(TENANT_A);
+            ts.setDeskId(deskId);
+            ts.setDate(date);
+            ts.setStartTime(start);
+            ts.setEndTime(start.plusHours(1));
+            saved.add(timeslotRepository.save(ts));
+        }
+        return saved;
+    }
+
+    private List<AgentAssignment> heldSeatAssignments(Agent agent, Specialization spec, UUID deskId,
+            UUID scheduleId, List<Timeslot> timeslots) {
+        List<AgentAssignment> seats = new ArrayList<>();
+        for (Timeslot ts : timeslots) {
+            AgentAssignment seat = new AgentAssignment();
+            seat.setId(UUID.randomUUID());
+            seat.setTenantId(TENANT_A);
+            seat.setDeskId(deskId);
+            seat.setScheduleId(scheduleId);
+            seat.setTimeslot(ts);
+            seat.setRequiredSpecialization(spec);
+            seat.setAgent(agent);
+            seats.add(seat);
+        }
+        return seats;
+    }
+
+    @Test
+    void getScheduleDetail_acceptedNamedRowShape_feasibleTrueImpliesNoViolatedHardConstraints() {
+        // Named-row regression (G-15-32 15-UAT.md): Armaz Dugashvili, 2026-01-05, shift
+        // "Mid 11:00-20:00", bandOffset 300 (break 16:00-17:00), held seats
+        // 11,12,13,14,15,17,18,19 -- every seat inside the envelope, none in the break window.
+        // Before the fix ALL EIGHT were reported as violations (the constant-1104 arithmetic,
+        // N*H for N=1 agent-day and H=8 legal seats); after the fix this accepted schedule
+        // reports zero, matching its own (feasible) persisted score.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "Armaz");
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveDefaultConstraintWeights(TENANT_A, deskId);
+        ShiftTemplate template = saveTemplate(deskId, "Mid", LocalTime.of(11, 0), LocalTime.of(20, 0),
+                new BreakBandRequest(300, 60, null));
+        ShiftTemplateBreakBand band = shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, template.getId())
+                .get(0);
+
+        List<Timeslot> heldTimeslots = saveTimeslots(deskId, MONDAY, List.of(
+                LocalTime.of(11, 0), LocalTime.of(12, 0), LocalTime.of(13, 0), LocalTime.of(14, 0),
+                LocalTime.of(15, 0), LocalTime.of(17, 0), LocalTime.of(18, 0), LocalTime.of(19, 0)));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setScore(HardSoftScore.ZERO);
+
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setTenantId(TENANT_A);
+        shiftAssignment.setDeskId(deskId);
+        shiftAssignment.setScheduleId(inMemoryScheduleId);
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, band));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+        schedule.setAssignments(new ArrayList<>(
+                heldSeatAssignments(agent, spec, deskId, inMemoryScheduleId, heldTimeslots)));
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        stubRealConstraintViolations();
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
+
+        assertThat(response.getFeasible()).isTrue();
+        assertThat(response.getConstraintViolations())
+                .as("constant-1104 regression: N*H (1 agent-day x 8 legal seats = 8) must never appear")
+                .isEmpty();
+        assertThat(response.getViolatedHardConstraints()).isEmpty();
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
+    }
+
+    @Test
+    void getScheduleDetail_acceptedRedProof_oneOutOfEnvelopeSeatReportsExactlyOneNamedViolation() {
+        // The load-bearing proof that the accepted path can still go non-empty (Task 2's own
+        // done-criterion): without this, "the accepted path is correct" and "the accepted path
+        // returns nothing" are indistinguishable. Same named-row shape as above, but the 11:00
+        // seat is relocated to 09:00 -- BEFORE the 11:00 envelope start -- via a live timeslot the
+        // solver would never have placed there.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        Agent agent = saveAgent(TENANT_A, deskId, "Armaz");
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveDefaultConstraintWeights(TENANT_A, deskId);
+        ShiftTemplate template = saveTemplate(deskId, "Mid", LocalTime.of(11, 0), LocalTime.of(20, 0),
+                new BreakBandRequest(300, 60, null));
+        ShiftTemplateBreakBand band = shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(TENANT_A, template.getId())
+                .get(0);
+
+        List<Timeslot> heldTimeslots = saveTimeslots(deskId, MONDAY, List.of(
+                LocalTime.of(9, 0), LocalTime.of(12, 0), LocalTime.of(13, 0), LocalTime.of(14, 0),
+                LocalTime.of(15, 0), LocalTime.of(17, 0), LocalTime.of(18, 0), LocalTime.of(19, 0)));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        // Genuinely infeasible: exactly one envelope breach at the desk's own weight (ofHard(1)).
+        schedule.setScore(HardSoftScore.ofHard(-1));
+
+        AgentShiftAssignment shiftAssignment = new AgentShiftAssignment();
+        shiftAssignment.setId(UUID.randomUUID());
+        shiftAssignment.setTenantId(TENANT_A);
+        shiftAssignment.setDeskId(deskId);
+        shiftAssignment.setScheduleId(inMemoryScheduleId);
+        shiftAssignment.setAgent(agent);
+        shiftAssignment.setDate(MONDAY);
+        shiftAssignment.setShiftBandPair(new ShiftBandPair(template, band));
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
+        schedule.setAssignments(new ArrayList<>(
+                heldSeatAssignments(agent, spec, deskId, inMemoryScheduleId, heldTimeslots)));
+
+        inMemoryStore.put(schedule);
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        stubRealConstraintViolations();
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, saved.getId(), null);
+
+        assertThat(response.getFeasible()).isFalse();
+        assertThat(response.getConstraintViolations()).hasSize(1);
+        ConstraintViolationEntry entry = response.getConstraintViolations().get(0);
+        assertThat(entry.constraintName()).isEqualTo("Shift envelope compliance");
+        assertThat(entry.level()).isEqualTo("HARD");
+        assertThat(entry.violationCount()).isEqualTo(1);
+        assertThat(entry.violations()).hasSize(1);
+        ViolationDetail detail = entry.violations().get(0);
+        assertThat(detail.agentId()).isEqualTo(agent.getId());
+        // The snapshot timeslot carries a freshly generated id (accept-time remap) — the relocated
+        // seat's identity is proven through its start time, which the remap preserves verbatim.
+        assertThat(detail.timeslotLabel()).contains("09:00");
+        assertThat(response.getViolatedHardConstraints()).containsExactly("Shift envelope compliance");
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
+    }
+
+    @Test
+    void getScheduleDetail_inMemoryFeasibleSchedule_feasibleTrueImpliesNoViolatedHardConstraints() {
+        // Live in-memory side of the read-path invariant (behaviour unchanged by Task 1 -- the
+        // live branch of buildConstraintViolations was not touched). The default @MockitoBean
+        // answer for buildConstraintViolations is an empty list, matching a genuinely clean solve.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setScore(HardSoftScore.ZERO);
+        inMemoryStore.put(schedule);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, scheduleId, null);
+
+        assertThat(response.getFeasible()).isTrue();
+        assertFeasibleImpliesNoViolatedHardConstraints(response);
     }
 
     private ScheduleOutputService realOutputService() {
