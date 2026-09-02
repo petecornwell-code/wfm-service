@@ -1338,11 +1338,34 @@ torn_down_2026_09_02: |
   persisted id (the same rename seen on the live desk when cf6f516e became 7cc71bf5). So it is the
   operator's acceptance of solve 5e27329f. Recorded because it is the only evidence in this file
   that the scratch desk was actually opened in the UI — and it is NOT a substitute for a verdict.
+rebuilt_2026_09_02: |
+  REBUILT on operator instruction ("rebuild it") so the visual half can actually be observed.
+  The ui_half_unobserved note below describes the FIRST fixture's disposal and is kept as the
+  record of why this rebuild happened; its "cannot be run without rebuilding" no longer applies.
+
+    desk    ZZ-UAT14-SCRATCH-slot-mode  5d8a6c1d-5af9-4100-809f-3b875aa5a2a1   mode SLOT (default)
+    spec    English  980b2ddd-d8df-4c52-a8d3-c4be6a8da453
+    period  Mon 2026-01-05, 9 hourly timeslots 08:00-17:00, 2 FTE/hour = 18 FTE-slots
+    roster  the same 9 active unassigned agents
+    solve   56dcd502-65e1-4713-85a6-d4a8dffc1812
+
+  REPRODUCED THE FIRST FIXTURE EXACTLY, which is itself worth recording — the slot path is
+  deterministic across a full teardown and rebuild:
+    score 0 hard / 0 soft, feasible=true, mode SLOT
+    3 agent-day entries, the SAME three eligible agents (Elene Tsakadze, Mariam Zeikidze,
+      Nino Ninoshvili), the other 6 excluded by filterEligible exactly as before
+    entries with .shift 0 · entries with .divergence 0 · warnings 0 · constraintViolations 0
+
+  DO NOT ACCEPT THIS SCHEDULE. Accepting it strands the desk behind
+  DeskService.deleteDesk's 409 guard and makes disposal a two-step job — that is what happened to
+  the first fixture. Leaving it COMPLETED keeps teardown to a single DELETE.
 ui_half_unobserved: |
+  RECORD OF THE FIRST FIXTURE'S DISPOSAL — superseded by rebuilt_2026_09_02 above.
+
   STATED PLAINLY so this test is not over-read. The API half is verified above and is strong. The
   SCREEN half was never reported: the operator was asked for a visual verdict, and the next
-  instruction was "tear it down" with no verdict given. The desk is now deleted, so the four visual
-  checks below cannot be run without rebuilding the fixture:
+  instruction was "tear it down" with no verdict given. The desk was then deleted, so the four
+  visual checks below could not be run without rebuilding the fixture:
     - Schedule Results shows the SLOT rendering — plain per-date agent table, no shift group
       headers, no "· HH:MM–HH:MM · N agent(s)" bars.
     - No E! marks, no × marks, no "unstaffed by design" treatment, no envelope legend.
