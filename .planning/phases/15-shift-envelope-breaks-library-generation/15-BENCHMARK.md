@@ -448,3 +448,33 @@ fine-grained quality metric. `INV-1`/`INV-2`/`INV-3` (the structural walkers) ar
 `INV-4` (the ceiling) exists only to catch a regression severe enough to move the median by more
 than 2. This is stated plainly, not softened, per this file's own established precedent of
 reporting both readings and hiding neither.
+
+## Live Weights Discipline (G-15-24) — added 2026-09-02, appended below every section above
+
+Plan 15-18's second fix clause for `G-15-24` (`15-UAT.md`) is a binding rule for anyone analysing
+this desk, written here per the same append-only discipline as the two sections above: read the
+desk's LIVE `ConstraintWeights` through the API, never `ConstraintWeights.java`'s defaults. The
+gate (`SolverService.requireShiftEnvelopeSeatSupply`) now enforces the same rule in code — it
+reads the caller-supplied live `weights` object and withdraws the over-allocation-ceiling remedy
+whenever `unassignedAssignmentWeight` carries a HARD component — so the written rule and the
+executable one point the same way.
+
+**Divergences recorded across `G-15-24`'s own `detail` and `HANDOFF.md` §2, source vs. live,
+side by side.** `G-15-24`'s `fix:` field states the two differ "on at least five constraints";
+four are documented by name across those two sources as of this writing, reported here plainly
+rather than rounded up to match that figure:
+
+| Constraint | Source default (`ConstraintWeights.java`) | Live value (desk `6170be17-...`) | Divergence |
+|---|---|---|---|
+| `unassignedAssignmentWeight` | `ofSoft(1000)` | `ofHard(10000)` | Kind AND magnitude — soft becomes hard. This is the one the gate's remedy text must read (Task 2). |
+| `minStaffingWeight` | `ofSoft(1000)` | `ofHard(10)` | Kind — soft becomes hard, though at a much lower magnitude than the source's soft weight. |
+| `contractedHoursUnderWeight` | `ofHard(100)` | `ofHard(10)` | Magnitude only — both hard, live is an order of magnitude lower. |
+| `shiftEnvelopeComplianceWeight` | `ofHard(1)` | `10` | Magnitude only — both hard, live is 10x the source default. |
+| `shiftWorkContiguityWeight` | `ofHard(10)` | `10` | None currently — V46 (`HANDOFF.md` §4) moved the SOURCE default 100→10 to match the live value that had already been set via the API; recorded here because it was a real divergence before V46 shipped, not because it still is one. |
+| `bandCapacityWeight` | `ofHard(1)` | `1` | None — matches. |
+
+Reading `ConstraintWeights.java` alone for this desk would have silently assumed
+`unassignedAssignmentWeight` and `minStaffingWeight` are soft and `contractedHoursUnderWeight`/
+`shiftEnvelopeComplianceWeight` are an order of magnitude lower than they actually are live —
+exactly the assumption `G-15-24`'s `detail` section shows produced the destructive "raise the
+ceiling" advice.

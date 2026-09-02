@@ -1,5 +1,7 @@
 package com.wfm.service;
 
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
+
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Agent;
@@ -7,6 +9,7 @@ import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentDayConfig;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.BreakAlignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.SchedulingMode;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
@@ -225,7 +228,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -258,7 +261,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 130, warnings))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 130, warnings, null))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -299,7 +302,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings);
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -327,7 +330,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -366,7 +369,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -401,7 +404,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings);
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -429,7 +432,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SLOT, rows, List.of(pair), window, assignments, 100, warnings);
+                    SchedulingMode.SLOT, rows, List.of(pair), window, assignments, 100, warnings, null);
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -455,7 +458,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -506,7 +509,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings);
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
 
         assertThat(warnings)
                 .as("a warning is recorded naming the tightest covered timeslot and its seat count")
@@ -555,7 +558,7 @@ class ShiftEnvelopeSupplyGateTest {
         // seats at 10/11/12/13/15 count. librarySupplySlots = 5, a shortfall of 3 against 8.
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings))
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null))
                 .as("THE FIX: a weekday-only template's clock-time coverage no longer inflates "
                         + "weekend supply -- before this fix the identical fixture passed the gate")
                 .isInstanceOf(PreSolveValidationException.class)
@@ -602,7 +605,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings);
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null);
 
         assertThat(warnings)
                 .as("a genuinely tight covered hour exists, so the advisory must fire")
@@ -618,5 +621,100 @@ class ShiftEnvelopeSupplyGateTest {
         assertThat(warnings)
                 .as("the tightest genuinely-covered hour is named, with its real 1-seat count")
                 .anySatisfy(w -> assertThat(w).contains("1 seat(s)"));
+    }
+
+    // ------------------------------------------------------------------
+    //  Tests 10-12 -- G-15-24: the shortfall remedy reads the desk's LIVE unassignedAssignmentWeight
+    //  rather than advising blind. Same shortfall shape as Test 1 (2 agents x 8h contracted = 16
+    //  slots demand, 8 slots supplied), varied only by the weights argument.
+    // ------------------------------------------------------------------
+
+    private static List<ErrorDetail> shortfallDetails(ConstraintWeights weights) {
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        ShiftBandPair pair = new ShiftBandPair(t, band(t));
+        List<Timeslot> window = operatingWindow();
+
+        Agent a1 = agent("A-1");
+        Agent a2 = agent("A-2");
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        AgentDayConfig dc2 = dayConfig(a2.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(
+                shiftRow(a1, dc1, List.of(pair)), shiftRow(a2, dc2, List.of(pair)));
+        List<AgentAssignment> assignments = new ArrayList<>(fullSupplySeats(window, 1));
+
+        java.util.concurrent.atomic.AtomicReference<List<ErrorDetail>> captured =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, weights))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> captured.set(((PreSolveValidationException) ex).getDetails()));
+        return captured.get();
+    }
+
+    private static final String EXPECTED_DEFAULT_MESSAGE =
+            "On " + DAY + ", rostered agent-days need 16 slot(s) (16.00h) inside the shift "
+                    + "library's live envelopes, but the library only reaches 8 slot(s) (8.00h) "
+                    + "there — a shortfall of 8 slot(s) (8.00h). On a shift-scheduled desk an "
+                    + "agent works exactly their assigned shift, so this cannot be resolved by "
+                    + "solving for longer. To fix it: raise the desk's over-allocation limit "
+                    + "(currently 100%), correct the demand forecast for the hours the library "
+                    + "covers, reduce rostered hours for " + DAY + ", or change the library so "
+                    + "its envelopes sit over demand-bearing hours.";
+
+    @Test
+    @DisplayName("SHIFT: default (soft) unassignedAssignmentWeight -- the shortfall message is byte-identical to today's, pinned by literal equality")
+    void defaultWeightsMessageIsByteIdenticalToBeforeThisPlan() {
+        ConstraintWeights defaultWeights = new ConstraintWeights();
+        assertThat(defaultWeights.getUnassignedAssignmentWeight().hardScore())
+                .as("sanity: the shipped default's hard component is zero -- soft, not hard")
+                .isZero();
+
+        List<ErrorDetail> details = shortfallDetails(defaultWeights);
+        assertThat(details).hasSize(1);
+        assertThat(details.get(0).message())
+                .as("literal equality -- not a substring match, so a drifting message fails loudly")
+                .isEqualTo(EXPECTED_DEFAULT_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("SHIFT: null weights (existing solver-package callers) fall back to the default wording and never throw NPE")
+    void nullWeightsFallBackToDefaultWording() {
+        List<ErrorDetail> details = shortfallDetails(null);
+        assertThat(details).hasSize(1);
+        assertThat(details.get(0).message())
+                .as("null weights must read exactly like the shipped default, not a third wording")
+                .isEqualTo(EXPECTED_DEFAULT_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("SHIFT: hard unassignedAssignmentWeight -- the ceiling remedy is withdrawn, the consequence is named, and the percentage is still reported")
+    void hardUnassignedWeightWithdrawsCeilingRemedyAndNamesConsequence() {
+        ConstraintWeights hardWeights = new ConstraintWeights();
+        hardWeights.setUnassignedAssignmentWeight(HardSoftScore.ofHard(10_000));
+
+        List<ErrorDetail> details = shortfallDetails(hardWeights);
+        assertThat(details).hasSize(1);
+        String message = details.get(0).message();
+
+        assertThat(message)
+                .as("the ceiling suggestion is withdrawn, not merely reworded")
+                .doesNotContain("raise the desk's over-allocation limit");
+        assertThat(message)
+                .as("the current percentage is still reported even though raising it is not advised")
+                .contains("currently 100%");
+        assertThat(message)
+                .as("names the forecast lever")
+                .containsIgnoringCase("forecast");
+        assertThat(message)
+                .as("names the roster lever")
+                .containsIgnoringCase("rostered hours");
+        assertThat(message)
+                .as("names the library lever")
+                .containsIgnoringCase("library");
+        assertThat(message)
+                .as("names the consequence: a hard violation at the desk's own configured weight, with the value")
+                .containsIgnoringCase("hard violation")
+                .contains("10000");
     }
 }

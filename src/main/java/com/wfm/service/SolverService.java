@@ -359,7 +359,8 @@ public class SolverService {
         // which runs before any seat exists. See the method's own javadoc for why moving it back
         // there would silently defeat it.
         requireShiftEnvelopeSeatSupply(desk.getSchedulingMode(), shiftAssignments, shiftBandPairs,
-                timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings());
+                timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings(),
+                weights);
 
         log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedAgents.size(), timeslots.size(),
@@ -1148,6 +1149,22 @@ public class SolverService {
      * to rather than replaced, since {@link #computeCapacityWarnings} already wrote to it earlier
      * in the same solve. This points at the pinch point without pretending to a precision the
      * aggregate check above does not have, and it must never throw.
+     *
+     * <p><strong>{@code weights} (G-15-24, plan 15-18 Task 2) — why the shortfall remedy is
+     * weight-aware.</strong> The refusal's remedy list previously offered raising the desk's
+     * over-allocation limit as its FIRST suggestion, unconditionally. Seat count scales with that
+     * ceiling ({@code expandOverflowAssignments} derives {@code maxAgents} as
+     * {@code ceil(requiredFTEs * pct / 100)}), so on a desk where an unfilled seat carries a HARD
+     * {@code unassignedAssignmentWeight}, raising the ceiling manufactures hard liability
+     * directly — the single most destructive available action, recommended by a gate that had
+     * never read the weight deciding whether it was safe. This basis is structural and checkable
+     * from the constraint definitions alone; it is NOT the earlier -20,338 measurement recorded
+     * against G-15-24, which changed {@code overallocationHardLimitPct} AND {@code
+     * underallocationHardLimitPct} in the same run and is confounded (a clean raise, measured
+     * separately and recorded under G-15-28, was beneficial). {@code weights} is nullable — both
+     * the solver-package callers that predate this parameter and a caller with no resolved
+     * weights fall back to exactly today's wording, unchanged, pinned by literal equality
+     * (Behavior: default/null weights).
      */
     static void requireShiftEnvelopeSeatSupply(
             SchedulingMode schedulingMode,
@@ -1156,13 +1173,26 @@ public class SolverService {
             List<Timeslot> timeslots,
             List<AgentAssignment> assignments,
             int overallocationHardLimitPct,
-            List<String> warnings) {
+            List<String> warnings,
+            ConstraintWeights weights) {
 
         if (schedulingMode != SchedulingMode.SHIFT
                 || shiftAssignments == null || shiftAssignments.isEmpty()) {
             return;
         }
         List<ShiftBandPair> pairs = shiftBandPairs == null ? List.of() : shiftBandPairs;
+
+        // G-15-24: whether raising the over-allocation ceiling is safe advice on THIS desk. Read
+        // from the live weights already resolved by the caller — never ConstraintWeights.java's
+        // defaults, which is the mistake the desk's own live configuration exposed (unassigned
+        // seats are ofSoft(1000) by default but ofHard(10000) live). Null (no weights resolved,
+        // e.g. the solver-package callers that predate this parameter) is treated exactly like
+        // the shipped default — soft — so the shortfall message is unchanged in both cases.
+        boolean unassignedSeatsAreHard = weights != null
+                && weights.getUnassignedAssignmentWeight() != null
+                && weights.getUnassignedAssignmentWeight().hardScore() != 0;
+        int unassignedHardWeight = unassignedSeatsAreHard
+                ? weights.getUnassignedAssignmentWeight().hardScore() : 0;
 
         Map<LocalDate, List<AgentShiftAssignment>> rowsByDate = shiftAssignments.stream()
                 .collect(Collectors.groupingBy(AgentShiftAssignment::getDate,
@@ -1212,6 +1242,22 @@ public class SolverService {
             if (contractedSlots > librarySupplySlots && !distinctLibraryDefectReportedForDate) {
                 int incrementMinutes = rows.get(0).getDayConfig().incrementMinutes();
                 int shortfallSlots = contractedSlots - librarySupplySlots;
+                // G-15-24: the remedy clause is the ONLY part of this message that differs by
+                // weight — everything before it (the shortfall figures) is identical either way.
+                String remedyClause = unassignedSeatsAreHard
+                        ? "Raising the desk's over-allocation limit (currently "
+                                + overallocationHardLimitPct + "%) is NOT a safe fix here: on this "
+                                + "desk every seat it manufactures beyond contracted demand is a "
+                                + "HARD violation, worth " + unassignedHardWeight + " hard, if no "
+                                + "agent can fill it. To fix it: correct the demand forecast for "
+                                + "the hours the library covers, reduce rostered hours for " + date
+                                + ", or change the library so its envelopes sit over demand-bearing "
+                                + "hours."
+                        : "To fix it: raise the desk's over-allocation limit (currently "
+                                + overallocationHardLimitPct + "%), correct the demand forecast "
+                                + "for the hours the library covers, reduce rostered hours for "
+                                + date + ", or change the library so its envelopes sit over "
+                                + "demand-bearing hours.";
                 errors.add(new ErrorDetail("shiftLibrary",
                         "On " + date + ", rostered agent-days need " + contractedSlots
                                 + " slot(s) (" + slotsToHours(contractedSlots, incrementMinutes)
@@ -1221,12 +1267,8 @@ public class SolverService {
                                 + "h) there — a shortfall of " + shortfallSlots + " slot(s) ("
                                 + slotsToHours(shortfallSlots, incrementMinutes) + "h). On a "
                                 + "shift-scheduled desk an agent works exactly their assigned "
-                                + "shift, so this cannot be resolved by solving for longer. To "
-                                + "fix it: raise the desk's over-allocation limit (currently "
-                                + overallocationHardLimitPct + "%), correct the demand forecast "
-                                + "for the hours the library covers, reduce rostered hours for "
-                                + date + ", or change the library so its envelopes sit over "
-                                + "demand-bearing hours.",
+                                + "shift, so this cannot be resolved by solving for longer. "
+                                + remedyClause,
                         date.toString()));
             }
 

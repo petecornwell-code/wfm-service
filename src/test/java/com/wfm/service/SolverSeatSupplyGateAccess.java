@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.ConstraintWeights;
 import com.wfm.model.SchedulingMode;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.Timeslot;
@@ -28,8 +29,10 @@ public final class SolverSeatSupplyGateAccess {
             List<Timeslot> timeslots,
             List<AgentAssignment> assignments,
             int overallocationHardLimitPct,
-            List<String> warnings) {
+            List<String> warnings,
+            ConstraintWeights weights) {
         SolverService.requireShiftEnvelopeSeatSupply(schedulingMode, shiftAssignments,
-                shiftBandPairs, timeslots, assignments, overallocationHardLimitPct, warnings);
+                shiftBandPairs, timeslots, assignments, overallocationHardLimitPct, warnings,
+                weights);
     }
 }

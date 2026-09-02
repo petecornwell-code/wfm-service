@@ -134,7 +134,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), warnings))
+                schedule.getOverallocationHardLimitPct(), warnings, null))
                 .as("this desk is built with ample seat supply -- the gate must pass it, not refuse it")
                 .doesNotThrowAnyException();
 
@@ -192,7 +192,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>()))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
                 .as("a desk whose thin forecast cannot supply the roster's contracted hours must be "
                         + "REFUSED before solving -- never left to converge on an irreducible "
                         + "envelope penalty the way the live desk did")
@@ -230,7 +230,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>()))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
                 .as("the healthy control must never be refused")
                 .doesNotThrowAnyException();
 

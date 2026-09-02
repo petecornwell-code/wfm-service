@@ -186,7 +186,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>()))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
                 .as("the shift-mode seat-supply gate must pass this desk, not refuse it")
                 .doesNotThrowAnyException();
 
@@ -237,7 +237,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>()))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
                 .as("THE FIX: the silent degrade-to-null-pair is now a named refusal BEFORE any solve")
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
@@ -286,7 +286,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>()))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
                 .as("THE FIX: an envelope-capacity shortfall is now caught BEFORE solving, not merely "
                         + "an irreducible penalty discovered by running the solver")
                 .isInstanceOf(PreSolveValidationException.class)
