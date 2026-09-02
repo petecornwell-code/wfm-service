@@ -21,7 +21,10 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,6 +133,72 @@ class ShiftEnvelopeSupplyGateTest {
             }
         }
         return seats;
+    }
+
+    // ------------------------------------------------------------------
+    //  Fixture builders for the weekend-overcount red-proof (G-15-21) -- these vary the
+    //  timeslot/row DATE, which the shared fixtures above hard-code to DAY (a Monday).
+    // ------------------------------------------------------------------
+
+    private static Timeslot timeslotOnDate(LocalDate date, LocalTime start) {
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(date);
+        ts.setStartTime(start);
+        ts.setEndTime(start.plusHours(1));
+        return ts;
+    }
+
+    private static AgentShiftAssignment shiftRowOnDate(LocalDate date, Agent a, AgentDayConfig dc,
+            List<ShiftBandPair> pairs) {
+        AgentShiftAssignment row = new AgentShiftAssignment();
+        row.setId(UUID.randomUUID());
+        row.setAgent(a);
+        row.setDate(date);
+        row.setDayConfig(dc);
+        row.setDeskShiftBandPairs(pairs);
+        return row;
+    }
+
+    private record WeekendFixture(List<ShiftBandPair> pairs, List<Timeslot> window,
+            Map<LocalTime, Timeslot> bySlotStart) {}
+
+    /**
+     * Two templates sharing one desk: a weekday-only template (08:00-17:00, break 12:00-13:00,
+     * net 8h) valid ONLY Mon-Fri, and a weekend-valid template (10:00-19:00, break 14:00-15:00,
+     * net 8h) valid ONLY Sat/Sun. Their clock-time coverage overlaps -- the weekday template's
+     * time-only footprint (08,09,10,11,13,14,15,16) unions with the weekend template's
+     * (10,11,12,13,15,16,17,18) to cover the ENTIRE 08:00-19:00 operating window, which is
+     * exactly the shape the calendar-blind predicate over-counts on a weekend date.
+     */
+    private static WeekendFixture weekdayVsWeekendFixture(LocalDate date) {
+        ShiftTemplate weekdayOnly = template(LocalTime.of(8, 0), LocalTime.of(17, 0),
+                LocalDate.of(2020, 1, 1), null);
+        weekdayOnly.setName("Weekday");
+        weekdayOnly.setValidWeekdays(EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
+                DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY));
+        ShiftBandPair weekdayPair = new ShiftBandPair(weekdayOnly, band(weekdayOnly));
+
+        ShiftTemplate weekend = template(LocalTime.of(10, 0), LocalTime.of(19, 0),
+                LocalDate.of(2020, 1, 1), null);
+        weekend.setName("Weekend");
+        weekend.setValidWeekdays(EnumSet.of(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY));
+        ShiftTemplateBreakBand weekendBand = new ShiftTemplateBreakBand();
+        weekendBand.setId(UUID.randomUUID());
+        weekendBand.setShiftTemplate(weekend);
+        weekendBand.setOffsetMinutes(240); // 10:00 + 240m = 14:00
+        weekendBand.setDurationMinutes(60);
+        ShiftBandPair weekendPair = new ShiftBandPair(weekend, weekendBand);
+
+        List<Timeslot> window = new ArrayList<>();
+        for (LocalTime t = LocalTime.of(8, 0); t.isBefore(LocalTime.of(19, 0)); t = t.plusHours(1)) {
+            window.add(timeslotOnDate(date, t));
+        }
+        Map<LocalTime, Timeslot> bySlotStart = new HashMap<>();
+        for (Timeslot ts : window) {
+            bySlotStart.put(ts.getStartTime(), ts);
+        }
+        return new WeekendFixture(List.of(weekendPair, weekdayPair), window, bySlotStart);
     }
 
     // ------------------------------------------------------------------
@@ -394,6 +463,13 @@ class ShiftEnvelopeSupplyGateTest {
                             assertThat(d.message()).containsIgnoringCase("no live shift"));
                     assertThat(details).noneSatisfy(d ->
                             assertThat(d.message()).contains("A-1"));
+                    // Retired/weekday-invalid interaction (Task 1): one error for this date, not
+                    // that distinct message PLUS a numeric shortfall restating the same root
+                    // cause -- date-aware coverage makes librarySupplySlots collapse to zero for
+                    // a wholly-retired date, which would otherwise ALSO trip the shortfall branch.
+                    assertThat(details)
+                            .as("exactly one error for this date -- not the distinct message plus a restated numeric shortfall")
+                            .hasSize(1);
                 });
     }
 
@@ -438,5 +514,109 @@ class ShiftEnvelopeSupplyGateTest {
                     assertThat(w).contains("09:00");
                     assertThat(w).contains("1");
                 });
+    }
+
+    // ------------------------------------------------------------------
+    //  Test 8 -- weekend over-count red-proof (G-15-21), the decisive case: exact pre/post figures
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SHIFT: a weekday-only template's clock-time coverage does not inflate weekend supply -- exact pre/post figures")
+    void refusesWeekendOvercountFromWeekdayOnlyTemplate() {
+        LocalDate saturday = LocalDate.of(2026, 9, 5);
+        assertThat(saturday.getDayOfWeek()).isEqualTo(DayOfWeek.SATURDAY);
+
+        WeekendFixture f = weekdayVsWeekendFixture(saturday);
+
+        Agent a1 = agent("A-1");
+        // 8.00h matches ONLY the weekend template's net hours (8h) -- the weekday template is
+        // ineligible on a Saturday regardless of hours, so this row's sole legal pair is the
+        // weekend one, and the row is never "unassignable" (this stays a pure numeric-shortfall
+        // case, not the distinct retired/weekday-invalid message).
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(shiftRowOnDate(saturday, a1, dc1, f.pairs()));
+
+        // Exactly 8 seats total: 3 sit ONLY on hours the weekday-only template's clock-time
+        // coverage reaches (08:00, 09:00, 14:00 -- the weekend template never covers these), and
+        // 5 sit on hours the weekend template genuinely covers (10:00, 11:00, 12:00, 13:00,
+        // 15:00). 16:00/17:00/18:00 (weekend-covered, weekday-blind) carry NO seats.
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (LocalTime t : List.of(LocalTime.of(8, 0), LocalTime.of(9, 0), LocalTime.of(14, 0),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), LocalTime.of(12, 0), LocalTime.of(13, 0),
+                LocalTime.of(15, 0))) {
+            assignments.add(seat(f.bySlotStart().get(t)));
+        }
+
+        // PRE-FIX (calendar-blind union of BOTH pairs' clock-time coverage, ignoring weekday
+        // validity): the two templates' time-only coverage unions to the FULL 11-hour window, so
+        // all 8 seats fall on "covered" hours -- librarySupplySlots = 8 == contractedSlots(8),
+        // and the gate PASSES today (before this fix).
+        // POST-FIX (date-aware -- only the weekend-valid pair counts on a Saturday): only the 5
+        // seats at 10/11/12/13/15 count. librarySupplySlots = 5, a shortfall of 3 against 8.
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings))
+                .as("THE FIX: a weekday-only template's clock-time coverage no longer inflates "
+                        + "weekend supply -- before this fix the identical fixture passed the gate")
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message()).contains(saturday.toString());
+                        assertThat(d.message())
+                                .as("exact post-fix supply figure -- 5 slots reached, not 8")
+                                .contains("only reaches 5 slot(s)");
+                        assertThat(d.message())
+                                .as("exact shortfall figure -- 3 slots, not merely nonzero")
+                                .contains("shortfall of 3 slot(s)");
+                    });
+                });
+    }
+
+    // ------------------------------------------------------------------
+    //  Test 9 -- advisory coherence: the tightest-hour advisory never names an hour reachable
+    //  only by a weekday-invalid template (the incoherent "0 seat(s)" shape cannot recur)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SHIFT: the tightest-hour advisory never names an hour only a weekday-invalid template reaches -- weekend date")
+    void advisoryNeverNamesAnHourOnlyAWeekdayInvalidTemplateReaches() {
+        LocalDate saturday = LocalDate.of(2026, 9, 5);
+        WeekendFixture f = weekdayVsWeekendFixture(saturday);
+
+        Agent a1 = agent("A-1");
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(shiftRowOnDate(saturday, a1, dc1, f.pairs()));
+
+        // Every weekend-covered slot gets exactly 1 seat -- meets the 8-slot contracted demand
+        // exactly, so the gate passes. The weekday-only clock-time-covered hours (08:00, 09:00,
+        // 14:00) get ZERO seats -- before this fix these could be counted as "covered" and
+        // mistaken for the tightest hour at a nonsensical 0 seats (the live symptom: "tightest at
+        // 08:00-09:00 with 0 seat(s)").
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (LocalTime t : List.of(LocalTime.of(10, 0), LocalTime.of(11, 0), LocalTime.of(12, 0),
+                LocalTime.of(13, 0), LocalTime.of(15, 0), LocalTime.of(16, 0), LocalTime.of(17, 0),
+                LocalTime.of(18, 0))) {
+            assignments.add(seat(f.bySlotStart().get(t)));
+        }
+
+        List<String> warnings = new ArrayList<>();
+        SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings);
+
+        assertThat(warnings)
+                .as("a genuinely tight covered hour exists, so the advisory must fire")
+                .isNotEmpty();
+        assertThat(warnings)
+                .as("never names an hour only the weekday-invalid template reaches on the clock -- "
+                        + "the incoherent zero-seat advisory shape cannot recur")
+                .allSatisfy(w -> {
+                    assertThat(w).doesNotContain("08:00-09:00");
+                    assertThat(w).doesNotContain("09:00-10:00");
+                    assertThat(w).doesNotContain("14:00-15:00");
+                });
+        assertThat(warnings)
+                .as("the tightest genuinely-covered hour is named, with its real 1-seat count")
+                .anySatisfy(w -> assertThat(w).contains("1 seat(s)"));
     }
 }

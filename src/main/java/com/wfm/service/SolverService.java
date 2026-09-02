@@ -1181,9 +1181,8 @@ public class SolverService {
             LocalDate date = entry.getKey();
             List<AgentShiftAssignment> rows = entry.getValue();
 
-            List<Timeslot> coveredTimeslots = timeslotsByDate.getOrDefault(date, List.of()).stream()
-                    .filter(ts -> pairs.stream().anyMatch(p -> p.covers(ts)))
-                    .toList();
+            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(
+                    date, timeslotsByDate.getOrDefault(date, List.of()), pairs);
             int librarySupplySlots = coveredTimeslots.stream()
                     .mapToInt(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L).intValue())
                     .sum();
@@ -1191,7 +1190,26 @@ public class SolverService {
                     .mapToInt(r -> r.getDayConfig().expectedWorkSlots())
                     .sum();
 
-            if (contractedSlots > librarySupplySlots) {
+            // Computed BEFORE the numeric-shortfall check below (ordering is load-bearing, not
+            // incidental): once coveredTimeslotsOnDate is date-aware, a date whose library is
+            // wholly retired or wholly weekday-invalid now has an EMPTY covered set, so
+            // librarySupplySlots collapses to zero and contractedSlots > 0 would otherwise ALSO
+            // trip the numeric-shortfall branch below — restating the same root cause the
+            // distinct message beneath already reports. Plan 15-11 split those messages
+            // precisely so a retired/weekday-invalid library reads as ONE message, not a
+            // mismatch repeated for every rostered agent; a later refactor that reorders these
+            // two checks would silently reintroduce that duplicate.
+            List<AgentShiftAssignment> unassignable = rows.stream()
+                    .filter(r -> r.getEligibleShiftBandPairs().isEmpty())
+                    .toList();
+            boolean anyPairLiveOnDate = pairs.stream()
+                    .anyMatch(p -> p.template().isEffectiveOn(date));
+            boolean anyPairAppliesOnWeekday = pairs.stream()
+                    .anyMatch(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date));
+            boolean distinctLibraryDefectReportedForDate =
+                    !unassignable.isEmpty() && (!anyPairLiveOnDate || !anyPairAppliesOnWeekday);
+
+            if (contractedSlots > librarySupplySlots && !distinctLibraryDefectReportedForDate) {
                 int incrementMinutes = rows.get(0).getDayConfig().incrementMinutes();
                 int shortfallSlots = contractedSlots - librarySupplySlots;
                 errors.add(new ErrorDetail("shiftLibrary",
@@ -1212,14 +1230,7 @@ public class SolverService {
                         date.toString()));
             }
 
-            List<AgentShiftAssignment> unassignable = rows.stream()
-                    .filter(r -> r.getEligibleShiftBandPairs().isEmpty())
-                    .toList();
             if (!unassignable.isEmpty()) {
-                boolean anyPairLiveOnDate = pairs.stream()
-                        .anyMatch(p -> p.template().isEffectiveOn(date));
-                boolean anyPairAppliesOnWeekday = pairs.stream()
-                        .anyMatch(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date));
                 if (!anyPairLiveOnDate) {
                     errors.add(new ErrorDetail("shiftLibrary",
                             "No live shift template reaches " + date + " — the shift library is "
@@ -1278,9 +1289,8 @@ public class SolverService {
 
         // Non-blocking advisory: the covered timeslot with the fewest seats, per rostered date.
         for (LocalDate date : rowsByDate.keySet()) {
-            List<Timeslot> coveredTimeslots = timeslotsByDate.getOrDefault(date, List.of()).stream()
-                    .filter(ts -> pairs.stream().anyMatch(p -> p.covers(ts)))
-                    .toList();
+            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(
+                    date, timeslotsByDate.getOrDefault(date, List.of()), pairs);
             coveredTimeslots.stream()
                     .min(Comparator.comparingLong(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L)))
                     .ifPresent(tightest -> {
@@ -1290,6 +1300,37 @@ public class SolverService {
                                 + seatCount + " seat(s) available.");
                     });
         }
+    }
+
+    /**
+     * Which of {@code date}'s timeslots the live shift library actually reaches ON THAT DATE.
+     *
+     * <p>Filters {@code pairs} to those whose template is both {@link ShiftTemplate#isEffectiveOn}
+     * and {@link ShiftTemplate#appliesOn} {@code date} before asking {@link ShiftBandPair#covers} —
+     * the same two-step {@link #expandMinimumStaffingSeats} already applies (commit {@code
+     * 6c82241}). {@link ShiftBandPair#covers} itself is left untouched and stays deliberately
+     * calendar-blind: the constraint that consumes it directly is already scoped to one
+     * assignment's own eligible pair, so changing it would be a far-reaching behavioural change
+     * for no gain here.
+     *
+     * <p>History, not a rule to defend: before this helper existed, the blocking supply
+     * computation and the trailing tightest-hour advisory each carried their OWN textually
+     * duplicated copy of the calendar-blind {@code anyMatch} expression below. Only one of the
+     * two divergent definitions of "covered" in this file was ever made date-aware
+     * ({@code expandMinimumStaffingSeats}, commit {@code 6c82241}) — this one, used only by the
+     * gate, was not. That divergence is what printed the incoherent live advisory "tightest at
+     * 08:00-09:00 with 0 seat(s)": a genuinely covered hour cannot show zero seats, but an
+     * over-counted one (a weekday-only template's envelope, counted purely on clock time on a
+     * weekend it does not apply to) can. Routing both sites through one shared helper is what
+     * makes that particular disagreement unrepeatable (G-15-21).
+     */
+    private static List<Timeslot> coveredTimeslotsOnDate(
+            LocalDate date, List<Timeslot> dateTimeslots, List<ShiftBandPair> pairs) {
+        return dateTimeslots.stream()
+                .filter(ts -> pairs.stream()
+                        .filter(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date))
+                        .anyMatch(p -> p.covers(ts)))
+                .toList();
     }
 
     private static BigDecimal slotsToHours(int slots, int incrementMinutes) {
