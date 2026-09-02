@@ -6,6 +6,7 @@ import ai.timefold.solver.core.config.phase.PhaseConfig;
 import ai.timefold.solver.core.config.solver.SolverConfig;
 import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 
+import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentDayConfig;
@@ -38,14 +39,31 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * (Phase 15 plan 15-19, gap closure G-15-31) The analysis the gap says nobody has done: candidate
- * within-day blocking rules, evaluated against fixtures known to solve and fixtures known to
- * collapse, with the false-refusal count MEASURED per rule rather than argued.
+ * (Phase 15 plan 15-19, gap closure G-15-31; re-measured by plan 15-20 against the SHIPPED gate)
+ * The analysis the gap says nobody has done: candidate within-day blocking rules, evaluated
+ * against fixtures known to solve and fixtures known to collapse, with the false-refusal count
+ * MEASURED per rule rather than argued.
+ *
+ * <p><strong>Plan 15-20 update.</strong> R2 (the forced-occupancy necessary condition this class
+ * proposed) is no longer a test-local proposal — {@code SolverService.requireShiftEnvelopeSeatSupply}
+ * now implements it in production, as a per-timeslot check accumulated alongside the pre-existing
+ * day-wide sum (R0). Per this phase's own threat register (T-15-20-04, "duplicate rule
+ * implementations drifting apart" — already the root cause behind G-15-10 root cause B, G-15-21,
+ * and the gate's own two {@code coveredTimeslots} sites before plan 15-18), this class's R2 rule no
+ * longer carries its own reimplementation of the forced-occupancy predicate: it calls {@link
+ * SolverSeatSupplyGateAccess#forcedAgentDaysByTimeslotId} (a thin bridge onto the SHIPPED
+ * production method), and a new "Shipped gate" rule invokes the full, throwing production method
+ * directly, so the table's own numbers describe production behaviour rather than a copy of it.
+ * {@code SolverService} itself is otherwise untouched by this file (plan 15-20's Task 1 is the only
+ * plan that edits it) — the one src/main change this class exercises through the bridge, never
+ * re-derives.
  *
  * <p><strong>What this class does NOT do.</strong> It does not make the tightest-hour advisory
  * blocking. {@code ShiftEnvelopeSupplyGateTest#advisoryOnThinTimeslotDoesNotBlock} is untouched by
- * this plan and still passes — see the verification block in {@code 15-19-PLAN.md}. Nothing in
- * {@code src/main} is touched by this file. This class is pure measurement.
+ * this plan and still passes — see plan 15-20's own outcome section in
+ * {@code 15-SEAT-SUPPLY-GATE-ANALYSIS.md}. This class remains measurement, exercising production
+ * only through the two read-only bridges ({@code SolverSeatSupplyGateAccess}); it edits nothing
+ * under {@code src/main} itself.
  *
  * <p><strong>Corpus size, stated plainly.</strong> This class builds and SOLVES three fixtures this
  * session (a distribution-blind fixture, a healthy staggered-shift control, and one fresh solve of
@@ -268,27 +286,46 @@ class SeatSupplyDistributionAnalysisTest {
     }
 
     @Test
-    @DisplayName("distribution-blind fixture: the SHIPPED day-wide-sum gate passes it -- exactly the defect G-15-31 measures")
-    void distributionBlindFixture_shippedGatePassesIt() {
+    @DisplayName("distribution-blind fixture: THE FIX (plan 15-20) -- the SHIPPED gate now refuses it, though R0 (the day-wide sum) alone still would not")
+    void distributionBlindFixture_shippedGateNowRefusesIt() {
         BuiltFixture f = buildDistributionBlindFixture();
         Schedule s = f.schedule();
-        List<String> warnings = new ArrayList<>();
 
-        org.assertj.core.api.Assertions.assertThatCode(() ->
+        // R0 ALONE is UNCHANGED by plan 15-20 -- day-wide supply (114) still comfortably exceeds
+        // day-wide contracted demand (80). This is exactly the defect plan 15-19 originally
+        // measured, reproduced here as a live control so the before/after contrast is explicit.
+        DateSlice slice = sliceFor(s, s.getPeriodStartDate());
+        RuleVerdict r0 = r0DayWideSum(slice);
+        assertThat(r0.refuses())
+                .as("R0 alone still does not refuse this desk -- day-wide supply (114) comfortably "
+                        + "exceeds day-wide demand (80): %s", r0.detail())
+                .isFalse();
+
+        // THE FIX: the SHIPPED gate -- R0 plus the new per-hour forced-occupancy check -- now
+        // refuses this SAME fixture, naming the 08:00 bottleneck. It PASSED this fixture in plan
+        // 15-19 (see this test's former name, distributionBlindFixture_shippedGatePassesIt).
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                 SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                         s.getSchedulingMode(), s.getShiftAssignments(), s.getShiftBandPairs(),
                         s.getTimeslots(), s.getAssignments(), s.getOverallocationHardLimitPct(),
-                        warnings, null))
-                .as("THE DEFECT: day-wide supply (114) comfortably exceeds day-wide contracted demand "
-                        + "(80), so the shipped gate does not refuse this desk despite the 08:00 bottleneck")
-                .doesNotThrowAnyException();
-
-        assertThat(warnings)
-                .as("the tightest-hour advisory must name the bottleneck's real seat count (2), driven "
-                        + "by seatsAtHour(1, 200) -- pinning the fixture's own numbers to the per-hour model")
-                .anySatisfy(w -> {
-                    assertThat(w).contains("08:00-09:00");
-                    assertThat(w).contains("2 seat(s)");
+                        new ArrayList<>(), null))
+                .as("THE FIX: the shipped gate now refuses this desk -- it PASSED it in plan 15-19")
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<com.wfm.dto.ErrorResponse.ErrorDetail> details =
+                            ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message())
+                                .as("names the bottleneck hour")
+                                .contains("08:00-09:00");
+                        assertThat(d.message())
+                                .as("names the forced count -- all 10 agent-days, single shared pair, zero slack")
+                                .contains("10 rostered agent-day(s)");
+                        assertThat(d.message())
+                                .as("names the real seat count (2), driven by seatsAtHour(1, 200) -- "
+                                        + "pinning the fixture's own numbers to the per-hour model")
+                                .contains("only 2 seat(s)");
+                    });
                 });
     }
 
@@ -556,23 +593,26 @@ class SeatSupplyDistributionAnalysisTest {
                 .toList();
     }
 
-    /** An agent-day is FORCED at {@code ts} -- see this class's javadoc for the precise definition. */
-    private static boolean isForcedAt(AgentShiftAssignment row, Timeslot ts, List<Timeslot> dateTimeslots) {
-        List<ShiftBandPair> eligible = row.getEligibleShiftBandPairs();
-        if (eligible.isEmpty()) {
-            return false; // no eligible pair -- R0's own distinct unassignable-row branch, not this analysis
-        }
-        int expected = row.getDayConfig().expectedWorkSlots();
-        for (ShiftBandPair p : eligible) {
-            if (!p.covers(ts)) {
-                return false; // this pair does not even reach ts -- the agent could take it and skip ts
+    /**
+     * Reconstructs the {@code List<AgentAssignment>} shape {@code
+     * SolverSeatSupplyGateAccess#requireShiftEnvelopeSeatSupply} needs from a {@link DateSlice}'s
+     * already-aggregated {@code seatsByTimeslotId} counts -- the production method only ever reads
+     * {@code getTimeslot().getId()} off each assignment to re-derive that same count
+     * (Collectors.groupingBy/counting), so a fixture-neutral placeholder with no agent/specialization
+     * set reproduces exactly what the gate consumes, nothing more.
+     */
+    private static List<AgentAssignment> assignmentsFor(DateSlice slice) {
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : slice.timeslots()) {
+            long count = slice.seatsByTimeslotId().getOrDefault(ts.getId(), 0L);
+            for (long i = 0; i < count; i++) {
+                AgentAssignment a = new AgentAssignment();
+                a.setId(UUID.randomUUID());
+                a.setTimeslot(ts);
+                assignments.add(a);
             }
-            long coveredCount = dateTimeslots.stream().filter(p::covers).count();
-            if (coveredCount != expected) {
-                return false; // this pair has slack -- the agent could take it and still skip ts legally
-            }
         }
-        return true;
+        return assignments;
     }
 
     /** R0 -- the shipped day-wide sum. Reimplemented as a pure function of the same shape (never calling the throwing production gate) so all four rules are evaluated identically. */
@@ -602,12 +642,22 @@ class SeatSupplyDistributionAnalysisTest {
         return new RuleVerdict(refuses, "tightest-hour seats=" + min + " agentDayCount=" + agentDayCount);
     }
 
-    /** R2 -- the forced-occupancy necessary condition (see this class's javadoc). */
+    /**
+     * R2 -- the forced-occupancy necessary condition (see this class's javadoc). Plan 15-20:
+     * calls {@link SolverSeatSupplyGateAccess#forcedAgentDaysByTimeslotId} -- the SHIPPED
+     * per-agent-day forced-occupancy count, promoted into {@code SolverService} by this plan --
+     * rather than a test-local reimplementation of the predicate (T-15-20-04). This row therefore
+     * shows what R2 ALONE (per-timeslot, ignoring the day-wide sum) decides on production's own
+     * counting logic; the separate "Shipped gate" rule below shows what the DESK ACTUALLY
+     * EXPERIENCES, which combines this with R0 in one throwing call.
+     */
     private static RuleVerdict r2ForcedOccupancy(DateSlice slice) {
+        Map<UUID, Long> forcedByTimeslotId =
+                SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(slice.rows(), slice.timeslots());
         StringBuilder detail = new StringBuilder();
         boolean refuses = false;
         for (Timeslot ts : slice.timeslots()) {
-            long forced = slice.rows().stream().filter(r -> isForcedAt(r, ts, slice.timeslots())).count();
+            long forced = forcedByTimeslotId.getOrDefault(ts.getId(), 0L);
             long seats = slice.seatsByTimeslotId().getOrDefault(ts.getId(), 0L);
             if (forced > seats) {
                 refuses = true;
@@ -623,20 +673,42 @@ class SeatSupplyDistributionAnalysisTest {
         return new RuleVerdict(false, r2.refuses() ? "WOULD have refused (R2 basis): " + r2.detail() : r2.detail());
     }
 
+    /**
+     * "Shipped gate" (plan 15-20) -- invokes the PRODUCTION {@code requireShiftEnvelopeSeatSupply}
+     * itself, via {@link SolverSeatSupplyGateAccess}, rather than any reimplementation. Refuses iff
+     * the shipped method throws for this date's slice, which folds BOTH the pre-existing day-wide
+     * sum (R0) and the newly-shipped per-hour forced-occupancy check (this class's own R2) into
+     * ONE production decision -- exactly how the two ship (both accumulate into the same error
+     * list, 15-20-PLAN.md Task 1). This is the row that answers "does the desk this fixture
+     * describes actually get refused by what ships," as distinct from R0/R2's isolated diagnostics.
+     */
+    private static RuleVerdict shippedGate(DateSlice slice) {
+        List<AgentAssignment> assignments = assignmentsFor(slice);
+        List<String> warnings = new ArrayList<>();
+        try {
+            SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(SchedulingMode.SHIFT,
+                    slice.rows(), slice.pairs(), slice.timeslots(), assignments, 100, warnings, null);
+            return new RuleVerdict(false, "shipped gate passed");
+        } catch (PreSolveValidationException ex) {
+            return new RuleVerdict(true, "shipped gate refused: " + ex.getMessage());
+        }
+    }
+
     private record CandidateRule(String name, java.util.function.Function<DateSlice, RuleVerdict> fn) {}
 
     private static final List<CandidateRule> RULES = List.of(
             new CandidateRule("R0 (shipped day-wide sum)", SeatSupplyDistributionAnalysisTest::r0DayWideSum),
             new CandidateRule("R1 (tightest-hour promoted to blocking)", SeatSupplyDistributionAnalysisTest::r1TightestHourPromoted),
-            new CandidateRule("R2 (forced-occupancy necessary condition)", SeatSupplyDistributionAnalysisTest::r2ForcedOccupancy),
-            new CandidateRule("R3 (R2, warn-only)", SeatSupplyDistributionAnalysisTest::r3ForcedOccupancyWarnOnly));
+            new CandidateRule("R2 (forced-occupancy necessary condition, shipped logic)", SeatSupplyDistributionAnalysisTest::r2ForcedOccupancy),
+            new CandidateRule("R3 (R2, warn-only)", SeatSupplyDistributionAnalysisTest::r3ForcedOccupancyWarnOnly),
+            new CandidateRule("Shipped gate (production: R0 + R2 combined)", SeatSupplyDistributionAnalysisTest::shippedGate));
 
     // ==================================================================
     //  Section 5 (Task 2) — R2's necessary-condition proof on a hand-built case
     // ==================================================================
 
     @Test
-    @DisplayName("R2 proof: on a hand-built two-template case, the forced set is exactly the agents R2 predicts, by construction")
+    @DisplayName("R2 proof: on a hand-built two-template case, the SHIPPED forced-occupancy count is exactly the agents R2 predicts, by construction")
     void r2ForcedSet_provenOnHandBuiltCase() {
         BuiltFixture f = buildHealthyStaggeredFixture();
         Schedule s = f.schedule();
@@ -651,9 +723,14 @@ class SeatSupplyDistributionAnalysisTest {
         Timeslot at1300 = dateTimeslots.stream().filter(ts -> ts.getStartTime().equals(LocalTime.of(13, 0))).findFirst().orElseThrow();
         Timeslot at1800 = dateTimeslots.stream().filter(ts -> ts.getStartTime().equals(LocalTime.of(18, 0))).findFirst().orElseThrow();
 
-        long forcedAt0800 = s.getShiftAssignments().stream().filter(r -> isForcedAt(r, at0800, dateTimeslots)).count();
-        long forcedAt1300 = s.getShiftAssignments().stream().filter(r -> isForcedAt(r, at1300, dateTimeslots)).count();
-        long forcedAt1800 = s.getShiftAssignments().stream().filter(r -> isForcedAt(r, at1800, dateTimeslots)).count();
+        // Plan 15-20: reads the SHIPPED count via the bridge, not a test-local predicate -- this
+        // is the proof that production's own implementation matches the hand-built construction,
+        // not merely that this class's former copy of the rule agreed with itself.
+        Map<UUID, Long> forcedByTimeslotId = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
+                s.getShiftAssignments(), dateTimeslots);
+        long forcedAt0800 = forcedByTimeslotId.getOrDefault(at0800.getId(), 0L);
+        long forcedAt1300 = forcedByTimeslotId.getOrDefault(at1300.getId(), 0L);
+        long forcedAt1800 = forcedByTimeslotId.getOrDefault(at1800.getId(), 0L);
 
         assertThat(forcedAt0800).as("08:00 is Morning-only -- exactly the 5 Morning agent-days are forced").isEqualTo(5);
         assertThat(forcedAt1300).as("13:00 is legal for BOTH templates -- all 10 agent-days are forced").isEqualTo(10);
@@ -672,7 +749,10 @@ class SeatSupplyDistributionAnalysisTest {
 
     private enum Label { KNOWN_SOLVES, KNOWN_COLLAPSES }
 
-    private record CorpusEntry(String name, Label label, DateSlice slice) {}
+    /** {@code evidenceFor} names, per row, which gap this fixture's outcome is evidence for --
+     * so the printed table is readable by someone arriving at a red build without this plan in
+     * hand (plan 15-20, Task 2 behaviour). */
+    private record CorpusEntry(String name, Label label, String evidenceFor, DateSlice slice) {}
 
     private static DateSlice sliceFor(Schedule s, LocalDate date) {
         List<AgentShiftAssignment> rows = s.getShiftAssignments().stream().filter(r -> r.getDate().equals(date)).toList();
@@ -688,26 +768,29 @@ class SeatSupplyDistributionAnalysisTest {
 
         BuiltFixture blind = buildDistributionBlindFixture();
         corpus.add(new CorpusEntry("distribution-blind (Task 1)", Label.KNOWN_COLLAPSES,
+                "G-15-31 (distribution blindness) -- must now be a TRUE refusal",
                 sliceFor(blind.schedule(), blind.schedule().getPeriodStartDate())));
 
         BuiltFixture healthy = buildHealthyStaggeredFixture();
         corpus.add(new CorpusEntry("healthy staggered desk", Label.KNOWN_SOLVES,
-                sliceFor(healthy.schedule(), healthy.schedule().getPeriodStartDate())));
+                "G-15-25/G-15-31 no-false-refusal corpus", sliceFor(healthy.schedule(), healthy.schedule().getPeriodStartDate())));
 
         LiveShapeShiftDeskFixture.Fixture control = buildControlFixture();
         Schedule cs = control.schedule();
         LocalDate d0 = cs.getPeriodStartDate();
         LocalDate d1 = cs.getPeriodEndDate();
-        corpus.add(new CorpusEntry("LiveShapeShiftDeskFixture day 1", Label.KNOWN_SOLVES, sliceFor(cs, d0)));
+        corpus.add(new CorpusEntry("LiveShapeShiftDeskFixture day 1", Label.KNOWN_SOLVES,
+                "G-15-25/G-15-31 no-false-refusal corpus", sliceFor(cs, d0)));
         if (!d1.equals(d0)) {
-            corpus.add(new CorpusEntry("LiveShapeShiftDeskFixture day 2", Label.KNOWN_SOLVES, sliceFor(cs, d1)));
+            corpus.add(new CorpusEntry("LiveShapeShiftDeskFixture day 2", Label.KNOWN_SOLVES,
+                    "G-15-25/G-15-31 no-false-refusal corpus", sliceFor(cs, d1)));
         }
 
         return corpus;
     }
 
     @Test
-    @DisplayName("the rule-by-fixture table: every rule against every corpus fixture, false/true refusal counts printed, R2 refuses the distribution-blind fixture, R2's false-refusal count is zero")
+    @DisplayName("the rule-by-fixture table: every rule against every corpus fixture (including the SHIPPED gate), false/true refusal counts printed, the shipped gate refuses the distribution-blind fixture with zero false refusals")
     void ruleByFixtureTable_falseAndTrueRefusalCounts() {
         List<CorpusEntry> corpus = buildCorpus();
         assertThat(corpus).as("the corpus must be non-empty").isNotEmpty();
@@ -722,12 +805,13 @@ class SeatSupplyDistributionAnalysisTest {
         }
 
         System.out.println();
-        System.out.println("[G-15-31 analysis] Rule-by-fixture table:");
-        System.out.println("| fixture | label | " + RULES.stream().map(CandidateRule::name).collect(Collectors.joining(" | ")) + " |");
-        System.out.println("|---|---|" + "---|".repeat(RULES.size()));
+        System.out.println("[G-15-25/G-15-31 analysis, re-measured post-plan-15-20] Rule-by-fixture table:");
+        System.out.println("| fixture | label | evidence for | " + RULES.stream().map(CandidateRule::name).collect(Collectors.joining(" | ")) + " |");
+        System.out.println("|---|---|---|" + "---|".repeat(RULES.size()));
         for (CorpusEntry entry : corpus) {
             Map<String, RuleVerdict> row = table.get(entry.name() + " [" + entry.label() + "]");
-            StringBuilder line = new StringBuilder("| ").append(entry.name()).append(" | ").append(entry.label()).append(" | ");
+            StringBuilder line = new StringBuilder("| ").append(entry.name()).append(" | ").append(entry.label())
+                    .append(" | ").append(entry.evidenceFor()).append(" | ");
             for (CandidateRule rule : RULES) {
                 line.append(row.get(rule.name()).refuses() ? "REFUSE" : "PASS").append(" | ");
             }
@@ -748,16 +832,18 @@ class SeatSupplyDistributionAnalysisTest {
         }
 
         System.out.println();
-        System.out.println("[G-15-31 analysis] Per-rule false-refusal / true-refusal counts (denominator: "
+        System.out.println("[G-15-25/G-15-31 analysis] Per-rule false-refusal / true-refusal counts (denominator: "
                 + corpus.stream().filter(c -> c.label() == Label.KNOWN_SOLVES).count() + " KNOWN-SOLVES, "
                 + corpus.stream().filter(c -> c.label() == Label.KNOWN_COLLAPSES).count() + " KNOWN-COLLAPSES):");
         for (CandidateRule rule : RULES) {
             System.out.println("  " + rule.name() + " -> falseRefusals=" + falseRefusals.get(rule.name())
                     + " trueRefusals=" + trueRefusals.get(rule.name()));
         }
-        System.out.println("[G-15-31 analysis] NOT-SOLVE-EVALUABLE, excluded from this table: 23 pre-existing "
-                + "fixtures across ShiftEnvelopeSupplyGateTest (14), ShiftEnvelopeSupplyInvariantTest (6) and "
-                + "ShiftDeskEndToEndRegressionTest (3) -- referenced, not re-instantiated (see class javadoc).");
+        System.out.println("[G-15-25/G-15-31 analysis] NOT-SOLVE-EVALUABLE, excluded from this table: 23 pre-existing "
+                + "fixtures across ShiftEnvelopeSupplyGateTest (14, itself extended by plan 15-20 with 2 more "
+                + "gate-calling cases), ShiftEnvelopeSupplyInvariantTest (6) and ShiftDeskEndToEndRegressionTest "
+                + "(3) -- referenced, not re-instantiated (see class javadoc); all pass unchanged after plan 15-20 "
+                + "(measured directly in those classes, not re-derived here).");
 
         // Structural assertions the table must have.
         assertThat(table).as("every corpus fixture appears in the table").hasSize(corpus.size());
@@ -765,18 +851,35 @@ class SeatSupplyDistributionAnalysisTest {
             assertThat(table.get(entry.name() + " [" + entry.label() + "]"))
                     .as("every rule appears for every fixture").hasSize(RULES.size());
         }
-        assertThat(table.get("distribution-blind (Task 1) [KNOWN_COLLAPSES]").get("R2 (forced-occupancy necessary condition)").refuses())
-                .as("R2 must refuse the distribution-blind fixture").isTrue();
 
-        // R2's false-refusal count is ASSERTED at zero -- it follows from R2 being a proven necessary
-        // condition, and a violation would mean the necessary-condition argument itself is wrong.
-        assertThat(falseRefusals.get("R2 (forced-occupancy necessary condition)"))
-                .as("R2's false-refusal count must be exactly zero -- it is a necessary condition for a "
-                        + "zero-hard solve, so refusing a KNOWN-SOLVES fixture would falsify that argument")
+        // THE DECISIVE ROW: the SHIPPED gate -- not merely R2's isolated diagnostic -- must now
+        // refuse the distribution-blind fixture. This is Task 2's own behaviour requirement: "The
+        // shipped gate now refuses the distribution-blind fixture that it passed in plan 15-19."
+        assertThat(table.get("distribution-blind (Task 1) [KNOWN_COLLAPSES]")
+                        .get("Shipped gate (production: R0 + R2 combined)").refuses())
+                .as("THE FIX: the SHIPPED gate (not a test-local rule) now refuses the "
+                        + "distribution-blind fixture -- it PASSED this same fixture in plan 15-19")
+                .isTrue();
+        assertThat(table.get("distribution-blind (Task 1) [KNOWN_COLLAPSES]")
+                        .get("R2 (forced-occupancy necessary condition, shipped logic)").refuses())
+                .as("R2 alone (via the shipped counting logic) must also refuse it").isTrue();
+
+        // THE OTHER DECISIVE COUNT: the shipped gate's false-refusal count against every
+        // KNOWN-SOLVES fixture in this corpus is ASSERTED at zero (Task 2's own behaviour
+        // requirement: "The shipped gate refuses zero KNOWN-SOLVES fixtures; the count is emitted
+        // and asserted equal to zero").
+        assertThat(falseRefusals.get("Shipped gate (production: R0 + R2 combined)"))
+                .as("the SHIPPED gate's false-refusal count against this corpus's KNOWN-SOLVES "
+                        + "fixtures must be exactly zero")
+                .isZero();
+        assertThat(falseRefusals.get("R2 (forced-occupancy necessary condition, shipped logic)"))
+                .as("R2's own false-refusal count must also be exactly zero -- it is a necessary "
+                        + "condition for a zero-hard solve, so refusing a KNOWN-SOLVES fixture "
+                        + "would falsify that argument")
                 .isZero();
 
         // R0/R1/R3's counts are REPORTED, not asserted -- the table's own printed numbers are the finding.
-        System.out.println("[G-15-31 analysis] R1's false-refusal count on this corpus: "
+        System.out.println("[G-15-25/G-15-31 analysis] R1's false-refusal count on this corpus: "
                 + falseRefusals.get("R1 (tightest-hour promoted to blocking)")
                 + " (expected: 1, the healthy staggered desk -- see healthyStaggeredFixture_reachesZeroHard)");
     }
@@ -790,13 +893,122 @@ class SeatSupplyDistributionAnalysisTest {
         RuleVerdict r0 = r0DayWideSum(slice);
         RuleVerdict r1 = r1TightestHourPromoted(slice);
         RuleVerdict r2 = r2ForcedOccupancy(slice);
+        RuleVerdict shipped = shippedGate(slice);
 
         assertThat(r0.refuses()).as("R0 (shipped) does not refuse this genuinely solvable desk").isFalse();
         assertThat(r2.refuses()).as("R2 (necessary condition) does not refuse it either -- correct").isFalse();
+        assertThat(shipped.refuses())
+                .as("the SHIPPED gate (R0 + R2 combined) does not refuse this genuinely solvable "
+                        + "desk either -- confirming production agrees with both isolated rules")
+                .isFalse();
         assertThat(r1.refuses())
                 .as("R1 DOES refuse it -- a FALSE refusal, since this desk is measured to reach 0 hard "
                         + "(healthyStaggeredFixture_reachesZeroHard). detail=%s", r1.detail())
                 .isTrue();
+    }
+
+    // ==================================================================
+    //  Section 6b (Task 2) — the band-composition experiment (G-15-25), as a first-class,
+    //  always-re-measured row rather than a one-off assertion living only in
+    //  ShiftEnvelopeSupplyGateTest.
+    // ==================================================================
+
+    /**
+     * One 9h template (08:00-17:00) with {@code breakOffsetsMinutes.length} distinct single-band
+     * pairs, each excluding a DIFFERENT 1-hour clock window -- every pair nets 8.00h, so an
+     * 8h-contracted agent is eligible for ALL of them. Mirrors {@code
+     * ShiftEnvelopeSupplyGateTest#saturatedUnionPairs} (plan 15-20, Task 1) exactly in shape;
+     * re-derived here rather than shared across packages, since that helper is {@code private} to
+     * its own test class and this harness's own fixture-building convention (this class's
+     * existing helpers) does not reach across test classes either.
+     */
+    private static BuiltFixture buildBandCompositionFixture(int... breakOffsetsMinutes) {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        LocalDate date = LocalDate.of(2026, 9, 7); // Monday
+
+        Specialization spec = specialization(ids, deskId, "Support");
+        Agent a1 = agent(ids, deskId, "A-1", "Agent-1");
+        a1.setPrimarySpecialization(spec);
+        a1.setSecondarySpecializations(new ArrayList<>());
+
+        ShiftTemplate t = template(ids, deskId, "Saturated", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        List<ShiftBandPair> pairs = new ArrayList<>();
+        for (int offset : breakOffsetsMinutes) {
+            pairs.add(new ShiftBandPair(t, band(ids, t, offset, 60)));
+        }
+
+        List<Timeslot> window = new ArrayList<>();
+        for (LocalTime time = LocalTime.of(8, 0); time.isBefore(LocalTime.of(17, 0)); time = time.plusHours(1)) {
+            window.add(timeslot(ids, deskId, scheduleId, date, time));
+        }
+
+        // One seat at every envelope hour -- the desk-wide union is saturated by 3+ distinct
+        // break offsets (every hour excluded by at most one band), so this is deliberately
+        // generous relative to the single agent's 8-slot demand; the point of this fixture is the
+        // FORCED-COUNT figure at 08:00, not a refusal.
+        List<AgentAssignment> seats = new ArrayList<>();
+        for (Timeslot ts : window) {
+            seats.add(seat(ids, deskId, scheduleId, ts, spec));
+        }
+
+        AgentDayConfig dc = new AgentDayConfig(a1.getId(), date, new java.math.BigDecimal("8.00"),
+                60, 60, new java.math.BigDecimal("4.00"), new java.math.BigDecimal("1.00"),
+                BreakAlignment.ON_HOUR, 100, 50);
+        AgentShiftAssignment row = shiftRow(ids, TENANT, deskId, scheduleId, a1, date, dc, pairs);
+
+        Schedule schedule = assembleSchedule(scheduleId, deskId, spec, List.of(a1), pairs, window,
+                seats, List.of(dc), List.of(row), date, date, 100, 50);
+        return new BuiltFixture(schedule, pairs);
+    }
+
+    @Test
+    @DisplayName("G-15-25 band-composition experiment (first-class row, re-measured every run): the SHIPPED forced-occupancy figure at 08:00 changes when edge bands are added to an already-saturated union; the desk-wide union figure does not")
+    void bandCompositionExperiment_shippedFigureChangesButUnionStaysSaturated() {
+        BuiltFixture threeBands = buildBandCompositionFixture(180, 240, 300); // breaks 11-12, 12-13, 13-14
+        BuiltFixture fiveBands = buildBandCompositionFixture(180, 240, 300, 0, 480); // + edges 08-09, 16-17
+
+        LocalDate date = threeBands.schedule().getPeriodStartDate();
+        DateSlice threeBandSlice = sliceFor(threeBands.schedule(), date);
+        DateSlice fiveBandSlice = sliceFor(fiveBands.schedule(), date);
+
+        Timeslot eight = threeBandSlice.timeslots().stream()
+                .filter(ts -> ts.getStartTime().equals(LocalTime.of(8, 0))).findFirst().orElseThrow();
+
+        Map<UUID, Long> threeBandForced = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
+                threeBandSlice.rows(), threeBandSlice.timeslots());
+        Map<UUID, Long> fiveBandForced = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
+                fiveBandSlice.rows(), fiveBandSlice.timeslots());
+        long forcedWithThreeBands = threeBandForced.getOrDefault(eight.getId(), 0L);
+        long forcedWithFiveBands = fiveBandForced.getOrDefault(eight.getId(), 0L);
+
+        // The desk-wide union (R0's own supply figure) stays byte-identical -- the exact
+        // "byte-identical gate output" symptom G-15-25 reports.
+        RuleVerdict threeBandR0 = r0DayWideSum(threeBandSlice);
+        RuleVerdict fiveBandR0 = r0DayWideSum(fiveBandSlice);
+
+        System.out.println();
+        System.out.println("[G-15-25 analysis] Band-composition experiment (evidence for G-15-25):");
+        System.out.println("| bands | forced-count at 08:00 | day-wide (R0) detail |");
+        System.out.println("|---|---|---|");
+        System.out.println("| 3 (breaks 11-12,12-13,13-14) | " + forcedWithThreeBands + " | " + threeBandR0.detail() + " |");
+        System.out.println("| 5 (+ edges 08-09,16-17) | " + forcedWithFiveBands + " | " + fiveBandR0.detail() + " |");
+
+        assertThat(forcedWithThreeBands)
+                .as("3 bands sharing this envelope: every eligible pair covers 08:00, so the agent is forced there")
+                .isEqualTo(1L);
+        assertThat(forcedWithFiveBands)
+                .as("THE FIX: adding one edge band whose break falls on 08:00 changes this figure")
+                .isEqualTo(0L);
+        assertThat(forcedWithThreeBands)
+                .as("two DIFFERENT numbers from two runs differing ONLY in band composition")
+                .isNotEqualTo(forcedWithFiveBands);
+        assertThat(threeBandR0.detail())
+                .as("the desk-wide union (R0) stays BYTE-IDENTICAL across both band compositions -- "
+                        + "it was already saturated at 3 bands, so it cannot see the 2 edge bands "
+                        + "added on top of it")
+                .isEqualTo(fiveBandR0.detail());
     }
 
     // ==================================================================

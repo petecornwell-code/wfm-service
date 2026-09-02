@@ -8,6 +8,8 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.Timeslot;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Test-only bridge (Phase 15 plan 15-11, Task 3) exposing {@link SolverService
@@ -34,5 +36,20 @@ public final class SolverSeatSupplyGateAccess {
         SolverService.requireShiftEnvelopeSeatSupply(schedulingMode, shiftAssignments,
                 shiftBandPairs, timeslots, assignments, overallocationHardLimitPct, warnings,
                 weights);
+    }
+
+    /**
+     * Test-only bridge (Phase 15 plan 15-20, gap closure G-15-25/G-15-31, threat T-15-20-04)
+     * exposing {@link SolverService#forcedAgentDaysByTimeslotId} — package-private in {@code
+     * com.wfm.service} — to {@code com.wfm.solver.SeatSupplyDistributionAnalysisTest}. Added
+     * specifically so that class can invoke the SHIPPED per-agent-day forced-occupancy count
+     * (R2, plan 15-19's analysis, promoted into production by plan 15-20) rather than keep its
+     * own test-local reimplementation of the same predicate — this phase's own threat register
+     * (T-15-20-04) names duplicate rule implementations drifting apart as the specific defect
+     * class this bridge method closes off.
+     */
+    public static Map<UUID, Long> forcedAgentDaysByTimeslotId(
+            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots) {
+        return SolverService.forcedAgentDaysByTimeslotId(rows, dateTimeslots);
     }
 }
