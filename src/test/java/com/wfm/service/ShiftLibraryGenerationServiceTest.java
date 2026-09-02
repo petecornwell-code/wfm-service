@@ -691,6 +691,110 @@ class ShiftLibraryGenerationServiceTest {
                 .containsExactlyElementsOf(expectedNames);
     }
 
+    // ---------- Task 2 (G-15-23 gap closure): demand-aware band placement ----------
+    //
+    // Offsets were chosen for coverage only, never to avoid the demand peak. Observed live: a
+    // break proposed at 11:00 on a 10:00-19:00 weekend template -- the busiest weekend hour.
+
+    @Test
+    void generateSuggestion_sharpInEnvelopePeak_noEmittedBandOverlapsIt() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        int peakHour = 14; // strictly inside every 08:00-21:00 envelope this fixture can propose
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            for (int hour = 8; hour < 21; hour++) {
+                int fte = (hour == peakHour) ? 20 : 1;
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
+            }
+        }
+        for (int i = 0; i < 12; i++) {
+            Agent a = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, a, weekday, new BigDecimal("8.00"));
+            }
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : response.templates()) {
+            LocalTime peakStart = LocalTime.of(peakHour, 0);
+            LocalTime peakEnd = peakStart.plusHours(1);
+            if (peakStart.isBefore(t.startTime()) || peakEnd.isAfter(t.endTime())) {
+                continue; // peak hour is outside this template's envelope -- nothing to avoid
+            }
+            for (ShiftLibrarySuggestionResponse.SuggestedBand b : t.bands()) {
+                LocalTime breakStart = t.startTime().plusMinutes(b.offsetMinutes());
+                LocalTime breakEnd = breakStart.plusMinutes(b.durationMinutes());
+                boolean overlapsPeak = breakStart.isBefore(peakEnd) && breakEnd.isAfter(peakStart);
+                assertThat(overlapsPeak)
+                        .as("template %s-%s band at offset %d must not overlap the %d:00 peak",
+                                t.startTime(), t.endTime(), b.offsetMinutes(), peakHour)
+                        .isFalse();
+                // Edge exclusion: no emitted band ever sits at the envelope's first or last slot.
+                assertThat(breakStart).isAfter(t.startTime());
+                assertThat(breakEnd).isBefore(t.endTime());
+            }
+        }
+    }
+
+    @Test
+    void generateSuggestion_exactlyThreeAdmissibleOffsetsOneOnThePeak_stillEmitsAllThree() {
+        // The shortest non-breakless envelope this desk's grid can produce (4h net + 1h break,
+        // hours at the breakMinShiftHours threshold) has exactly SUGGESTED_BAND_COUNT admissible
+        // offsets -- no room to avoid the peak even though it lands on one of them. The generator
+        // must still emit the full band count (capacity arithmetic depends on it): it degrades to
+        // "use every admissible offset", it does not drop the peak-touching one and it does not
+        // throw.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 13; hour++) {
+            int fte = (hour == 10) ? 10 : 1; // peak sits on the middle (only avoidable) offset
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, WEEK_START.getDayOfWeek(), new BigDecimal("4.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates()).hasSize(1);
+        ShiftLibrarySuggestionResponse.SuggestedTemplate template = response.templates().get(0);
+        assertThat(template.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(template.endTime()).isEqualTo(LocalTime.of(13, 0));
+        assertThat(template.bands()).extracting(ShiftLibrarySuggestionResponse.SuggestedBand::offsetMinutes)
+                .as("all 3 admissible offsets emitted, including the one on the 10:00 peak")
+                .containsExactlyInAnyOrder(60, 120, 180);
+    }
+
+    @Test
+    void generateSuggestion_peakedDemand_repeatedRequestsReturnByteIdenticalDrafts() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            for (int hour = 8; hour < 21; hour++) {
+                int fte = (hour == 14) ? 20 : 1;
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
+            }
+        }
+        for (int i = 0; i < 8; i++) {
+            Agent a = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, a, weekday, new BigDecimal("8.00"));
+            }
+        }
+
+        ShiftLibrarySuggestionResponse first = generationService.generateSuggestion(deskId);
+        ShiftLibrarySuggestionResponse second = generationService.generateSuggestion(deskId);
+
+        assertThat(second).isEqualTo(first);
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(long tenantId) {

@@ -29,6 +29,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -175,13 +176,20 @@ public class ShiftLibraryGenerationService {
             selected.addAll(clusterSelected);
         }
 
+        // Demand-aware band placement (Task 2) needs a per-weekday, per-start-time FTE view of the
+        // WHOLE desk's demand -- the same aggregation clusterWeekdaysByDemandShape already builds,
+        // reused here rather than re-derived. A single desk-wide map is correct for every cluster's
+        // templates too: each weekday belongs to exactly one cluster, so scoring a candidate only
+        // ever looks up entries for that candidate's own valid weekdays.
+        Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart = aggregateDemandByWeekdayAndStart(demand);
+
         // D-12: do not refuse outright when full coverage is impossible -- the desk that most
         // needs help would get nothing. Return the best partial draft plus the still-uncovered
         // windows, named in the exact ErrorDetail shape SHLB-05's coverage report already emits.
         // uncoveredDetails is computed INSIDE buildResponse, from the emitted (deduped, final-band)
         // templates -- never from these pre-expansion single-band candidates (Task 1/G-15-23) -- so
         // the report and the returned templates can never disagree.
-        return buildResponse(selected, hoursByWeekday, bounds.incrementMinutes(), windows);
+        return buildResponse(selected, hoursByWeekday, demandByWeekdayAndStart, bounds.incrementMinutes(), windows);
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
@@ -655,12 +663,14 @@ public class ShiftLibraryGenerationService {
 
     private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected,
                                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                          Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
                                                           int incrementMinutes,
                                                           List<ShiftLibraryValidationService.Window> windows) {
         List<EmittedRow> rows = new ArrayList<>();
         for (Candidate candidate : selected) {
             List<DayOfWeek> validWeekdays = candidate.template().getValidWeekdays().stream().sorted().toList();
-            List<ShiftTemplateBreakBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday, incrementMinutes);
+            List<ShiftTemplateBreakBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday,
+                    demandByWeekdayAndStart, incrementMinutes, windows);
             rows.add(new EmittedRow(candidate.template(), bands, validWeekdays, candidate.netHours()));
         }
 
@@ -743,21 +753,40 @@ public class ShiftLibraryGenerationService {
     }
 
     /**
-     * Expands the selected candidate's single coverage-bearing band into {@link
-     * #SUGGESTED_BAND_COUNT} grid-aligned, capacity-capped bands (the outward walk from the
-     * coverage-bearing offset -- Task 2/G-15-23 defect 2 replaces this with demand-ranked
-     * placement; this walk stays unaware of demand for now).
+     * Selects {@link #SUGGESTED_BAND_COUNT} grid-aligned, capacity-capped break bands for the
+     * selected candidate's envelope -- demand-ranked (Task 2/G-15-23 defect 2), never the outward
+     * walk from the coverage-bearing offset it replaces.
      *
      * <p>Done HERE rather than during enumeration for three reasons. Band count does not affect
      * {@code netHours} (duration is unchanged), so eligibility — an exact net-hours match against
      * contracted hours — is untouched. {@code covers()} is ANY-band, so additional bands can only
      * ADD coverage, never remove it, and the cover guarantee {@code greedyCover} established is
-     * preserved by construction. And expanding during enumeration would multiply an already
-     * capped candidate space for no gain in the cover search.
+     * preserved by construction (subject to the explicit re-check below, since band PLACEMENT can
+     * now move away from the coverage-bearing offset). And expanding during enumeration would
+     * multiply an already capped candidate space for no gain in the cover search.
      *
      * <p>A zero-band candidate stays zero-band: that is the break-less template the enumeration
      * deliberately admits only below the desk's {@code breakMinShiftHours} threshold, and it means
      * "no break", which has nothing to spread.
+     *
+     * <p>The admissible offset RANGE is unchanged from the outward-walk implementation --
+     * {@code [incrementMinutes, spanLengthMinutes - duration - incrementMinutes]} -- and is NOT to
+     * be widened. Those bounds are what forbid an edge break; Test 10's caveat and the operator's
+     * explicit ruling ("Breaks are mid-shift only now") make relaxing them a regression, not an
+     * improvement in search room.
+     *
+     * <p>Each admissible offset is scored by the demand its break window would sit on, summed over
+     * the break window's timeslots and taken as the MAXIMUM across the template's valid weekdays --
+     * the same busiest-day-not-average-day rule {@link #suggestedCapacity} already applies to
+     * headcount, and for the same reason: a break that empties the peak on one day is not excused
+     * by being harmless on another. The {@link #SUGGESTED_BAND_COUNT} lowest-scoring offsets are
+     * chosen, ties broken by ascending offset (deterministic, D-11).
+     *
+     * <p>Coverage is the harder constraint and wins: if the demand-ranked set does not cover every
+     * window the pre-expansion coverage-bearing single band covered, the coverage-bearing offset is
+     * put back, evicting the highest-scoring (worst) chosen offset so the emitted band COUNT is
+     * unchanged -- {@link #suggestedCapacity}'s arithmetic depends on that count, not on which
+     * offsets were chosen.
      *
      * <p><b>Reverses P-11's "capacity always blank on a generated band".</b> That rule made the
      * generator's own output invisible to {@code ShiftLibraryValidationService}: its capacity check
@@ -767,38 +796,78 @@ public class ShiftLibraryGenerationService {
      */
     private List<ShiftTemplateBreakBand> suggestedBands(Candidate candidate, List<DayOfWeek> validWeekdays,
                                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
-                                                          int incrementMinutes) {
+                                                          Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
+                                                          int incrementMinutes,
+                                                          List<ShiftLibraryValidationService.Window> windows) {
         if (candidate.durationMinutes() == 0 || candidate.bands().isEmpty()) {
             return List.of(); // break-less template: no break to spread
         }
 
         int duration = candidate.durationMinutes();
         // Same bounds enumerateCandidates uses, so every emitted band is one
-        // ShiftTemplateService.validateGridAlignment would accept.
+        // ShiftTemplateService.validateGridAlignment would accept. Do NOT relax these to gain
+        // search room -- they are what keeps every band off the envelope's edges.
         int minOffset = incrementMinutes;
         int maxOffset = candidate.spanLengthMinutes() - duration - incrementMinutes;
 
-        Set<Integer> offsets = new TreeSet<>();
-        offsets.add(candidate.offsetMinutes()); // the coverage-bearing band is always kept
-        for (int step = 1; offsets.size() < SUGGESTED_BAND_COUNT; step++) {
-            int before = candidate.offsetMinutes() - step * incrementMinutes;
-            int after = candidate.offsetMinutes() + step * incrementMinutes;
-            boolean progressed = false;
-            if (after <= maxOffset) {
-                offsets.add(after);
-                progressed = true;
-            }
-            if (offsets.size() < SUGGESTED_BAND_COUNT && before >= minOffset) {
-                offsets.add(before);
-                progressed = true;
-            }
-            if (!progressed) {
-                break; // span too short to hold more bands — emit what fits
-            }
+        List<Integer> admissibleOffsets = new ArrayList<>();
+        for (int offset = minOffset; offset <= maxOffset; offset += incrementMinutes) {
+            admissibleOffsets.add(offset);
         }
 
-        Integer capacity = suggestedCapacity(candidate, validWeekdays, hoursByWeekday, offsets.size());
-        return toBands(offsets, duration, capacity);
+        Map<Integer, Integer> scoreByOffset = new LinkedHashMap<>();
+        for (int offset : admissibleOffsets) {
+            scoreByOffset.put(offset, scoreOffset(candidate.template(), offset, duration, validWeekdays,
+                    demandByWeekdayAndStart, incrementMinutes));
+        }
+
+        List<Integer> ranked = new ArrayList<>(admissibleOffsets);
+        ranked.sort(Comparator.<Integer>comparingInt(scoreByOffset::get).thenComparingInt(o -> o));
+
+        int bandCount = Math.min(SUGGESTED_BAND_COUNT, ranked.size());
+        Set<Integer> chosen = new LinkedHashSet<>(ranked.subList(0, bandCount));
+
+        // Coverage re-check: the demand ranking can legitimately drop the coverage-bearing offset.
+        // If it does, and the windows that offset's single band covered are no longer all covered
+        // by the chosen set, force it back in -- evicting the worst (highest-scoring) member so the
+        // count this candidate emits does not change.
+        List<ShiftLibraryValidationService.Window> originallyCovered = windows.stream()
+                .filter(w -> shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), w))
+                .toList();
+        List<ShiftTemplateBreakBand> chosenPreview = toBands(chosen, duration, null);
+        boolean coverageOk = originallyCovered.stream()
+                .allMatch(w -> shiftLibraryValidationService.covers(candidate.template(), chosenPreview, w));
+        if (!coverageOk) {
+            int worst = chosen.stream().max(Comparator.comparingInt(scoreByOffset::get)).orElseThrow();
+            chosen.remove(worst);
+            chosen.add(candidate.offsetMinutes());
+        }
+
+        Integer capacity = suggestedCapacity(candidate, validWeekdays, hoursByWeekday, chosen.size());
+        return toBands(chosen, duration, capacity);
+    }
+
+    /**
+     * Sums this template's demand at {@code offset}'s break window (i.e. {@code
+     * [templateStart+offset, templateStart+offset+duration)}), per grid slot, taken as the MAXIMUM
+     * across {@code validWeekdays} -- a break that empties the peak on the busiest day the template
+     * serves is not excused by being harmless on a quieter one it also serves.
+     */
+    private int scoreOffset(ShiftTemplate template, int offset, int duration, List<DayOfWeek> validWeekdays,
+                             Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
+                             int incrementMinutes) {
+        LocalTime breakStart = template.getStartTime().plusMinutes(offset);
+        LocalTime breakEnd = breakStart.plusMinutes(duration);
+        int maxAcrossWeekdays = 0;
+        for (DayOfWeek weekday : validWeekdays) {
+            Map<LocalTime, Integer> daySlots = demandByWeekdayAndStart.getOrDefault(weekday, Map.of());
+            int sum = 0;
+            for (LocalTime slot = breakStart; slot.isBefore(breakEnd); slot = slot.plusMinutes(incrementMinutes)) {
+                sum += daySlots.getOrDefault(slot, 0);
+            }
+            maxAcrossWeekdays = Math.max(maxAcrossWeekdays, sum);
+        }
+        return maxAcrossWeekdays;
     }
 
     private static List<ShiftTemplateBreakBand> toBands(Set<Integer> offsets, int duration, Integer capacity) {
