@@ -478,3 +478,18 @@ Reading `ConstraintWeights.java` alone for this desk would have silently assumed
 `shiftEnvelopeComplianceWeight` are an order of magnitude lower than they actually are live —
 exactly the assumption `G-15-24`'s `detail` section shows produced the destructive "raise the
 ceiling" advice.
+
+## Seat-Supply Distribution Analysis (G-15-31) — added 2026-09-02, appended below every section above
+
+Plan 15-19 did the analysis `G-15-31`'s `fix:` field asked for rather than skipped it: candidate
+within-day blocking rules, evaluated against fixtures known to solve and fixtures known to collapse,
+with the false-refusal rate measured per rule. Full write-up:
+`15-SEAT-SUPPLY-GATE-ANALYSIS.md`. Rule-evaluation test:
+`src/test/java/com/wfm/solver/SeatSupplyDistributionAnalysisTest.java`.
+
+**One-line recommendation:** adopt R2 (a proven forced-occupancy necessary condition, zero measured
+false refusals across a small four-date-slice corpus) as an additional per-timeslot blocking check
+alongside the existing day-wide sum — not implemented by plan 15-19, left for plan 15-20 to act on.
+`advisoryOnThinTimeslotDoesNotBlock` stays exactly as shipped; the naive "promote the raw tightest-hour
+advisory" rule (R1) is measured to false-refuse 3 of 4 known-solving date-slices in this corpus, which
+is the measured justification for that test's own name never having been an accident.

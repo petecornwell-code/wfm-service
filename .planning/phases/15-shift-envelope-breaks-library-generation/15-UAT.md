@@ -1495,7 +1495,38 @@ blocked: 1
 
 - gap_id: G-15-24
   truth: "Raising the over-allocation limit is NOT a safe remedy on a desk where unassigned seats are hard"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-18 Task 2 (c5baa55) -- requireShiftEnvelopeSeatSupply takes a nullable live
+    ConstraintWeights parameter and withdraws the over-allocation-ceiling remedy, naming the
+    consequence instead, whenever unassignedAssignmentWeight carries a nonzero hard component."
+  resolved_evidence: |
+    PART 1 OF THE FIX (advice-safety) IS DELIVERED AND TEST-PROVEN. Default/null weights emit
+    exactly today's message, pinned by LITERAL EQUALITY (not substring):
+    `ShiftEnvelopeSupplyGateTest#defaultWeightsMessageIsByteIdenticalToBeforeThisPlan` and
+    `#nullWeightsFallBackToDefaultWording`. A hard `unassignedAssignmentWeight` withdraws the
+    ceiling suggestion, names the consequence (every manufactured, unfillable seat is a hard
+    violation at the desk's own configured weight, value named) and still reports the current
+    percentage: `#hardUnassignedWeightWithdrawsCeilingRemedyAndNamesConsequence`.
+
+    PART 2 (the destructiveness measurement) IS EXPLICITLY NOT RE-ESTABLISHED, per this gap's own
+    fix field's basis requirement -- stated here rather than left implicit. The original -20,338
+    measurement is retracted_claim-adjacent and confirmed CONFOUNDED (it changed
+    overallocationHardLimitPct AND underallocationHardLimitPct in the same run; G-15-28 recorded a
+    clean raise, measured separately, as beneficial on this desk). The fix instead rests on the
+    structural, checkable mechanism alone: expandOverflowAssignments derives maxAgents as
+    ceil(requiredFTEs * pct / 100), so raising the ceiling manufactures additional seats regardless
+    of measurement, and a nonzero hard unassignedAssignmentWeight makes every one of those seats
+    that no agent can fill a hard violation by construction -- reading that weight before advising
+    is correct independent of how a controlled re-experiment would come out. This is the SAME basis
+    this gap's own fix field asked for ("read the desk's LIVE weights, not
+    ConstraintWeights.java's defaults"), delivered in code: 15-BENCHMARK.md's "Live Weights
+    Discipline (G-15-24)" section (appended 2026-09-02) writes the same rule down, with the
+    source-vs-live divergence table this gap's detail names.
+
+    RE-RUN THIS SESSION (plan 15-19), not transcribed from the plan text:
+    `./gradlew test --tests "com.wfm.service.ShiftEnvelopeSupplyGateTest"
+    --tests "com.wfm.solver.ShiftEnvelopeSupplyInvariantTest"
+    --tests "com.wfm.solver.ShiftDeskEndToEndRegressionTest"` -- 23/23 pass, 0 failures, 0 errors.
   severity: major
   found_by: edge-band experiment, 2026-08-31 (resumed session)
   retracted_claim: |
@@ -1973,6 +2004,46 @@ blocked: 1
     Until this is fixed, over-allocation at 250% on this desk fails SILENTLY — no refusal, ~8
     minutes burned, three hard constraints violated, and nothing on screen names the limit as the
     cause. The 500% in HANDOFF.md §3 is load-bearing and the UI default is not it.
+  plan_15_19_analysis: |
+    THE ANALYSIS THIS GAP ASKED FOR IS DONE. Status stays OPEN, deliberately — a document existing
+    is not a code change, and this entry is not marked resolved merely because one now exists.
+
+    Full write-up: `15-SEAT-SUPPLY-GATE-ANALYSIS.md`. Executable evidence:
+    `src/test/java/com/wfm/solver/SeatSupplyDistributionAnalysisTest.java`
+    (`./gradlew test --tests "com.wfm.solver.SeatSupplyDistributionAnalysisTest"` -- 11/11 pass,
+    re-run this session).
+
+    FOUR CANDIDATE RULES EVALUATED against a small, honestly-sized corpus (4 date-slices across 3
+    fixtures -- 1 KNOWN-COLLAPSES, 3 KNOWN-SOLVES; 23 further pre-existing fixtures referenced but
+    not re-instantiated, named in the analysis's own §2.4/§7): R0 (the shipped day-wide sum, this
+    gap's own control), R1 (the tightest-hour advisory promoted to blocking naively), R2 (a proven
+    forced-occupancy necessary condition), R3 (R2 demoted to warn-only).
+
+    R2 REFUSES THE COLLAPSING FIXTURE (a minimal, ten-agent-scale reproduction of this gap's own
+    live shape -- total supply generous, one boundary hour reachable by a single zero-slack
+    template, forcing every agent-day onto it) WITH ZERO MEASURED FALSE REFUSALS across every
+    KNOWN-SOLVES fixture tried, and is proven a genuine necessary condition (not merely measured
+    lucky) on a hand-built case where the forced set is known by construction.
+
+    R1 IS MEASURED, NOT DISMISSED, PER THE fix FIELD'S OWN INSTRUCTION NOT TO SKIP IT: it
+    false-refuses 3 of 4 KNOWN-SOLVES date-slices in this corpus (75%) -- the measured version of
+    the exact risk this gap's fix field named, and the measured justification for
+    `advisoryOnThinTimeslotDoesNotBlock` staying non-blocking (§6 of the analysis states this
+    verdict explicitly).
+
+    RECOMMENDATION (not applied by this plan): adopt R2 as an additional per-timeslot blocking check
+    alongside the existing day-wide sum R0 -- for plan 15-20 to implement and close this gap
+    against, with the false-refusal measurement already on record. `advisoryOnThinTimeslotDoesNotBlock`
+    is untouched (`git diff` on `ShiftEnvelopeSupplyGateTest.java` shows the method unchanged) and
+    still passes.
+
+    NOT SETTLED BY THIS ANALYSIS, named in its own §7 rather than gestured at: the 23
+    referenced-but-not-re-instantiated fixtures were not run against R1/R2/R3; multi-template desks
+    beyond two templates and R2-with-mixed-slack configurations are untested; R2's interaction with
+    G-15-25 (still open) is not evaluated; R2's runtime cost at real desk scale (138 agent-days) was
+    not measured; the live-desk calibration is a cross-consistency check between two already-
+    published advisory sequences, not an independent replication against a raw per-hour demand
+    table (none was recorded anywhere in this file or HANDOFF.md for this desk).
 
 - gap_id: G-15-32
   truth: "An accepted schedule's reported constraint violations must describe that schedule"
@@ -2089,7 +2160,36 @@ blocked: 1
 
 - gap_id: G-15-21
   truth: "The seat-supply gate must not count hours only a weekday template reaches when solving a weekend"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-18 Task 1 (32c3240) -- SolverService.coveredTimeslotsOnDate, one date-aware
+    coverage helper shared by both the blocking supply computation and the trailing tightest-hour
+    advisory, replacing the two textually-duplicated calendar-blind anyMatch expressions this gap
+    named at ~1184 and ~1281."
+  resolved_evidence: |
+    THE FIX MATCHES fix EXACTLY. coveredTimeslotsOnDate filters pairs by
+    `template.isEffectiveOn(date) && template.appliesOn(date)` before calling
+    `ShiftBandPair.covers(ts)` -- the identical two-step `expandMinimumStaffingSeats` already
+    applied (6c82241). `ShiftBandPair.covers` itself is untouched, exactly as the fix specified.
+
+    THE WEEKEND OVER-COUNT RED-PROOF, with exact pre/post figures (not merely "it throws"):
+    `ShiftEnvelopeSupplyGateTest#refusesWeekendOvercountFromWeekdayOnlyTemplate` -- a two-template
+    fixture (weekday-only "Weekday" 08:00-17:00 and weekend-valid "Weekend" 10:00-19:00, clock-time
+    footprints overlapping) on a Saturday. PRE-FIX (calendar-blind union): 8 slots counted as
+    supplied == 8 contracted -- the gate PASSED. POST-FIX (date-aware): only 5 slots counted (the
+    weekend-valid pair's own coverage) against 8 contracted -- a shortfall of 3, and the gate now
+    REFUSES, naming both figures exactly ("only reaches 5 slot(s)", "a shortfall of 3 slot(s)").
+
+    ADVISORY COHERENCE, closing the incoherent "tightest at 08:00-09:00 with 0 seat(s)" symptom this
+    gap's own detail named: `ShiftEnvelopeSupplyGateTest
+    #advisoryNeverNamesAnHourOnlyAWeekdayInvalidTemplateReaches` proves the tightest-hour advisory
+    never names an hour reachable only by a weekday-invalid template on that date.
+
+    RE-RUN THIS SESSION (plan 15-19), not transcribed from the plan text:
+    `./gradlew test --tests "com.wfm.service.ShiftEnvelopeSupplyGateTest"
+    --tests "com.wfm.solver.ShiftEnvelopeSupplyInvariantTest"
+    --tests "com.wfm.solver.ShiftDeskEndToEndRegressionTest"` -- 23/23 pass, 0 failures, 0 errors
+    (14 + 6 + 3, confirmed against the test-results XML this session, matching 15-18-SUMMARY.md's
+    own recorded 23/23).
   severity: major
   found_by: test 10 retest, 2026-08-31
   detail: |
