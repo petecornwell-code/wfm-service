@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T21:50:00Z"
+updated: "2026-09-02T22:10:00Z"
 ---
 
 <!--
@@ -89,21 +89,13 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 19
-name: Envelope divergence and unstaffed hours render correctly
-expected: |
-  Visual. Shift column agrees with the group header; inline divergence marker on out-of-envelope
-  rows; per-cell E! distinct from x; hours no template reaches render muted/italic under an
-  "unstaffed by design" header; tooltips and legend legible.
-  Run on 709fd8b4 first (exactly 1 out-of-envelope seat vs 31 unworked), then 9bd158dd (12).
-awaiting: user response
+[testing paused — 0 pending; 1 blocked (test 18, production deploy) and 1 issue (test 10) remain]
 
-NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
-is no slot-mode desk to observe. Test 3 established the pattern for this — create a throwaway desk,
-verify, delete it, confirm the cascade. Expect that route rather than a live comparison.
-
-<!-- PREVIOUSLY: [testing paused — 6 items outstanding: tests 13, 14, 15, 16, 17, 19]
-     Resumed 2026-09-02T17:05Z against deploy 33656348187 / task def :66 / image 64bafd8. -->
+ALL 17 TESTABLE CHECKPOINTS ARE NOW RESOLVED. What is left is not work anyone can do at a keyboard
+today: test 18 needs a production deploy that has not been scheduled, and test 10 is an open
+quality issue whose remaining cause is G-15-28, the weekend demand forecast, which the operator
+owns. Status stays `partial` rather than `complete` because a blocked item remains, per the
+workflow's own rule.
 
 RESUMED 2026-09-02. The pause note below is kept because its reasoning still explains how the file
 got here; its "RESUME AT TEST 13" instruction has now been carried out.
@@ -1703,7 +1695,61 @@ expected: |
 
     - tooltips and the extended legend are legible.
 
-result: [pending]
+result: pass
+reported: |
+  "E! and x are clearly distinct, header reads 08:00-17:00" (709fd8b4)
+  "unstaffed hours render muted, E! cells clear, legend readable" (9bd158dd)
+  "12 amber, 22 grey, matches the E! agents" (9bd158dd, Agent Schedule tab)
+tested_against: |
+  dev on the shipped build (image 8f61493 / task def :67), two schedules chosen so that between
+  them every bullet has a case that actually exercises it:
+    709fd8b4  1 out-of-envelope seat against 31 unworked — the E!-vs-x discrimination test
+    9bd158dd  12 E! seats, and the ONLY schedules (with e6728aab) that have hours no assigned
+              shift reaches, which is the only place the unstaffed-by-design bullet is testable
+  Five of the seven accepted schedules have FULL envelope coverage on every date, so the
+  unstaffed-by-design treatment cannot be seen on them at all. That is why this test needed two.
+evidence: |
+  BULLET 1 — Shift column agrees with the Agent Allocation group header.
+    Confirmed on 709fd8b4's decisive row: Tekla Davitashvili, 2026-01-11, holding a 20:00 seat
+    while assigned Weekend Opening 08:00-17:00. Header read "08:00-17:00" — NOT widened to 20:00
+    to swallow the stray seat. That is the G-15-10 D4 disagreement demonstrably not happening, on
+    the one row in the schedule where it could have shown.
+
+  BULLET 2 — inline divergence marker on the Agent Schedule row.
+    Verified on 9bd158dd by COUNT, against a figure computed from the API before it was viewed:
+      predicted  12 amber "outside envelope"  /  22 grey "legal slot(s) unworked"  (34 rows)
+      observed   "12 amber, 22 grey, matches the E! agents"
+    Operator also confirmed the 12 amber rows are the SAME agents carrying E! in the allocation
+    grid, which is the cross-check that matters — the badge and the per-cell mark agree.
+
+  BULLET 3 — per-cell E! distinct from x. "clearly distinct" (709fd8b4), re-confirmed at density
+    on 9bd158dd ("E! cells clear"). 709fd8b4 is the sharp case: ONE E! among 31 x cells, and both
+    markers on the SAME ROW (Tekla — E! at 20:00, x at 10:00), so the two were compared side by
+    side rather than across the grid.
+
+  BULLET 4 — hours no template reaches render muted under "unstaffed by design".
+    "unstaffed hours render muted" on 9bd158dd, where 2026-01-10 and 2026-01-11 both leave 08:00,
+    09:00 and 20:00 unreached (that day's only groups are Weekend Early 10:00-19:00, Weekend Flex
+    10:00-20:00 and Weekend Late 11:00-20:00 — nothing before 10:00, nothing past 20:00).
+    NOTE THE HARD CASE THIS COVERED: those columns are not empty. Every agent seated in them is
+    out of envelope by construction, so an "unstaffed by design" column carries E! cells beneath
+    it — 3 at 08:00, 2 at 09:00, 1 at 20:00 on 01-11. The rendering held up with that combination
+    present, which occurs in no other schedule on the desk.
+
+  BULLET 5 — legend legible. "legend readable".
+divergence_marker_fix_verified_here: |
+  This test doubles as the field verification of the 2026-09-02 divergence-marker fix (commit
+  8f61493, recorded under test 19's finding_surfaced_early / fixed_2026_09_02 above). The fix had
+  passed `npm run build` but had NO automated coverage — this project has no frontend test
+  framework — so bullet 2's count was the only verification available to it.
+  The 12/22 split is exactly the fix's intended behaviour: before it, all 34 rows carried an amber
+  ⚠, including 22 that describe correct bounded-slack behaviour. Operator's confirmation that the
+  12 amber rows match the E! agents closes it: the warning now marks defects and nothing else.
+scope_note: |
+  The tooltip half of bullet 5 was not separately reported, and deliberately was not pressed —
+  known_caveat WR-02 records that the "unstaffed by design" tooltip reads only that day's assigned
+  shifts rather than the desk's full live library, so its literal wording is known-inaccurate in
+  exactly the edge case 9bd158dd presents. The visual treatment was the thing to judge, and it was.
 amended: 2026-08-31 — see expectation_correction below. The test's ORIGINAL wording is preserved above; read the correction before judging the `x` marker.
 expectation_correction: |
   This test was written BEFORE bounded envelope slack shipped (81117e3, V44), and one of its
@@ -1860,9 +1906,9 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 16
+passed: 17
 issues: 1
-pending: 1
+pending: 0
 skipped: 3
 blocked: 1
 
