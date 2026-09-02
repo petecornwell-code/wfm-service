@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T21:05:00Z"
+updated: "2026-09-02T21:25:00Z"
 ---
 
 <!--
@@ -89,13 +89,11 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 16
-name: Accepted schedule keeps its true mode (CR-02 fix)
+number: 17
+name: Deleting an accepted shift schedule leaves no orphans (CR-03 fix)
 expected: |
-  Accept a shift-mode schedule, reopen it — Schedule Results reports SHIFT and renders the shift
-  view. Must hold even for a schedule accepted with few or NO placed shifts, and must not change
-  if the desk's mode is switched afterwards. Pre-deploy accepts are backfilled by inference and
-  are out of scope.
+  Delete an accepted shift-mode schedule, then confirm no agent_shift_assignment rows remain for
+  that schedule id.
 awaiting: user response
 
 NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
@@ -1507,7 +1505,74 @@ reported: "[operator authorised the live-desk route; result measured from the AP
 ### 16. Accepted schedule keeps its true mode (CR-02 fix)
 
 expected: Accept a shift-mode schedule, reopen it — Schedule Results reports SHIFT and renders the shift view. This must hold even for a schedule accepted with few or NO placed shifts, and must not change if the desk's mode is switched afterwards. *Legacy caveat: schedules accepted BEFORE this deploy are backfilled by inference, so a pre-existing shift-mode accept that placed zero shifts will read SLOT. That is unrecoverable — the true fact was never recorded — not a new bug. Verify only that post-deploy accepts are exact.*
-result: [pending]
+result: pass
+tested_against: |
+  dev, live desk Stubhub (EN), shipped build (image 8f61493, task def :67), plus the automated
+  suite run locally on HEAD. Operator authorised the live mode round-trip.
+the_mechanism: |
+  CR-02 replaced an INFERENCE with a RECORDED FACT. `schedule.scheduling_mode` is a mapped column
+  (V43, `75349d8`), written by SolverService.buildSchedule from Desk.schedulingMode at SOLVE time
+  and persisted unchanged at accept; ScheduleService:573 reads it directly. Nothing derives it from
+  shift-row presence any more. That is why claim 2 holds structurally: the value is fixed before a
+  single shift is placed, so how many get placed cannot affect it.
+claim_1_reported_mode: |
+  All 7 accepted schedules on the live desk report SHIFT.
+  HONEST SCOPE: this is NON-DISCRIMINATING on its own. Every one carries shifts on 138 of 138
+  agent-days, so the OLD inference ("has shift rows -> SHIFT") would return the same answer. It
+  confirms nothing regressed; it cannot confirm the fix. The discriminating evidence is below.
+claim_2_zero_placed_shifts: |
+  Covered by a purpose-built regression test, verified passing on HEAD:
+    ScheduleServiceShiftSnapshotTest.getScheduleDetail_acceptedShiftModeSchedule_zeroPlacedShifts_stillReportsShift
+
+  It is well constructed in the way that matters — it asserts
+  `agentShiftAssignmentRepository.findByTenantIdAndDeskIdAndScheduleId(...)` is EMPTY *before*
+  asserting the mode reads SHIFT, so it cannot silently decay into the ordinary at-least-one-shift
+  case. Its sibling test carries the fix's own history in its name: it was renamed FROM
+  `...derivesSchedulingModeFromShiftRowPresence`, i.e. the pre-fix test asserted the very inference
+  that was the defect.
+
+  Not reproduced live: engineering a zero-placed-shift solve on the live desk would mean giving it
+  a library that matches no agent's contracted hours, which the seat-supply gate exists to refuse.
+  The unit test reaches the state directly and proves it reached it.
+claim_3_survives_a_desk_mode_switch: |
+  THE ONE WITH NO AUTOMATED GUARD — see coverage_gap_found below — so it was measured live.
+
+  ROUND TRIP on the live desk, 2026-09-02:
+    pre        desk SHIFT · 0 RUNNING schedules · validation clean (0 uncovered windows)
+    SHIFT->SLOT  HTTP 200, desk reads SLOT
+    WHILE THE DESK WAS IN SLOT, all 7 accepted schedules still read:
+       7cc71bf5 SHIFT · 6a10afa1 SHIFT · b88cc98f SHIFT · 523c8785 SHIFT
+       709fd8b4 SHIFT · e6728aab SHIFT · 9bd158dd SHIFT
+    and their shift descriptors survived intact — withShift 138/138 on every one, so the mode is
+    not merely a label that stayed put while the payload emptied.
+    SLOT->SHIFT  HTTP 200 (the validator DOES run on this direction and passed), desk reads SHIFT
+    post       byte-identical to the pre-switch reading; 11 templates, 28 agents, unchanged
+
+  Desk mode and schedule mode are now independent facts, which is exactly what CR-02 set out to
+  make true.
+coverage_gap_found: |
+  FOUND WHILE VERIFYING CLAIM 3, and it is why claim 3 was worth measuring rather than assuming.
+
+  `DeskServiceSchedulingModeTest.switchSchedulingMode_roundTrip_leavesAcceptedScheduleAndSnapshotRowsExactlyUnchanged`
+  reads like the guard for this claim. It is not. Its private `ScheduleSnapshot` record (:393)
+  captures 18 fields — id, tenantId, deskId, incrementMinutes, start/endTime, period dates, the
+  break settings, contracted hours, the two allocation limits, status, errorMessage, version — and
+  `schedulingMode` is NOT among them. The test would therefore pass unchanged even if a desk mode
+  switch corrupted the accepted schedule's `scheduling_mode`, despite asserting "ExactlyUnchanged".
+
+  WHY IT HAPPENED, from the history rather than guessed: the test was last touched in PHASE 14
+  (`b7f5b3b feat(14-05)`), and the column it omits was introduced in PHASE 15 (`75349d8`). The
+  snapshot simply predates the field and was never extended when CR-02 added it. No other test
+  pairs a desk mode switch with an accepted-schedule mode read.
+
+  SEVERITY: low as things stand — the behaviour is correct, as the live round-trip above proves.
+  The risk is REGRESSION, not present breakage: nothing would fail if a future change made the
+  desk switch write through to accepted schedules. Suggested fix is one line — add
+  `s.getSchedulingMode()` to the ScheduleSnapshot record and its `of(...)` factory, which converts
+  an existing passing test into a real guard without writing a new one.
+  Recorded as an observation for the operator to route; NOT filed as a Phase 15 gap, since the
+  shipped behaviour meets the phase's stated requirement.
+reported: "[operator authorised the live mode round-trip; result measured from the API]"
 
 ### 17. Deleting an accepted shift schedule leaves no orphans (CR-03 fix)
 
@@ -1704,9 +1769,9 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 14
+passed: 15
 issues: 1
-pending: 3
+pending: 2
 skipped: 2
 blocked: 1
 
