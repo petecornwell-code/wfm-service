@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T17:30:00Z"
+updated: "2026-09-02T20:45:00Z"
 ---
 
 <!--
@@ -89,11 +89,12 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 14
-name: A slot-scheduled desk is completely unchanged
+number: 15
+name: UPCOMING and RETIRED templates are not assignable (CR-01 fix)
 expected: |
-  A desk still in slot mode behaves exactly as before — same Agent Allocation rendering, same
-  solve behaviour, same validation. No shift-mode UI appears on it.
+  A template whose effectiveFrom is in the FUTURE is not assigned to any agent-day before that
+  date; if it becomes effective mid-period it is assignable only from effectiveFrom onward. A
+  RETIRED template (past effectiveTo) is never assignable.
 awaiting: user response
 
 NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
@@ -1233,7 +1234,32 @@ caveat_at_pause: |
 ### 14. A slot-scheduled desk is completely unchanged
 
 expected: A desk still in slot mode behaves exactly as before — same Agent Allocation rendering, same solve behaviour, same validation. No shift-mode UI appears on it.
-result: [pending]
+result: pass
+reported: "It was scheduled in SLOT mode - there are no shifts"
+tested_against: |
+  dev on the shipped build (image 8f61493, ECS task def wfm-service-dev:67, rollout COMPLETED,
+  health UP) — so the visual check ran against the newest code including the divergence-marker fix,
+  even though that fix cannot reach a slot desk.
+verdict_scope: |
+  The operator's sentence answers the test's LAST and most important clause — "No shift-mode UI
+  appears on it" — from the screen, which is the half no automated test in this project can reach.
+  Read together with the API evidence below (0 entries carrying .shift, 0 carrying .divergence) the
+  two agree: there are no shifts in the data and no shifts on the page.
+
+  What the verdict does NOT separately confirm is the finer visual detail — the absence of the E!/×
+  glyphs and the envelope legend specifically, as opposed to shifts generally. Those are gated on
+  the same null `.shift`/`.divergence` the API proves absent, and on the ScheduleResults.tsx:422
+  early return, so they cannot render without the data that is not there. Noted as inference rather
+  than observation.
+teardown_2026_09_02_second: |
+  DISPOSED cleanly, and the disposal itself confirmed the lesson the first teardown taught:
+    accepted schedules on desk   0  (the schedule was deliberately left COMPLETED)
+    9 agents removed             roster -> 0
+    DELETE desk                  204 on the FIRST attempt — no 409, no second step
+    GET desk                     404
+  Live state after: 1 desk, Stubhub (EN) still 28 agents and 11 templates, tenant unassigned back
+  to 14. So "do not accept the scratch schedule" is the whole difference between a one-call
+  teardown and a two-call one.
 setup_problem: |
   The tenant has ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there is no slot-mode desk to
   observe. Same shape of problem as test 3, and the same answer: a throwaway DESK, which
@@ -1616,10 +1642,10 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 12
+passed: 13
 issues: 1
-pending: 5
-skipped: 1
+pending: 4
+skipped: 2
 blocked: 1
 
 <!--
