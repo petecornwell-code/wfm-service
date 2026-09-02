@@ -1210,9 +1210,9 @@ public class SolverService {
         for (Map.Entry<LocalDate, List<AgentShiftAssignment>> entry : rowsByDate.entrySet()) {
             LocalDate date = entry.getKey();
             List<AgentShiftAssignment> rows = entry.getValue();
+            List<Timeslot> dateTimeslots = timeslotsByDate.getOrDefault(date, List.of());
 
-            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(
-                    date, timeslotsByDate.getOrDefault(date, List.of()), pairs);
+            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(date, dateTimeslots, pairs);
             int librarySupplySlots = coveredTimeslots.stream()
                     .mapToInt(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L).intValue())
                     .sum();
@@ -1269,6 +1269,65 @@ public class SolverService {
                                 + "shift-scheduled desk an agent works exactly their assigned "
                                 + "shift, so this cannot be resolved by solving for longer. "
                                 + remedyClause,
+                        date.toString()));
+            }
+
+            // G-15-25/G-15-31 (plan 15-20): the day-wide sum above is blind to BOTH band
+            // composition (it unions the desk-wide pair list) and distribution within the day
+            // (it compares two totals). This second check is computed against each agent-day's
+            // OWN eligible pairs (see forcedAgentDaysByTimeslotId) and per COVERED TIMESLOT, not
+            // the day as a whole -- it is the one check plan 15-19's analysis (R2) proved is a
+            // genuine necessary condition for a zero-hard solve, so it accumulates into the SAME
+            // error list rather than replacing the day-wide check, which remains sound in its
+            // own right (plan 15-11). Consolidated to the single WORST timeslot per date (largest
+            // forced-minus-seats deficit), mirroring the trailing advisory's own "tightest"
+            // precedent, rather than one entry per offending hour.
+            Map<UUID, Long> forcedByTimeslotId = forcedAgentDaysByTimeslotId(rows, dateTimeslots);
+            Timeslot worstForcedTimeslot = null;
+            long worstDeficit = 0;
+            long worstForcedCount = 0;
+            long worstSeatCount = 0;
+            for (Timeslot ts : dateTimeslots) {
+                long forcedCount = forcedByTimeslotId.getOrDefault(ts.getId(), 0L);
+                if (forcedCount == 0) {
+                    continue;
+                }
+                long seatCount = seatsByTimeslotId.getOrDefault(ts.getId(), 0L);
+                long deficit = forcedCount - seatCount;
+                if (deficit > 0 && deficit > worstDeficit) {
+                    worstDeficit = deficit;
+                    worstForcedTimeslot = ts;
+                    worstForcedCount = forcedCount;
+                    worstSeatCount = seatCount;
+                }
+            }
+            if (worstForcedTimeslot != null) {
+                // Same weight-aware branching as the day-wide clause above (G-15-24): a per-hour
+                // shortfall is in fact the case where raising the ceiling is most tempting (the
+                // day-wide total can look abundant while one hour is structurally short) and, on
+                // a hard-weighted desk, most dangerous.
+                String perHourRemedy = unassignedSeatsAreHard
+                        ? "Raising the desk's over-allocation limit (currently "
+                                + overallocationHardLimitPct + "%) is NOT a safe fix here either: "
+                                + "on this desk every seat manufactured beyond contracted demand "
+                                + "is a HARD violation, worth " + unassignedHardWeight + " hard, "
+                                + "if no agent can fill it -- and a per-hour shortfall is exactly "
+                                + "the case where that ceiling is most tempting to raise. To fix "
+                                + "it: correct the demand forecast for this hour, reduce rostered "
+                                + "hours for " + date + ", or change the library so its envelopes "
+                                + "distribute agents more evenly across the day."
+                        : "To fix it: raise the desk's over-allocation limit (currently "
+                                + overallocationHardLimitPct + "%), correct the demand forecast "
+                                + "for this hour, reduce rostered hours for " + date + ", or "
+                                + "change the library so its envelopes distribute agents more "
+                                + "evenly across the day.";
+                errors.add(new ErrorDetail("shiftLibrary",
+                        "On " + date + " at " + worstForcedTimeslot.getStartTime() + "-"
+                                + worstForcedTimeslot.getEndTime() + ", " + worstForcedCount
+                                + " rostered agent-day(s) are structurally forced onto that hour "
+                                + "— every one of their eligible shift envelopes requires it, "
+                                + "with no legal slack to work around it — but only "
+                                + worstSeatCount + " seat(s) exist there. " + perHourRemedy,
                         date.toString()));
             }
 
@@ -1373,6 +1432,74 @@ public class SolverService {
                         .filter(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date))
                         .anyMatch(p -> p.covers(ts)))
                 .toList();
+    }
+
+    /**
+     * G-15-25/G-15-31 (plan 15-20): for {@code date}, how many rostered agent-days are FORCED to
+     * occupy each of {@code dateTimeslots} — the per-agent-day forced-occupancy necessary
+     * condition (R2) plan 15-19's analysis (15-SEAT-SUPPLY-GATE-ANALYSIS.md) measured and
+     * recommended, computed against each agent-day's OWN {@link
+     * AgentShiftAssignment#getEligibleShiftBandPairs()} rather than the desk-wide union {@link
+     * #coveredTimeslotsOnDate} computes.
+     *
+     * <p>An agent-day is forced at {@code ts} when EVERY one of its eligible pairs both (a)
+     * covers {@code ts}, and (b) has ZERO SLACK for that agent-day — that pair's own
+     * covered-slot count on this date equals the agent-day's {@link
+     * AgentDayConfig#expectedWorkSlots()} exactly. A pair with slack lets the agent legally skip
+     * up to {@code envelopeSlackSlots} of its own covered slots without becoming a {@code
+     * Contracted hours (under)} violation — only the AGGREGATE hours total is judged, never which
+     * specific slot was skipped ({@link AgentShiftAssignment}'s own javadoc) — so a pair with
+     * slack does not force the agent onto any one of its covered slots even though it covers it.
+     * An agent-day with NO eligible pairs at all is not "forced" by this predicate; that case is
+     * this method's own distinct unassignable-row branch, unaffected by this computation.
+     *
+     * <p><strong>Band-composition sensitivity, by construction (G-15-25).</strong> Adding a band
+     * to one of an agent-day's eligible templates can change THAT PAIR's own covered-slot count
+     * (and therefore whether it still has zero slack) without changing what the desk-wide union
+     * {@link #coveredTimeslotsOnDate} reports — a union already saturated by three or more bands
+     * per template stays saturated, since each additional band only excludes its own break hour
+     * from an already-full clock-time footprint. A per-agent-day count can therefore change while
+     * the union-based supply figure stays byte-identical, which is precisely the sensitivity the
+     * old desk-wide {@code anyMatch} model could never have — the two-run, byte-identical live
+     * measurement that filed G-15-25 is the direct evidence for that structural blindness.
+     *
+     * <p><strong>Distribution sensitivity, by construction (G-15-31).</strong> Evaluating this
+     * per COVERED TIMESLOT rather than as one day-wide total is what lets it see distribution
+     * within the day: two dates with an identical day-wide sum can differ arbitrarily in how that
+     * total is spread across the day's hours, which a sum-vs-sum comparison cannot tell apart
+     * (plan 15-19's analysis, §1) but a per-timeslot forced-vs-seats comparison can.
+     *
+     * <p>Package-private, not {@code private} (like {@link #requireShiftEnvelopeSeatSupply}
+     * itself), so {@code ShiftEnvelopeSupplyGateTest} (same package) can call it directly to
+     * assert on the raw forced-count FIGURE — the band-composition red-proof needs to compare two
+     * numbers from two runs, not merely observe that the gate does or does not throw.
+     */
+    static Map<UUID, Long> forcedAgentDaysByTimeslotId(
+            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots) {
+        Map<UUID, Long> forcedCounts = new LinkedHashMap<>();
+        for (AgentShiftAssignment row : rows) {
+            List<ShiftBandPair> eligible = row.getEligibleShiftBandPairs();
+            if (eligible.isEmpty()) {
+                continue; // the distinct unassignable-row branch handles this agent-day
+            }
+            int expectedSlots = row.getDayConfig().expectedWorkSlots();
+            boolean allZeroSlack = eligible.stream()
+                    .allMatch(p -> coveredSlotCountOnDate(p, dateTimeslots) == expectedSlots);
+            if (!allZeroSlack) {
+                continue; // at least one eligible pair gives this agent-day a legal skip
+            }
+            for (Timeslot ts : dateTimeslots) {
+                if (eligible.stream().allMatch(p -> p.covers(ts))) {
+                    forcedCounts.merge(ts.getId(), 1L, Long::sum);
+                }
+            }
+        }
+        return forcedCounts;
+    }
+
+    /** How many of {@code dateTimeslots} {@code pair} covers — its own covered-slot count on this date. */
+    private static int coveredSlotCountOnDate(ShiftBandPair pair, List<Timeslot> dateTimeslots) {
+        return (int) dateTimeslots.stream().filter(pair::covers).count();
     }
 
     private static BigDecimal slotsToHours(int slots, int incrementMinutes) {

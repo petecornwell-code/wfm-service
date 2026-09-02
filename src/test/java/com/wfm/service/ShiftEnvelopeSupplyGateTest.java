@@ -627,6 +627,15 @@ class ShiftEnvelopeSupplyGateTest {
     //  Tests 10-12 -- G-15-24: the shortfall remedy reads the desk's LIVE unassignedAssignmentWeight
     //  rather than advising blind. Same shortfall shape as Test 1 (2 agents x 8h contracted = 16
     //  slots demand, 8 slots supplied), varied only by the weights argument.
+    //
+    //  Plan 15-20 note: this fixture's single shared pair forces BOTH agents at every one of the
+    //  8 covered hours (zero slack, one eligible pair each), and only 1 seat exists at each of
+    //  those hours -- so the new per-hour forced-occupancy check (G-15-25/G-15-31) now ALSO fires
+    //  here, alongside the pre-existing day-wide shortfall. That is the correct, intended
+    //  interaction (both checks accumulate into the same list -- 15-20-PLAN.md Task 1), not a
+    //  regression: this fixture genuinely IS short both in total and at every hour. These tests
+    //  isolate and pin ONLY the day-wide message's exact wording (the thing they exist to prove),
+    //  via dayWideShortfallDetail below, rather than asserting the full detail list's size.
     // ------------------------------------------------------------------
 
     private static List<ErrorDetail> shortfallDetails(ConstraintWeights weights) {
@@ -652,6 +661,22 @@ class ShiftEnvelopeSupplyGateTest {
         return captured.get();
     }
 
+    /**
+     * Finds the ONE day-wide shortfall detail (identified by its stable message prefix, unique to
+     * that branch) among possibly several details -- plan 15-20's per-hour check now also fires on
+     * this same fixture (see the class-level note above) and must not be mistaken for this one.
+     */
+    private static ErrorDetail dayWideShortfallDetail(List<ErrorDetail> details) {
+        List<ErrorDetail> matches = details.stream()
+                .filter(d -> d.message().startsWith("On " + DAY + ", rostered agent-days need"))
+                .toList();
+        assertThat(matches)
+                .as("exactly one day-wide shortfall detail for this date, distinct from any "
+                        + "per-hour forced-occupancy detail")
+                .hasSize(1);
+        return matches.get(0);
+    }
+
     private static final String EXPECTED_DEFAULT_MESSAGE =
             "On " + DAY + ", rostered agent-days need 16 slot(s) (16.00h) inside the shift "
                     + "library's live envelopes, but the library only reaches 8 slot(s) (8.00h) "
@@ -671,8 +696,7 @@ class ShiftEnvelopeSupplyGateTest {
                 .isZero();
 
         List<ErrorDetail> details = shortfallDetails(defaultWeights);
-        assertThat(details).hasSize(1);
-        assertThat(details.get(0).message())
+        assertThat(dayWideShortfallDetail(details).message())
                 .as("literal equality -- not a substring match, so a drifting message fails loudly")
                 .isEqualTo(EXPECTED_DEFAULT_MESSAGE);
     }
@@ -681,8 +705,7 @@ class ShiftEnvelopeSupplyGateTest {
     @DisplayName("SHIFT: null weights (existing solver-package callers) fall back to the default wording and never throw NPE")
     void nullWeightsFallBackToDefaultWording() {
         List<ErrorDetail> details = shortfallDetails(null);
-        assertThat(details).hasSize(1);
-        assertThat(details.get(0).message())
+        assertThat(dayWideShortfallDetail(details).message())
                 .as("null weights must read exactly like the shipped default, not a third wording")
                 .isEqualTo(EXPECTED_DEFAULT_MESSAGE);
     }
@@ -694,8 +717,7 @@ class ShiftEnvelopeSupplyGateTest {
         hardWeights.setUnassignedAssignmentWeight(HardSoftScore.ofHard(10_000));
 
         List<ErrorDetail> details = shortfallDetails(hardWeights);
-        assertThat(details).hasSize(1);
-        String message = details.get(0).message();
+        String message = dayWideShortfallDetail(details).message();
 
         assertThat(message)
                 .as("the ceiling suggestion is withdrawn, not merely reworded")
@@ -716,5 +738,163 @@ class ShiftEnvelopeSupplyGateTest {
                 .as("names the consequence: a hard violation at the desk's own configured weight, with the value")
                 .containsIgnoringCase("hard violation")
                 .contains("10000");
+    }
+
+    // ------------------------------------------------------------------
+    //  Tests 13-14 -- G-15-25/G-15-31 (plan 15-20): supply computed against each agent-day's OWN
+    //  eligible pairs, not a desk-wide anyMatch union; a per-timeslot forced-occupancy check
+    //  catches what the day-wide sum structurally cannot see.
+    // ------------------------------------------------------------------
+
+    /**
+     * One 9h template ({@code TEMPLATE_START}-{@code TEMPLATE_END}) with {@code
+     * breakOffsetsMinutes.length} distinct single-band pairs, each excluding a DIFFERENT 1-hour
+     * clock window -- every pair has identical net hours (8.00h), so an 8h-contracted agent is
+     * eligible for ALL of them. Three or more distinct offsets already saturate the desk-wide
+     * union to the full envelope (every hour is excluded by AT MOST one band, so some OTHER band
+     * still covers it) -- the "per-template band count already saturates the desk-wide union"
+     * shape G-15-25 is about.
+     */
+    private static List<ShiftBandPair> saturatedUnionPairs(int... breakOffsetsMinutes) {
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        List<ShiftBandPair> pairs = new ArrayList<>();
+        for (int offset : breakOffsetsMinutes) {
+            ShiftTemplateBreakBand b = new ShiftTemplateBreakBand();
+            b.setId(UUID.randomUUID());
+            b.setShiftTemplate(t);
+            b.setOffsetMinutes(offset);
+            b.setDurationMinutes(60);
+            pairs.add(new ShiftBandPair(t, b));
+        }
+        return pairs;
+    }
+
+    private static List<ErrorDetail> captureDetails(List<AgentShiftAssignment> rows,
+            List<ShiftBandPair> pairs, List<Timeslot> window, List<AgentAssignment> assignments) {
+        java.util.concurrent.atomic.AtomicReference<List<ErrorDetail>> captured =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, pairs, window, assignments, 100, warnings, null))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> captured.set(((PreSolveValidationException) ex).getDetails()));
+        return captured.get();
+    }
+
+    @Test
+    @DisplayName("SHIFT: G-15-25 red-proof -- adding edge bands to an already-saturated union changes the per-agent-day forced count even though the desk-wide union figure does not")
+    void bandCompositionChangesForcedCountButNotTheSaturatedUnion() {
+        List<ShiftBandPair> threeBands = saturatedUnionPairs(180, 240, 300); // breaks 11-12, 12-13, 13-14
+        List<ShiftBandPair> fiveBands = saturatedUnionPairs(180, 240, 300, 0, 480); // + edges 08-09, 16-17
+
+        List<Timeslot> window = operatingWindow();
+        Agent a1 = agent("A-1");
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+
+        // THE DECISIVE FIGURE, computed directly (not inferred from whether the gate throws): at
+        // the boundary hour 08:00, the agent is forced under the 3-band library (every one of its
+        // 3 eligible pairs -- all zero-slack -- covers 08:00) but NOT under the 5-band library
+        // (the added edge band's break falls exactly on 08:00, so THAT pair no longer covers it,
+        // and "forced" requires EVERY eligible pair to cover the hour).
+        Timeslot eight = window.stream().filter(ts -> ts.getStartTime().equals(LocalTime.of(8, 0)))
+                .findFirst().orElseThrow();
+        Map<UUID, Long> threeBandForced = SolverService.forcedAgentDaysByTimeslotId(
+                List.of(shiftRow(a1, dc1, threeBands)), window);
+        Map<UUID, Long> fiveBandForced = SolverService.forcedAgentDaysByTimeslotId(
+                List.of(shiftRow(a1, dc1, fiveBands)), window);
+
+        long forcedWithThreeBands = threeBandForced.getOrDefault(eight.getId(), 0L);
+        long forcedWithFiveBands = fiveBandForced.getOrDefault(eight.getId(), 0L);
+        assertThat(forcedWithThreeBands)
+                .as("3 bands sharing this envelope: every eligible pair covers 08:00, so the agent is forced there")
+                .isEqualTo(1L);
+        assertThat(forcedWithFiveBands)
+                .as("THE FIX: adding one edge band whose break falls on 08:00 changes this figure "
+                        + "-- a desk-wide union, already saturated at 3 bands, could never see this")
+                .isEqualTo(0L);
+        assertThat(forcedWithThreeBands)
+                .as("two DIFFERENT numbers from two runs differing ONLY in band composition -- a "
+                        + "test asserting merely that the gate refuses, or that the figures are "
+                        + "unchanged, would not distinguish this from the old behaviour")
+                .isNotEqualTo(forcedWithFiveBands);
+
+        // THE DESK-WIDE UNION STAYS SATURATED (byte-identical), in both configurations -- the
+        // exact "byte-identical gate output" symptom G-15-25 reports, reproduced here as the
+        // day-wide shortfall message computed by the shipped gate staying literally identical.
+        Agent a2 = agent("A-2");
+        AgentDayConfig dc2 = dayConfig(a2.getId(), new BigDecimal("8.00"));
+        List<AgentAssignment> oneSeatPerEnvelopeHour = new ArrayList<>();
+        for (Timeslot ts : window) {
+            oneSeatPerEnvelopeHour.add(seat(ts));
+        }
+
+        String threeBandMessage = dayWideShortfallDetail(captureDetails(
+                List.of(shiftRow(a1, dc1, threeBands), shiftRow(a2, dc2, threeBands)),
+                threeBands, window, oneSeatPerEnvelopeHour)).message();
+        String fiveBandMessage = dayWideShortfallDetail(captureDetails(
+                List.of(shiftRow(a1, dc1, fiveBands), shiftRow(a2, dc2, fiveBands)),
+                fiveBands, window, oneSeatPerEnvelopeHour)).message();
+
+        assertThat(threeBandMessage)
+                .as("the day-wide shortfall figure is BYTE-IDENTICAL across both band compositions "
+                        + "-- the desk-wide union was already saturated at 3 bands, so it cannot "
+                        + "see the 2 edge bands added on top of it")
+                .isEqualTo(fiveBandMessage);
+    }
+
+    @Test
+    @DisplayName("SHIFT: G-15-31 -- a distribution-blind shortfall the day-wide sum misses is caught by the per-hour forced-occupancy check, naming date/hour/forced-count/seat-count")
+    void perHourForcedOccupancyRefusesWhatTheDayWideSumMisses() {
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        ShiftBandPair pair = new ShiftBandPair(t, band(t));
+        List<Timeslot> window = operatingWindow();
+
+        Agent a1 = agent("A-1");
+        Agent a2 = agent("A-2");
+        Agent a3 = agent("A-3");
+        List<AgentShiftAssignment> rows = List.of(
+                shiftRow(a1, dayConfig(a1.getId(), new BigDecimal("8.00")), List.of(pair)),
+                shiftRow(a2, dayConfig(a2.getId(), new BigDecimal("8.00")), List.of(pair)),
+                shiftRow(a3, dayConfig(a3.getId(), new BigDecimal("8.00")), List.of(pair)));
+
+        // Day-wide supply is ABUNDANT (30 slots against 24 contracted = 3 agents x 8h) -- the
+        // pre-existing day-wide sum PASSES this desk -- but one hour (13:00) carries only 2 seats
+        // against the 3 agent-days structurally forced onto it (single shared pair, zero slack).
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : window) {
+            LocalTime start = ts.getStartTime();
+            if (start.equals(LocalTime.of(12, 0))) continue; // break, uncovered
+            int seats = start.equals(LocalTime.of(13, 0)) ? 2 : 4;
+            for (int i = 0; i < seats; i++) {
+                assignments.add(seat(ts));
+            }
+        }
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                .as("THE FIX: a day-wide-abundant desk with one genuinely thin hour is no longer "
+                        + "waved through -- before this plan only the day-wide sum was checked")
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details)
+                            .as("the day-wide sum genuinely PASSES here (30 >= 24) -- this refusal "
+                                    + "comes from nowhere else")
+                            .noneMatch(d -> d.message().startsWith(
+                                    "On " + DAY + ", rostered agent-days need"));
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message()).contains(DAY.toString());
+                        assertThat(d.message())
+                                .as("names the hour")
+                                .contains("13:00-14:00");
+                        assertThat(d.message())
+                                .as("names the forced count")
+                                .contains("3 rostered agent-day(s)");
+                        assertThat(d.message())
+                                .as("names the seat count")
+                                .contains("only 2 seat(s)");
+                    });
+                });
     }
 }
