@@ -175,16 +175,13 @@ public class ShiftLibraryGenerationService {
             selected.addAll(clusterSelected);
         }
 
-        List<ShiftLibraryValidationService.Window> uncovered = stillUncovered(selected, windows);
-
         // D-12: do not refuse outright when full coverage is impossible -- the desk that most
         // needs help would get nothing. Return the best partial draft plus the still-uncovered
         // windows, named in the exact ErrorDetail shape SHLB-05's coverage report already emits.
-        List<ErrorDetail> uncoveredDetails = uncovered.stream()
-                .map(w -> new ErrorDetail("coverage", w.date() + " " + w.startTime() + "-" + w.endTime(), null))
-                .toList();
-
-        return buildResponse(selected, uncoveredDetails, hoursByWeekday, bounds.incrementMinutes());
+        // uncoveredDetails is computed INSIDE buildResponse, from the emitted (deduped, final-band)
+        // templates -- never from these pre-expansion single-band candidates (Task 1/G-15-23) -- so
+        // the report and the returned templates can never disagree.
+        return buildResponse(selected, hoursByWeekday, bounds.incrementMinutes(), windows);
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
@@ -386,11 +383,7 @@ public class ShiftLibraryGenerationService {
     private List<Set<DayOfWeek>> clusterWeekdaysByDemandShape(List<StaffingRequirement> demand,
                                                                 TimeslotBoundsResponse bounds) {
         int increment = Math.max(1, bounds.incrementMinutes());
-        Map<DayOfWeek, Map<LocalTime, Integer>> byWeekday = new TreeMap<>();
-        for (StaffingRequirement sr : demand) {
-            byWeekday.computeIfAbsent(sr.getTimeslot().getDate().getDayOfWeek(), k -> new TreeMap<>())
-                    .merge(sr.getTimeslot().getStartTime(), sr.getRequiredFTEs(), Integer::sum);
-        }
+        Map<DayOfWeek, Map<LocalTime, Integer>> byWeekday = aggregateDemandByWeekdayAndStart(demand);
 
         List<LocalTime> slots = byWeekday.values().stream()
                 .flatMap(m -> m.keySet().stream())
@@ -425,6 +418,22 @@ public class ShiftLibraryGenerationService {
             home.add(entry.getKey());
         }
         return clusters;
+    }
+
+    /**
+     * Per-weekday, per-start-time summed FTE demand -- the same aggregation shape {@link
+     * #clusterWeekdaysByDemandShape} needs for its cosine-similarity vectors and Task 2's
+     * demand-ranked band placement needs for scoring offsets. Built once and shared (D-08-style
+     * single-implementation discipline) rather than re-derived per caller.
+     */
+    private static Map<DayOfWeek, Map<LocalTime, Integer>> aggregateDemandByWeekdayAndStart(
+            List<StaffingRequirement> demand) {
+        Map<DayOfWeek, Map<LocalTime, Integer>> byWeekday = new TreeMap<>();
+        for (StaffingRequirement sr : demand) {
+            byWeekday.computeIfAbsent(sr.getTimeslot().getDate().getDayOfWeek(), k -> new TreeMap<>())
+                    .merge(sr.getTimeslot().getStartTime(), sr.getRequiredFTEs(), Integer::sum);
+        }
+        return byWeekday;
     }
 
     private static double norm(double[] v) {
@@ -620,19 +629,6 @@ public class ShiftLibraryGenerationService {
         return candidate.offsetMinutes() < currentBest.offsetMinutes();
     }
 
-    private List<ShiftLibraryValidationService.Window> stillUncovered(
-            List<Candidate> selected, List<ShiftLibraryValidationService.Window> windows) {
-        List<ShiftLibraryValidationService.Window> result = new ArrayList<>();
-        for (ShiftLibraryValidationService.Window window : windows) {
-            boolean covered = selected.stream()
-                    .anyMatch(c -> shiftLibraryValidationService.covers(c.template(), c.bands(), window));
-            if (!covered) {
-                result.add(window);
-            }
-        }
-        return result;
-    }
-
     // --- Response assembly (P-10/P-11) ---
 
     /**
@@ -648,26 +644,109 @@ public class ShiftLibraryGenerationService {
      */
     private static final int SUGGESTED_BAND_COUNT = 3;
 
+    /**
+     * A fully-formed candidate emission: the candidate's template, its FINAL band list (Task 2's
+     * demand-ranked offsets, not the single coverage-bearing band {@code Candidate} carries), and
+     * its sorted valid-weekday list -- everything {@link #dedupeKey} and the emitted-bands
+     * uncovered-window recomputation (Task 1) need, computed once and reused for both.
+     */
+    private record EmittedRow(ShiftTemplate template, List<ShiftTemplateBreakBand> bands,
+                               List<DayOfWeek> validWeekdays, BigDecimal netHours) {}
+
     private ShiftLibrarySuggestionResponse buildResponse(List<Candidate> selected,
-                                                          List<ErrorDetail> uncoveredDetails,
                                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
-                                                          int incrementMinutes) {
+                                                          int incrementMinutes,
+                                                          List<ShiftLibraryValidationService.Window> windows) {
+        List<EmittedRow> rows = new ArrayList<>();
+        for (Candidate candidate : selected) {
+            List<DayOfWeek> validWeekdays = candidate.template().getValidWeekdays().stream().sorted().toList();
+            List<ShiftTemplateBreakBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday, incrementMinutes);
+            rows.add(new EmittedRow(candidate.template(), bands, validWeekdays, candidate.netHours()));
+        }
+
+        // Dedupe AFTER band selection has run for every candidate (Task 1/G-15-23 defect 1): this
+        // is where two distinct candidates -- selected by greedyCover because their DIFFERENT
+        // coverage-bearing offsets self-cover each other's break hour (D-02) -- can collapse into
+        // an identical emitted template once expanded to the same final band set. Keyed on exact
+        // identity (start, end, sorted weekdays, ordered (offset,duration,capacity) band list),
+        // never on span alone: two rows identical on that tuple cover exactly the same windows, so
+        // dropping one cannot change any covers() result -- but two rows sharing only a span do
+        // NOT, and collapsing those would silently discard a stagger position expandForSupply
+        // deliberately added. First occurrence wins (existing deterministic iteration order).
+        //
+        // Dedupe does not backfill the lost row: expandForSupply counts distinct SPANS (spanKey),
+        // so a collapsed exact duplicate never reduced the span count the supply-aware target was
+        // computed against -- the draft simply comes back with one fewer row than the pre-dedupe
+        // expansion produced, which is the correct answer, not a shortfall to paper over.
+        List<EmittedRow> deduped = new ArrayList<>();
+        Set<String> seenKeys = new LinkedHashSet<>();
+        for (EmittedRow row : rows) {
+            if (seenKeys.add(dedupeKey(row))) {
+                deduped.add(row);
+            }
+        }
+
+        // uncoveredDetails is computed from the EMITTED, DEDUPED, FINAL-BAND templates -- the same
+        // covers() predicate stillUncovered used pre-refactor, just applied after dedupe instead of
+        // before expansion -- so the reported list and the returned templates can never disagree
+        // (Task 1). Assigning "Suggested N" AFTER dedupe keeps the numbering contiguous: a collapsed
+        // duplicate never leaves a gap an operator would read as a missing row.
+        List<ErrorDetail> uncoveredDetails = computeUncoveredDetails(deduped, windows);
+
         LocalDate today = LocalDate.now();
         List<SuggestedTemplate> templates = new ArrayList<>();
         int index = 1;
-        for (Candidate candidate : selected) {
-            List<DayOfWeek> validWeekdays = candidate.template().getValidWeekdays().stream().sorted().toList();
-            List<SuggestedBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday, incrementMinutes);
-            templates.add(new SuggestedTemplate("Suggested " + index, candidate.template().getStartTime(),
-                    candidate.template().getEndTime(), bands, validWeekdays, today, null, candidate.netHours()));
+        for (EmittedRow row : deduped) {
+            List<SuggestedBand> bands = row.bands().stream()
+                    .map(b -> new SuggestedBand(b.getOffsetMinutes(), b.getDurationMinutes(), b.getCapacity()))
+                    .toList();
+            templates.add(new SuggestedTemplate("Suggested " + index, row.template().getStartTime(),
+                    row.template().getEndTime(), bands, row.validWeekdays(), today, null, row.netHours()));
             index++;
         }
         return new ShiftLibrarySuggestionResponse(templates, uncoveredDetails);
     }
 
     /**
+     * The exact-identity dedupe key (Task 1): start time, end time, sorted valid-weekday list, and
+     * the full ordered (offset, duration, capacity) band tuple. {@code EmittedRow.bands()} is
+     * already offset-sorted (see {@link #toBands}), so this is stable across otherwise-identical
+     * rows regardless of which candidate produced them first.
+     */
+    private static String dedupeKey(EmittedRow row) {
+        String bandsKey = row.bands().stream()
+                .map(b -> b.getOffsetMinutes() + ":" + b.getDurationMinutes() + ":" + b.getCapacity())
+                .collect(Collectors.joining(","));
+        return row.template().getStartTime() + "|" + row.template().getEndTime() + "|"
+                + row.validWeekdays() + "|" + bandsKey;
+    }
+
+    /**
+     * Recomputes the uncovered-window report against the FINAL emitted rows -- the same {@code
+     * covers()} predicate {@code stillUncovered} used pre-refactor against the pre-expansion
+     * single-band candidates, now applied post-dedupe/post-band-selection so the report can never
+     * drift from what the response actually returns (Task 1/D-08: one predicate, one call site
+     * describing the emitted shape).
+     */
+    private List<ErrorDetail> computeUncoveredDetails(List<EmittedRow> rows,
+                                                       List<ShiftLibraryValidationService.Window> windows) {
+        List<ErrorDetail> details = new ArrayList<>();
+        for (ShiftLibraryValidationService.Window window : windows) {
+            boolean covered = rows.stream()
+                    .anyMatch(r -> shiftLibraryValidationService.covers(r.template(), r.bands(), window));
+            if (!covered) {
+                details.add(new ErrorDetail("coverage", window.date() + " " + window.startTime()
+                        + "-" + window.endTime(), null));
+            }
+        }
+        return details;
+    }
+
+    /**
      * Expands the selected candidate's single coverage-bearing band into {@link
-     * #SUGGESTED_BAND_COUNT} grid-aligned, capacity-capped bands.
+     * #SUGGESTED_BAND_COUNT} grid-aligned, capacity-capped bands (the outward walk from the
+     * coverage-bearing offset -- Task 2/G-15-23 defect 2 replaces this with demand-ranked
+     * placement; this walk stays unaware of demand for now).
      *
      * <p>Done HERE rather than during enumeration for three reasons. Band count does not affect
      * {@code netHours} (duration is unchanged), so eligibility — an exact net-hours match against
@@ -686,9 +765,9 @@ public class ShiftLibraryGenerationService {
      * generated draft could not be assessed by the very validator meant to guard it. Blank capacity
      * is also precisely what permits a whole shift to break at once.
      */
-    private List<SuggestedBand> suggestedBands(Candidate candidate, List<DayOfWeek> validWeekdays,
-                                                Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
-                                                int incrementMinutes) {
+    private List<ShiftTemplateBreakBand> suggestedBands(Candidate candidate, List<DayOfWeek> validWeekdays,
+                                                          Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                          int incrementMinutes) {
         if (candidate.durationMinutes() == 0 || candidate.bands().isEmpty()) {
             return List.of(); // break-less template: no break to spread
         }
@@ -719,7 +798,17 @@ public class ShiftLibraryGenerationService {
         }
 
         Integer capacity = suggestedCapacity(candidate, validWeekdays, hoursByWeekday, offsets.size());
-        return offsets.stream().map(o -> new SuggestedBand(o, duration, capacity)).toList();
+        return toBands(offsets, duration, capacity);
+    }
+
+    private static List<ShiftTemplateBreakBand> toBands(Set<Integer> offsets, int duration, Integer capacity) {
+        return offsets.stream().sorted().map(offset -> {
+            ShiftTemplateBreakBand band = new ShiftTemplateBreakBand();
+            band.setOffsetMinutes(offset);
+            band.setDurationMinutes(duration);
+            band.setCapacity(capacity);
+            return band;
+        }).toList();
     }
 
     /**

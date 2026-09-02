@@ -602,6 +602,95 @@ class ShiftLibraryGenerationServiceTest {
                 .allSatisfy(t -> assertThat(t.bands()).isNotEmpty());
     }
 
+    // ---------- Task 1 (G-15-23 gap closure): dedupe after band selection ----------
+    //
+    // greedyCover legitimately selects two same-span candidates with different coverage-bearing
+    // offsets because each covers the other's break hour (D-02 self-cover). Expanding both to the
+    // same final band set collapses them into an identical duplicate -- observed live as the
+    // weekday cluster containing 08:00-17:00 TWICE with identical bands.
+
+    @Test
+    void generateSuggestion_selfCoveringCandidatesWithIdenticalFinalBands_collapseToOneTemplate() {
+        // Single-day, tight-cover fixture (optimal cover size known to be 2 by construction, same
+        // reasoning as generateSuggestion_knownOptimalCoverOfTwo), but with a mid-envelope demand
+        // peak. Demand-ranked selection is a pure function of (span, weekdays, duration) plus the
+        // shared demand curve, so BOTH self-covering candidates -- sharing that span, those
+        // weekdays, and that duration -- rank identically and land on the SAME final 3 offsets:
+        // they must collapse to exactly one emitted template, not two.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int hour = 8; hour < 17; hour++) {
+            int fte = (hour == 13) ? 10 : 1; // sharp peak at 13:00, strictly inside the envelope
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, WEEK_START.getDayOfWeek(), new BigDecimal("8.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates())
+                .as("two self-covering candidates sharing span/weekdays/bands must collapse to one row")
+                .hasSize(1);
+        assertThat(response.templates().get(0).name()).isEqualTo("Suggested 1");
+        // The peak hour (13:00-14:00) must not be a break window on the surviving template.
+        assertThat(response.templates().get(0).bands())
+                .noneMatch(b -> b.offsetMinutes() == 300); // 08:00 + 300min = 13:00
+    }
+
+    @Test
+    void generateSuggestion_templatesSharingASpanButDifferingElsewhere_areNotCollapsed() {
+        // Weekday and weekend clusters both propose an 08:00-17:00 envelope (same span), but with
+        // different valid weekdays AND (since their demand peaks differ) different final bands.
+        // Dedupe must key on full identity, never on span alone, or this would wrongly collapse two
+        // operationally distinct templates into one.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            boolean weekend = date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY;
+            for (int hour = 8; hour < 21; hour++) {
+                int fte = weekend ? (hour == 11 ? 10 : 2) : (hour == 13 ? 10 : 3);
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
+            }
+        }
+        for (int i = 0; i < 12; i++) {
+            Agent a = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, a, weekday, new BigDecimal("8.00"));
+            }
+        }
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+
+        List<ShiftLibrarySuggestionResponse.SuggestedTemplate> sameSpan = response.templates().stream()
+                .filter(t -> t.startTime().equals(LocalTime.of(8, 0)) && t.endTime().equals(LocalTime.of(17, 0)))
+                .toList();
+        assertThat(sameSpan)
+                .as("weekday and weekend clusters both propose 08:00-17:00")
+                .hasSizeGreaterThanOrEqualTo(2);
+        // Never identical on the full (weekdays, bands) tuple -- that would be a real duplicate.
+        for (int i = 0; i < sameSpan.size(); i++) {
+            for (int j = i + 1; j < sameSpan.size(); j++) {
+                boolean sameWeekdays = sameSpan.get(i).validWeekdays().equals(sameSpan.get(j).validWeekdays());
+                boolean sameBands = sameSpan.get(i).bands().equals(sameSpan.get(j).bands());
+                assertThat(sameWeekdays && sameBands)
+                        .as("two 08:00-17:00 templates must differ on weekdays or bands, never be identical")
+                        .isFalse();
+            }
+        }
+
+        // Numbering is contiguous after dedupe -- "Suggested 1".."Suggested N" with no gap.
+        List<String> expectedNames = java.util.stream.IntStream.rangeClosed(1, response.templates().size())
+                .mapToObj(i -> "Suggested " + i).toList();
+        assertThat(response.templates()).extracting(ShiftLibrarySuggestionResponse.SuggestedTemplate::name)
+                .containsExactlyElementsOf(expectedNames);
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(long tenantId) {
