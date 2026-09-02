@@ -2186,7 +2186,7 @@ blocked: 1
 
 - gap_id: G-15-23
   truth: "The suggested library must not emit duplicate templates or break on the demand peak"
-  status: open
+  status: resolved
   severity: minor
   found_by: test 9 retest, 2026-08-31
   detail: |
@@ -2203,6 +2203,51 @@ blocked: 1
        the busiest weekend hour (44 FTE Saturday, 32 Sunday). The hand-set bands were kept instead.
        Fix: bias offsets away from the highest-demand hours the envelope spans; the demand curve
        is already loaded in that method.
+  resolved_by: "Plan 15-17 Task 1 (8bac0bc) dedupes `buildResponse`'s emitted rows on exact
+    identity (start, end, sorted weekdays, ordered (offset,duration,capacity) band list) AFTER
+    `suggestedBands` runs for every selected candidate, reassigning contiguous `Suggested N`
+    names afterward; `uncoveredDetails` is recomputed from the deduped, final-band templates via
+    the same `covers()` predicate. Plan 15-17 Task 2 (6c8ddeb) replaces the outward-offset walk in
+    `suggestedBands` with demand-ranked selection: every admissible offset (bounds unchanged, still
+    excluding envelope edges) is scored by the demand its break window would sit on (max across the
+    template's valid weekdays), and the 3 lowest-scoring offsets are chosen, ties broken ascending
+    for determinism; a coverage re-check puts the original coverage-bearing offset back (evicting
+    the worst-scoring chosen one) if the ranked set would regress coverage. Plan 15-17 Task 3
+    (2e35fbf) extends the generator-to-validator round trip onto a peaked-demand fixture, proving
+    both fixes together as eight separately-named assertions."
+  resolved_evidence: |
+    DEDUPE PROVEN: `generateSuggestion_selfCoveringCandidatesWithIdenticalFinalBands_collapseToOneTemplate`
+    reproduces the exact self-cover scenario (two candidates sharing span/weekdays/duration, D-02)
+    against a peaked single-day fixture and asserts the response contains exactly ONE template
+    (`Suggested 1`), not two, with zero uncovered windows.
+    `generateSuggestion_templatesSharingASpanButDifferingElsewhere_areNotCollapsed` proves dedupe is
+    on exact identity, not span alone: weekday and weekend clusters both propose an 08:00-17:00
+    envelope, and the two rows are kept separate (their weekdays and bands differ) with contiguous
+    `Suggested 1..N` numbering.
+
+    DEMAND-AWARE PLACEMENT PROVEN: on a full-week fixture with a sharp peak at 14:00 (20 FTE vs 1
+    FTE baseline), the generated templates whose envelope spans 14:00 exclude the peak-hour offset
+    every time -- e.g. the 12:00-21:00 template chose bands {60,180,240} (13:00-14, 15:00-16,
+    16:00-17), explicitly skipping offset 120 (14:00-15:00, the peak); the 10:00-19:00 template
+    chose {60,120,180}, skipping offset 240 (14:00-15:00); the 11:00-20:00 template chose
+    {60,120,240}, skipping offset 180 (14:00-15:00). This directly closes the live observation (a
+    break proposed on the desk's busiest hour) with the same mechanism, generalized via the shared
+    demand curve rather than hand-tuned per template.
+    `generateSuggestion_exactlyThreeAdmissibleOffsetsOneOnThePeak_stillEmitsAllThree` proves the
+    degrade path: when the shortest non-breakless envelope this grid can produce has exactly 3
+    admissible offsets and the peak lands on one of them, all 3 are still emitted (band count is
+    never sacrificed to dodge demand).
+
+    ROUND-TRIP PROVEN JOINTLY:
+    `generateSuggestion_peakedDemandAcceptedUnchanged_cleanOnEveryValidatorAxisAndDeterministic`
+    asserts, on a peaked full-week/12-agent fixture, as eight separately-named assertions: zero
+    uncovered windows, zero misaligned templates, zero capacity advisories, zero
+    break-concentration advisories, no two emitted templates identical on (start,end,weekdays,bands),
+    no emitted band overlapping the fixture's own 14:00 peak, no emitted band at an envelope edge,
+    and byte-identical repeated calls.
+
+    Full suite: see 15-17-SUMMARY.md for the verbatim before/after totals against the 600/0/0/2
+    baseline recorded at commit 660408d.
 
 sunday_2000_is_structural: |
   PREDICTION MADE AND FALSIFIED, recorded because the falsification is the useful part. Having
