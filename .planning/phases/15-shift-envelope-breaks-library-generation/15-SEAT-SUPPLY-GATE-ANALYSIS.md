@@ -275,5 +275,130 @@ Named individually, not gestured at:
    additive (R0 unchanged, R2 added) throughout; whether R0 becomes redundant once R2 is adopted (R2
    dominating R0's refusal set) was not checked, and is a natural next question for plan 15-20.
 
+## 8. Outcome (Plan 15-20)
+
+**Appended, never an edit to §1-§7 above** — those sections describe the state this document
+measured BEFORE plan 15-20 changed production code, and their value is that they predate the
+change they justified.
+
+### 8.1 What was implemented
+
+**R2 (the forced-occupancy necessary condition) was adopted exactly as recommended**: as an
+ADDITIONAL, per-timeslot blocking check accumulated alongside the pre-existing day-wide sum (R0),
+never replacing it. `SolverService.forcedAgentDaysByTimeslotId` (new, package-private) computes,
+for each date and each of that date's timeslots, how many rostered agent-days are FORCED there —
+every one of the agent-day's `getEligibleShiftBandPairs()` both covers the timeslot and has zero
+slack for that agent-day (its own covered-slot count on that date equals the agent-day's
+`expectedWorkSlots()` exactly) — and `requireShiftEnvelopeSeatSupply` refuses when that count
+exceeds the seats at that timeslot, consolidated to the single worst timeslot per date (largest
+forced-minus-seats deficit), mirroring the trailing tightest-hour advisory's own "worst" precedent.
+The refusal message names the date, the hour, the forced count and the seat count, and follows the
+same weight-aware remedy branching plan 15-18 established (the over-allocation-ceiling suggestion
+is withdrawn when `unassignedAssignmentWeight` carries a hard component).
+
+This one check closes BOTH gaps this plan carried, exactly as `15-20-PLAN.md`'s own key_links
+predicted: it is band-composition-sensitive by construction (G-15-25, since it is computed
+per-agent-day against each agent's own eligible pairs, never a desk-wide union), and it is
+evaluated per covered timeslot rather than as a day-wide sum (G-15-31, so it sees distribution
+within the day a sum-vs-sum comparison structurally cannot).
+
+**The analysis harness itself was re-measured against the SHIPPED implementation**, not left as a
+test-local copy: `SeatSupplyDistributionAnalysisTest`'s R2 row now calls
+`SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId` (a new, minimal bridge exposing the
+package-private production method, mirroring that class's existing
+`requireShiftEnvelopeSeatSupply` bridge exactly), and a new "Shipped gate" row invokes the full,
+throwing production method directly — this phase's own threat register (T-15-20-04) names
+duplicate rule implementations drifting apart as a defect class already hit three times (G-15-10
+root cause B, G-15-21, and the gate's own two `coveredTimeslots` sites before plan 15-18); this is
+the specific countermeasure for a fourth recurrence.
+
+### 8.2 The post-change rule-by-fixture table
+
+Re-run this session (`SeatSupplyDistributionAnalysisTest#ruleByFixtureTable_falseAndTrueRefusalCounts`),
+against the SAME four-date-slice, three-fixture corpus §2.4 defined (no fixture added or removed):
+
+| fixture | label | R0 (day-wide sum) | R1 (tightest-hour) | R2 (shipped logic) | R3 (warn-only) | **Shipped gate** |
+|---|---|---|---|---|---|---|
+| distribution-blind (Task 1) | KNOWN_COLLAPSES | PASS | REFUSE | REFUSE | PASS | **REFUSE** |
+| healthy staggered desk | KNOWN_SOLVES | PASS | REFUSE | PASS | PASS | PASS |
+| LiveShapeShiftDeskFixture day 1 | KNOWN_SOLVES | PASS | REFUSE | PASS | PASS | PASS |
+| LiveShapeShiftDeskFixture day 2 | KNOWN_SOLVES | PASS | REFUSE | PASS | PASS | PASS |
+
+**Per-rule false-refusal / true-refusal counts** (denominator: 3 KNOWN-SOLVES, 1 KNOWN-COLLAPSES):
+
+| Rule | False refusals | True refusals |
+|---|---|---|
+| R0 (shipped day-wide sum) | 0 | 0 |
+| R1 (tightest-hour promoted to blocking) | 3 | 1 |
+| R2 (forced-occupancy necessary condition, shipped logic) | 0 | 1 |
+| R3 (R2, warn-only) | 0 | 0 |
+| **Shipped gate (production: R0 + R2 combined)** | **0** | **1** |
+
+**THE DECISIVE ROW is "Shipped gate," not R2 in isolation**: it is the actual, throwing production
+method (`SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply`), asserted to refuse the
+distribution-blind fixture — which it PASSED in plan 15-19 — with a false-refusal count of exactly
+zero against this corpus's three KNOWN-SOLVES fixtures
+(`SeatSupplyDistributionAnalysisTest#distributionBlindFixture_shippedGateNowRefusesIt`,
+`#ruleByFixtureTable_falseAndTrueRefusalCounts`).
+
+### 8.3 The band-composition figures (G-15-25's decisive evidence)
+
+Added as a first-class, always-re-measured test
+(`SeatSupplyDistributionAnalysisTest#bandCompositionExperiment_shippedFigureChangesButUnionStaysSaturated`,
+mirrored in `ShiftEnvelopeSupplyGateTest#bandCompositionChangesForcedCountButNotTheSaturatedUnion`),
+re-run this session:
+
+| bands | forced-count at 08:00 (shipped) | day-wide (R0) detail |
+|---|---|---|
+| 3 (breaks 11-12, 12-13, 13-14) | **1** | demand=8 supply=9 |
+| 5 (+ edges 08-09, 16-17) | **0** | demand=8 supply=9 |
+
+Two DIFFERENT figures (1, then 0) from two runs differing ONLY in band composition, while the
+desk-wide union figure (`day-wide demand=8 supply=9`) stays BYTE-IDENTICAL across both — the exact
+inverse of the byte-identical live measurement that filed G-15-25.
+
+### 8.4 What was NOT implemented, named rather than omitted
+
+**§7 item 6 (whether R0 becomes redundant once R2 is adopted) was NOT resolved.** R0 is kept
+exactly as the recommendation specified — additive, unchanged, never replaced. This session's own
+table (§8.2) shows R0 never independently contributes a refusal beyond what R2 already provides on
+this SMALL four-date-slice corpus (R0's own true-refusal count is 0, even on the one
+KNOWN_COLLAPSES fixture), but that observation is not evidence R0 is redundant in general — it is
+evidence about this corpus's four date-slices, and the corpus was never large enough to settle it
+(§7's own honesty framing). R0 stays, per the plan's own instruction, because it is "a sound
+necessary condition in its own right" independent of whether R2 happens to dominate it on the
+fixtures measured so far.
+
+**§7 items 1-2, 4-5 (the 23 referenced fixtures, multi-template-beyond-two configurations, R2's
+runtime cost at real desk scale, and independent live-desk demand-table replication) remain
+unmeasured by this plan**, exactly as scoped. Item 4 (runtime cost) is addressed structurally
+rather than empirically: `requireShiftEnvelopeSeatSupply`'s threat register (T-15-20-02) bounds the
+added cost at O(agent-days × eligible pairs × timeslots) — on the live desk's own numbers roughly
+138 × 15 × 13, trivially small — but no wall-clock benchmark was run against it. **§7 item 3 (R2's
+interaction with G-15-25) is now settled by construction**, not merely argued: `R2` in production
+IS the per-agent-eligible-pairs computation, not the desk-wide `coveredOnDate` question — §1's own
+account of "the likely shape is a per-hour (or per-agent-day, per G-15-25's fix) achievable-
+assignment check" is exactly what shipped.
+
+### 8.5 `advisoryOnThinTimeslotDoesNotBlock`, settled
+
+**It stays exactly as it is: non-blocking, untouched.** `git diff` on
+`src/test/java/com/wfm/service/ShiftEnvelopeSupplyGateTest.java`'s
+`advisoryOnThinTimeslotDoesNotBlock` method across this plan's commits is empty. §6's prediction —
+"Adopting R2 would not change `advisoryOnThinTimeslotDoesNotBlock`'s own fixture's verdict: that
+fixture's single agent-day is forced at its 09:00 hour, seats there (1) meet exactly the forced
+count (1), so R2 would not refuse it either" — is now a fact about shipped production code, not a
+projection from a test-local reimplementation: that test still passes, unedited, against the
+SHIPPED per-hour check. Its name was indeed not an accident, and this is the second, independent
+confirmation of that (the first being §6's own analysis-time prediction).
+
+### 8.6 False-refusal measurement, headline
+
+Zero. Across every KNOWN-SOLVES fixture in plan 15-19's labelled corpus (3 date-slices), the
+SHIPPED gate refuses none of them (§8.2). Corpus size is unchanged from plan 15-19 (4 date-slices,
+3 fixtures) — this plan re-measured the existing corpus against production code, it did not grow
+the corpus.
+
 ---
-*Phase: 15-shift-envelope-breaks-library-generation. Analysis for plan 15-19, gap G-15-31.*
+*Phase: 15-shift-envelope-breaks-library-generation. Analysis for plan 15-19, gap G-15-31. Outcome
+appended by plan 15-20, gap closure G-15-25/G-15-31.*

@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T00:45:00Z"
+updated: "2026-09-02T02:30:00Z"
 ---
 
 <!--
@@ -1910,7 +1910,51 @@ blocked: 1
 
 - gap_id: G-15-25
   truth: "The seat-supply gate must respond to band composition, not just to the union of envelopes"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-20 Task 1 (2ef0252) -- SolverService.forcedAgentDaysByTimeslotId, a new
+    per-agent-day forced-occupancy count computed against each agent-day's OWN
+    getEligibleShiftBandPairs(), never a desk-wide anyMatch union. An agent-day is forced at a
+    covered timeslot when EVERY one of its eligible pairs both covers it and has zero slack for
+    that agent-day; requireShiftEnvelopeSeatSupply refuses when the forced count at any covered
+    timeslot exceeds the seats there, accumulated alongside the pre-existing day-wide sum (never
+    replacing it). This is R2 from plan 15-19's analysis, promoted from test source into
+    production exactly as recommended."
+  resolved_evidence: |
+    THE BAND-COMPOSITION FIGURES, LEADING (the exact experiment that filed this gap). On a
+    saturated-union library -- one 9h envelope, 3 single-band pairs with distinct break offsets
+    (11-12, 12-13, 13-14) -- the shipped forced-occupancy count at the boundary hour 08:00 is 1
+    (the agent's every eligible pair covers it, zero slack). Adding two edge bands to the SAME
+    envelope (breaks 08-09, 16-17 -- 5 bands total) changes that figure to 0, while the desk-wide
+    union figure (day-wide demand=8 supply=9) stays BYTE-IDENTICAL across both runs -- two
+    DIFFERENT numbers from two runs differing only in band composition, the direct inverse of the
+    byte-identical live measurement that filed this gap (five break bands added at the envelope
+    edges of three live weekend templates, both runs reaching "136" identically). Re-run this
+    session: `SeatSupplyDistributionAnalysisTest#bandCompositionExperiment_shippedFigureChangesButUnionStaysSaturated`
+    and `ShiftEnvelopeSupplyGateTest#bandCompositionChangesForcedCountButNotTheSaturatedUnion`,
+    both pass.
+
+    THE MODEL FIX, not merely a number fix, matching `fix` exactly: supply is computed against
+    each agent-day's OWN eligible pairs, never a desk-wide `anyMatch` union. An agent-day whose
+    every eligible pair covers a covered timeslot and carries zero slack is counted as forced
+    there; the same agent-day, once its template gains a band whose break falls on that hour, is
+    not -- exactly the band-composition sensitivity a desk-wide union structurally cannot have.
+
+    NECESSARY CONDITION PRESERVED, MEASURED AGAINST THE CORPUS, NOT HOPED AWAY: zero false
+    refusals across every KNOWN-SOLVES fixture in plan 15-19's labelled corpus (3 date-slices),
+    asserted in `SeatSupplyDistributionAnalysisTest#ruleByFixtureTable_falseAndTrueRefusalCounts`.
+    The distribution-blind fixture, which PASSED the gate in plan 15-19, is now REFUSED
+    (`#distributionBlindFixture_shippedGateNowRefusesIt`), naming the 08:00 bottleneck, the 10
+    forced agent-days and the 2 seats there.
+
+    ALL THREE PRE-EXISTING GATE-CALLING TEST CLASSES PASS UNCHANGED: 25/25 across
+    `ShiftEnvelopeSupplyGateTest` (14 pre-existing + 2 new gap-closure tests +
+    3 weight-branching tests updated for the new check's correct interaction, per
+    15-20-SUMMARY.md), `ShiftEnvelopeSupplyInvariantTest` (6/6) and `ShiftDeskEndToEndRegressionTest`
+    (3/3) -- re-run this session.
+
+    Full suite: `./gradlew test` -- **635 tests, 0 failures, 0 errors, 2 skipped**, against the
+    632/0/0/2 baseline this executor was handed (the 3-test increase is exactly this plan's new
+    tests: 2 in Task 1, 1 in Task 2; see 15-20-SUMMARY.md for the full accounting).
   severity: major
   found_by: edge-band experiment, 2026-08-31 (resumed session)
   related_to: G-15-21 (same method, same calendar-blind predicate)
@@ -1940,7 +1984,58 @@ blocked: 1
 
 - gap_id: G-15-31
   truth: "The seat-supply gate must compare supply where the shortfall bites, not as a day-wide total"
-  status: open
+  status: resolved
+  resolved_by: "Plan 15-20 Task 1 (2ef0252) implemented plan 15-19's own recommendation exactly:
+    R2 (the forced-occupancy necessary condition) adopted as an ADDITIONAL per-timeslot blocking
+    check alongside the existing day-wide sum (R0), never replacing it -- the identical shape
+    §5's Recommendation names ('adopt R2 ... as an additional, per-timeslot blocking check
+    alongside the existing day-wide sum'). Plan 15-20 Task 2 (4cc01b6) re-measured
+    SeatSupplyDistributionAnalysisTest against the SHIPPED implementation rather than leaving it
+    as a test-local copy (T-15-20-04)."
+  resolved_evidence: |
+    THE COMPARISON NOW SEES WITHIN-DAY DISTRIBUTION. requireShiftEnvelopeSeatSupply no longer
+    relies solely on one day-wide sum-vs-sum comparison; it also refuses when the count of
+    agent-days structurally forced onto any ONE covered timeslot exceeds the seats there --
+    exactly the per-timeslot granularity `detail` names as missing ("Distribution within the day
+    is invisible to it").
+
+    THE ANALYSIS'S RECOMMENDATION WAS IMPLEMENTED IN FULL, not partially: R2 adopted additively
+    (R0 kept, unchanged, per the recommendation's own "alongside", not "instead of"); the
+    necessary-condition argument (§4) carried over unmodified into production (zero eligible
+    pairs is not "forced" -- that is the distinct unassignable-row branch; a pair with slack does
+    not force the agent, since contractedHoursOver/Under judge only the aggregate hours total).
+    `advisoryOnThinTimeslotDoesNotBlock` was settled explicitly, not silently changed -- see
+    `15-SEAT-SUPPLY-GATE-ANALYSIS.md` §8.5: it stays non-blocking, untouched, exactly as §6
+    recommended.
+
+    FALSE-REFUSAL COUNT: zero, against the SAME three-KNOWN-SOLVES corpus plan 15-19 measured
+    (`SeatSupplyDistributionAnalysisTest#ruleByFixtureTable_falseAndTrueRefusalCounts`, asserted
+    on the "Shipped gate" row -- the actual throwing production method, not R2's isolated
+    diagnostic). TRUE REFUSAL: the distribution-blind fixture, which passed the gate in plan
+    15-19 at 250%-scale headroom (day-wide supply 114 vs demand 80), is now refused
+    (`#distributionBlindFixture_shippedGateNowRefusesIt`).
+
+    NOT RESOLVED ON THE STRENGTH OF G-15-25's FIX ALONE, per this gap's own related_to caveat: the
+    evidence above is G-15-31-specific (the per-timeslot comparison structurally seeing
+    distribution), distinct from G-15-25's evidence (the per-agent-day model seeing band
+    composition) even though one production check now serves both -- see
+    `15-SEAT-SUPPLY-GATE-ANALYSIS.md` §8.1's key_links accounting for why one check can close two
+    independent gaps without the gaps being the same gap.
+
+    WHAT REMAINS UNSETTLED, NAMED RATHER THAN IMPLIED CLOSED (`15-SEAT-SUPPLY-GATE-ANALYSIS.md`
+    §8.4): whether R0 becomes fully redundant once R2 is adopted was not checked (R0 is kept,
+    unchanged, per the recommendation's own "additive" framing); R2's runtime cost at real desk
+    scale (138 agent-days) was bounded structurally (threat T-15-20-02, O(agent-days x pairs x
+    timeslots)) but not wall-clock-benchmarked; the 23 referenced-but-not-re-instantiated
+    pre-existing fixtures were still not run against R0-R3 individually (they DO all still pass
+    the shipped combined gate, confirmed this session: 25/25 across ShiftEnvelopeSupplyGateTest,
+    ShiftEnvelopeSupplyInvariantTest and ShiftDeskEndToEndRegressionTest). None of these residual
+    items contradicts or narrows the recommendation that WAS implemented; they are the corpus's
+    own honestly-stated scope boundary (§7), carried forward rather than silently dropped.
+
+    Full suite: `./gradlew test` -- **635 tests, 0 failures, 0 errors, 2 skipped**, against the
+    632/0/0/2 baseline this executor was handed (the 3-test increase is exactly this plan's new
+    tests: 2 in Task 1, 1 in Task 2; see 15-20-SUMMARY.md for the full accounting).
   severity: major
   found_by: operator run at 250% over-allocation, 2026-09-01 (see Test 10 session_2026_09_01 Run 3)
   related_to: >
