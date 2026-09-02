@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T02:30:00Z"
+updated: "2026-09-02T17:02:00Z"
 ---
 
 <!--
@@ -100,6 +100,92 @@ schedule 6a10afa1 and is recorded in test 13's `precomputed_expectation` block b
 resumes compares against a table rather than re-deriving it. NOTE: if the gap-closure round
 changes the solver or the library, RE-COMPUTE that table before using it — it describes schedule
 6a10afa1 specifically, not whatever is newest at resume time.
+
+>>> THE NOTE ABOVE WAS ACTED ON, 2026-09-02T17:00Z. The gap-closure round DID change both the
+>>> solver and the library, so the table was re-derived against the shipped build rather than
+>>> reused. Counts came back identical on all seven dates; the block is rewritten in the page's own
+>>> sort order and the G-15-32 caveat under it is retired. See test 13.
+
+<!--
+  SESSION 2026-09-02 (resumed). Deployment re-derived per the standing rule BEFORE any testing, and
+  this time the rule EARNED ITS KEEP — it caught a trap that would have wasted the whole sitting.
+
+    AT RESUME:  HEAD 64bafd8, but `git log @{u}..HEAD -- . ':!.planning/'` showed 17 UNPUSHED source
+                commits, and unlike the 2026-09-01 sitting these were NOT test-only. The runtime
+                diff (excluding src/test/) was 6 files, +650/-98:
+                  GlobalExceptionHandler +36   ScheduleOutputService +164   ScheduleService +13
+                  ShiftLibraryGenerationService +272   SolverService +252
+                  ScheduleConstraintProvider +11
+                Newest successful deploy was 33543912228 on a320ca7 (2026-09-01T18:29Z). So dev was
+                serving PRE-gap-closure code: the ENTIRE 15-16..15-20 round was local only.
+
+                Every remaining test touches at least one of those six files (13/19 ->
+                ScheduleOutputService; 14/16/17 -> ScheduleService; 15 -> SolverService; 10/20 are
+                retests of the changed paths). Running any of them would have re-measured the
+                un-fixed build and read as the fixes having FAILED — the identical trap the
+                2026-08-27 sitting fell into and wrote the standing rule to prevent.
+
+    RESOLVED:   operator authorised the push. gh active account was `pcornwell` and was switched to
+                `petecornwell-code` first. Pushed 5bf636e..64bafd8; unpushed source commits -> 0.
+                Deploy run 33656348187 on 64bafd8 SUCCESS.
+
+    RE-DERIVED FROM INFRASTRUCTURE, not from the green tick:
+                ECS task def   wfm-service-dev:66, PRIMARY, 1/1, rolloutState COMPLETED
+                image tag      wfm-service:64bafd87948723440dddd9338dd19368b53e3b2e  == HEAD
+                /actuator/health  UP, db UP on PostgreSQL
+                Flyway         no migration files changed a320ca7..HEAD — this round is code-only,
+                               so there is no new schema version to confirm. V46 remains current.
+
+  NOTE ON THE STANDING RULE'S REFINEMENT: the 2026-09-01 sitting relaxed "unpushed source log must
+  be EMPTY" to "empty after excluding ':!src/test/'". That relaxation held up here and is what made
+  the danger legible rather than ambiguous — the exclusion did NOT clear the log this time, which is
+  precisely the signal it was designed to give. Keep both forms: the conservative check first, the
+  refined one only after LOOKING at the file list.
+
+  Gap reconciliation on resume: 0 newly reconciled. No gap carries `status: failed`, so the
+  reconcile pass had nothing to act on. Standing: 10 resolved, 1 closed_pending_retest (G-15-10),
+  1 open (G-15-28, weekend demand forecast, operator-owned).
+-->
+
+<!--
+  MEASURED IN PASSING 2026-09-02 while re-deriving test 13's table, and it BEARS ON TEST 19 — read
+  before running it. On accepted schedule 6a10afa1 under the shipped build, 17 agent-days carry a
+  non-null `divergence`, and they break down as:
+
+      total outOfEnvelopeSeats:  0
+      total unworkedLegalSlots: 17
+
+  So this schedule has NOTHING to exercise the `E!` rendering with — zero out-of-envelope seats.
+  Test 19's second and third bullets (the inline divergence marker, and `E!` being visually distinct
+  from `x`) CANNOT be observed on 6a10afa1. Only the `x` treatment can.
+
+  That is consistent with the desk having reached hard 0 and is not itself a defect — but test 19's
+  own wording anticipated it ("or force one"). No forcing is needed: all six accepted schedules were
+  read on the shipped build and three of them carry real out-of-envelope seats already, so test 19
+  can be run against stored data without perturbing the live library.
+
+    id        hard  soft   oosSeats  unworkedLegalSlots  violatedHardConstraints
+    6a10afa1     0   -68          0                  17                        0
+    b88cc98f     0   -60          0                   0                        0
+    523c8785     0   -76          0                   0                        0
+    709fd8b4    -1   -70          1                  31                        1   <-- minimal E! case
+    e6728aab    -9   -67          9                  37                        1
+    9bd158dd   -12   -62         12                  41                        1   <-- richest E! case
+
+  RECOMMENDED FOR TEST 19: run the `E!`-vs-`x` distinction on 709fd8b4 first — exactly ONE
+  out-of-envelope seat against 31 unworked legal slots is the sharpest possible test of whether the
+  two markers are visually distinguishable, because the rare one must not get lost among the common
+  one. Then 9bd158dd for density. Use 6a10afa1 for the "unstaffed by design" and tooltip bullets.
+
+  UNASKED-FOR CORROBORATION OF G-15-32, recorded because it was observed. `oosSeats` equals
+  |hardScore| EXACTLY on all six schedules — 0, 0, 0, 1, 9, 12 against hard 0, 0, 0, -1, -9, -12.
+  The G-15-32 defect was that every accepted schedule reported a CONSTANT 1104 violations
+  regardless of its true count, and the resolution entry lists precisely this series (12, 9, 1, 0,
+  0, 0) as the counts that all wrongly read 1104. Re-read live on the shipped build, each one now
+  reports its own true figure. That is independent confirmation of the fix from the read path an
+  operator actually uses, not from the test that was written to cover it.
+-->
+
 
 <!--
   SESSION 2026-09-01 (resumed, second sitting). Deployment re-derived per the standing rule BEFORE
@@ -1003,35 +1089,65 @@ note: |
 expected: On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their assigned shift, each group naming the shift and its headcount.
 result: [pending]
 precomputed_expectation: |
-  COMPUTED FROM THE API 2026-09-01 for schedule 6a10afa1 (newest ACCEPTED) so that resuming this
-  test is a COMPARISON against a table, not a judgement from memory. Re-compute if the library or
-  solver changes — this describes 6a10afa1, not "whatever is newest".
+  RE-COMPUTED 2026-09-02T17:00Z against the SHIPPED gap-closure round (deploy 33656348187, image
+  tag 64bafd8, ECS task def wfm-service-dev:66). The previous table was computed 2026-09-01 against
+  a320ca7 — i.e. BEFORE the 15-16..15-20 round — and carried its own instruction to re-compute if
+  the solver or library changed. Both changed (SolverService +252, ShiftLibraryGenerationService
+  +272), so it was re-derived rather than trusted.
 
-    2026-01-05 (18)  Late 12:00-21:00 x9 · Early 08:00-17:00 x4 · Mid 11:00-20:00 x3
-                     · Daytime 10:00-19:00 x1 · Morning 09:00-18:00 x1
-    2026-01-06 (19)  Late x8 · Daytime x4 · Early x3 · Mid x2 · Morning x2
-    2026-01-07 (18)  Late x8 · Mid x4 · Morning x3 · Daytime x2 · Early x1
-    2026-01-08 (18)  Late x8 · Daytime x4 · Mid x4 · Early x2      <-- FOUR groups, no Morning
-    2026-01-09 (22)  Mid x9 · Late x6 · Early x3 · Morning x3 · Daytime x1
-    2026-01-10 (25)  Wknd Flex 10:00-20:00 x10 · Wknd Late 11:00-20:00 x10 · Wknd Closing x2
-                     · Wknd Early x2 · Wknd Opening 08:00-17:00 x1
-    2026-01-11 (18)  Wknd Late x8 · Wknd Flex x7 · Wknd Closing x1 · Wknd Early x1 · Wknd Opening x1
+  Same schedule 6a10afa1-1823-4773-8563-598a08fb2952 (still the newest ACCEPTED, hard 0 / soft -68,
+  feasible), so this is a clean before/after: identical stored rows, new rendering code.
+
+  ORDERED THE WAY THE PAGE ORDERS IT — ScheduleResults.tsx:592 sorts groups by shift start time
+  ascending, tie-broken alphabetically by template name, with the null bucket last. The old table
+  was ordered by headcount descending, which meant comparing it to the screen required re-sorting
+  in your head. Read top-to-bottom against the page.
+
+    2026-01-05 (18)  Early 08:00-17:00 x4 · Morning 09:00-18:00 x1 · Daytime 10:00-19:00 x1
+                     · Mid 11:00-20:00 x3 · Late 12:00-21:00 x9
+    2026-01-06 (19)  Early x3 · Morning x2 · Daytime x4 · Mid x2 · Late x8
+    2026-01-07 (18)  Early x1 · Morning x3 · Daytime x2 · Mid x4 · Late x8
+    2026-01-08 (18)  Early x2 · Daytime x4 · Mid x4 · Late x8      <-- FOUR groups, no Morning
+    2026-01-09 (22)  Early x3 · Morning x3 · Daytime x1 · Mid x9 · Late x6
+    2026-01-10 (25)  Weekend Opening 08:00-17:00 x1 · Weekend Early 10:00-19:00 x2
+                     · Weekend Flex 10:00-20:00 x10 · Weekend Late 11:00-20:00 x10
+                     · Weekend Closing 12:00-21:00 x2
+    2026-01-11 (18)  Weekend Opening x1 · Weekend Early x1 · Weekend Flex x7 · Weekend Late x8
+                     · Weekend Closing x1
 
   10 distinct groups, 138 working agent-days, every one carrying a shift.
+
+  THE COUNTS ARE UNCHANGED — every date, every group, every headcount matches the 2026-09-01 table
+  exactly. That is a RESULT, not a formality: the gap-closure round rewrote the seat-supply gate
+  (G-15-21/-24/-25/-31) and the library generator (G-15-23), and none of it perturbed the accepted
+  schedule's shift assignment. Weekend template times are now written out in full; the old table
+  abbreviated them and only gave times for Weekend Opening.
 what_to_watch: |
   1. GROUP HEADER TIMES MUST BE THE TEMPLATE'S, not derived from held seats. This is the exact
      disagreement that surfaced G-15-10's D4 (same agent-day reading "Late 12:00-21:00" in the
      header and "09:00-21:00" in the table). ScheduleResults.tsx:632 uses the authoritative values,
      so the header is the trustworthy side; if the two disagree at resume, THAT is the finding.
+     MEASURED 2026-09-02 on the shipped build: of 138 agent-days, ZERO disagree — `shift.startTime`
+     /`shift.endTime` equal `shiftStart`/`shiftEnd` on every row. So the API data is clean and any
+     disagreement visible ON SCREEN is a pure rendering defect, not the D4 data bug resurfacing.
   2. 2026-01-08 has FOUR groups. An empty "Morning" group rendered there would be a defect the API
-     data does not show.
+     data does not show. (Re-confirmed on the shipped build.)
   3. No weekday template on Sat/Sun and no weekend template on Mon-Fri. The data is clean on this
      — it is validWeekdays enforcement (b2dd702) visible in the grouping — so confirm it survives
-     to the screen.
+     to the screen. Re-measured 2026-09-02: zero cross-calendar assignments.
+  4. NO "No shift assigned" GROUP SHOULD RENDER. All 138 agent-days carry a non-null `shift`, so
+     the null bucket is empty. One appearing on screen is a finding.
 caveat_at_pause: |
-  Until G-15-32 is fixed, the results page for ANY accepted schedule also shows
-  "Violated hard constraints: Shift envelope compliance" and 1104 violations. That is the G-15-32
-  misreport, NOT a test 13 finding, and it should not be recorded as one.
+  RETIRED 2026-09-02 — the caveat below described the pre-fix build and no longer applies.
+
+  It read: "Until G-15-32 is fixed, the results page for ANY accepted schedule also shows
+  'Violated hard constraints: Shift envelope compliance' and 1104 violations."
+
+  G-15-32 shipped in the round now deployed (plan 15-16 task 1, 579b090). Re-read live from the
+  same accepted schedule on the new build: `violatedHardConstraints: []` and `warnings: []`,
+  against a true score of hard 0 — the constant 1104-violation misreport is gone. If the results
+  page still shows a "Shift envelope compliance" hard violation for 6a10afa1, that IS now a test 13
+  finding rather than a known misreport to look past.
 
 ### 14. A slot-scheduled desk is completely unchanged
 
