@@ -224,7 +224,7 @@ deferred:*
 - [x] 15-17-PLAN.md — Suggested library stops emitting duplicate templates and stops placing breaks on the demand peak, with a round-trip guard tying the generator to the validator that judges it (G-15-23) (wave 1)
 - [x] 15-18-PLAN.md — Seat-supply gate: one date-aware definition of covered supply shared by the blocking check and the advisory, plus refusal advice the gate has actually checked against the desk's live `unassignedAssignmentWeight` (G-15-21, G-15-24) (wave 1)
 - [x] 15-19-PLAN.md — The analysis nobody has done: candidate within-day blocking rules evaluated against a labelled corpus with measured false-refusal counts, producing `15-SEAT-SUPPLY-GATE-ANALYSIS.md`. Changes no production behaviour by design (G-15-31) (wave 2)
-- [ ] 15-20-PLAN.md — Supply computed against each agent-day's own eligible pairs rather than a desk-wide union, proven band-composition-sensitive by the experiment that proved the old one blind, and the analysis's recommendation implemented or declined in writing (G-15-25, G-15-31) (wave 3)
+- [x] 15-20-PLAN.md — Supply computed against each agent-day's own eligible pairs rather than a desk-wide union, proven band-composition-sensitive by the experiment that proved the old one blind, and the analysis's recommendation implemented or declined in writing (G-15-25, G-15-31) (wave 3)
 
 **Planning note (2026-08-26):** CONTEXT.md D-09 amends the SHLB-07 note above. The
 first-slice ordering stands, but the claim that the slice "shares no code path with the rest of the

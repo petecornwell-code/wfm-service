@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-19-PLAN.md
-last_updated: "2026-09-02T14:42:37.372Z"
+stopped_at: Completed 15-20-PLAN.md
+last_updated: "2026-09-02T15:30:09.816Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 15 execution started
-state_head: 1726b05a901f59c870d552e39856da680b8cae26
+state_head: 2d6761063f17de4e795f700d9f205d99d05ff47c
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
   percent: 25
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 5 of 20
+Plan: 6 of 20
 Status: Ready to execute
 Last activity: 2026-09-01 — Phase 15 execution started
 
@@ -236,6 +236,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: Phase 15 Plan 18: coveredTimeslotsOnDate is the single date-aware coverage helper shared by the gate's blocking check and advisory (template.isEffectiveOn && appliesOn before covers); numeric shortfall suppressed when the distinct retired/weekday-invalid message already fires for a date, computed before the shortfall check
 - [Phase 15]: Phase 15 Plan 18: requireShiftEnvelopeSeatSupply takes a nullable live ConstraintWeights (appended last param); withdraws the raise-ceiling remedy only when unassignedAssignmentWeight carries nonzero hard score, naming the consequence and the weight value; default/null weights stay byte-identical, pinned by literal equality
 - [Phase 15]: Plan 15-19: R2 (forced-occupancy necessary condition) proven zero-false-refusal on the measured corpus; R1 (naive tightest-hour promotion) measured to false-refuse 3/4 known-solving date-slices, the justification for advisoryOnThinTimeslotDoesNotBlock staying non-blocking; G-15-31 left open with the analysis and recommendation attached for plan 15-20
+- [Phase 15]: Plan 15-20: R2 (forced-occupancy necessary condition) shipped into production exactly as plan 15-19's analysis measured -- additive alongside the day-wide sum, per-hour violations consolidated to the single worst timeslot per date, one check closing both G-15-25 (band composition) and G-15-31 (within-day distribution).
 
 ### Blockers/Concerns
 
@@ -253,8 +254,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-02T14:42:37.210Z
-Stopped at: Completed 15-19-PLAN.md
+Last session: 2026-09-02T15:30:09.558Z
+Stopped at: Completed 15-20-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -294,3 +295,4 @@ Resume file: None
 | Phase 15 P17 | ~50 min | 3 tasks | 3 files |
 | Phase 15 P18 | ~50 min | 2 tasks | 6 files |
 | Phase 15 P19 | ~100 min | 3 tasks | 4 files |
+| Phase 15 P20 | ~70 min | 3 tasks | 6 files |
