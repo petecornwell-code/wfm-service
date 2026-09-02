@@ -271,7 +271,15 @@ class DeskServiceSchedulingModeTest {
         Desk desk = saveDesk(TENANT_A, SchedulingMode.SLOT);
         Specialization specialization = saveSpecialization(desk.getId());
 
+        // The accepted schedule is deliberately SHIFT while the desk round-trips SLOT -> SHIFT ->
+        // SLOT. The mismatch is what gives the schedulingMode assertion teeth: if a desk mode
+        // switch ever wrote through to accepted schedules, this row would come back SLOT (the
+        // desk's final mode) and the snapshot comparison would fail. Were the schedule left at the
+        // SLOT default instead, that regression would end on SLOT too and the guard would pass
+        // while the behaviour was broken.
         Schedule accepted = saveSchedule(desk.getId(), ScheduleStatus.ACCEPTED);
+        accepted.setSchedulingMode(SchedulingMode.SHIFT);
+        accepted = scheduleRepository.save(accepted);
         Timeslot snapshotTimeslot = saveTimeslot(desk.getId(), accepted.getId(), LocalDate.of(2026, 1, 5));
         StaffingRequirement snapshotRequirement =
                 saveStaffingRequirement(desk.getId(), accepted.getId(), snapshotTimeslot, specialization);
@@ -390,20 +398,32 @@ class DeskServiceSchedulingModeTest {
         inMemoryScheduleStore.put(schedule);
     }
 
+    /**
+     * {@code schedulingMode} is in this record deliberately, and it was MISSING until 2026-09-02.
+     *
+     * <p>The column arrived with CR-02 (V43, {@code 75349d8}) while this test was last touched in
+     * phase 14 ({@code b7f5b3b}), so the snapshot simply predated the field. The consequence was
+     * that {@link #switchSchedulingMode_roundTrip_leavesAcceptedScheduleAndSnapshotRowsExactlyUnchanged}
+     * asserted "ExactlyUnchanged" while ignoring the one column CR-02 exists to protect — a desk
+     * mode switch could have written through to every accepted schedule and this test would still
+     * have passed. Found during UAT test 16, where the behaviour had to be verified by hand
+     * against the live desk because nothing in the suite covered it.
+     */
     private record ScheduleSnapshot(UUID id, long tenantId, UUID deskId, int incrementMinutes,
                                      LocalTime startTime, LocalTime endTime, LocalDate periodStartDate,
                                      LocalDate periodEndDate, BigDecimal breakBlockedHours,
                                      int breakDurationMinutes, BigDecimal breakMinShiftHours,
                                      int breakClusterThresholdPct, BigDecimal defaultContractedHoursPerDay,
                                      int overallocationHardLimitPct, int underallocationHardLimitPct,
-                                     ScheduleStatus status, String errorMessage, int version) {
+                                     ScheduleStatus status, String errorMessage, int version,
+                                     SchedulingMode schedulingMode) {
         static ScheduleSnapshot of(Schedule s) {
             return new ScheduleSnapshot(s.getId(), s.getTenantId(), s.getDeskId(), s.getIncrementMinutes(),
                     s.getStartTime(), s.getEndTime(), s.getPeriodStartDate(), s.getPeriodEndDate(),
                     s.getBreakBlockedHours(), s.getBreakDurationMinutes(), s.getBreakMinShiftHours(),
                     s.getBreakClusterThresholdPct(), s.getDefaultContractedHoursPerDay(),
                     s.getOverallocationHardLimitPct(), s.getUnderallocationHardLimitPct(),
-                    s.getStatus(), s.getErrorMessage(), s.getVersion());
+                    s.getStatus(), s.getErrorMessage(), s.getVersion(), s.getSchedulingMode());
         }
     }
 
