@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T21:25:00Z"
+updated: "2026-09-02T21:50:00Z"
 ---
 
 <!--
@@ -89,11 +89,13 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-number: 17
-name: Deleting an accepted shift schedule leaves no orphans (CR-03 fix)
+number: 19
+name: Envelope divergence and unstaffed hours render correctly
 expected: |
-  Delete an accepted shift-mode schedule, then confirm no agent_shift_assignment rows remain for
-  that schedule id.
+  Visual. Shift column agrees with the group header; inline divergence marker on out-of-envelope
+  rows; per-cell E! distinct from x; hours no template reaches render muted/italic under an
+  "unstaffed by design" header; tooltips and legend legible.
+  Run on 709fd8b4 first (exactly 1 out-of-envelope seat vs 31 unworked), then 9bd158dd (12).
 awaiting: user response
 
 NOTE FOR TEST 14: the tenant has exactly ONE desk (Stubhub (EN)) and it is in SHIFT mode, so there
@@ -1583,7 +1585,96 @@ SELECT count(*) FROM agent_shift_assignment WHERE schedule_id = '<deleted-schedu
 ```
 
 Expected: `0`.
-result: [pending]
+result: pass
+tested_against: |
+  dev, throwaway desk ZZ-UAT17-SCRATCH-orphans (968fda8c), shipped build 8f61493 / task def :67,
+  plus the automated regression run locally on HEAD. NOT run on the live desk — see why below.
+why_not_the_live_desk: |
+  Deliberate. `ScheduleService.acceptSchedule` (:265) supersedes the currently-ACCEPTED
+  accepted_schedule_date rows for every date the new schedule covers, and `deleteSchedule`
+  (:386-405) does NOT restore them. Accepting a throwaway schedule on Stubhub (EN) for
+  2026-01-05..11 would therefore demote 7cc71bf5's date rows to SUPERSEDED, and deleting it again
+  would leave those dates with NO accepted schedule at all. A scratch desk avoids damaging the
+  operator's live acceptance state.
+how_it_was_observed_without_sql: |
+  The test as written is a SQL count, and psql to the RDS instance times out (test 5b — the
+  instance is PubliclyAccessible but its security group admits no arbitrary client IP). The same
+  count is reachable through the API: `ShiftTemplateService.deleteShiftTemplate` (:141) calls
+  `agentShiftAssignmentRepository.countByTenantIdAndSourceTemplateId(tenantId, id)` and REFUSES
+  with 409 when it is > 0 — and its message reports the count. So a template delete is a read of
+  exactly the table test 17 asks about.
+evidence: |
+  A THREE-STEP PROOF WITH A POSITIVE CONTROL, on an accepted SHIFT-mode schedule (mode read back
+  SHIFT, 3 of 3 agent-days carrying shifts):
+
+    STEP 1  DELETE template BEFORE deleting the schedule
+            409 — "Shift template 'AllDay' cannot be deleted: it is used by 3 agent-day
+                   assignment(s) in one or more schedules."
+            => exactly 3 agent_shift_assignment rows existed, counted by the server itself.
+
+    STEP 2  DELETE the accepted schedule            204
+            GET the deleted schedule                404
+
+    STEP 3  DELETE template AFTER                   204
+            => countByTenantIdAndSourceTemplateId returned 0. NO ORPHANS.
+
+  THE POSITIVE CONTROL IS WHAT MAKES THIS CONCLUSIVE. Step 1 proves the query can see these rows
+  and would have refused had any survived; step 3's success is therefore a measurement of zero,
+  not an absence of evidence. 3 -> 0, caused by the schedule delete and nothing else.
+automated_guard: |
+  ScheduleServiceShiftSnapshotTest.deleteSchedule_shiftMode_deletesAgentShiftAssignmentRows,
+  verified passing on HEAD. Built with the same discipline as the CR-02 zero-shift test — it
+  asserts the repository has `hasSize(1)` BEFORE the delete and `isEmpty()` after, so it cannot
+  pass vacuously on a schedule that never had shift rows.
+the_mechanism: |
+  ScheduleService:402 — `agentShiftAssignmentRepository.deleteByTenantIdAndDeskIdAndScheduleId(...)`.
+  Needed explicitly because `agent_shift_assignment.schedule_id` carries NO foreign key (V41, D-07
+  denormalisation), so deleting the schedule row cannot cascade to it. Before CR-03 the repository
+  exposed no deleteBy* method at all and the rows were silently stranded.
+disposal: |
+  9 agents removed (roster -> 0), desk DELETE 204 on the first attempt — the accepted schedule had
+  already been deleted as step 2, so the DeskService 409 guard did not fire. GET desk -> 404.
+  Live state after: 1 desk, unassigned back to 14, Stubhub (EN) untouched at SHIFT / 28 agents /
+  11 templates / 7 schedules.
+reported: "[measured from the API on a throwaway desk]"
+
+### 17b. (incidental) A desk whose agents rely on the default contracted hours cannot enter SHIFT mode
+
+expected: n/a — NOT a Phase 15 test. Found while building test 17's fixture.
+result: skipped
+reason: |
+  OUT OF PHASE 15 SCOPE — `ShiftLibraryValidationService.loadHoursByWeekday` dates from
+  `bcf8c84 feat(14-04)`, i.e. Phase 14. Recorded for the operator to route, following the test 3
+  and test 14b precedent.
+
+  SYMPTOM. A new desk whose agents carry no per-day hours rows is refused entry to SHIFT mode:
+    PUT /scheduling-mode {SHIFT} -> 400
+    "1 weekday(s) have no shift template any agent's contracted hours can satisfy: Monday.
+     Add or adjust a template, or update contracted hours, before switching modes."
+  This was with a 9h envelope / 1h band template whose net is 8.00h, a desk default of 8.00h, and
+  every agent's own screen showing `dayHours.MONDAY.effectiveHours = 8.00`. The refusal contradicts
+  what the agent page displays.
+
+  ROOT CAUSE. `loadHoursByWeekday` (:284) reads ONLY `AgentDayHours` rows
+  (`findByTenantIdAndDeskId`) and applies NO fallback. With no rows the map is empty, so every
+  weekday is unsatisfiable. The solver disagrees: `SolverService.computeAgentDayConfigs` resolves
+  through `resolveEffectiveHours(exMap, dayHoursMap, d, schedule.getDefaultContractedHoursPerDay())`
+  — i.e. it DOES fall back to the desk/schedule default. The validator is stricter than the solver
+  about the same fact, and it is the validator that gates mode entry.
+
+  PROVEN BY CONTROLLED FIX, not by reading alone. Writing MONDAY day-hours rows carrying the SAME
+  8.00 value that was already the effective default — changing no template, no demand, no agent —
+  flipped `unsatisfiableWeekdays` from ["MONDAY"] to [] and the switch then returned 200.
+
+  WHY THE LIVE DESK NEVER HIT IT: all 28 of Stubhub (EN)'s agents have explicit MONDAY rows
+  (hasRow=true), so it has always taken the populated path. Only 1 of the 28 has an agent-level
+  `contractedHoursPerDay`, so the rows — not that field — are what saves it.
+
+  CONSEQUENCE WORTH WEIGHING: this blocks SHIFT-mode adoption on any newly created desk until
+  per-day hours are written for its agents, with a message that points at "contracted hours" the
+  UI already shows as correct. Workaround is straightforward (set day hours), so it is friction
+  rather than breakage — but it is friction at exactly the moment a new desk adopts the phase's
+  headline feature.
 
 ### 18. Production migration executed safely
 
@@ -1769,10 +1860,10 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 15
+passed: 16
 issues: 1
-pending: 2
-skipped: 2
+pending: 1
+skipped: 3
 blocked: 1
 
 <!--
