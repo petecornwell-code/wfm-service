@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T22:10:00Z"
+updated: "2026-09-02T22:20:00Z"
 ---
 
 <!--
@@ -89,13 +89,14 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-[testing paused — 0 pending; 1 blocked (test 18, production deploy) and 1 issue (test 10) remain]
+[testing paused — 0 pending, 0 issues; 1 blocked (test 18, production deploy) remains]
 
-ALL 17 TESTABLE CHECKPOINTS ARE NOW RESOLVED. What is left is not work anyone can do at a keyboard
-today: test 18 needs a production deploy that has not been scheduled, and test 10 is an open
-quality issue whose remaining cause is G-15-28, the weekend demand forecast, which the operator
-owns. Status stays `partial` rather than `complete` because a blocked item remains, per the
-workflow's own rule.
+ALL 18 TESTABLE CHECKPOINTS PASS. Test 10 was closed by operator ruling on 2026-09-02 (see its
+closed_by_operator_ruling block). The only outstanding item is test 18, which needs a PRODUCTION
+deploy that has not been scheduled — `deploy.yml` targets dev only. Status stays `partial` rather
+than `complete` because a blocked item remains, per the workflow's own rule.
+
+STILL OPEN AND NOT CLOSED BY ANY OF THIS: G-15-28, the weekend demand forecast, operator-owned.
 
 RESUMED 2026-09-02. The pause note below is kept because its reasoning still explains how the file
 got here; its "RESUME AT TEST 13" instruction has now been carried out.
@@ -700,9 +701,40 @@ still_open: |
 ### 10. Shift-mode solve succeeds at production scale
 
 expected: A real desk in shift-scheduled mode solves to a feasible schedule in acceptable time. The automated benchmark ran only 4 agents x 2 days — this is the first exercise at your real agent count, day count and demand curve. AFTER G-15-10 CLOSURE, the acceptable outcomes are exactly two: (a) the solve reaches 0 hard in acceptable time, or (b) the solve is REFUSED BEFORE it starts, naming the date, the seat shortfall and the levers you control. A completed solve still carrying residual `Shift envelope compliance` penalty is a failure. Per operator ruling OR-1, an hour the shift library does not reach is now deliberately unstaffed and should render as such — that is correct behaviour, not a bug.
-result: issue
-reported: "Hard: -9, Soft: -67 — NOT FEASIBLE. Nine agent-day seats outside their assigned shift envelope, all on 2026-01-11, all agents seated during their own break window."
-severity: major
+result: pass
+closed_by_operator_ruling_2026_09_02: |
+  OPERATOR RULING ("mark test 10 as passed"), taken after the evidence below was put to them. This
+  is a JUDGEMENT about the desk, not a new measurement — recorded as a ruling so nobody later reads
+  it as though the -9 simply stopped being true.
+
+  WHAT THE TEST ASKED FOR. Its own expected text names exactly two acceptable outcomes: "(a) the
+  solve reaches 0 hard in acceptable time, or (b) the solve is REFUSED BEFORE it starts, naming the
+  date, the seat shortfall and the levers you control."
+
+  OUTCOME (a) IS DEMONSTRABLY REACHED. Three accepted schedules on the live desk, all solved after
+  the three root causes shipped, all over the full 2026-01-05..11 period at production scale:
+      523c8785   hard 0 / soft -76   feasible=true   2026-09-01T13:57
+      b88cc98f   hard 0 / soft -60   feasible=true   2026-09-01T18:46
+      6a10afa1   hard 0 / soft -68   feasible=true   2026-09-01T22:06
+  Re-read live from the API on 2026-09-02 against the shipped build; all three report
+  violatedHardConstraints [] and 138/138 agent-days carrying a shift. The frozen-solve symptom that
+  opened this test is gone, and a feasible production-scale schedule exists.
+
+  WHAT THE PASS DOES NOT CLAIM. It does not claim every run reaches 0 hard. The newest accepted
+  schedule 7cc71bf5 reads hard -30, which is THREE violations at the rescaled ofHard(10) envelope
+  weight (G-15-30), not thirty — and it was solved at overallocationHardLimitPct 500, the G-15-28
+  workaround. The residual is attributed, with a controlled experiment behind it, to the weekend
+  demand forecast rather than to the solver: raising the ceiling 250 -> 500 with everything else
+  held constant took the desk to hard 0. That work is G-15-28, it is OPEN, and the operator owns it.
+  Passing test 10 does not close G-15-28.
+
+  ALL THREE ROOT CAUSES FIXED AND DEPLOYED, which is what makes (a) reachable at all:
+    A  validWeekdays never enforced in the solver path        b2dd702
+    B  phantom seats from calendar-blind coverage             6c82241  (third site closed by G-15-21)
+    C  zero-slack eligibility                                 81117e3 (V44)
+previous_result: issue
+previously_reported_at_pass_time: "Hard: -9, Soft: -67 — NOT FEASIBLE. Nine agent-day seats outside their assigned shift envelope, all on 2026-01-11, all agents seated during their own break window."
+severity_at_time_of_issue: major
 severity_note: |
   Downgraded from the original BLOCKER. The blocking symptom — a solve frozen on an irreducible
   score with agents dragged onto zero-demand hours — is gone. What remains is a small search
@@ -1906,8 +1938,8 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 17
-issues: 1
+passed: 18
+issues: 0
 pending: 0
 skipped: 3
 blocked: 1
@@ -1938,7 +1970,12 @@ blocked: 1
 
 - gap_id: G-15-10
   truth: "A real desk in shift-scheduled mode solves to a feasible schedule in acceptable time"
-  status: closed_pending_retest
+  status: resolved
+  resolved_by: "UAT test 10 retest closed by operator ruling 2026-09-02 — outcome (a) reached on three
+    accepted schedules (523c8785, b88cc98f, 6a10afa1: hard 0, feasible, 138/138 shifts). The
+    residual on other runs is G-15-28 (weekend demand forecast), which stays OPEN and is not
+    closed by this."
+  resolved_at: 2026-09-02
   closed_by: [15-09, 15-10, 15-11, 15-12, 15-13]
   closure_evidence: |
     All four AND-gated root causes fixed and independently verified against HEAD (d490171) by
