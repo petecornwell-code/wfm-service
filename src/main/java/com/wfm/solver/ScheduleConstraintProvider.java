@@ -26,6 +26,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     public static final int MIN_AGENTS_PER_TIMESLOT = 1;
 
+    /**
+     * The exact constraint name {@link #shiftEnvelopeCompliance} registers via
+     * {@code asConstraint(...)}. Public so the read-path accepted-schedule violation report
+     * ({@code ScheduleOutputService.buildAcceptedConstraintViolations}, G-15-32 gap closure) can
+     * reuse this literal rather than retyping it — the UI keys on this exact string, and a
+     * divergence between the solver's registered name and a retyped copy would be silent.
+     */
+    public static final String SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME = "Shift envelope compliance";
+
     // ------------------------------------------------------------------
     //  Shared grouping building blocks
     //
@@ -420,7 +429,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter((sa, cfg, a) -> sa.getShiftBandPair() == null
                         || !sa.getShiftBandPair().covers(a.getTimeslot()))
                 .penalizeConfigurable()
-                .asConstraint("Shift envelope compliance");
+                .asConstraint(SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME);
     }
 
     /**

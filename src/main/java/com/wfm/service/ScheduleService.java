@@ -154,9 +154,16 @@ public class ScheduleService {
         response.setStaffingSummary(scheduleOutputService.buildStaffingSummary(schedule));
         response.setAgentSchedule(scheduleOutputService.buildAgentSchedule(schedule));
         response.setPreferenceReport(scheduleOutputService.buildPreferenceReport(schedule));
-        response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule));
+        response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule, fromDb));
 
-        // Derive violatedHardConstraints from constraint violations (deduplicated)
+        // Derive violatedHardConstraints from constraint violations (deduplicated). This
+        // derivation is correct once constraintViolations is correct (G-15-32) — the invariant it
+        // upholds is that a `feasible: true` response can never simultaneously name a violated
+        // hard constraint, because constraintViolations itself now reports reality on both the
+        // live and accepted paths (ScheduleOutputService.buildConstraintViolations). The
+        // invariant is asserted structurally, by making the source correct — never by filtering
+        // this derived list on `feasible`, which would hide a genuinely infeasible schedule
+        // instead of fixing the misreport.
         Set<String> violatedHardSet = new LinkedHashSet<>();
         if (response.getConstraintViolations() != null) {
             for (var cv : response.getConstraintViolations()) {

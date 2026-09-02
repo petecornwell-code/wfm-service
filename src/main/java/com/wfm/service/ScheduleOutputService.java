@@ -8,6 +8,7 @@ import ai.timefold.solver.core.api.score.constraint.ConstraintMatch;
 import com.wfm.dto.ScheduleDetailResponse.*;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.model.*;
+import com.wfm.solver.ScheduleConstraintProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -413,17 +414,48 @@ public class ScheduleOutputService {
 
     /**
      * 8.4 Constraint Violations — grouped by constraint name.
-     * Uses the cached Timefold SolutionManager to explain the score.
-     * Only works for in-memory schedules with complete solver data;
-     * accepted (DB) schedules should not call this method.
+     *
+     * <p>{@code isAcceptedSnapshot} is the caller's own knowledge of provenance —
+     * {@link ScheduleService#getScheduleDetail}'s {@code fromDb} local, threaded through rather
+     * than inferred (G-15-32 gap closure). On the LIVE-SOLVER path ({@code false}) this uses the
+     * cached Timefold {@link SolutionManager} to explain the score, unchanged from before. On the
+     * ACCEPTED/DB path ({@code true}) it NEVER calls {@code solutionManager.explain} — explaining
+     * a schedule whose shift problem facts are not reconstituted makes every held seat fail the
+     * coverage predicate (this file's own discriminator identity for a null band pair), which is
+     * exactly where the constant 1104 (= 138 agent-days x 8 contracted hours, every staffed seat)
+     * came from. Instead it delegates to {@link #buildAcceptedConstraintViolations}, which derives
+     * the report from the persisted snapshot the schedule already carries — the same
+     * {@link #resolveShiftDescriptor} and {@link #computeDivergence} the accepted path of
+     * {@link #buildAgentSchedule} already calls, so envelope compliance can never disagree between
+     * the two views (D-08 one-predicate discipline).
+     *
+     * <p>Only envelope compliance is derivable this way: the persisted snapshot carries the
+     * envelope and band scalars, so envelope compliance is derivable and IS derived on the
+     * accepted path. Every other constraint's problem facts are not reconstituted at accept time,
+     * so nothing is reported for them there — reporting nothing for a constraint whose ground
+     * truth is absent is the honest outcome; reporting it from a mis-explained score director is
+     * what produced this gap. Shift-work contiguity is ALSO derivable from the same snapshot
+     * (worked slots plus the descriptor's break window) but is DELIBERATELY NOT derived here: its
+     * structural walker currently exists only in test source
+     * ({@code SolverQualityGuardTest.findSplitShifts}), and promoting it to main source needs its
+     * own guard — a named, routable limitation rather than a silent omission.
      */
     @SuppressWarnings("removal")
-    public List<ConstraintViolationEntry> buildConstraintViolations(Schedule schedule) {
+    public List<ConstraintViolationEntry> buildConstraintViolations(Schedule schedule, boolean isAcceptedSnapshot) {
         if (schedule.getAssignments() == null || schedule.getAssignments().isEmpty()) {
             return List.of();
         }
 
-        // Cannot explain accepted schedules — they lack solver problem facts
+        if (isAcceptedSnapshot) {
+            return buildAcceptedConstraintViolations(schedule);
+        }
+
+        // Secondary safety net for the LIVE-SOLVER path only (demoted from being the
+        // provenance discriminator, G-15-32): an accepted schedule DOES carry
+        // ConstraintWeights — ScheduleService.loadSnapshotData loads them from
+        // constraintWeightsRepository, which is precisely how every accepted schedule used to
+        // reach the explain() call below. This null check can therefore never again stand in
+        // for "is this an accepted schedule" — provenance is now the explicit parameter above.
         if (schedule.getConstraintWeights() == null) {
             return List.of();
         }
@@ -514,6 +546,81 @@ public class ScheduleOutputService {
         }
     }
 
+    /**
+     * The accepted/DB-path violation report (G-15-32 gap closure) — built from the persisted
+     * snapshot, never from {@code solutionManager.explain}. Walks every agent-day exactly as
+     * {@link #buildAgentSchedule} does, resolving each descriptor through the same
+     * {@link #resolveShiftDescriptor} and finding out-of-envelope seats through the same
+     * {@link #outOfEnvelopeAssignments} walk {@link #computeDivergence} already performs — no
+     * second definition of "covered" (D-08). Emits exactly one HARD
+     * {@link ConstraintViolationEntry} aggregating every out-of-envelope seat across every
+     * agent-day, or an empty list when there are none (matching the live path's existing
+     * "skip a zero total" behaviour) — a clean accepted schedule therefore reports an empty list
+     * because it was computed, not because the path was disabled.
+     */
+    private List<ConstraintViolationEntry> buildAcceptedConstraintViolations(Schedule schedule) {
+        Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate =
+                buildShiftDescriptorsByAgentDate(schedule);
+        if (shiftDescriptorsByAgentDate.isEmpty()) {
+            return List.of();
+        }
+
+        // Group assigned assignments by (agentId, date) — mirrors buildAgentSchedule's own
+        // grouping exactly, so the two views walk identical agent-days.
+        Map<UUID, Map<LocalDate, List<AgentAssignment>>> grouped = new LinkedHashMap<>();
+        for (AgentAssignment a : schedule.getAssignments()) {
+            if (a.getAgent() == null) continue;
+            grouped
+                    .computeIfAbsent(a.getAgent().getId(), k -> new LinkedHashMap<>())
+                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
+                    .add(a);
+        }
+
+        List<ViolationDetail> violations = new ArrayList<>();
+        for (var agentEntry : grouped.entrySet()) {
+            UUID agentId = agentEntry.getKey();
+            Map<LocalDate, ShiftDescriptor> agentDescriptors =
+                    shiftDescriptorsByAgentDate.getOrDefault(agentId, Map.of());
+
+            for (var dateEntry : agentEntry.getValue().entrySet()) {
+                ShiftDescriptor descriptor = agentDescriptors.get(dateEntry.getKey());
+                // No descriptor: a shift-mode agent-day the solver left unassigned (acceptSchedule
+                // never writes a row when shiftBandPair is null). Nothing to check — mirrors
+                // buildAgentSchedule's own fallback branch, which reports no divergence either.
+                if (descriptor == null) continue;
+
+                for (AgentAssignment out : outOfEnvelopeAssignments(descriptor, dateEntry.getValue())) {
+                    Agent agent = out.getAgent();
+                    Timeslot ts = out.getTimeslot();
+                    String timeslotLabel = ts.getDate() + " " + ts.getStartTime() + "-" + ts.getEndTime();
+                    String description = ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME
+                            + " violation" + (agent != null ? " for " + agent.getName() : "");
+                    violations.add(new ViolationDetail(
+                            agentId, agent != null ? agent.getName() : null, ts.getId(), timeslotLabel,
+                            description));
+                }
+            }
+        }
+
+        if (violations.isEmpty()) {
+            return List.of();
+        }
+
+        ConstraintWeights weights = schedule.getConstraintWeights();
+        HardSoftScore envelopeWeight = weights != null
+                ? weights.getShiftEnvelopeComplianceWeight()
+                : HardSoftScore.ZERO;
+        int violationCount = violations.size();
+        ScheduleSummary.ScoreDto weightDto = new ScheduleSummary.ScoreDto(
+                envelopeWeight.hardScore(), envelopeWeight.softScore());
+        ScheduleSummary.ScoreDto totalPenalty = new ScheduleSummary.ScoreDto(
+                envelopeWeight.hardScore() * violationCount, envelopeWeight.softScore() * violationCount);
+
+        return List.of(new ConstraintViolationEntry(
+                ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME,
+                "HARD", weightDto, violationCount, totalPenalty, violations));
+    }
+
     // --- Helpers ---
 
     /**
@@ -556,12 +663,40 @@ public class ScheduleOutputService {
     }
 
     /**
+     * The subset of {@code dayAssignments} whose held seat the coverage predicate
+     * ({@link ShiftBandPair#covers}) rejects. Factored out of {@link #computeDivergence} (Task 1,
+     * G-15-32 gap closure) so the accepted-path violation report
+     * ({@link #buildAcceptedConstraintViolations}) can recover the {@link AgentAssignment}
+     * identity (agent, timeslot) that {@code computeDivergence}'s {@code LocalTime}-only
+     * {@code outOfEnvelopeSeats} list discards — without adding a second definition of "covered"
+     * (D-08's one-predicate/two-callers discipline: this is the one walk, both callers use it).
+     */
+    private List<AgentAssignment> outOfEnvelopeAssignments(ShiftDescriptor descriptor,
+            List<AgentAssignment> dayAssignments) {
+        LocalTime envelopeStart = descriptor.startTime();
+        LocalTime envelopeEnd = descriptor.endTime();
+        Integer bandOffset = descriptor.bandOffsetMinutes();
+        Integer bandDuration = descriptor.bandDurationMinutes();
+
+        List<AgentAssignment> outOfEnvelope = new ArrayList<>();
+        for (AgentAssignment a : dayAssignments) {
+            Timeslot ts = a.getTimeslot();
+            boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
+                    ts.getStartTime(), ts.getEndTime());
+            if (!legal) {
+                outOfEnvelope.add(a);
+            }
+        }
+        return outOfEnvelope;
+    }
+
+    /**
      * Divergence between the assigned envelope and the day's actual seats (Task 2), using the one
      * static coverage predicate from {@link com.wfm.model.ShiftBandPair#covers}. A held seat the
-     * predicate rejects is out-of-envelope; a legal slot (from the schedule's own timeslots for
-     * this date — the agent's own assignment list cannot express a slot they do not hold) the
-     * agent does not hold is unworked-legal. Returns {@code null} when both lists are empty so a
-     * clean agent-day carries no noise.
+     * predicate rejects is out-of-envelope ({@link #outOfEnvelopeAssignments}); a legal slot (from
+     * the schedule's own timeslots for this date — the agent's own assignment list cannot express
+     * a slot they do not hold) the agent does not hold is unworked-legal. Returns {@code null}
+     * when both lists are empty so a clean agent-day carries no noise.
      */
     private ShiftEnvelopeDivergence computeDivergence(ShiftDescriptor descriptor,
             List<AgentAssignment> dayAssignments, List<Timeslot> dayTimeslots) {
@@ -572,14 +707,11 @@ public class ScheduleOutputService {
 
         List<LocalTime> outOfEnvelopeSeats = new ArrayList<>();
         Set<UUID> heldTimeslotIds = new HashSet<>();
+        for (AgentAssignment a : outOfEnvelopeAssignments(descriptor, dayAssignments)) {
+            outOfEnvelopeSeats.add(a.getTimeslot().getStartTime());
+        }
         for (AgentAssignment a : dayAssignments) {
-            Timeslot ts = a.getTimeslot();
-            heldTimeslotIds.add(ts.getId());
-            boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
-                    ts.getStartTime(), ts.getEndTime());
-            if (!legal) {
-                outOfEnvelopeSeats.add(ts.getStartTime());
-            }
+            heldTimeslotIds.add(a.getTimeslot().getId());
         }
 
         List<LocalTime> unworkedLegalSlots = new ArrayList<>();
