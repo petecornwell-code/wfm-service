@@ -89,7 +89,19 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-[testing paused — 6 items outstanding: tests 13, 14, 15, 16, 17, 19]
+number: 13
+name: Agent Allocation groups by shift on a shift desk
+expected: |
+  On a shift-scheduled desk, Agent Allocation in Schedule Results groups agents under their
+  assigned shift, each group naming the shift and its headcount. Compare against the re-computed
+  table in test 13's precomputed_expectation (2026-09-02, shipped build, schedule 6a10afa1).
+awaiting: user response
+
+<!-- PREVIOUSLY: [testing paused — 6 items outstanding: tests 13, 14, 15, 16, 17, 19]
+     Resumed 2026-09-02T17:05Z against deploy 33656348187 / task def :66 / image 64bafd8. -->
+
+RESUMED 2026-09-02. The pause note below is kept because its reasoning still explains how the file
+got here; its "RESUME AT TEST 13" instruction has now been carried out.
 
 PAUSED 2026-09-02 by operator decision ("fix everything") after test 11 passed. UAT did not stop
 because it was blocked — it stopped because the open GAPS were routed to a planned gap-closure
@@ -1122,6 +1134,28 @@ precomputed_expectation: |
   (G-15-21/-24/-25/-31) and the library generator (G-15-23), and none of it perturbed the accepted
   schedule's shift assignment. Weekend template times are now written out in full; the old table
   abbreviated them and only gave times for Weekend Opening.
+
+  SUPERSEDED AS "NEWEST ACCEPTED" 2026-09-02T17:09Z — the operator ran a fresh solve and accepted
+  it as 7cc71bf5-829c-4e41-85a0-c23bef70d198 (hard -30, soft -67, 500% over-allocation, 7m39s).
+  6a10afa1 still EXISTS and the table above still describes it exactly, so either schedule can be
+  used for test 13; open the one on screen. The fresh solve's grouping, same page order:
+
+    2026-01-05 (18)  Early 08:00-17:00 x1 · Morning 09:00-18:00 x3 · Mid 11:00-20:00 x4
+                     · Late 12:00-21:00 x10          <-- FOUR groups, no Daytime
+    2026-01-06 (19)  Early x3 · Morning x2 · Daytime x2 · Mid x2 · Late x10
+    2026-01-07 (18)  Early x1 · Morning x2 · Daytime x4 · Mid x4 · Late x7
+    2026-01-08 (18)  Early x3 · Daytime x5 · Mid x3 · Late x7      <-- FOUR groups, no Morning
+    2026-01-09 (22)  Early x2 · Morning x4 · Daytime x3 · Mid x5 · Late x8
+    2026-01-10 (25)  Wknd Opening 08:00-17:00 x1 · Wknd Flex 10:00-20:00 x9
+                     · Wknd Late 11:00-20:00 x14 · Wknd Closing 12:00-21:00 x1
+                     <-- FOUR groups, no Weekend Early
+    2026-01-11 (18)  Wknd Opening x1 · Wknd Early 10:00-19:00 x2 · Wknd Flex x7 · Wknd Late x7
+                     · Wknd Closing x1
+
+  9 distinct groups, 138 working agent-days, every one carrying a shift. Note this schedule has
+  THREE dates with only four groups (05, 08, 10), so the "empty group" check in what_to_watch has
+  three places to fail rather than one. All four invariants re-measured on it and clean: 0
+  header/row disagreements, 0 null-bucket agent-days, 0 cross-calendar assignments.
 what_to_watch: |
   1. GROUP HEADER TIMES MUST BE THE TEMPLATE'S, not derived from held seats. This is the exact
      disagreement that surfaced G-15-10's D4 (same agent-day reading "Late 12:00-21:00" in the
@@ -1229,6 +1263,44 @@ known_caveat: |
   Code review WR-02: the "unstaffed by design" tooltip reflects only that day's assigned shifts,
   not the desk's full live shift library, so its literal wording can be inaccurate in an edge case.
   Known and unfixed — judge the visual treatment, not the tooltip's precise claim.
+finding_surfaced_early_2026_09_02: |
+  NOT YET AN OPERATOR VERDICT — found by analysis while the operator was answering test 13, and
+  recorded here rather than filed as a gap so they can judge it. It bears directly on this test's
+  SECOND bullet, which asks that the inline divergence marker appear "when the actual seats fall
+  outside the assigned envelope".
+
+  IT ALSO FIRES WHEN ZERO SEATS FALL OUTSIDE. On accepted schedule 7cc71bf5, 19 of 138 agent-days
+  carry the ⚠ marker, and they split:
+
+      3  genuine   ⚠ 1 outside envelope, 1 unworked   (Mon 01-05, Morning 09:00-18:00, 08:00 seat)
+     16  spurious  ⚠ 0 outside envelope, 1 unworked   (all Weekend Flex 10:00-20:00)
+
+  So 84% of the warnings on this schedule describe correct behaviour, and the 3 that matter are
+  buried among them.
+
+  IT IS STRUCTURAL, NOT OCCASIONAL. Weekend Flex is a 10-hour envelope carrying a 60m band: 10
+  slots - 1 break = 9 legal slots, against 8 contracted hours. Every agent holding it leaves
+  exactly one legal slot unworked BY CONSTRUCTION, so every Weekend Flex agent-day is flagged, on
+  every date, forever. Verified: all 16 sit on that one template, and the example rows all read
+  held=8, unworked=[10:00].
+
+  THE MECHANISM — the two features disagree because they were built at different times:
+    ScheduleOutputService:727  divergence is null only if BOTH lists are empty, so a pure-slack
+                               agent-day yields a non-null divergence.
+    ScheduleResults.tsx:922    renders ⚠ when `outOfEnvelopeSeats.length > 0 ||
+                               unworkedLegalSlots.length > 0` — the OR is what admits the 16.
+
+  This is the SAME EXPIRY this test already documents for the `x` marker in expectation_correction
+  above: before bounded envelope slack (81117e3, V44, default 1 slot) an unworked legal slot meant
+  the agent could not reach contracted hours and WAS a defect signal. V44 made it normal. The `x`
+  cell's meaning was corrected in this file; the ⚠ row marker was not, and it is the louder of the
+  two. Consequence worth weighing: a marker that cries wolf on 16 correct rows trains an operator
+  to ignore the 3 real ones — it degrades exactly the signal the phase's headline guarantee needs.
+
+  SUGGESTED SHAPE OF A FIX (not planned, not agreed): gate the ⚠ on `outOfEnvelopeSeats.length > 0`
+  alone and surface unworked legal slots without warning styling, since the per-cell `x` treatment
+  already communicates them. That keeps both facts visible while restoring the marker as a defect
+  signal. Whether unworked slots deserve any row-level indicator at all is an operator call.
 
 ### 20. Warning list does not grow while a schedule is running
 
