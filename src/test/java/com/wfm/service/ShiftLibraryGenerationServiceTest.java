@@ -194,6 +194,66 @@ class ShiftLibraryGenerationServiceTest {
                 .isEmpty();
     }
 
+    /**
+     * Task 3/G-15-23 round-trip guard: the generator and the validator are two services sharing one
+     * coverage predicate (D-08), and the defect class this closes is the generator emitting a shape
+     * its own validator would flag. Extends the round trip above (added in 7298f96) onto a fixture
+     * whose demand carries a sharp IN-ENVELOPE peak, so this plan's demand bias is genuinely
+     * exercised rather than vacuously satisfied, and asserts every axis this plan could have
+     * disturbed as a separately-named assertion so a future regression names which property broke.
+     */
+    @Test
+    void generateSuggestion_peakedDemandAcceptedUnchanged_cleanOnEveryValidatorAxisAndDeterministic() {
+        int peakHour = 14; // computed once, shared by the fixture and every assertion below
+        UUID deskId = deskWithFullWeekDemandPeakedAndAgents(12, peakHour, 20);
+
+        ShiftLibrarySuggestionResponse first = generationService.generateSuggestion(deskId);
+        ShiftLibrarySuggestionResponse second = generationService.generateSuggestion(deskId);
+        assertThat(second).as("two successive calls on an unchanged desk are byte-identical").isEqualTo(first);
+
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : first.templates()) {
+            saveGeneratedTemplate(deskId, t);
+        }
+        var validation = validationService.validate(deskId);
+
+        assertThat(validation.uncoveredWindows()).as("zero uncovered windows").isEmpty();
+        assertThat(validation.misalignedTemplates()).as("zero misaligned templates").isEmpty();
+        assertThat(validation.capacityAdvisories()).as("zero capacity advisories").isEmpty();
+        assertThat(validation.breakConcentrationAdvisories()).as("zero break-concentration advisories").isEmpty();
+
+        List<ShiftLibrarySuggestionResponse.SuggestedTemplate> templates = first.templates();
+        for (int i = 0; i < templates.size(); i++) {
+            for (int j = i + 1; j < templates.size(); j++) {
+                ShiftLibrarySuggestionResponse.SuggestedTemplate a = templates.get(i);
+                ShiftLibrarySuggestionResponse.SuggestedTemplate b = templates.get(j);
+                boolean identical = a.startTime().equals(b.startTime()) && a.endTime().equals(b.endTime())
+                        && a.validWeekdays().equals(b.validWeekdays()) && a.bands().equals(b.bands());
+                assertThat(identical)
+                        .as("no two emitted templates identical on (start, end, weekdays, bands): %s vs %s",
+                                a.name(), b.name())
+                        .isFalse();
+            }
+        }
+
+        LocalTime peakStart = LocalTime.of(peakHour, 0);
+        LocalTime peakEnd = peakStart.plusHours(1);
+        for (ShiftLibrarySuggestionResponse.SuggestedTemplate t : templates) {
+            for (ShiftLibrarySuggestionResponse.SuggestedBand b : t.bands()) {
+                LocalTime breakStart = t.startTime().plusMinutes(b.offsetMinutes());
+                LocalTime breakEnd = breakStart.plusMinutes(b.durationMinutes());
+                if (!peakStart.isBefore(t.startTime()) && !peakEnd.isAfter(t.endTime())) {
+                    boolean overlapsPeak = breakStart.isBefore(peakEnd) && breakEnd.isAfter(peakStart);
+                    assertThat(overlapsPeak)
+                            .as("no emitted band's break window overlaps the fixture's peak hour (%s on %s-%s)",
+                                    peakStart, t.startTime(), t.endTime())
+                            .isFalse();
+                }
+                assertThat(breakStart).as("no emitted band at the envelope's first slot").isAfter(t.startTime());
+                assertThat(breakEnd).as("no emitted band at the envelope's last slot").isBefore(t.endTime());
+            }
+        }
+    }
+
     @Test
     void generateSuggestion_bandCapacityTotal_exceedsTheHeadcountItMustSeat() {
         // bandCapacityWeight is ofHard(1): under-sizing does not degrade a schedule, it makes the
@@ -423,6 +483,32 @@ class ShiftLibraryGenerationServiceTest {
             LocalDate date = WEEK_START.plusDays(day);
             for (int hour = 8; hour < 21; hour++) {
                 saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+            }
+        }
+        for (int i = 0; i < agentCount; i++) {
+            Agent agent = saveAgent(TENANT_A, deskId, "A" + i);
+            for (DayOfWeek weekday : DayOfWeek.values()) {
+                saveAgentDayHours(TENANT_A, agent, weekday, new BigDecimal("8.00"));
+            }
+        }
+        return deskId;
+    }
+
+    /**
+     * Same shape as {@link #deskWithFullWeekDemandAndAgents}, but every day carries a sharp,
+     * strictly in-envelope demand peak at {@code peakHour} (baseline FTE 1 elsewhere) -- so a
+     * round-trip test against this fixture genuinely exercises Task 2's demand bias rather than
+     * being vacuously satisfied by flat demand.
+     */
+    private UUID deskWithFullWeekDemandPeakedAndAgents(int agentCount, int peakHour, int peakFte) {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        for (int day = 0; day < 7; day++) {
+            LocalDate date = WEEK_START.plusDays(day);
+            for (int hour = 8; hour < 21; hour++) {
+                int fte = (hour == peakHour) ? peakFte : 1;
+                saveDemand(TENANT_A, deskId, spec, date, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), fte);
             }
         }
         for (int i = 0; i < agentCount; i++) {
