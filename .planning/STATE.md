@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 15
 current_phase_name: Shift Envelope, Breaks & Library Generation
 status: executing
-stopped_at: Completed 15-17-PLAN.md
-last_updated: "2026-09-02T13:26:39.688Z"
+stopped_at: Completed 15-18-PLAN.md
+last_updated: "2026-09-02T13:58:12.144Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 15 execution started
-state_head: 2e35fbf836df4910991573b6aea26b64e7291b21
+state_head: c5baa55d17150f19afc6304e44a0cc38e4efc930
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 24
   percent: 25
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 3 of 20
+Plan: 4 of 20
 Status: Ready to execute
 Last activity: 2026-09-01 — Phase 15 execution started
 
@@ -233,6 +233,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: Plan 15-16 Task 3 (G-15-26): a wrong HTTP verb answers 405 with an Allow header built as one comma-joined value (not one header entry per method) because HttpHeaders.getAllow() reads only the first Allow value and tokenizes it -- a varargs .header(ALLOW, array) call would have silently truncated to the first supported method.
 - [Phase 15]: Phase 15 Plan 17: dedupe keys on full emitted-shape identity (start, end, weekdays, ordered band list including capacity), never on span alone — Two templates sharing only a span (e.g. weekday vs weekend clusters both proposing 08:00-17:00) must stay separate since they serve different weekdays/demand-ranked bands; span-only dedupe would silently merge operationally distinct templates
 - [Phase 15]: Phase 15 Plan 17: suggestedBands replaced outward-walk with demand-ranked offset selection, admissible offset range left unchanged — Offsets now scored by demand at the break window (max across valid weekdays) and the 3 lowest chosen; the range itself stays frozen at its Task-14/15 bounds per Test 10's caveat and operator ruling against edge breaks -- only which offsets within range are picked changed, not where they may sit
+- [Phase 15]: Phase 15 Plan 18: coveredTimeslotsOnDate is the single date-aware coverage helper shared by the gate's blocking check and advisory (template.isEffectiveOn && appliesOn before covers); numeric shortfall suppressed when the distinct retired/weekday-invalid message already fires for a date, computed before the shortfall check
+- [Phase 15]: Phase 15 Plan 18: requireShiftEnvelopeSeatSupply takes a nullable live ConstraintWeights (appended last param); withdraws the raise-ceiling remedy only when unassignedAssignmentWeight carries nonzero hard score, naming the consequence and the weight value; default/null weights stay byte-identical, pinned by literal equality
 
 ### Blockers/Concerns
 
@@ -250,8 +252,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-02T13:26:39.540Z
-Stopped at: Completed 15-17-PLAN.md
+Last session: 2026-09-02T13:58:11.989Z
+Stopped at: Completed 15-18-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -289,3 +291,4 @@ Resume file: None
 | Phase 15 P15 | 45min | 3 tasks | 4 files |
 | Phase 15 P16 | ~25min (continuation; Task 1 579b090 from prior interrupted session) | 3 tasks | 7 files |
 | Phase 15 P17 | ~50 min | 3 tasks | 3 files |
+| Phase 15 P18 | ~50 min | 2 tasks | 6 files |
