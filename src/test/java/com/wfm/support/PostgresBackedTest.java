@@ -4,9 +4,9 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -42,9 +42,20 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * Docker, and the deploy gate runs the full unfiltered suite — so these DO gate a deploy. If that
  * ever stops being true, this guard silently stops existing.
  *
- * <p><b>Cost.</b> The container is per test class ({@code @Container} on a static field), so each
- * Postgres-backed class pays one container start plus one migration run. Keep the number of such
- * classes small and put related assertions together in one class rather than spreading them.
+ * <p><b>Cost / lifecycle (revised, Phase 16).</b> The container is a JVM-wide singleton, started
+ * once in a static initializer and never explicitly stopped -- Testcontainers' own Ryuk reaper
+ * container cleans it up when the JVM exits. This is deliberately NOT the {@code @Container}
+ * annotation's per-test-class lifecycle: {@code @Container} starts the container before, and
+ * stops it after, EACH test class's run, but {@code POSTGRES} is one shared static field slot
+ * declared on THIS superclass, not duplicated per subclass. With only one subclass
+ * ({@code AgentRepositoryPostgresTest}) that collision was unreachable; adding a second
+ * ({@code AgentUsualShiftPostgresTest}, Phase 16) surfaced it immediately -- every test in
+ * whichever class ran second failed with a JDBC "connection refused" against the first class's
+ * now-stopped container port. The singleton pattern (start once, never stop, no {@code @Container}
+ * annotation on the field) is Testcontainers' own documented fix for exactly this
+ * shared-across-classes scenario. Keep the number of Postgres-backed classes small regardless --
+ * each still pays its own migration run against the shared container -- and put related
+ * assertions together in one class rather than spreading them.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -57,9 +68,12 @@ public abstract class PostgresBackedTest {
      * ({@code ERROR: extension "vector" is not available}). pg16 matches the dev RDS instance's
      * major version (16.13). {@code asCompatibleSubstituteFor} is required because the image name
      * is not the official {@code postgres} one Testcontainers otherwise expects.
+     *
+     * <p>Deliberately NOT {@code @Container} (see the class javadoc's Lifecycle note) -- this is
+     * the Testcontainers "singleton container" pattern instead, started once below and shared by
+     * every subclass for the life of the JVM.
      */
-    @Container
-    @SuppressWarnings("resource") // Testcontainers owns the lifecycle via @Container
+    @SuppressWarnings("resource") // Testcontainers' Ryuk reaper owns cleanup at JVM exit
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(
                     DockerImageName.parse("pgvector/pgvector:pg16")
@@ -67,6 +81,18 @@ public abstract class PostgresBackedTest {
                     .withDatabaseName("wfm_test")
                     .withUsername("wfm")
                     .withPassword("wfm");
+
+    static {
+        // Guarded on Docker availability so class LOADING itself never throws -- static
+        // initializers run at class-load time, which can happen before
+        // @Testcontainers(disabledWithoutDocker = true)'s own ExecutionCondition gets a chance to
+        // disable the test class. If Docker is absent this leaves POSTGRES unstarted; the
+        // disabledWithoutDocker skip (backed by the same DockerClientFactory check) still applies
+        // before any test method would otherwise touch the unstarted container.
+        if (DockerClientFactory.instance().isDockerAvailable()) {
+            POSTGRES.start();
+        }
+    }
 
     @DynamicPropertySource
     static void postgresProperties(DynamicPropertyRegistry registry) {
