@@ -34,6 +34,7 @@ public class DeskAgentService {
     private final AgentUsualShiftRepository agentUsualShiftRepository;
     private final UsualShiftResolutionService usualShiftResolutionService;
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
+    private final UsualShiftService usualShiftService;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
@@ -45,7 +46,8 @@ public class DeskAgentService {
                             ScheduleRepository scheduleRepository,
                             AgentUsualShiftRepository agentUsualShiftRepository,
                             UsualShiftResolutionService usualShiftResolutionService,
-                            ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository) {
+                            ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
+                            UsualShiftService usualShiftService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
@@ -57,6 +59,7 @@ public class DeskAgentService {
         this.agentUsualShiftRepository = agentUsualShiftRepository;
         this.usualShiftResolutionService = usualShiftResolutionService;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
+        this.usualShiftService = usualShiftService;
     }
 
     /**
@@ -355,6 +358,17 @@ public class DeskAgentService {
         // Clean up associated desk-scoped data for this agent
         agentPreferenceRepository.deleteByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId);
         agentExceptionRepository.deleteByTenantIdAndDeskIdAndAgent_Id(tenantId, deskId, agentId);
+        // D-12: (1) AgentDayHours is deliberately ABSENT from this list -- day-hours follow the
+        // person, not the desk assignment, and this method does not change that (RESEARCH.md
+        // Pitfall 1). (2) Usual shifts DO belong here: a usual shift references a template from
+        // the DESK's own library and has no meaning once the agent leaves it. (3) This method is
+        // the desk-move trigger point -- there is no atomic move endpoint in this application, and
+        // ClientManagementService.assignEmployeesToDesk refuses an agent whose deskId is already
+        // non-null, so an agent's desk can only change through this method setting it to null
+        // first (RESEARCH.md Pitfall 2). Goes through the one clearUsualShifts implementation
+        // clearDesk also calls (D-11/D-12, Phase 14 D-08 discipline) -- never a repository call
+        // inlined directly into this method.
+        usualShiftService.clearUsualShifts(agentId);
 
         // Unassign: clear desk-specific fields
         agent.setDeskId(null);

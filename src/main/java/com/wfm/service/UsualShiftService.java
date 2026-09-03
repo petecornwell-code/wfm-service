@@ -17,14 +17,13 @@ import java.util.UUID;
 
 /**
  * The single choke-point write for an agent's usual shift on one weekday (ROADMAP success
- * criterion 3). Mirrors {@code DeskAgentService.setDayHours}'s shape: tenant+desk-scoped agent
+ * criterion 3). Mirrors the roster's day-hours choke point's shape: tenant+desk-scoped agent
  * resolution before any repository call (T-13-05/T-16-01), reject-not-clamp validation, a
  * reuse-or-create upsert, and an explicit {@code flush()} so the write is correct in isolation.
  *
- * <p>Per P-06 this service injects no other service -- {@code DeskAgentController} composes the
- * write with a subsequent read via {@code DeskAgentService.getDeskAgentResponse}, so the
- * dependency graph stays acyclic once plan 16-02 adds {@code DeskAgentService ->
- * UsualShiftService}.
+ * <p>Per P-06 this service injects no other service -- the controller composes the write with a
+ * subsequent roster read, so the dependency graph stays acyclic even after plan 16-02 gives the
+ * roster read side an outbound edge INTO this class (never the reverse).
  */
 @Service
 public class UsualShiftService {
@@ -76,7 +75,7 @@ public class UsualShiftService {
             // weekday-mask violation is a flat contradiction with a single-field fix that is
             // knowable at pick time, whereas a contracted-hours mismatch (D-06) is a moving
             // judgement about a library the operator is still shaping. Reject, do not clamp --
-            // same posture DeskAgentService.setDayHours takes on out-of-range hours.
+            // same posture the roster's day-hours choke point takes on out-of-range hours.
             if (!template.getValidWeekdays().contains(day)) {
                 throw new IllegalArgumentException(
                         "Shift template '" + template.getName() + "' is not valid on " + day);
@@ -109,7 +108,7 @@ public class UsualShiftService {
     /**
      * The ONE clear-usual-shifts implementation (D-11/D-12, Phase 14's D-08 discipline). Plan
      * 16-03 calls this from {@code DeskAssignmentUploadService.clearDesk} and plan 16-02 calls
-     * this from {@code DeskAgentService.removeDeskAgent}. A no-op when the agent has no rows.
+     * this from the roster's remove-agent-from-desk path. A no-op when the agent has no rows.
      */
     @Transactional
     public void clearUsualShifts(UUID agentId) {

@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * zero persisted schedules.
  */
 @DataJpaTest
-@Import({DeskAgentService.class, UsualShiftResolutionService.class})
+@Import({DeskAgentService.class, UsualShiftResolutionService.class, UsualShiftService.class})
 @ActiveProfiles("test")
 class DeskAgentServiceReadPathTest {
 

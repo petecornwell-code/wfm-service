@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * durable now that the solver reads per-day rows instead of the scalar.
  */
 @DataJpaTest
-@Import({DeskAgentService.class, UsualShiftResolutionService.class})
+@Import({DeskAgentService.class, UsualShiftResolutionService.class, UsualShiftService.class})
 @ActiveProfiles("test")
 class DeskAgentServiceContractedHoursTest {
 

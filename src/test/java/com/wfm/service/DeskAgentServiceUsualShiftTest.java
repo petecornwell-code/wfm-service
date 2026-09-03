@@ -191,6 +191,53 @@ class DeskAgentServiceUsualShiftTest {
         assertThat(usualShiftSnapshot()).isEqualTo(usualShiftBefore);
     }
 
+    // ---------- D-12 desk-move clears usual shifts (Task 3) ----------
+
+    @Test
+    void d12_removeDeskAgent_clearsUsualShifts_leavesDayHoursUntouched() {
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.TUESDAY, early.getId(), false);
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.WEDNESDAY, early.getId(), false);
+        deskAgentService.setDayHours(desk.getId(), agent.getId(), DayOfWeek.MONDAY, new BigDecimal("8"), null, false);
+        Map<UUID, BigDecimal> dayHoursBefore = dayHoursSnapshot();
+
+        deskAgentService.removeDeskAgent(desk.getId(), agent.getId());
+
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
+        assertThat(dayHoursSnapshot()).isEqualTo(dayHoursBefore);
+    }
+
+    @Test
+    void ushf05_adjacency_clearingTwiceInARowIsANoOpTheSecondTime() {
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+
+        usualShiftService.clearUsualShifts(agent.getId());
+        assertThatCode(() -> usualShiftService.clearUsualShifts(agent.getId())).doesNotThrowAnyException();
+
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
+    }
+
+    @Test
+    void ushf05_empty_clearingAnAgentWithZeroRows_leavesOtherAgentsOnTheDeskUntouched() {
+        Agent otherAgent = saveAgent(desk.getId());
+        usualShiftService.setUsualShift(desk.getId(), otherAgent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+
+        assertThatCode(() -> usualShiftService.clearUsualShifts(agent.getId())).doesNotThrowAnyException();
+
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, otherAgent.getId())).hasSize(1);
+    }
+
+    @Test
+    void deskMoveSignature_afterRemoveDeskAgent_noStoredRowCouldStillResolveAgainstTheOldDeskLibrary() {
+        // RESEARCH.md Pitfall 1's failure signature: an agent moved off a desk must not keep a
+        // usual-shift FK still pointing into that desk's library.
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+
+        deskAgentService.removeDeskAgent(desk.getId(), agent.getId());
+
+        assertThat(agentUsualShiftRepository.findByAgent_IdAndDayOfWeek(agent.getId(), DayOfWeek.MONDAY)).isEmpty();
+    }
+
     // ---------- USHF-04 ----------
 
     @Test

@@ -42,7 +42,7 @@ import static org.mockito.Mockito.verify;
  * loop has started genuinely leaves nothing behind.
  */
 @DataJpaTest
-@Import({DeskAgentService.class, UsualShiftResolutionService.class})
+@Import({DeskAgentService.class, UsualShiftResolutionService.class, UsualShiftService.class})
 @ActiveProfiles("test")
 class DeskAgentServiceBulkRollbackTest {
 
