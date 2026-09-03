@@ -766,9 +766,19 @@ export default function DeskAgents() {
                       No per-day hours uploaded — every day shows the schedule default ({formatHours(da.dayHours[DAY_ORDER[0]].effectiveHours)}h).
                     </div>
                   )}
+                  {/*
+                    Each tile carries an explicit 90px width, matching every 90px child it already
+                    holds (the hours input, the usual-shift <select>, and UsualShiftLine's own
+                    maxWidth). Without it the tile is a content-sized flex item: tiles holding a
+                    short value ("8", "–") collapse while one holding a long usual-shift string
+                    ("Early · not worked") pushes out to its 90px cap — ragged columns, with the
+                    long line abutting its neighbour. Latent since Phase 13 and invisible until
+                    Phase 16 put variable-length content in the tile. 7x90 + 6x8 gap = 678px,
+                    exactly the geometry G-13-8 measured and deliberately chose not to widen.
+                  */}
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                     {DAY_ORDER.map(d => (
-                      <div key={d} style={{ textAlign: 'center' }}>
+                      <div key={d} style={{ textAlign: 'center', width: '90px' }}>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{DAY_LABELS[d]}</div>
                         <div>
                           {editCell && editCell.agentId === da.id && editCell.day === d ? (
