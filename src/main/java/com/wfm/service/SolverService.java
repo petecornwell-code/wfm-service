@@ -536,7 +536,19 @@ public class SolverService {
         }
 
         if (request.overallocationHardLimitPct() != null) s.setOverallocationHardLimitPct(request.overallocationHardLimitPct());
-        if (request.shiftEnvelopeSlackSlots() != null && request.shiftEnvelopeSlackSlots() >= 0) s.setShiftEnvelopeSlackSlots(request.shiftEnvelopeSlackSlots());
+        // REJECT a negative slack rather than substituting the default (review WR-02). The previous
+        // `&& >= 0` guard silently dropped the supplied value and solved with slack=1, so a caller
+        // that computed slack from some other quantity and went negative got a schedule whose
+        // behaviour did not match the request it believed it sent — and no error to find. Throwing
+        // matches incrementMinutes' precedent at the top of this method; every OTHER optional field
+        // here is applied unconditionally when non-null and validated downstream, so silent
+        // substitution was this field's alone.
+        if (request.shiftEnvelopeSlackSlots() != null) {
+            if (request.shiftEnvelopeSlackSlots() < 0) {
+                throw new IllegalArgumentException("shiftEnvelopeSlackSlots must be >= 0");
+            }
+            s.setShiftEnvelopeSlackSlots(request.shiftEnvelopeSlackSlots());
+        }
         if (request.underallocationHardLimitPct() != null) s.setUnderallocationHardLimitPct(request.underallocationHardLimitPct());
 
         return s;

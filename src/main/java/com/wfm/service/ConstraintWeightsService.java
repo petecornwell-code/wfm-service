@@ -81,6 +81,9 @@ public class ConstraintWeightsService {
         if (updates.getContractedHoursOverWeight() != null) {
             weights.setContractedHoursOverWeight(toScore(updates.getContractedHoursOverWeight()));
         }
+        if (updates.getContractedHoursUnderZeroWeight() != null) {
+            weights.setContractedHoursUnderZeroWeight(toScore(updates.getContractedHoursUnderZeroWeight()));
+        }
         if (updates.getContractedHoursUnderWeight() != null) {
             weights.setContractedHoursUnderWeight(toScore(updates.getContractedHoursUnderWeight()));
         }
@@ -126,6 +129,7 @@ public class ConstraintWeightsService {
         dto.setBreakClusteringWeight(fromScore(w.getBreakClusteringWeight()));
         dto.setContractedHoursOverWeight(fromScore(w.getContractedHoursOverWeight()));
         dto.setContractedHoursUnderWeight(fromScore(w.getContractedHoursUnderWeight()));
+        dto.setContractedHoursUnderZeroWeight(fromScore(w.getContractedHoursUnderZeroWeight()));
         dto.setBulkOverallocationLimitWeight(fromScore(w.getBulkOverallocationLimitWeight()));
         dto.setBulkUnderallocationSoftWeight(fromScore(w.getBulkUnderallocationSoftWeight()));
         dto.setBulkUnderallocationHardWeight(fromScore(w.getBulkUnderallocationHardWeight()));

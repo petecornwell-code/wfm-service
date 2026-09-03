@@ -17,6 +17,11 @@ public class ConstraintWeightsDto {
     private ScoreDto breakClusteringWeight;
     private ScoreDto contractedHoursOverWeight;
     private ScoreDto contractedHoursUnderWeight;
+    // Review WR-01: the same class of gap the Phase 15 block below describes, missed in that pass.
+    // A DISTINCT constraint from contractedHoursUnderWeight -- it penalises an agent-day with ZERO
+    // assignments rather than a short one -- and equally weight-configurable, so leaving it out of
+    // the DTO meant a PUT body naming it was silently ignored by Jackson.
+    private ScoreDto contractedHoursUnderZeroWeight;
     private ScoreDto bulkOverallocationLimitWeight;
     private ScoreDto bulkUnderallocationSoftWeight;
     private ScoreDto bulkUnderallocationHardWeight;
@@ -60,6 +65,8 @@ public class ConstraintWeightsDto {
     public void setContractedHoursOverWeight(ScoreDto v) { this.contractedHoursOverWeight = v; }
     public ScoreDto getContractedHoursUnderWeight() { return contractedHoursUnderWeight; }
     public void setContractedHoursUnderWeight(ScoreDto v) { this.contractedHoursUnderWeight = v; }
+    public ScoreDto getContractedHoursUnderZeroWeight() { return contractedHoursUnderZeroWeight; }
+    public void setContractedHoursUnderZeroWeight(ScoreDto v) { this.contractedHoursUnderZeroWeight = v; }
     public ScoreDto getBulkOverallocationLimitWeight() { return bulkOverallocationLimitWeight; }
     public void setBulkOverallocationLimitWeight(ScoreDto v) { this.bulkOverallocationLimitWeight = v; }
     public ScoreDto getBulkUnderallocationSoftWeight() { return bulkUnderallocationSoftWeight; }
