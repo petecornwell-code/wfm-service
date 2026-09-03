@@ -44,7 +44,7 @@ files_reviewed_list:
   - src/test/java/com/wfm/support/PostgresBackedTest.java
   - src/test/java/com/wfm/repository/AgentRepositoryPostgresTest.java
 findings:
-  critical: 1
+  critical: 1   # CR-01 RESOLVED in f74be4e — see the finding for evidence
   warning: 2
   info: 0
   total: 3
@@ -103,6 +103,33 @@ export interface ShiftLibraryValidation {
 Then surface both lists in `ShiftLibrary.tsx` — e.g. a warning glyph per template row (mirroring the existing "Hours match"/"Capacity" columns) for `breakConcentrationAdvisories`, and a new panel or list item alongside `CoveragePanel` for `peakShortfallAdvisories` (which is date/hour-scoped, not template-scoped, so it needs its own rendering rather than a per-row glyph). Every three places that build a partial `ShiftLibraryValidation` object client-side (the `handleModeSwitch` 400-error reconstruction, and the draft-row `CoveragePanel` reuse) will also need the two new fields added (empty arrays are fine there, since neither refusal path currently emits them).
 
 ## Warnings
+
+**RESOLVED 2026-09-02 — commit `f74be4e`.**
+
+`BreakConcentrationAdvisory` and `PeakShortfallAdvisory` added to `frontend/src/api/client.ts` and
+to the `ShiftLibraryValidation` interface, and both rendered on the Shift Library page. Rendering
+follows the shape of each finding rather than one generic advisory list:
+
+- **Break concentration** is per-template, so it is a glyph column beside Capacity using the same
+  glyph-plus-tooltip mechanism (P-23). Deliberately its OWN cell rather than folded into Capacity:
+  one warns bands are too tight and the other too loose, and `bandCapacity` is `ofHard(1)`, so an
+  operator who "fixes" concentration by over-tightening makes the desk unsolvable rather than
+  merely worse.
+- **Peak shortfall** is per-date/hour and is not a library problem at all, so it gets its own panel
+  which states that explicitly. Folding it into `CoveragePanel` would send an operator looking for
+  a template gap that does not exist — the hour IS covered; there are simply not enough people.
+
+The mode-switch refusal path now carries both arrays through instead of resetting them, so a
+failed switch cannot blank a live shortfall warning as a side effect.
+
+VERIFIED AGAINST THE LIVE DESK, not just compiled: the API already returns two shortfalls for
+Stubhub (EN), and the new panel renders exactly them —
+`2026-01-10 11:00-12:00 needs 44, at most 25 (short 19)` and
+`2026-01-11 11:00-12:00 needs 32, at most 18 (short 14)`. Those are the same figures UAT test 8
+recorded, which until now were obtainable only by querying the API directly.
+`breakConcentrationAdvisories` is currently 0 and that is correct: it fired when every template
+carried one blank-capacity band, and the library now carries three capped bands each (test 9's
+fix), so the new column stays blank. `npm run build` (tsc -b && vite build) passes.
 
 ### WR-01: `contractedHoursUnderZeroWeight` remains unreadable/untunable through the constraint-weights API
 
