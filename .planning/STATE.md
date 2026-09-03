@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-09-03T16:00:31.148Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-09-03T16:39:21.824Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 16 execution started
-state_head: def2c475900029aa54750e0713ac3c1da26967f4
+state_head: 5d9b148559acbba35a02d09dcfc35c03b37ee385
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 31
-  completed_plans: 27
+  completed_plans: 28
   percent: 50
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 ## Current Position
 
 Phase: 16 (Usual Shift Storage) — EXECUTING
-Plan: 2 of 5
-Status: Executing Phase 16 — plan 16-01 (tracer) complete, 4 plans remaining
-Last activity: 2026-09-03 — Phase 16 plan 01 (tracer) complete
+Plan: 3 of 5
+Status: Ready to execute
+Last activity: 2026-09-03 — Phase 16 plan 02 (write-path expansion) complete
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 27/31 plans, Phase 16 1/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 28/31 plans, Phase 16 2/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -239,6 +239,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: Plan 15-20: R2 (forced-occupancy necessary condition) shipped into production exactly as plan 15-19's analysis measured -- additive alongside the day-wide sum, per-hour violations consolidated to the single worst timeslot per date, one check closing both G-15-25 (band composition) and G-15-31 (within-day distribution).
 - [Phase 16]: Adopted P-01..P-06 verbatim: real FK resolve-by-name, both FKs ON DELETE CASCADE, server-side dead-template rejection, P-04 package placement, P-06 write-then-read controller composition — Locks the tracer's architecture so plans 16-02..16-05 expand outward from a proven path
 - [Phase 16]: Fixed PostgresBackedTest's shared static Testcontainers Postgres to use the singleton-container pattern (start once, never stop) instead of @Container's per-class lifecycle — Adding this plan's second PostgresBackedTest subclass exposed a stop-collision that killed the first subclass's container out from under the second under the full suite
+- [Phase 16]: 16-02: D-05's advisory always measures the AgentUsualShift row's own stored template, never the resolved live era, matching the bulk band-load design and the plan's explicit RETIRED-still-measurable note
+- [Phase 16]: 16-02: reworded five pre-existing plan-16-01 UsualShiftService.java javadoc comments (no behavior change) to satisfy Task 3's literal acceptance-criteria grep for zero DeskAgentService mentions
 
 ### Blockers/Concerns
 
@@ -255,11 +257,12 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **Phase 12 must-pass threshold FAILED — phase goal not achieved.** 12-BENCHMARK.md shows the must-pass median-vs-spread threshold FAILS (with-move median hours assigned exceeds baseline median by only 0.25h against a 5.00h baseline spread). Operator ruling (2026-08-13): keep the atomic shift move as committed code (correct, improves hard score, breaks nothing), but do NOT claim the phase goal — record threshold 1 as FAILED rather than the "more hours assigned" goal achieved. Cross-agent seat displacement filed as follow-up (`.planning/todos/pending/2026-08-13-cross-agent-seat-displacement.md`, `resolves_phase: 12`) since the 130% conservative-variant data shows seat capacity, not move selection, is the binding constraint at realistic over-allocation. Phase 12 should not be marked complete against its original success criteria on this ruling.
 - Plan 15-14: full-suite runtime-budget delta for the new SolverQualityGuardTest could not be cleanly measured in-session (two consecutive ./gradlew test runs showed +147s then +235s deltas against HANDOFF.md's 8m08s baseline, confounded by cumulative machine load from three back-to-back ~10-12min suite runs on a fanless dev laptop). Isolated guard-class cost is 20-31s, well under the 90s budget. A human should confirm the next CI deploy gate's Test job duration does not regress materially past the 12m53s recorded in HANDOFF.md.
 - Plan 15-15 found a pre-existing, uncommitted change to 15-UAT.md's G-15-27 entry (status open->resolved, full resolved_by/resolved_evidence) already on disk before the plan's own edits -- not authored by this execution, deliberately left uncommitted (touch no other gap entry), needs a human or future session to commit or discard it
+- 16-02: MultiDayConstraintDiagnosticTest (solver package, wall-clock time-boxed) failed once during the mandatory full-suite run under contention; confirmed flaky, green in isolation. Pre-existing, out of this phase's scope — logged to .planning/phases/16-usual-shift-storage/deferred-items.md
 
 ## Session Continuity
 
-Last session: 2026-09-03T16:00:30.968Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-09-03T16:39:21.670Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -301,3 +304,4 @@ Resume file: None
 | Phase 15 P19 | ~100 min | 3 tasks | 4 files |
 | Phase 15 P20 | ~70 min | 3 tasks | 6 files |
 | Phase 16 P01 | 43min | 2 tasks | 22 files |
+| Phase 16 P02 | 49min | 3 tasks | 14 files |
