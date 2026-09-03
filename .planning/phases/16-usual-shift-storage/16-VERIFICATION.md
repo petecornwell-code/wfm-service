@@ -2,7 +2,7 @@
 phase: 16-usual-shift-storage
 verified: 2026-09-03T18:24:20Z
 status: human_needed
-score: 5/5 ROADMAP success criteria verified in code; live QA 2026-09-03 discharged XCUT-01 fully and the Excel-dropdown item substantially, found and fixed 2 pre-existing layout defects, and left 1 partial item (State B not yet observed)
+score: 5/5 ROADMAP success criteria verified in code; live QA 2026-09-03 discharged XCUT-01 fully and the Excel-dropdown item substantially, found and fixed 2 pre-existing layout defects, and discharged the three-state QA in full; 1 residual (Excel rendering unobserved, structurally sound)
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
@@ -72,7 +72,8 @@ run and ECS roll.
 |---|---|---|
 | XCUT-01 roster -> export trace | **DISCHARGED** | Live export of StubHub (EN): col `U` "Usual Shift Monday" = `Early`, matching the value set inline in the roster; cols `V`-`AA` blank (D-07 semantics, not a placeholder); `Monday` day-hours col still `MANDATORY`; First/Last Name at `AB`/`AC`, displaced by exactly 7 as designed |
 | Excel dropdown structural validity | **SUBSTANTIALLY DISCHARGED** | Live template download carries 7 `dataValidation` blocks (`O2:O…` through `U2:U…`), one per Usual Shift column, each `formula1` 104 chars — well under the 255-char explicit-list limit that was the actual failure mode. Residual: rendering in real Excel still unobserved. Headroom is ~151 chars (~15 more templates) before the limit binds |
-| Roster three-state visual QA | **PARTIAL** | Screenshot confirms State A (`-`, light `#d1d5db`, upright) and State C (italic `#9ca3af`, `Early - not wor...`) are visually distinct — the load-bearing audit-I-1 distinction holds. State B (LIVE, accent `#3b82f6` bold) not yet observed: no weekday on the QA'd agent is currently in a live state |
+| Roster three-state visual QA | **DISCHARGED** | Completed 2026-09-03 by setting Adaeze's Tuesday to `Early` (a worked day) through the live inline picker, producing all three states in one row. Computed styles read from the live DOM, not eyeballed: State A `rgb(209,213,219)`=`#d1d5db` w400 upright; State B `rgb(59,130,246)`=`#3b82f6` w600 upright; State C `rgb(156,163,175)`=`#9ca3af` w400 italic. Every token matches 16-UI-SPEC.md Component Specifications §1 exactly, and the three states differ in colour AND weight AND slant. Screenshot retained in the QA harness output |
+| D-17 picker weekday filtering | **DISCHARGED (incidental)** | The Tuesday picker offered `— none —, Daytime, Early, Late, Mid, Morning` — 5 of the library's 10 templates, correctly excluding the 5 `Weekend *` templates whose `validWeekdays` exclude Tuesday. `— none —` first, remainder alphabetical, exactly as D-17 specifies |
 
 ### Accepted, not fixed
 
