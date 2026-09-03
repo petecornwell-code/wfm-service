@@ -5,11 +5,11 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: verifying
-stopped_at: Completed 16-05-PLAN.md
-last_updated: "2026-09-03T18:18:39.756Z"
+stopped_at: Phase 16 executed 5/5; verification human_needed (3 visual/Excel items)
+last_updated: "2026-09-03T18:26:52.929Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 16 plan 05 (usual shift roster UI) complete — phase ready for verification
-state_head: cf266f2030a63f4dc629a73927303c67085d50b5
+state_head: cc92fd3b2c8e98e539537d8b1532d073b563750f
 progress:
   total_phases: 4
   completed_phases: 2
@@ -266,9 +266,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:18:34.159Z
-Stopped at: Completed 16-05-PLAN.md
-Resume file: None
+Last session: 2026-09-03T18:26:52.504Z
+Stopped at: Phase 16 executed 5/5; verification human_needed (3 visual/Excel items)
+Resume file: .planning/phases/16-usual-shift-storage/16-VERIFICATION.md
 
 ## Operator Next Steps
 

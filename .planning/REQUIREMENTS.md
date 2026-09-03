@@ -134,12 +134,12 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | SHLB-01…06 | Phase 14 | Complete (2026-08-26) |
 | SHLB-07 | Phase 15 | Complete |
 | MODE-01…05 | Phase 14 | Complete (2026-08-26) |
-| ENVL-01…10 | Phase 15 | Pending |
-| USHF-01…06 | Phase 16 | Pending |
+| ENVL-01…10 | Phase 15 | Complete (2026-08-27) — verification `passed`; this row read "Pending" until 2026-09-03 while the checkbox list above already marked all ten `[x]` |
+| USHF-01…06 | Phase 16 | Complete in code (2026-09-03) — all six verified against the codebase by `16-VERIFICATION.md`; phase status is `human_needed`, not `passed`, for three visual/Excel items no automation in this project can close (see below) |
 | CONS-01…06 | Phase 17 | Pending |
 | DRFT-01…04 | Phase 17 | Pending |
-| XCUT-01 (display verification) | Phases 14, 15, 16, 17 | Pending |
-| XCUT-02 (every write path) | Phases 16, 17 | Pending |
+| XCUT-01 (display verification) | Phases 14, 15, 16, 17 | Partial — Phases 14/15 complete; Phase 16's store → roster → export trace is proven end-to-end in one test (`UsualShiftTracerTest#happyPath_storeRosterExport_endToEnd`), but its frontend leg is human-verification-only (no frontend test framework exists in this project); Phase 17 outstanding |
+| XCUT-02 (every write path) | Phases 16, 17 | Phase 16 complete (2026-09-03) — nine enumerated write paths in `src/test/resources/ushf-05-write-paths.md`, one test per path, plus `UsualShiftWritePathGuardTest`'s set-equality structural guard proven able to fail twice (test-of-the-test and a real deliberate break). Phase 17 outstanding |
 | XCUT-03 (solverConfig.xml build test) | Phase 15 | Complete (2026-08-27) — every gap-closure plan's solver tests (15-04, 15-08, 15-09, 15-11, 15-13) build a solver via `SolverConfig.createFromXmlResource("solverConfig.xml")` and solve through it; `ShiftDeskEndToEndRegressionTest` (15-13) is the closing end-to-end proof |
 | XCUT-04 (seeded A/B benchmark) | Phases 15, 17 | Partial — Phase 15 benchmark delivered (`15-BENCHMARK.md`, PASS verdict, D-08 CH-ordering decided); Phase 17's own XCUT-04 obligation outstanding |
 | XCUT-05 (constraint classification) | Phases 14, 15 | Complete (2026-08-27) — Phase 14 classification delivered (`XCUT-05-constraint-classification.md`); Phase 15 mode-gating (plans 15-06, 15-09) closed the remaining "Minimum staffing" row |
