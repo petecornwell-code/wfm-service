@@ -5,11 +5,11 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: planning
-stopped_at: Phase 15 complete, ready to plan Phase 16
-last_updated: "2026-09-03T02:52:44.767Z"
-last_activity: 2026-09-02
-last_activity_desc: Phase 15 complete, transitioned to Phase 16
-state_head: 09f28f8b92758ad4b8f80cdf08a4334dd54b3513
+stopped_at: Phase 16 context gathered
+last_updated: "2026-09-03T12:18:57.556Z"
+last_activity: 2026-09-03
+last_activity_desc: Phase 16 context gathered — 18 decisions captured
+state_head: 8f5e186f78a02ad9faef645e1b7310e16e1e462e
 progress:
   total_phases: 4
   completed_phases: 2
@@ -256,13 +256,13 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-02
-Stopped at: Phase 15 complete (verified, secured, UAT 20/20), ready to plan Phase 16
-Resume file: None
+Last session: 2026-09-03T12:18:57.197Z
+Stopped at: Phase 16 context gathered
+Resume file: .planning/phases/16-usual-shift-storage/16-CONTEXT.md
 
 ## Operator Next Steps
 
-- Discuss Phase 15 with `/gsd-discuss-phase 15` — no CONTEXT.md exists yet
+- Plan Phase 16 with `/gsd-plan-phase 16` — `16-CONTEXT.md` is written and committed (18 decisions)
 - Consider a Testcontainers-backed migration boot test — Phase 14's G-14-1 showed the suite cannot catch migration-vs-entity drift
 
 ## Performance Metrics
