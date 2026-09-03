@@ -1,9 +1,9 @@
 ---
-status: partial
+status: complete
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-03T01:50:00Z"
+updated: "2026-09-03T03:05:00Z"
 ---
 
 <!--
@@ -89,12 +89,13 @@ covers that and stays blocked until a production deploy is actually planned.
 
 ## Current Test
 
-[testing paused — 0 pending, 0 issues; 1 blocked (test 18, production deploy) remains]
+[testing complete]
 
-ALL 18 TESTABLE CHECKPOINTS PASS. Test 10 was closed by operator ruling on 2026-09-02 (see its
-closed_by_operator_ruling block). The only outstanding item is test 18, which needs a PRODUCTION
-deploy that has not been scheduled — `deploy.yml` targets dev only. Status stays `partial` rather
-than `complete` because a blocked item remains, per the workflow's own rule.
+ALL 20 NUMBERED TESTS RESOLVED — 20 pass, 0 issues, 0 blocked, 0 pending. Two were closed by
+operator ruling rather than by fresh measurement, and each says so in its own entry: test 10
+(2026-09-02, the desk's residual judged acceptable) and test 18 (2026-09-02, "no cloud is dev" —
+no separate production tier exists, and Test 1 already verified the fan-out against the one live
+environment). Status is `complete` because no pending, blocked, or reasonless-skipped item remains.
 
 STILL OPEN AND NOT CLOSED BY ANY OF THIS: G-15-28, the weekend demand forecast, operator-owned.
 
@@ -1771,9 +1772,34 @@ verified_live_2026_09_02: |
 ### 18. Production migration executed safely
 
 expected: Before deploying to PRODUCTION, a restorable snapshot of `shift_template` exists (including `break_offset_minutes` and `break_duration_minutes`), because V40 DROPs both after fanning their data out — if the fan-out is wrong there, the source data is already gone. After the production deploy, Test 1's fan-out query is re-run against production and passes. Dev's four successful runs are a rehearsal, not a substitute: production has different data volume, different pre-existing rows, and different edge cases.
-result: blocked
-blocked_by: server
-reason: No production deploy has occurred. `deploy.yml` targets the dev environment (ECS cluster `wfm-service-dev`) only. Unblock when a production deploy is planned.
+result: pass
+closed_by_operator_ruling_2026_09_02: |
+  OPERATOR RULING ("no cloud is dev", 2026-09-02): there is no separate production tier and none
+  is planned. The cloud deployment NAMED "dev" is the live system — one environment, carrying real
+  tenant data. This test was written assuming a two-tier dev→production promotion that does not
+  exist in this project.
+
+  WHY THAT CLOSES IT RATHER THAN EXCUSING IT. The test's substantive requirement is "after the
+  deploy, Test 1's fan-out query is re-run against the live system and passes". That has already
+  happened: Test 1 ran against this exact environment on live tenant data
+  (https://d2bbtcc80peap7.cloudfront.net, 2026-08-27T21:26Z) — desk Stubhub (EN), all four real
+  templates, each showing exactly 1 band with its former offset/duration (Early 12:00-13:00
+  surviving the DROP intact, corroborated by V40's own header recording the pre-migration state).
+  Zero templates with >1 band, zero with 0 bands. The pre-deploy snapshot concern is likewise
+  spent: V40 has already run on the only system there is, and its fan-out was verified correct
+  before the source columns became unrecoverable.
+
+  WHAT IS NOT CLAIMED. No second migration run against a different data volume was performed,
+  because no second environment exists to run one against. If a production tier is ever stood up,
+  this test becomes live again and must be re-run there.
+
+  SUPERSEDED BY: Test 1 (live cloud data, same environment).
+
+  PRIOR STATE (kept for history, no longer the verdict):
+    result: blocked
+    blocked_by: server
+    reason: No production deploy has occurred. `deploy.yml` targets the dev environment (ECS
+      cluster `wfm-service-dev`) only. Unblock when a production deploy is planned.
 
 ### 19. Envelope divergence and unstaffed hours render correctly
 
@@ -2019,24 +2045,29 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 19
+passed: 20
 issues: 0
 pending: 0
 skipped: 3
-blocked: 1
+blocked: 0
 
 <!--
   COUNT CORRECTION 2026-09-02: this block briefly read `issues: 0` while test 20 still carried
   `result: issue`, and the figures did not sum to 20. Numbered tests 1-20: 18 passed, 1 issue
   (test 20), 1 blocked (test 18). `skipped: 3` counts the lettered entries 5b/14b/17b, which sit
   outside the numbered 20 — that is why passed+issues+blocked already totals 20 without them.
+
+  COUNT UPDATE 2026-09-02 (later): test 18 closed by operator ruling ("no cloud is dev") — no
+  separate production tier exists, and Test 1 already verified V40's fan-out against the one live
+  environment. blocked 1 -> 0, passed 19 -> 20. Numbered tests now 20 passed, 0 issues, 0 blocked;
+  `skipped: 3` still counts only the lettered entries 5b/14b/17b, outside the numbered 20.
 -->
 
 <!--
   passed : 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12
   issue  : 10 (major, was blocker — search plateau, all structural causes fixed)
   skipped: 5b (probe artefact bookkeeping, now closed by the delete control)
-  blocked: 18 (production deploy, unchanged)
+  blocked: 18 (production deploy) — SUPERSEDED, see COUNT UPDATE above; now passed
   pending: 13, 14, 15, 16, 17, 19
 
   TEST 3 CLOSED 2026-09-01 via operator-chosen route (b) — a throwaway DESK (created and deleted
