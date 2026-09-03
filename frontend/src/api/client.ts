@@ -333,7 +333,18 @@ export interface HoursAdvisory { templateId: string; templateName: string; weekd
 // D-03's named residual risk (P-06 — Task 3, plan 15-01): a band-capacity total below the
 // admissible headcount, surfaced as a save-time advisory rather than an unexplained hard score.
 export interface CapacityAdvisory { templateId: string; templateName: string; weekday: string; capacityTotal: number; admissibleHeadcount: number; message: string }
-export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[] }
+// The INVERSE of CapacityAdvisory, and the gap that advisory structurally cannot see: capacity
+// fires when a band total is too LOW and skips blank-capacity templates entirely ("unlimited by
+// construction"), but unlimited is the DEFAULT and is exactly what lets every agent on a shift
+// take the same break hour. worstCaseSimultaneousBreak is what the library PERMITS, not what one
+// solve produced.
+export interface BreakConcentrationAdvisory { templateId: string; templateName: string; weekday: string; bandCount: number; admissibleHeadcount: number; worstCaseSimultaneousBreak: number; message: string }
+// A single hour whose demand exceeds every agent who could possibly work it. Every other supply
+// check on a desk is a per-DATE aggregate, so a day can report a comfortable surplus while one
+// hour inside it is unmeetable. reachableAgents is a deliberate UPPER bound, which is what makes
+// a reported shortfall provable rather than another number to weigh.
+export interface PeakShortfallAdvisory { date: string; startTime: string; endTime: string; requiredFTEs: number; reachableAgents: number; shortfall: number; message: string }
+export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[]; breakConcentrationAdvisories: BreakConcentrationAdvisory[]; peakShortfallAdvisories: PeakShortfallAdvisory[] }
 
 // --- SHLB-07 Suggested Library (D-11) ---
 // A generated candidate mirrors ShiftTemplateBody's field set (P-10) so a draft row can be handed

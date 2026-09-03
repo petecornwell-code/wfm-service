@@ -272,6 +272,49 @@ function CoveragePanel({ validation, extraLine }: { validation: ShiftLibraryVali
   return <p>✓ All staffing-demand windows are covered by the current shift library.</p>
 }
 
+/**
+ * Peak-hour shortfalls — deliberately NOT folded into CoveragePanel.
+ *
+ * A shortfall here is not a coverage problem and no library edit can fix it: the hour IS covered
+ * by a template, there are simply not enough people who could work it. Rendering it inside the
+ * coverage panel would invite an operator to go looking for a template gap that does not exist.
+ *
+ * It is also the one finding on this page that survives a clean verdict everywhere else. Every
+ * other supply check is a per-DATE aggregate, so the desk can read 140% coverage with the
+ * seat-supply gate clean while one hour inside that day is unmeetable — observed live at Saturday
+ * 11:00, 44 FTE required against 25 agents on the entire desk.
+ *
+ * reachableAgents is an UPPER bound (it ignores that those same agents must also cover other
+ * hours), so a real schedule can only do worse. That is what makes this worth an operator's
+ * attention: the shortfall is provable, not a projection. Advisory only — never blocking, because
+ * an unmeetable peak is a staffing fact and the operator still wants the best partial schedule.
+ */
+function PeakShortfallPanel({ validation }: { validation: ShiftLibraryValidation | null }) {
+  const shortfalls = validation?.peakShortfallAdvisories ?? []
+  if (shortfalls.length === 0) return null
+
+  return (
+    <div style={{ ...amberPanelStyle, marginTop: '8px' }}>
+      <div style={{ fontWeight: 600 }}>
+        {shortfalls.length} hour(s) need more agents than could possibly work them:
+      </div>
+      <ul style={{ maxHeight: '220px', overflowY: 'auto', margin: '4px 0 0', paddingLeft: '1.25rem' }}>
+        {shortfalls.map((s, i) => (
+          <li key={i}>
+            {s.date} {s.startTime?.substring(0, 5)}–{s.endTime?.substring(0, 5)} — needs{' '}
+            <strong>{s.requiredFTEs}</strong>, at most <strong>{s.reachableAgents}</strong> can work it
+            {' '}(short {s.shortfall})
+          </li>
+        ))}
+      </ul>
+      <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+        This is a staffing shortfall, not a library gap — the hours above are covered by a template.
+        No library edit or longer solve closes it; it needs more people rostered on those days.
+      </div>
+    </div>
+  )
+}
+
 export default function ShiftLibrary() {
   const { deskId } = useParams<{ deskId: string }>()
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
@@ -559,6 +602,11 @@ export default function ShiftLibrary() {
           hoursAdvisories: prev?.hoursAdvisories ?? [],
           unsatisfiableWeekdays: prev?.unsatisfiableWeekdays ?? [],
           capacityAdvisories: prev?.capacityAdvisories ?? [],
+          // Carried through, not reset: a mode-switch refusal rewrites only the coverage-shaped
+          // fields, so discarding these would blank a live peak-shortfall warning as a side effect
+          // of a failed switch.
+          breakConcentrationAdvisories: prev?.breakConcentrationAdvisories ?? [],
+          peakShortfallAdvisories: prev?.peakShortfallAdvisories ?? [],
         }))
         setModeSwitchHoursError(hoursMessage)
         if (demandMessage) showToast('error', demandMessage)
@@ -881,6 +929,7 @@ export default function ShiftLibrary() {
               <th>Effective range</th>
               <th>Hours match</th>
               <th>Capacity</th>
+              <th>Break spread</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -970,6 +1019,22 @@ export default function ShiftLibrary() {
                     })()}
                   </td>
                   <td>
+                    {(() => {
+                      // The inverse of the Capacity column, and deliberately its own cell rather
+                      // than folded into it: capacity warns that bands are too TIGHT, this warns
+                      // they are too LOOSE, and an operator who cannot tell them apart may "fix"
+                      // one by worsening the other. bandCapacity is ofHard(1), so over-tightening
+                      // makes a desk unsolvable rather than merely worse.
+                      //
+                      // Same glyph-plus-tooltip mechanism as the two columns before it (P-23);
+                      // several weekdays collapse into one tooltip; a clean row is a blank cell.
+                      const advisories = validation?.breakConcentrationAdvisories.filter(a => a.templateId === t.id) ?? []
+                      if (advisories.length === 0) return null
+                      const tooltip = advisories.map(a => a.message).join('\n')
+                      return <span title={tooltip}>⚠</span>
+                    })()}
+                  </td>
+                  <td>
                     {retiringId === t.id ? (
                       <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
                         <label style={{ fontSize: '0.8rem' }}>
@@ -1034,6 +1099,11 @@ export default function ShiftLibrary() {
                         hoursAdvisories: [],
                         unsatisfiableWeekdays: [],
                         capacityAdvisories: [],
+                        // The suggested-library draft reports coverage only; it has no agents or
+                        // demand context of its own, so these are legitimately empty here rather
+                        // than unknown.
+                        breakConcentrationAdvisories: [],
+                        peakShortfallAdvisories: [],
                       }}
                     />
                   </div>
@@ -1047,6 +1117,7 @@ export default function ShiftLibrary() {
       <div style={{ margin: '16px 0' }}>
         <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Coverage</h3>
         <CoveragePanel validation={validation} extraLine={modeSwitchHoursError} />
+        <PeakShortfallPanel validation={validation} />
       </div>
 
       <div style={{ margin: '16px 0' }}>
