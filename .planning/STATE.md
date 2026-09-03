@@ -5,11 +5,11 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: planning
-stopped_at: Phase 16 context gathered
-last_updated: "2026-09-03T12:18:57.556Z"
+stopped_at: Phase 16 UI-SPEC approved
+last_updated: "2026-09-03T12:43:43.687Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 16 context gathered — 18 decisions captured
-state_head: 8f5e186f78a02ad9faef645e1b7310e16e1e462e
+last_activity_desc: Phase 16 UI-SPEC approved — research, validation strategy and UI contract in place
+state_head: 3b22896b00d7c17490de328b1e719e69be64807a
 progress:
   total_phases: 4
   completed_phases: 2
@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 Phase: 16 — Usual Shift Storage
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-02 — Phase 15 complete, transitioned to Phase 16
+Status: Planning in progress — CONTEXT, RESEARCH, VALIDATION and UI-SPEC written; planner next
+Last activity: 2026-09-03 — Phase 16 UI-SPEC approved (6/6 dimensions)
 
 Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete, 26/26 plans)
 
@@ -256,9 +256,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T12:18:57.197Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-usual-shift-storage/16-CONTEXT.md
+Last session: 2026-09-03T12:43:43.246Z
+Stopped at: Phase 16 UI-SPEC approved
+Resume file: .planning/phases/16-usual-shift-storage/16-UI-SPEC.md
 
 ## Operator Next Steps
 
