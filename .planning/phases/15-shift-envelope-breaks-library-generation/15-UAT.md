@@ -3,7 +3,7 @@ status: partial
 phase: 15-shift-envelope-breaks-library-generation
 source: [15-01-SUMMARY.md, 15-02-SUMMARY.md, 15-03-SUMMARY.md, 15-04-SUMMARY.md, 15-05-SUMMARY.md, 15-06-SUMMARY.md, 15-07-SUMMARY.md, 15-08-SUMMARY.md, 15-09-SUMMARY.md, 15-10-SUMMARY.md, 15-11-SUMMARY.md, 15-12-SUMMARY.md, 15-13-SUMMARY.md, 15-VERIFICATION.md]
 started: 2026-08-27T13:10:00Z
-updated: "2026-09-02T23:30:00Z"
+updated: "2026-09-03T01:50:00Z"
 ---
 
 <!--
@@ -1949,9 +1949,22 @@ expected: |
   Start a SHIFT-mode solve that produces an envelope divergence and leave the results page open
   while it is RUNNING. The schedule's warnings should NOT accumulate duplicate entries as the page
   polls (every 2s). The divergence information itself should be correct on every refresh.
-result: issue
-reported: "the capacity warning keeps growing please stop that"
-severity: minor
+result: pass
+closed_by_operator_ruling_2026_09_02: |
+  OPERATOR RULING ("20 is a pass"), given after the fix and its evidence were put to them. Recorded
+  as a ruling, not a measurement, so nobody later reads it as a fresh field observation.
+
+  WHAT IS ESTABLISHED: the append-per-poll cause was located precisely (ScheduleOutputService:236
+  on a READ path, against a Schedule handed back by reference from InMemoryScheduleStore), fixed
+  idempotently, and covered by three guard tests — two of which were verified to FAIL against the
+  pre-fix code before being accepted.
+
+  WHAT IS NOT: no post-fix observation on a RUNNING shift desk. The only field evidence after the
+  fix is weak by construction — warnings held flat across 5 polls during test 14, but that was a
+  SLOT desk, where publishDivergenceWarning has nothing to publish and so never exercises the
+  fixed path. The operator's own original sighting was pre-fix.
+previously_reported: "the capacity warning keeps growing please stop that"
+severity_at_time_of_issue: minor
 tested_against: dev (https://d2bbtcc80peap7.cloudfront.net) on 5b7bd15, live operator observation
 confirms: 15-REVIEW.md CR-04 — predicted in code review, now observed in the field by the operator.
 finding: |
@@ -2006,8 +2019,8 @@ why_human: |
 ## Summary
 
 total: 20
-passed: 18
-issues: 1
+passed: 19
+issues: 0
 pending: 0
 skipped: 3
 blocked: 1
