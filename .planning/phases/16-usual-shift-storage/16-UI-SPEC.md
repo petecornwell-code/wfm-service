@@ -288,7 +288,10 @@ all (reconfirmed this session against `frontend/package.json`), so purely visual
 proven by assertion — marked `backstop` deliberately, routing to `human_needed` at verify time unless
 visual evidence is wired.
 
-Applicable state considerations resolved: **12 covered, 4 backstop, 0 unresolved.**
+Applicable state considerations resolved: **16 applicable — 11 covered (explicit), 3 backstop,
+2 dismissed (not applicable, reason given), 0 unresolved.** Tally verified against the probe
+engine's own report (`ui-consideration-probe.cjs` → `coverage.applicable: 16`), which emits the same
+eight categories per element for both E1 and E2.
 
 ### E1 — Roster day tile, usual-shift line + inline editor *(interactive-control, static-content)*
 
