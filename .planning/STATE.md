@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-09-03T16:39:21.824Z"
+stopped_at: Completed 16-03-PLAN.md
+last_updated: "2026-09-03T17:18:23.440Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 16 execution started
-state_head: 5d9b148559acbba35a02d09dcfc35c03b37ee385
+state_head: 9e28ca7bf9bfa126f3d1b5abe732749027eb5530
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 31
-  completed_plans: 28
+  completed_plans: 29
   percent: 50
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 ## Current Position
 
 Phase: 16 (Usual Shift Storage) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
-Last activity: 2026-09-03 — Phase 16 plan 02 (write-path expansion) complete
+Last activity: 2026-09-03 — Phase 16 plan 03 (upload template usual shift) complete
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 28/31 plans, Phase 16 2/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 29/31 plans, Phase 16 3/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -241,6 +241,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 16]: Fixed PostgresBackedTest's shared static Testcontainers Postgres to use the singleton-container pattern (start once, never stop) instead of @Container's per-class lifecycle — Adding this plan's second PostgresBackedTest subclass exposed a stop-collision that killed the first subclass's container out from under the second under the full suite
 - [Phase 16]: 16-02: D-05's advisory always measures the AgentUsualShift row's own stored template, never the resolved live era, matching the bulk band-load design and the plan's explicit RETIRED-still-measurable note
 - [Phase 16]: 16-02: reworded five pre-existing plan-16-01 UsualShiftService.java javadoc comments (no behavior change) to satisfy Task 3's literal acceptance-criteria grep for zero DeskAgentService mentions
+- [Phase 16]: Adopted P-11..P-15 verbatim: required Usual Shift headers, trim+lowercase name matching with explicit ambiguity path, direct-repository parser write bypassing the choke-point service, three-condition graceful dropdown degradation, template column placement 14-20 with specialty at 21-22 — Locks the D-09/D-10/upload-parser shape so plan 16-04's structural guard and 16-05's roster UI expand from a proven, consistent path
 
 ### Blockers/Concerns
 
@@ -261,8 +262,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T16:39:21.670Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-09-03T17:18:23.276Z
+Stopped at: Completed 16-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -305,3 +306,4 @@ Resume file: None
 | Phase 15 P20 | ~70 min | 3 tasks | 6 files |
 | Phase 16 P01 | 43min | 2 tasks | 22 files |
 | Phase 16 P02 | 49min | 3 tasks | 14 files |
+| Phase 16 P03 | 35min | 2 tasks | 20 files |
