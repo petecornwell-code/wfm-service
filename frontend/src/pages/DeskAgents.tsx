@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, useMemo, useRef, type CSSProperties } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type DayHoursEntry, type UsualShiftEntry, type Agent, type Specialization, getErrorMessage } from '../api/client'
+import { deskAgents, agents as agentsApi, specializations as specApi, shiftTemplates, type DeskAgent, type DayHoursEntry, type UsualShiftEntry, type ShiftTemplate, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type SortField = 'firstName' | 'lastName'
@@ -57,6 +57,51 @@ function formatHoursSummary(da: DeskAgent) {
  * note (13-UI-SPEC.md E1 empty). */
 function isEveryDayNotSet(da: DeskAgent): boolean {
   return DAY_ORDER.every(d => !da.dayHours[d].hasRow)
+}
+
+// D-17 inline picker sentinels: the clear option's value and the disabled retired option's
+// value. Neither collides with a real ShiftTemplate id (a UUID).
+const USUAL_SHIFT_CLEAR_VALUE = ''
+const USUAL_SHIFT_RETIRED_VALUE = '__retired__'
+
+/** The desk's CURRENT-era templates valid for this weekday, alphabetical ascending
+ * (16-UI-SPEC.md Component Specifications §2, option group 3) — filtered client-side from the
+ * one page-level fetch (P-21); the picker's only source is the already desk-scoped
+ * shiftTemplates.list(deskId), never a second endpoint. */
+function liveTemplatesForDay(templates: ShiftTemplate[], day: string): ShiftTemplate[] {
+  return templates
+    .filter(t => t.eraStatus === 'CURRENT' && t.validWeekdays.includes(day))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** The <select>'s initial value when the editor opens: the matching live template's id for
+ * LIVE, the retired sentinel for STORED_INACTIVE/RETIRED, otherwise the clear option — so the
+ * control never opens showing a blank selection for a value that IS stored. */
+function initialUsualShiftValue(entry: UsualShiftEntry, templates: ShiftTemplate[], day: string): string {
+  if (entry.status === 'STORED_INACTIVE' && entry.reason === 'RETIRED') return USUAL_SHIFT_RETIRED_VALUE
+  if (entry.status === 'LIVE') {
+    const match = liveTemplatesForDay(templates, day).find(t => t.name === entry.name)
+    if (match) return match.id
+  }
+  return USUAL_SHIFT_CLEAR_VALUE
+}
+
+/** Option list, in the exact order 16-UI-SPEC.md Component Specifications §2 requires: the
+ * clear option always first, the disabled retired option only when applicable, then every live
+ * weekday-valid template. The zero-live-template case needs no special handling or messaging —
+ * the 90px column has no room for it and the operator already sees the near-empty dropdown. */
+function usualShiftOptions(entry: UsualShiftEntry, templates: ShiftTemplate[], day: string): { value: string; label: string; disabled?: boolean }[] {
+  const options: { value: string; label: string; disabled?: boolean }[] = [
+    { value: USUAL_SHIFT_CLEAR_VALUE, label: '— none —' },
+  ]
+  if (entry.status === 'STORED_INACTIVE' && entry.reason === 'RETIRED') {
+    options.push({ value: USUAL_SHIFT_RETIRED_VALUE, label: `${entry.name} (retired)`, disabled: true })
+  }
+  for (const t of liveTemplatesForDay(templates, day)) {
+    options.push({ value: t.id, label: t.name })
+  }
+  return options
 }
 
 /** Per-day cell display (13-UI-SPEC.md Section 3, rules 1-5) — this branch order is
@@ -211,6 +256,17 @@ export default function DeskAgents() {
    * clearing the field for the dropdown's sake does not hide what is currently stored. */
   const [editCellSeed, setEditCellSeed] = useState('')
 
+  // Usual-shift inline picker (D-17). Mirrors editCell's { agentId, day } shape but carries none
+  // of its cellDirtyRef/cellEscapedRef guard machinery — that machinery exists solely to work
+  // around G-13-DD (a seeded <input> collapsing its <datalist> to the single self-matching
+  // option), which a closed native <select> option list has no equivalent of.
+  const [usualShiftTemplates, setUsualShiftTemplates] = useState<ShiftTemplate[]>([])
+  const [editUsualShift, setEditUsualShift] = useState<{ agentId: string; day: string } | null>(null)
+  const [usualShiftValue, setUsualShiftValue] = useState('')
+  const [usualShiftSaving, setUsualShiftSaving] = useState(false)
+  const [usualShiftError, setUsualShiftError] = useState<string | null>(null)
+  const usualShiftCommittingRef = useRef(false)
+
   // Days off modal
   const [showDaysOff, setShowDaysOff] = useState<{ agentId: string; agentName: string; daysOff: Array<{ id: string; date: string; type: string }> } | null>(null)
 
@@ -240,6 +296,14 @@ export default function DeskAgents() {
 
   useEffect(() => {
     if (deskId) specApi.list(deskId).then(setSpecs).catch(() => {})
+  }, [deskId])
+
+  // P-21: the desk's shift templates are fetched once per page load, not per tile — seven tiles
+  // times every expanded agent would otherwise be a request storm. Filtered per weekday at
+  // render time from this one array. On failure, degrade to an empty list rather than blocking
+  // the roster: the picker then offers only the clear option (T-16-29).
+  useEffect(() => {
+    if (deskId) shiftTemplates.list(deskId).then(setUsualShiftTemplates).catch(() => setUsualShiftTemplates([]))
   }, [deskId])
 
   const handleRefresh = async () => {
@@ -405,6 +469,46 @@ export default function DeskAgents() {
       setEditCell(null)
     } finally {
       setSavingCell(false)
+    }
+  }
+
+  const startEditUsualShift = (da: DeskAgent, day: string) => {
+    setEditUsualShift({ agentId: da.id, day })
+    setUsualShiftValue(initialUsualShiftValue(da.usualShift[day], usualShiftTemplates, day))
+    setUsualShiftError(null)
+  }
+
+  // D-17's commit shape: unlike the neighbouring hours <input> (which needs a blur-triggered
+  // save and dirty-tracking guards to work around G-13-DD, where a seeded input collapses its
+  // native picklist to the single self-matching option), the <select> fires the PUT immediately
+  // on selection via its own native change event — no Save button, no blur handler, no
+  // dirty-tracking ref, because a closed option list has no equivalent quirk to work around.
+  const commitUsualShift = async (da: DeskAgent, day: string, value: string) => {
+    if (!deskId) return
+    const previousValue = usualShiftValue
+    usualShiftCommittingRef.current = true
+    setUsualShiftValue(value)
+    setUsualShiftSaving(true)
+    setUsualShiftError(null)
+    try {
+      const body = value === USUAL_SHIFT_CLEAR_VALUE
+        ? { clearRow: true }
+        : { shiftTemplateId: value }
+      const updated = await deskAgents.setUsualShift(deskId, da.id, day, body)
+      setAgentList(agentList.map(a => a.id === da.id ? updated : a))
+      setEditUsualShift(null)
+    } catch (err) {
+      // P-23: revert the control to what was stored before the attempt so the operator is never
+      // left looking at a selection that was not accepted; the error stays visible and the
+      // select stays open until they pick again or click away. This path is defensive rather
+      // than primary — the option list already excludes weekday-invalid templates — so it
+      // mainly guards a stale option list (e.g. the template's valid weekdays changed after the
+      // picker's data loaded).
+      setUsualShiftValue(previousValue)
+      setUsualShiftError(getErrorMessage(err))
+    } finally {
+      setUsualShiftSaving(false)
+      usualShiftCommittingRef.current = false
     }
   }
 
@@ -703,7 +807,39 @@ export default function DeskAgents() {
                             <DayCell entry={da.dayHours[d]} onClick={() => startEditCell(da, d)} />
                           )}
                         </div>
-                        <UsualShiftLine entry={da.usualShift[d]} day={d} onClick={() => {}} />
+                        {/* usual-shift editor */}
+                        {editUsualShift && editUsualShift.agentId === da.id && editUsualShift.day === d ? (
+                          <div
+                            style={{ textAlign: 'left' }}
+                            onBlur={() => {
+                              // Cancel: clicking away with no selection change closes the editor
+                              // and sends no request. A native <select> has no free-text state
+                              // to escape out of (unlike the hours <input>), so no custom Escape
+                              // handler is needed here either.
+                              if (usualShiftCommittingRef.current) return
+                              setEditUsualShift(null)
+                              setUsualShiftError(null)
+                            }}
+                          >
+                            <select
+                              autoFocus
+                              disabled={usualShiftSaving}
+                              value={usualShiftValue}
+                              onChange={e => commitUsualShift(da, d, e.target.value)}
+                              style={{ width: '90px', fontSize: '0.7rem' }}
+                            >
+                              {usualShiftOptions(da.usualShift[d], usualShiftTemplates, d).map(opt => (
+                                <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+                              ))}
+                            </select>
+                            {usualShiftError && (
+                              <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '2px' }}>{usualShiftError}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <UsualShiftLine entry={da.usualShift[d]} day={d} onClick={() => startEditUsualShift(da, d)} />
+                        )}
+                        {/* end usual-shift editor */}
                       </div>
                     ))}
                   </div>
