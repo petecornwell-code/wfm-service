@@ -62,7 +62,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **USHF-02**: Operator can set usual shifts in bulk via a column in the per-desk upload template
 - [ ] **USHF-03**: Operator can set and correct an agent's usual shift inline in the roster
 - [x] **USHF-04**: An agent with no stored usual shift is scheduled without penalty rather than being forced toward an arbitrary default
-- [ ] **USHF-05**: Every write path that can change agent scheduling data — upload, inline edit, BambooHR refresh, desk clear, mode switch — leaves usual-shift data in a defined, documented state
+- [x] **USHF-05**: Every write path that can change agent scheduling data — upload, inline edit, BambooHR refresh, desk clear, mode switch — leaves usual-shift data in a defined, documented state
 - [ ] **USHF-06**: A stored usual shift is visible everywhere agent scheduling data is displayed, including the roster and the Excel export
 
 ### Consistency (CONS)
@@ -87,7 +87,7 @@ These apply to every phase and are verification criteria, not features. They exi
 project has already been burned by each one.
 
 - [x] **XCUT-01**: Every phase that writes shift or usual-shift data verifies that the written value is visible to the operator in every surface that displays it — roster, export, accepted-schedule view, drift report. *(v1.2 audit I-1: the model was built and the view never migrated, costing an entire extra phase.)*
-- [ ] **XCUT-02**: Every guarantee is verified on every reachable write path, not only the one its phase built. *(v1.2 audit I-2: open across two consecutive audits because a second entry point bypassed the merge engine.)*
+- [x] **XCUT-02**: Every guarantee is verified on every reachable write path, not only the one its phase built. *(v1.2 audit I-2: open across two consecutive audits because a second entry point bypassed the merge engine.)*
 - [x] **XCUT-03**: Any change to `solverConfig.xml` is validated by a test that actually builds a solver. *(No test under `src/test/java/com/wfm/solver/` currently does, and the coupling spike found a solver-build failure that would therefore have shipped silently.)*
 - [x] **XCUT-04**: The shift model's effect on schedule quality is judged by seeded, step-count-terminated A/B runs reporting median **and** full min/max spread, against a threshold committed before the run, including at realistic (~130%) over-allocation. *(Phase 12 produced a +0.25h median inside a 5.00h noise spread and was withdrawn.)*
 - [x] **XCUT-05**: Every one of the existing constraints is explicitly classified as mode-agnostic, mode-gated, or needing a shift-mode variant — no constraint is left unclassified. *(A test suite where every fixture is single-mode is structurally blind to interaction bugs.)*

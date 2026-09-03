@@ -5,17 +5,17 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: executing
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-09-03T17:18:23.440Z"
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-09-03T18:06:07.141Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 16 execution started
-state_head: 9e28ca7bf9bfa126f3d1b5abe732749027eb5530
+state_head: ef7c3011725c5d13dc4abe0623df58ddee47f850
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 31
-  completed_plans: 29
-  percent: 50
+  completed_plans: 30
+  percent: 25
 ---
 
 # Project State
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 ## Current Position
 
 Phase: 16 (Usual Shift Storage) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
-Last activity: 2026-09-03 — Phase 16 plan 03 (upload template usual shift) complete
+Last activity: 2026-09-03 — Phase 16 plan 04 (write-path structural guard) complete
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 29/31 plans, Phase 16 3/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 30/31 plans, Phase 16 4/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -242,6 +242,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 16]: 16-02: D-05's advisory always measures the AgentUsualShift row's own stored template, never the resolved live era, matching the bulk band-load design and the plan's explicit RETIRED-still-measurable note
 - [Phase 16]: 16-02: reworded five pre-existing plan-16-01 UsualShiftService.java javadoc comments (no behavior change) to satisfy Task 3's literal acceptance-criteria grep for zero DeskAgentService mentions
 - [Phase 16]: Adopted P-11..P-15 verbatim: required Usual Shift headers, trim+lowercase name matching with explicit ambiguity path, direct-repository parser write bypassing the choke-point service, three-condition graceful dropdown degradation, template column placement 14-20 with specialty at 21-22 — Locks the D-09/D-10/upload-parser shape so plan 16-04's structural guard and 16-05's roster UI expand from a proven, consistent path
+- [Phase 16]: 16-04: adopted P-16 verbatim (static source-scan D-14 guard over Spring-bean reflective scan) — no Spring context needed, sub-second, matches DeskAssignmentUploadMultiSheetTest/ScheduleConstraintClassificationTest's existing structural-guard idioms
+- [Phase 16]: 16-04: Row 7's LiveShapeShiftDeskFixture is package-private in com.wfm.solver, inaccessible from com.wfm.service — built a minimal SLOT-mode fixture instead and ran a real bounded Timefold solve via solverConfig.xml, documented as a P-19 finding
 
 ### Blockers/Concerns
 
@@ -262,8 +264,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T17:18:23.276Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-09-03T18:05:26.578Z
+Stopped at: Completed 16-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -307,3 +309,4 @@ Resume file: None
 | Phase 16 P01 | 43min | 2 tasks | 22 files |
 | Phase 16 P02 | 49min | 3 tasks | 14 files |
 | Phase 16 P03 | 35min | 2 tasks | 20 files |
+| Phase 16 P04 | ~43min | 2 tasks | 3 files |
