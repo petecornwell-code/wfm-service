@@ -2007,10 +2007,17 @@ why_human: |
 
 total: 20
 passed: 18
-issues: 0
+issues: 1
 pending: 0
 skipped: 3
 blocked: 1
+
+<!--
+  COUNT CORRECTION 2026-09-02: this block briefly read `issues: 0` while test 20 still carried
+  `result: issue`, and the figures did not sum to 20. Numbered tests 1-20: 18 passed, 1 issue
+  (test 20), 1 blocked (test 18). `skipped: 3` counts the lettered entries 5b/14b/17b, which sit
+  outside the numbered 20 — that is why passed+issues+blocked already totals 20 without them.
+-->
 
 <!--
   passed : 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12
