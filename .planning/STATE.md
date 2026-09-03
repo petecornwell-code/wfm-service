@@ -5,15 +5,15 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
 status: planning
-stopped_at: Phase 16 UI-SPEC approved
-last_updated: "2026-09-03T12:43:43.687Z"
+stopped_at: Phase 16 planned — 5 plans, 3 waves, all gates passed
+last_updated: "2026-09-03T15:13:53.256Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 16 UI-SPEC approved — research, validation strategy and UI contract in place
-state_head: 3b22896b00d7c17490de328b1e719e69be64807a
+last_activity_desc: Phase 16 planned (5 plans, 3 waves); D-05 coverage gap found and closed before execution
+state_head: 7ef9967c8bd0b0111018e91b24bf407c492de7a9
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 26
+  total_plans: 31
   completed_plans: 26
   percent: 50
 ---
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 16 — Usual Shift Storage
-Plan: Not started
-Status: Planning in progress — CONTEXT, RESEARCH, VALIDATION and UI-SPEC written; planner next
-Last activity: 2026-09-03 — Phase 16 UI-SPEC approved (6/6 dimensions)
+Phase: 16 (Usual Shift Storage) — READY TO EXECUTE
+Plan: 0 of 5 executed
+Status: Ready to execute — 5 plans in 3 waves; plan-checker passed, coverage gates 18/18 decisions and 6/6 USHF requirements
+Last activity: 2026-09-03 — Phase 16 planned; D-05 (hours-mismatch advisory) was dropped by the planner and restored into 16-02/16-05 before execution
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete, 26/26 plans)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 26/31 plans, Phase 16's 5 planned)
 
 ## Milestone v1.3 Roadmap
 

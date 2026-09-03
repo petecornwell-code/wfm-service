@@ -260,10 +260,17 @@ or inline roster editing, and visible everywhere agent scheduling data is displa
 **Research needed at plan time**: No — directly parallels the proven `AgentDayHours`/`resolvePreferences` shape from v1.2 (SUMMARY.md §Research Flags).
 
 **Plans**: 5 plans (3 waves)
+**Wave 1**
 
 - [ ] 16-01-PLAN.md — Tracer: store → roster → export for one weekday (table, entity, repository, resolution service, choke-point write + endpoint, roster DTO, seven export columns, migration guards) — wave 1
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 16-02-PLAN.md — Three-state resolution depth (D-01/D-02/D-04), the desk-move clear (D-12), and a delete-refusal guard on referenced templates — wave 2
 - [ ] 16-03-PLAN.md — Upload column group: template pre-fill and dropdown (D-09/D-10) then the parser and `clearDesk` wipe (D-06/D-07/D-08/D-11) — wave 2
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 16-04-PLAN.md — USHF-05 write-path table (9 rows), one test per path, and the D-14 structural completeness guard — wave 3
 - [ ] 16-05-PLAN.md — Roster day-tile usual-shift line and inline `<select>` editor (D-15/D-16/D-17) — wave 3
 
