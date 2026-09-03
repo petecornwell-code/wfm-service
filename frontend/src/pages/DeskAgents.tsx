@@ -781,14 +781,17 @@ export default function DeskAgents() {
                       <div key={d} style={{ textAlign: 'center', width: '90px' }}>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{DAY_LABELS[d]}</div>
                         {/*
-                          Fixed 26px row so the usual-shift line below always starts at the same y
+                          Fixed 28px row so the usual-shift line below always starts at the same y
                           across all seven tiles. DayCell renders MANDATORY/PTO as inline-block
                           badges with 4px padding but a plain number as a bare span with none, so
                           this row is ~8px taller on MAND/PTO days. Before Phase 16 nothing sat
                           underneath it and the difference was invisible; now it pushes the
-                          usual-shift line down on exactly those days.
+                          usual-shift line down on exactly those days. 28px, not 26px: the badge's
+                          own height measures 27px on the deployed page, so a 26px floor still let
+                          it overflow by 1px. Use a fixed `height`, not `minHeight`, so no future
+                          taller variant can silently reintroduce the drift.
                         */}
-                        <div style={{ minHeight: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {editCell && editCell.agentId === da.id && editCell.day === d ? (
                             <div style={{ textAlign: 'left' }}>
                               <input
