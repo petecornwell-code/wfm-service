@@ -48,3 +48,8 @@ infra/tfplan
 # Excel owner-lock / temp files
 ~$*.xlsx
 ~$*.xls
+
+# Agent tooling runtime state (worktrees, local settings, dispatch sentinel, phase lock)
+.claude/
+.gsd/
+.planning/milestone.lock
