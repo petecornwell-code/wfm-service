@@ -2,7 +2,7 @@
 phase: 16-usual-shift-storage
 verified: 2026-09-03T18:24:20Z
 status: human_needed
-score: 5/5 ROADMAP success criteria verified in code; 3 outstanding human-verification items (all pre-declared "backstop" truths, none newly discovered)
+score: 5/5 ROADMAP success criteria verified in code; live QA 2026-09-03 discharged XCUT-01 fully and the Excel-dropdown item substantially, found and fixed 2 pre-existing layout defects, and left 1 partial item (State B not yet observed)
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
@@ -42,6 +42,47 @@ because three visual/manual claims — explicitly pre-declared `verification: ba
 themselves, not newly discovered gaps — were never exercised in a live browser or Excel session
 during execution (no browser/Excel tooling was available). This matches what both 16-03-SUMMARY.md
 and 16-05-SUMMARY.md already honestly record; nothing here contradicts the plans' own accounting.
+
+## Live QA results (2026-09-03, post-deploy)
+
+Phase 16 was deployed to the live environment (run `33804010801`, bundle `index-CsYSjWGU.js`) and
+QA'd against the real StubHub (EN) desk. Evidence below is measured, not asserted.
+
+### Two layout defects found and fixed
+
+Human visual QA found two defects that no automated check in this project could reach (there is no
+frontend test framework). **Both were pre-existing, exposed rather than introduced by Phase 16** —
+the tile had held equally short, equally tall content until this phase put variable-length content
+in it.
+
+| # | Defect | Cause | Fix |
+|---|---|---|---|
+| 1 | Ragged tile widths; a long usual-shift line abutted the neighbouring tile's value | The tile container was a content-sized flex item with no width, though every child assumed 90px | `feff8e4` — explicit `width: 90px`, restoring the `7x90 + 6x8 = 678px` geometry G-13-8 measured |
+| 2 | The usual-shift line sat lower on MAND/PTO days | `DayCell` renders MANDATORY/PTO as inline-block badges with 4px padding, a number as a bare span with none — the row is ~8px taller on those days | `dabcb8a` then `b01329d` — fixed `height: 28px` on the hours row |
+
+Measured on the deployed page with a headless browser after fix 1 and the first form of fix 2: all
+seven tiles 90px (was ragged); usual-shift line tops 488px on MAND days vs 487px elsewhere — an 8px
+error reduced to 1px. `b01329d` closes the residual 1px (the badge measures 27px, so the 26px floor
+still overflowed); committed but NOT deployed, as a 1px correction did not justify its own pipeline
+run and ECS roll.
+
+### Human-verification items — status after QA
+
+| Item | Status | Evidence |
+|---|---|---|
+| XCUT-01 roster -> export trace | **DISCHARGED** | Live export of StubHub (EN): col `U` "Usual Shift Monday" = `Early`, matching the value set inline in the roster; cols `V`-`AA` blank (D-07 semantics, not a placeholder); `Monday` day-hours col still `MANDATORY`; First/Last Name at `AB`/`AC`, displaced by exactly 7 as designed |
+| Excel dropdown structural validity | **SUBSTANTIALLY DISCHARGED** | Live template download carries 7 `dataValidation` blocks (`O2:O…` through `U2:U…`), one per Usual Shift column, each `formula1` 104 chars — well under the 255-char explicit-list limit that was the actual failure mode. Residual: rendering in real Excel still unobserved. Headroom is ~151 chars (~15 more templates) before the limit binds |
+| Roster three-state visual QA | **PARTIAL** | Screenshot confirms State A (`-`, light `#d1d5db`, upright) and State C (italic `#9ca3af`, `Early - not wor...`) are visually distinct — the load-bearing audit-I-1 distinction holds. State B (LIVE, accent `#3b82f6` bold) not yet observed: no weekday on the QA'd agent is currently in a live state |
+
+### Accepted, not fixed
+
+**State C's reason word is always truncated at 90px.** `Early - not worked` renders as
+`Early - not wor...`, so the word distinguishing *retired* from *not worked* is clipped on every
+State C tile and survives only in the `title` tooltip. The UI-SPEC accepted 90px clipping (following
+G-13-8) but assumed it would bite long template *names*, not the reason on every tile. Operator
+ruling 2026-09-03: **accept as-is** — colour and italic already carry the state distinction that
+matters, and the tooltip carries the full text. Recorded rather than silently left.
+
 
 ## Goal Achievement
 
