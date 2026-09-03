@@ -780,7 +780,15 @@ export default function DeskAgents() {
                     {DAY_ORDER.map(d => (
                       <div key={d} style={{ textAlign: 'center', width: '90px' }}>
                         <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>{DAY_LABELS[d]}</div>
-                        <div>
+                        {/*
+                          Fixed 26px row so the usual-shift line below always starts at the same y
+                          across all seven tiles. DayCell renders MANDATORY/PTO as inline-block
+                          badges with 4px padding but a plain number as a bare span with none, so
+                          this row is ~8px taller on MAND/PTO days. Before Phase 16 nothing sat
+                          underneath it and the difference was invisible; now it pushes the
+                          usual-shift line down on exactly those days.
+                        */}
+                        <div style={{ minHeight: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {editCell && editCell.agentId === da.id && editCell.day === d ? (
                             <div style={{ textAlign: 'left' }}>
                               <input
