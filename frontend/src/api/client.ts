@@ -155,6 +155,8 @@ export const deskAgents = {
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/contracted-hours`, { method: 'PUT', body: JSON.stringify({ contractedHoursPerDay: hours }) }),
   setDayHours: (deskId: string, agentId: string, day: string, body: { hours?: number; dayOffType?: 'MANDATORY' | 'PTO'; clearRow?: boolean }) =>
     request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/day-hours/${day}`, { method: 'PUT', body: JSON.stringify(body) }),
+  setUsualShift: (deskId: string, agentId: string, day: string, body: { shiftTemplateId?: string | null; clearRow?: boolean }) =>
+    request<DeskAgent>(`/desks/${deskId}/agents/${agentId}/usual-shift/${day}`, { method: 'PUT', body: JSON.stringify(body) }),
   refresh: (deskId: string) =>
     request<void>(`/desks/${deskId}/agents/refresh`, { method: 'POST' }),
   exportToExcel: (deskId: string) =>
@@ -319,7 +321,12 @@ export interface Desk { id: string; name: string; description?: string; defaultC
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
 export interface DayHoursEntry { hasRow: boolean; hours: number | null; dayOffType: 'MANDATORY' | 'PTO' | null; effectiveHours: number }
-export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[]; dayHours: Record<string, DayHoursEntry> }
+// D-16's backend-computed three-state discriminator for the roster's usual-shift tile line.
+// name is non-null for LIVE and STORED_INACTIVE; reason is non-null only for STORED_INACTIVE.
+// hoursAdvisory (D-05) is non-null only when the stored template's net hours mismatch the
+// agent's effective contracted hours for this weekday — advisory only, never blocking.
+export interface UsualShiftEntry { status: 'NOT_SET' | 'LIVE' | 'STORED_INACTIVE'; name: string | null; reason: 'RETIRED' | 'NOT_WORKED' | null; hoursAdvisory: string | null }
+export interface DeskAgent { id: string; deskId: string; bamboohrId: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string; primarySpecialization?: Specialization; secondarySpecializations: Specialization[]; contractedHoursPerDay?: number; effectiveContractedHoursPerDay: number; employmentType: 'FULL_TIME' | 'PART_TIME' | null; pendingPtoCount: number; pendingPtoDates: string[]; dayHours: Record<string, DayHoursEntry>; usualShift: Record<string, UsualShiftEntry> }
 export interface Specialization { id: string; name: string; color?: string }
 // One persisted break band (D-01). offsetMinutes/durationMinutes are the source of truth;
 // breakStartTime/breakEndTime are server-derived wall-clock convenience fields for display.

@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useState, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useState, useMemo, useRef, type CSSProperties } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type DayHoursEntry, type Agent, type Specialization, getErrorMessage } from '../api/client'
+import { deskAgents, agents as agentsApi, specializations as specApi, type DeskAgent, type DayHoursEntry, type UsualShiftEntry, type Agent, type Specialization, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type SortField = 'firstName' | 'lastName'
@@ -91,6 +91,68 @@ function DayCell({ entry, onClick }: { entry: DayHoursEntry; onClick: () => void
     >
       {formatHours(entry.effectiveHours)}
     </span>
+  )
+}
+
+/** Roster day-tile usual-shift line (D-15, D-16, D-17 — 16-UI-SPEC.md Component Specifications
+ * §1). Branches on the backend-computed `entry.status` discriminator ONLY — this component must
+ * never re-derive "is this template's era current?" or "does the agent work this day?", which
+ * live once, server-side, in UsualShiftResolutionService and DeskAgentService.toResponse. */
+function UsualShiftLine({ entry, day, onClick }: { entry: UsualShiftEntry; day: string; onClick: () => void }) {
+  const shared: CSSProperties = {
+    fontSize: '0.7rem',
+    marginTop: '4px',
+    cursor: 'pointer',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    maxWidth: '90px',
+  }
+
+  let text: string
+  let style: CSSProperties
+  let title: string
+
+  if (entry.status === 'NOT_SET') {
+    // 16-UI-SPEC.md § Color's explicit ruling: State A is deliberately lighter (#d1d5db) and
+    // NOT italic — distinct in both color and style from State C's #9ca3af/italic — so the two
+    // absences ("never set" vs "stored but not in effect") are distinguishable at a glance
+    // without reading the text. That distinction is audit I-1's failure shape and the one
+    // Phase 17's DRFT-02 depends on.
+    text = '–'
+    style = { ...shared, color: '#d1d5db', fontWeight: 400 }
+    title = 'Click to set usual shift'
+  } else if (entry.status === 'LIVE') {
+    text = entry.name ?? ''
+    // The only new element in this phase that uses the accent color — keeps it meaningful
+    // rather than decorative (16-UI-SPEC.md Focal points).
+    style = { ...shared, color: '#3b82f6', fontWeight: 600 }
+    title = entry.name ?? ''
+  } else {
+    const reasonWord = entry.reason === 'RETIRED' ? 'retired' : 'not worked'
+    text = `${entry.name} · ${reasonWord}`
+    style = { ...shared, color: '#9ca3af', fontWeight: 400, fontStyle: 'italic' }
+    title = entry.reason === 'RETIRED'
+      ? `${entry.name} — retired, no successor`
+      : `${entry.name} — not worked on ${capitalizeDay(day)}`
+  }
+
+  // D-05's hours advisory — the warning half of "advisory only". The marker is additive, never
+  // a replacement: an advisory-carrying LIVE entry still renders the accent-coloured name plus
+  // this marker. Rendering nothing here would silently convert D-05 into the "store silently, no
+  // advisory" option the operator rejected. The marker uses the same warning amber the D-03
+  // rejection message uses below — both are non-blocking operator warnings, never the destructive
+  // red used elsewhere in this app.
+  const hasAdvisory = entry.hoursAdvisory != null
+  if (hasAdvisory) {
+    title = entry.hoursAdvisory as string
+  }
+
+  return (
+    <div onClick={onClick} title={title} style={style}>
+      {text}
+      {hasAdvisory && <span style={{ color: '#92400e', fontWeight: 600, marginLeft: '2px' }}>!</span>}
+    </div>
   )
 }
 
@@ -641,6 +703,7 @@ export default function DeskAgents() {
                             <DayCell entry={da.dayHours[d]} onClick={() => startEditCell(da, d)} />
                           )}
                         </div>
+                        <UsualShiftLine entry={da.usualShift[d]} day={d} onClick={() => {}} />
                       </div>
                     ))}
                   </div>
