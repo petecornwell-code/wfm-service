@@ -4,18 +4,18 @@ milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
-status: executing
-stopped_at: Completed 16-04-PLAN.md
-last_updated: "2026-09-03T18:06:07.141Z"
+status: verifying
+stopped_at: Completed 16-05-PLAN.md
+last_updated: "2026-09-03T18:18:39.756Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 16 execution started
-state_head: ef7c3011725c5d13dc4abe0623df58ddee47f850
+last_activity_desc: Phase 16 plan 05 (usual shift roster UI) complete — phase ready for verification
+state_head: cf266f2030a63f4dc629a73927303c67085d50b5
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 31
-  completed_plans: 30
-  percent: 25
+  completed_plans: 31
+  percent: 50
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 16 (Usual Shift Storage) — EXECUTING
+Phase: 16 (Usual Shift Storage) — READY FOR VERIFICATION
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-09-03 — Phase 16 plan 04 (write-path structural guard) complete
+Status: Phase complete — ready for verification
+Last activity: 2026-09-03 — Phase 16 plan 05 (usual shift roster UI) complete
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 30/31 plans, Phase 16 4/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 31/31 plans, Phase 16 5/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -244,6 +244,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 16]: Adopted P-11..P-15 verbatim: required Usual Shift headers, trim+lowercase name matching with explicit ambiguity path, direct-repository parser write bypassing the choke-point service, three-condition graceful dropdown degradation, template column placement 14-20 with specialty at 21-22 — Locks the D-09/D-10/upload-parser shape so plan 16-04's structural guard and 16-05's roster UI expand from a proven, consistent path
 - [Phase 16]: 16-04: adopted P-16 verbatim (static source-scan D-14 guard over Spring-bean reflective scan) — no Spring context needed, sub-second, matches DeskAssignmentUploadMultiSheetTest/ScheduleConstraintClassificationTest's existing structural-guard idioms
 - [Phase 16]: 16-04: Row 7's LiveShapeShiftDeskFixture is package-private in com.wfm.solver, inaccessible from com.wfm.service — built a minimal SLOT-mode fixture instead and ran a real bounded Timefold solve via solverConfig.xml, documented as a P-19 finding
+- [Phase 16]: 16-05: deferred P-21 template fetch from Task 1 to Task 2 to keep Task 1's build green under noUnusedLocals
+- [Phase 16]: 16-05: click-away cancel for the usual-shift picker wired via onBlur on the wrapping div, not the <select> itself, so blur bubbles without violating the plan's literal no-onBlur-on-select constraint
 
 ### Blockers/Concerns
 
@@ -264,8 +266,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:05:26.578Z
-Stopped at: Completed 16-04-PLAN.md
+Last session: 2026-09-03T18:18:34.159Z
+Stopped at: Completed 16-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -310,3 +312,4 @@ Resume file: None
 | Phase 16 P02 | 49min | 3 tasks | 14 files |
 | Phase 16 P03 | 35min | 2 tasks | 20 files |
 | Phase 16 P04 | ~43min | 2 tasks | 3 files |
+| Phase 16 P05 | 13min | 2 tasks | 2 files |

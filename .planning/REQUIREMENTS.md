@@ -60,10 +60,10 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 
 - [x] **USHF-01**: Each agent can have a stored usual shift per weekday, referencing a shift template from their desk's library
 - [x] **USHF-02**: Operator can set usual shifts in bulk via a column in the per-desk upload template
-- [ ] **USHF-03**: Operator can set and correct an agent's usual shift inline in the roster
+- [x] **USHF-03**: Operator can set and correct an agent's usual shift inline in the roster
 - [x] **USHF-04**: An agent with no stored usual shift is scheduled without penalty rather than being forced toward an arbitrary default
 - [x] **USHF-05**: Every write path that can change agent scheduling data — upload, inline edit, BambooHR refresh, desk clear, mode switch — leaves usual-shift data in a defined, documented state
-- [ ] **USHF-06**: A stored usual shift is visible everywhere agent scheduling data is displayed, including the roster and the Excel export
+- [x] **USHF-06**: A stored usual shift is visible everywhere agent scheduling data is displayed, including the roster and the Excel export
 
 ### Consistency (CONS)
 
