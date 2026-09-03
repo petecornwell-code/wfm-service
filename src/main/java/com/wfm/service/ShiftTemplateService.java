@@ -11,6 +11,7 @@ import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.repository.AgentShiftAssignmentRepository;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
@@ -44,17 +45,20 @@ public class ShiftTemplateService {
     private final TimeslotGeneratorService timeslotGeneratorService;
     private final DeskRepository deskRepository;
     private final AgentShiftAssignmentRepository agentShiftAssignmentRepository;
+    private final AgentUsualShiftRepository agentUsualShiftRepository;
 
     public ShiftTemplateService(ShiftTemplateRepository shiftTemplateRepository,
                                  ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
                                  TimeslotGeneratorService timeslotGeneratorService,
                                  DeskRepository deskRepository,
-                                 AgentShiftAssignmentRepository agentShiftAssignmentRepository) {
+                                 AgentShiftAssignmentRepository agentShiftAssignmentRepository,
+                                 AgentUsualShiftRepository agentUsualShiftRepository) {
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
         this.deskRepository = deskRepository;
         this.agentShiftAssignmentRepository = agentShiftAssignmentRepository;
+        this.agentUsualShiftRepository = agentUsualShiftRepository;
     }
 
     /**
@@ -131,6 +135,19 @@ public class ShiftTemplateService {
      *
      * <p>Break bands need no explicit delete — V40 declares
      * {@code shift_template_id ... ON DELETE CASCADE}.
+     *
+     * <p><b>Second guard (T-16-09, P-09):</b> a template referenced by any {@code
+     * agent_usual_shift} row is also refused. Unlike {@code agent_shift_assignment
+     * .source_template_id}, which carries no FK, {@code agent_usual_shift.shift_template_id} is a
+     * real FK declared {@code ON DELETE CASCADE} (V47) — without this guard the database would
+     * accept the delete and silently remove every referencing agent's stored usual shift, with no
+     * exception raised at any layer. This guard is data-loss prevention, not a legibility
+     * improvement. The cascade itself exists because {@code DeskService.deleteDesk} relies on
+     * {@code shift_template.desk_id}'s own cascade (V39) to clean up a desk's templates; a
+     * non-cascading reference from {@code agent_usual_shift} would make every such desk deletion
+     * fail instead. This refusal applies to DELETE only — retiring a template through {@link
+     * #updateShiftTemplate} by setting {@code effectiveTo} stays unblockable by any referencing
+     * row, which is what D-02 and Phase 14's T-14-14 actually guarantee.
      */
     @Transactional
     public void deleteShiftTemplate(UUID deskId, UUID id) {
@@ -142,6 +159,14 @@ public class ShiftTemplateService {
         if (usages > 0) {
             throw new ConflictException("Shift template '" + template.getName() + "' cannot be deleted: it is "
                     + "used by " + usages + " agent-day assignment(s) in one or more schedules. Retire it "
+                    + "instead by setting its effective-to date, which stops it being assigned to any new "
+                    + "schedule while keeping existing ones explicable.");
+        }
+
+        long usualShiftUsages = agentUsualShiftRepository.countByShiftTemplate_Id(id);
+        if (usualShiftUsages > 0) {
+            throw new ConflictException("Shift template '" + template.getName() + "' cannot be deleted: it is "
+                    + "referenced by " + usualShiftUsages + " agent-weekday usual shift(s). Retire it "
                     + "instead by setting its effective-to date, which stops it being assigned to any new "
                     + "schedule while keeping existing ones explicable.");
         }

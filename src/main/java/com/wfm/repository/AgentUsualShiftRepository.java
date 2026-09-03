@@ -29,4 +29,10 @@ public interface AgentUsualShiftRepository extends JpaRepository<AgentUsualShift
     // Agent-scoped delete for DeskAssignmentUploadService.clearDesk (D-11) and
     // DeskAgentService.removeDeskAgent (D-12), both via UsualShiftService.clearUsualShifts.
     void deleteByAgent_Id(UUID agentId);
+
+    // Template-usage guard for ShiftTemplateService.deleteShiftTemplate (T-16-09/P-10). Not
+    // tenant-scoped, mirroring findByAgent_IdAndDayOfWeek/deleteByAgent_Id above -- the only
+    // caller resolves the template through findByIdAndTenantIdAndDeskId first, so the id is
+    // already proven in tenant+desk scope before this count runs.
+    long countByShiftTemplate_Id(UUID shiftTemplateId);
 }

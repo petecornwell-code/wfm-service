@@ -10,12 +10,14 @@ import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.AgentUsualShift;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.AgentShiftAssignmentRepository;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.ShiftTemplateRepository;
@@ -78,6 +80,9 @@ class ShiftTemplateServiceTest {
 
     @Autowired
     private AgentRepository agentRepository;
+
+    @Autowired
+    private AgentUsualShiftRepository agentUsualShiftRepository;
 
     @MockitoBean
     private TimeslotGeneratorService timeslotGeneratorService;
@@ -530,6 +535,53 @@ class ShiftTemplateServiceTest {
         // And it must still be there — a refused delete removes nothing.
         assertThat(shiftTemplateRepository.findByIdAndTenantIdAndDeskId(created.getId(), TENANT_A, deskId))
                 .isPresent();
+    }
+
+    @Test
+    void deleteShiftTemplate_referencedByAgentUsualShift_isRefusedAndDirectedToRetire() {
+        // T-16-09/P-09: agent_usual_shift.shift_template_id is ON DELETE CASCADE (V47), so
+        // without this guard the delete would succeed and silently destroy the referencing row.
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate created = service.createShiftTemplate(deskId,
+                request("Early", LocalDate.of(2026, 1, 1), null));
+
+        AgentUsualShift usualShift = new AgentUsualShift();
+        usualShift.setTenantId(TENANT_A);
+        usualShift.setAgent(saveAgent(TENANT_A, deskId));
+        usualShift.setDayOfWeek(DayOfWeek.MONDAY);
+        usualShift.setShiftTemplate(created);
+        agentUsualShiftRepository.save(usualShift);
+
+        assertThatThrownBy(() -> service.deleteShiftTemplate(deskId, created.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Early")
+                .hasMessageContaining("1");
+
+        // And it must still be there — a refused delete removes nothing.
+        assertThat(shiftTemplateRepository.findByIdAndTenantIdAndDeskId(created.getId(), TENANT_A, deskId))
+                .isPresent();
+    }
+
+    @Test
+    void updateShiftTemplate_retiringAReferencedTemplate_stillSucceeds() {
+        // The new guard must not leak into the retirement path (D-02/T-14-14): setting
+        // effectiveTo stays unblockable by any referencing agent_usual_shift row.
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplate created = service.createShiftTemplate(deskId,
+                request("Early", LocalDate.of(2026, 1, 1), null));
+
+        AgentUsualShift usualShift = new AgentUsualShift();
+        usualShift.setTenantId(TENANT_A);
+        usualShift.setAgent(saveAgent(TENANT_A, deskId));
+        usualShift.setDayOfWeek(DayOfWeek.MONDAY);
+        usualShift.setShiftTemplate(created);
+        agentUsualShiftRepository.save(usualShift);
+
+        assertThatCode(() -> service.updateShiftTemplate(deskId, created.getId(),
+                new ShiftTemplateRequest("Early", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                        List.of(new BreakBandRequest(240, 60, null)),
+                        Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), LocalDate.now())))
+                .doesNotThrowAnyException();
     }
 
     @Test
