@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.format.TextStyle;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,7 @@ public class DeskAgentService {
     private final ScheduleRepository scheduleRepository;
     private final AgentUsualShiftRepository agentUsualShiftRepository;
     private final UsualShiftResolutionService usualShiftResolutionService;
+    private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
@@ -42,7 +44,8 @@ public class DeskAgentService {
                             AgentDayHoursRepository agentDayHoursRepository,
                             ScheduleRepository scheduleRepository,
                             AgentUsualShiftRepository agentUsualShiftRepository,
-                            UsualShiftResolutionService usualShiftResolutionService) {
+                            UsualShiftResolutionService usualShiftResolutionService,
+                            ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
@@ -53,6 +56,7 @@ public class DeskAgentService {
         this.scheduleRepository = scheduleRepository;
         this.agentUsualShiftRepository = agentUsualShiftRepository;
         this.usualShiftResolutionService = usualShiftResolutionService;
+        this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
     }
 
     /**
@@ -89,6 +93,27 @@ public class DeskAgentService {
                         Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u)));
     }
 
+    /**
+     * Bulk band fetch for the D-05 hours advisory — ONE query for every referenced template's
+     * bands, keyed by template id, called BEFORE the {@code DAY_ORDER} loop rather than from
+     * inside it. {@code usualShiftRows} is every stored usual-shift row in scope for this call
+     * (one agent's seven, or a whole desk's), so this never becomes an N+1 across agents/weekdays.
+     */
+    private Map<UUID, List<ShiftTemplateBreakBand>> loadBandsForUsualShifts(
+            long tenantId, Collection<AgentUsualShift> usualShiftRows) {
+        List<UUID> templateIds = usualShiftRows.stream()
+                .map(u -> u.getShiftTemplate().getId())
+                .distinct()
+                .toList();
+        if (templateIds.isEmpty()) {
+            return Map.of();
+        }
+        return shiftTemplateBreakBandRepository
+                .findByTenantIdAndShiftTemplateIdInOrderByOffsetMinutesAsc(tenantId, templateIds)
+                .stream()
+                .collect(Collectors.groupingBy(b -> b.getShiftTemplate().getId()));
+    }
+
     @Transactional(readOnly = true)
     public List<DeskAgentResponse> listDeskAgentResponses(UUID deskId, String search, String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
@@ -108,11 +133,14 @@ public class DeskAgentService {
 
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId,
+                usualShiftsByAgent.values().stream().flatMap(m -> m.values().stream()).toList());
 
         return agents.stream()
                 .map(a -> toResponse(a, scheduleDefault,
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
                         usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
+                        bandsByTemplateId,
                         pendingByAgent.getOrDefault(a.getId(), List.of())))
                 .toList();
     }
@@ -120,43 +148,30 @@ public class DeskAgentService {
     private DeskAgentResponse toResponse(Agent a, BigDecimal scheduleDefault,
                                           Map<DayOfWeek, AgentDayHours> dayRows,
                                           Map<DayOfWeek, AgentUsualShift> usualRows,
+                                          Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
                                           List<LocalDate> pendingPtoDates) {
         Specialization ps = a.getPrimarySpecialization();
 
+        // Single combined loop: the D-16 usual-shift discriminator's NOT_WORKED arm needs the
+        // SAME agent_day_hours row (dayRow) this loop already resolves for dayHours — reusing it
+        // here is what keeps this a read-layer correlation with no new repository call, per D-04's
+        // orthogonality staying a write-layer constraint only.
         Map<DayOfWeek, DeskAgentResponse.DayHoursEntry> dayHours = new EnumMap<>(DayOfWeek.class);
-        BigDecimal maxEffective = null;
-        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
-            AgentDayHours row = dayRows.get(day);
-            DeskAgentResponse.DayHoursEntry entry = row != null
-                    ? new DeskAgentResponse.DayHoursEntry(true, row.getHours(), row.getDayOffType(), row.getHours())
-                    : new DeskAgentResponse.DayHoursEntry(false, null, null, scheduleDefault);
-            dayHours.put(day, entry);
-            if (maxEffective == null || entry.effectiveHours().compareTo(maxEffective) > 0) {
-                maxEffective = entry.effectiveHours();
-            }
-        }
-
-        // Usual shift (D-16 three-state discriminator). Per P-05 the NOT_WORKED arm is plan
-        // 16-02's -- this task computes only NOT_SET / LIVE / STORED_INACTIVE(RETIRED) and does
-        // not read agent_day_hours here.
         Map<DayOfWeek, DeskAgentResponse.UsualShiftEntry> usualShift = new EnumMap<>(DayOfWeek.class);
+        BigDecimal maxEffective = null;
         LocalDate today = LocalDate.now();
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
-            AgentUsualShift row = usualRows.get(day);
-            DeskAgentResponse.UsualShiftEntry entry;
-            if (row == null) {
-                entry = new DeskAgentResponse.UsualShiftEntry(
-                        DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null);
-            } else {
-                String storedName = row.getShiftTemplate().getName();
-                entry = usualShiftResolutionService.resolve(row, today).isPresent()
-                        ? new DeskAgentResponse.UsualShiftEntry(
-                                DeskAgentResponse.UsualShiftStatus.LIVE, storedName, null)
-                        : new DeskAgentResponse.UsualShiftEntry(
-                                DeskAgentResponse.UsualShiftStatus.STORED_INACTIVE, storedName,
-                                DeskAgentResponse.UsualShiftReason.RETIRED);
+            AgentDayHours dayRow = dayRows.get(day);
+            DeskAgentResponse.DayHoursEntry hoursEntry = dayRow != null
+                    ? new DeskAgentResponse.DayHoursEntry(true, dayRow.getHours(), dayRow.getDayOffType(), dayRow.getHours())
+                    : new DeskAgentResponse.DayHoursEntry(false, null, null, scheduleDefault);
+            dayHours.put(day, hoursEntry);
+            if (maxEffective == null || hoursEntry.effectiveHours().compareTo(maxEffective) > 0) {
+                maxEffective = hoursEntry.effectiveHours();
             }
-            usualShift.put(day, entry);
+
+            usualShift.put(day, usualShiftEntry(day, usualRows.get(day), dayRow, hoursEntry.effectiveHours(),
+                    bandsByTemplateId, today));
         }
 
         return new DeskAgentResponse(
@@ -181,6 +196,89 @@ public class DeskAgentService {
     }
 
     /**
+     * D-16 three-state discriminator, with D-05's hours advisory and P-07's RETIRED-before-
+     * NOT_WORKED precedence. {@code dayRow} is the SAME {@code agent_day_hours} row (possibly
+     * null) this method's caller already resolved for {@code dayHours} — no second repository
+     * call, keeping D-04's orthogonality a write-layer constraint only.
+     */
+    private DeskAgentResponse.UsualShiftEntry usualShiftEntry(DayOfWeek day, AgentUsualShift usualRow,
+                                                                AgentDayHours dayRow, BigDecimal effectiveHours,
+                                                                Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                                                LocalDate today) {
+        if (usualRow == null) {
+            return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null, null);
+        }
+
+        String storedName = usualRow.getShiftTemplate().getName();
+        boolean isLive = usualShiftResolutionService.resolve(usualRow, today).isPresent();
+
+        // P-07: RETIRED is evaluated FIRST. The stored reference itself being dead is the more
+        // fundamental fact — a template that no longer exists as a live era cannot be honoured on
+        // any weekday, whereas "not worked" is a per-weekday condition that could flip back with
+        // one hours edit.
+        if (!isLive) {
+            String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours);
+            return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.STORED_INACTIVE,
+                    storedName, DeskAgentResponse.UsualShiftReason.RETIRED, advisory);
+        }
+
+        // P-08: "does not work this weekday" = a day-hours row exists for it AND is either
+        // MANDATORY/PTO or its hours has signum() == 0. Uses signum(), never a direct BigDecimal
+        // equality check against an unscaled zero constant -- the stored value is NUMERIC(5,2)
+        // and reads back scaled, so that equality is false for a real stored 0.00. A weekday with
+        // NO row is NOT "not worked": it resolves to the schedule default (a positive number), so
+        // the agent works it and the state stays LIVE.
+        boolean notWorked = dayRow != null
+                && (dayRow.getDayOffType() == DayOffType.MANDATORY || dayRow.getDayOffType() == DayOffType.PTO
+                    || dayRow.getHours().signum() == 0);
+        if (notWorked) {
+            // No contracted hours to mismatch against on a weekday the agent doesn't work.
+            return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.STORED_INACTIVE,
+                    storedName, DeskAgentResponse.UsualShiftReason.NOT_WORKED, null);
+        }
+
+        String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours);
+        return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.LIVE, storedName, null, advisory);
+    }
+
+    /**
+     * D-05: null when at least one of the STORED template's bands' net duration (via {@link
+     * ShiftTemplate#getNetHours(int)} -- never a local duration recomputation from the template's
+     * own start/end times, per Phase 14 D-08 discipline) equals the agent's effective contracted
+     * hours for the weekday,
+     * exact-equality via {@link BigDecimals#normalize} + {@code compareTo}, no tolerance --
+     * matching {@code ShiftLibraryValidationService.findHoursAdvisories}'s own any-band quantifier
+     * and SHLB-06 message register exactly. A zero-band template is measured on {@code
+     * getNetHours(0)} alone (P-02 "zero bands = no break").
+     *
+     * <p>Deliberately computed on the READ path only: {@code UsualShiftService.setUsualShift}
+     * never gains an hours check (D-05 stays advisory, never blocking, mirroring Phase 14 D-06),
+     * so this is also what surfaces a mismatch introduced LATER by a contracted-hours edit under
+     * an unchanged usual shift -- a write-time-only advisory could not do that.
+     */
+    private String hoursAdvisory(ShiftTemplate template, DayOfWeek day,
+                                  Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+                                  BigDecimal effectiveHours) {
+        List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
+        List<BigDecimal> bandNetHours = bands.isEmpty()
+                ? List.of(template.getNetHours(0))
+                : bands.stream().map(b -> template.getNetHours(b.getDurationMinutes())).toList();
+
+        BigDecimal normalizedEffective = BigDecimals.normalize(effectiveHours);
+        boolean anyBandMatches = bandNetHours.stream()
+                .anyMatch(net -> BigDecimals.normalize(net).compareTo(normalizedEffective) == 0);
+        if (anyBandMatches) {
+            return null;
+        }
+
+        BigDecimal reportedNetHours = BigDecimals.normalize(bandNetHours.get(0));
+        return template.getName() + "'s net duration (" + reportedNetHours.toPlainString()
+                + "h) doesn't match this agent's contracted hours on "
+                + day.getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " (" + normalizedEffective.toPlainString()
+                + "h). The usual shift is still saved.";
+    }
+
+    /**
      * P-06: the read half of the write-then-read composition {@code DeskAgentController} performs
      * for the usual-shift endpoint -- mirrors the existing {@code refreshFromBamboo} pattern
      * (write via one service, read via {@code listDeskAgentResponses}), scoped to a single agent.
@@ -199,8 +297,9 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
 
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, List.of());
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
     }
 
     @Transactional
@@ -236,10 +335,13 @@ public class DeskAgentService {
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId,
+                usualShiftsByAgent.values().stream().flatMap(m -> m.values().stream()).toList());
         return assigned.stream()
                 .map(a -> toResponse(a, scheduleDefault,
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
-                        usualShiftsByAgent.getOrDefault(a.getId(), Map.of()), List.of()))
+                        usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
+                        bandsByTemplateId, List.of()))
                 .toList();
     }
 
@@ -299,7 +401,8 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, List.of());
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
     }
 
     @Transactional
@@ -348,7 +451,8 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, List.of());
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
     }
 
     /**
@@ -400,7 +504,8 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, List.of());
+        Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
     }
 
     /**

@@ -131,9 +131,13 @@ class UsualShiftTracerTest {
         usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
 
         DeskAgentResponse single = deskAgentService.getDeskAgentResponse(desk.getId(), agent.getId());
-        assertThat(single.usualShift().get(DayOfWeek.MONDAY))
-                .isEqualTo(new DeskAgentResponse.UsualShiftEntry(
-                        DeskAgentResponse.UsualShiftStatus.LIVE, "Early", null));
+        DeskAgentResponse.UsualShiftEntry mondayEntry = single.usualShift().get(DayOfWeek.MONDAY);
+        assertThat(mondayEntry.status()).isEqualTo(DeskAgentResponse.UsualShiftStatus.LIVE);
+        assertThat(mondayEntry.name()).isEqualTo("Early");
+        assertThat(mondayEntry.reason()).isNull();
+        // D-05: "Early" (9h net, no bands) vs. this fixture's unset-schedule 8h default is a real
+        // mismatch -- advisory, never blocking (asserted non-null here, not equality on wording).
+        assertThat(mondayEntry.hoursAdvisory()).isNotNull();
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
             if (day == DayOfWeek.MONDAY) {
                 continue;
@@ -141,7 +145,7 @@ class UsualShiftTracerTest {
             assertThat(single.usualShift().get(day))
                     .as("weekday %s", day)
                     .isEqualTo(new DeskAgentResponse.UsualShiftEntry(
-                            DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null));
+                            DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null, null));
         }
 
         List<DeskAgentResponse> roster = deskAgentService.listDeskAgentResponses(desk.getId(), null, null, 50);
@@ -182,7 +186,7 @@ class UsualShiftTracerTest {
         DeskAgentResponse response = deskAgentService.getDeskAgentResponse(desk.getId(), agent.getId());
         assertThat(response.usualShift().get(DayOfWeek.MONDAY))
                 .isEqualTo(new DeskAgentResponse.UsualShiftEntry(
-                        DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null));
+                        DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null, null));
         assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId())).isEmpty();
     }
 
