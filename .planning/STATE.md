@@ -4,18 +4,18 @@ milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 16
 current_phase_name: Usual Shift Storage
-status: planning
-stopped_at: Phase 16 planned — 5 plans, 3 waves, all gates passed
-last_updated: "2026-09-03T15:13:53.256Z"
+status: executing
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-09-03T16:00:31.148Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 16 planned (5 plans, 3 waves); D-05 coverage gap found and closed before execution
-state_head: 7ef9967c8bd0b0111018e91b24bf407c492de7a9
+last_activity_desc: Phase 16 execution started
+state_head: def2c475900029aa54750e0713ac3c1da26967f4
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 31
-  completed_plans: 26
-  percent: 50
+  completed_plans: 27
+  percent: 25
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 16 (Usual Shift Storage) — READY TO EXECUTE
-Plan: 0 of 5 executed
-Status: Ready to execute — 5 plans in 3 waves; plan-checker passed, coverage gates 18/18 decisions and 6/6 USHF requirements
-Last activity: 2026-09-03 — Phase 16 planned; D-05 (hours-mismatch advisory) was dropped by the planner and restored into 16-02/16-05 before execution
+Phase: 16 (Usual Shift Storage) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-03 — Phase 16 execution started
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 26/31 plans, Phase 16's 5 planned)
+Progress: [███░░░░░░░] 25% (2/4 phases — Phases 14–15 complete; 26/31 plans, Phase 16's 5 planned)
 
 ## Milestone v1.3 Roadmap
 
@@ -237,6 +237,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 15]: Phase 15 Plan 18: requireShiftEnvelopeSeatSupply takes a nullable live ConstraintWeights (appended last param); withdraws the raise-ceiling remedy only when unassignedAssignmentWeight carries nonzero hard score, naming the consequence and the weight value; default/null weights stay byte-identical, pinned by literal equality
 - [Phase 15]: Plan 15-19: R2 (forced-occupancy necessary condition) proven zero-false-refusal on the measured corpus; R1 (naive tightest-hour promotion) measured to false-refuse 3/4 known-solving date-slices, the justification for advisoryOnThinTimeslotDoesNotBlock staying non-blocking; G-15-31 left open with the analysis and recommendation attached for plan 15-20
 - [Phase 15]: Plan 15-20: R2 (forced-occupancy necessary condition) shipped into production exactly as plan 15-19's analysis measured -- additive alongside the day-wide sum, per-hour violations consolidated to the single worst timeslot per date, one check closing both G-15-25 (band composition) and G-15-31 (within-day distribution).
+- [Phase 16]: Adopted P-01..P-06 verbatim: real FK resolve-by-name, both FKs ON DELETE CASCADE, server-side dead-template rejection, P-04 package placement, P-06 write-then-read controller composition — Locks the tracer's architecture so plans 16-02..16-05 expand outward from a proven path
+- [Phase 16]: Fixed PostgresBackedTest's shared static Testcontainers Postgres to use the singleton-container pattern (start once, never stop) instead of @Container's per-class lifecycle — Adding this plan's second PostgresBackedTest subclass exposed a stop-collision that killed the first subclass's container out from under the second under the full suite
 
 ### Blockers/Concerns
 
@@ -256,9 +258,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T12:43:43.246Z
-Stopped at: Phase 16 UI-SPEC approved
-Resume file: .planning/phases/16-usual-shift-storage/16-UI-SPEC.md
+Last session: 2026-09-03T16:00:30.968Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -298,3 +300,4 @@ Resume file: .planning/phases/16-usual-shift-storage/16-UI-SPEC.md
 | Phase 15 P18 | ~50 min | 2 tasks | 6 files |
 | Phase 15 P19 | ~100 min | 3 tasks | 4 files |
 | Phase 15 P20 | ~70 min | 3 tasks | 6 files |
+| Phase 16 P01 | 43min | 2 tasks | 22 files |
