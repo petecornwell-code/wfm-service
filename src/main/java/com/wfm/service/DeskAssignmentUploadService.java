@@ -8,15 +8,19 @@ import com.wfm.integration.AgentMergeService;
 import com.wfm.integration.BambooEmployee;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
+import com.wfm.model.AgentUsualShift;
 import com.wfm.model.DayOffType;
 import com.wfm.model.Desk;
+import com.wfm.model.ShiftTemplate;
 import com.wfm.model.Specialization;
 import com.wfm.model.WorkingDaysSource;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.util.AgentNameSplitter;
 import com.wfm.util.EnrichedColumnLayout;
@@ -32,6 +36,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -60,6 +65,9 @@ public class DeskAssignmentUploadService {
     private final AgentEligibilityService agentEligibilityService;
     private final AgentMergeService agentMergeService;
     private final TransactionTemplate transactionTemplate;
+    private final AgentUsualShiftRepository agentUsualShiftRepository;
+    private final ShiftTemplateRepository shiftTemplateRepository;
+    private final UsualShiftService usualShiftService;
 
     public DeskAssignmentUploadService(AgentRepository agentRepository,
                                         DeskRepository deskRepository,
@@ -70,7 +78,10 @@ public class DeskAssignmentUploadService {
                                         SpecializationRepository specializationRepository,
                                         AgentEligibilityService agentEligibilityService,
                                         AgentMergeService agentMergeService,
-                                        TransactionTemplate transactionTemplate) {
+                                        TransactionTemplate transactionTemplate,
+                                        AgentUsualShiftRepository agentUsualShiftRepository,
+                                        ShiftTemplateRepository shiftTemplateRepository,
+                                        UsualShiftService usualShiftService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.clientManagementService = clientManagementService;
@@ -81,6 +92,9 @@ public class DeskAssignmentUploadService {
         this.agentEligibilityService = agentEligibilityService;
         this.agentMergeService = agentMergeService;
         this.transactionTemplate = transactionTemplate;
+        this.agentUsualShiftRepository = agentUsualShiftRepository;
+        this.shiftTemplateRepository = shiftTemplateRepository;
+        this.usualShiftService = usualShiftService;
     }
 
     public DeskAssignmentUploadResult uploadDeskAssignments(MultipartFile file) throws IOException {
@@ -254,6 +268,19 @@ public class DeskAssignmentUploadService {
                         missingHeaders.add(EnrichedColumnLayout.dayHeader(d));
                     }
                 }
+                // P-11: the seven Usual Shift headers are REQUIRED on an enriched-shape sheet,
+                // even though a blank Usual Shift CELL is valid (D-07 -- a missing column GROUP
+                // is a different question than a blank cell). Tolerating a missing column group
+                // would let a pre-Phase-16 workbook clear every usual shift on the desk (D-11
+                // fires) and re-supply none (no columns to read) -- reintroducing, through a side
+                // door, precisely the wipe hazard D-09's pre-fill exists to close. Reusing the
+                // existing skip-the-sheet-and-do-not-clear mechanism (CR-01) is exactly the
+                // outcome an old workbook should get: the operator re-downloads the template once.
+                for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) {
+                    if (!col.containsKey(EnrichedColumnLayout.normalize(EnrichedColumnLayout.usualShiftHeader(d)))) {
+                        missingHeaders.add(EnrichedColumnLayout.usualShiftHeader(d));
+                    }
+                }
                 if (!missingHeaders.isEmpty()) {
                     skippedSheets.add(new SkippedSheet(sheetName,
                             "missing required column(s): " + String.join(", ", missingHeaders) + " — skipped"));
@@ -273,6 +300,26 @@ public class DeskAssignmentUploadService {
                 clearDesk(tenantId, desk.getId());
 
                 Map<String, Specialization> deskSpecs = specsByDesk.getOrDefault(desk.getId(), Map.of());
+
+                // P-12: per-sheet normalized-name -> live ShiftTemplate index for resolving Usual
+                // Shift cells, built ONCE per sheet from the sheet's OWN desk (T-16-14 -- a value
+                // on desk A's sheet can never resolve against desk B's library, structurally, not
+                // just by test). A normalized-key collision across two live templates is kept in
+                // a separate set rather than letting one silently overwrite the other, so a Usual
+                // Shift cell naming an ambiguous key can be reported rather than guessed at.
+                Map<String, ShiftTemplate> liveTemplatesByNormalizedName = new HashMap<>();
+                Set<String> ambiguousNormalizedNames = new HashSet<>();
+                for (ShiftTemplate template : shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, desk.getId())) {
+                    if (!template.isEffectiveOn(LocalDate.now())) {
+                        continue;
+                    }
+                    String key = EnrichedColumnLayout.normalize(template.getName());
+                    if (liveTemplatesByNormalizedName.containsKey(key)) {
+                        ambiguousNormalizedNames.add(key);
+                    } else {
+                        liveTemplatesByNormalizedName.put(key, template);
+                    }
+                }
 
                 int sheetImportedCount = 0;
                 int sheetSkippedCount = 0;
@@ -533,6 +580,56 @@ public class DeskAssignmentUploadService {
                         }
                     }
 
+                    // Write one agent_usual_shift row per weekday whose cell resolves
+                    // (D-06/D-07/D-08/D-03/P-12). Direct repository write, deliberately NOT
+                    // through the roster's usual-shift choke-point write method (P-13): that
+                    // method's contract is reject-with-400, which contradicts D-08's
+                    // skip-the-cell-and-warn rule, and its per-call tenant/desk resolution plus
+                    // flush would turn a bulk import into an N-query path -- mirrors exactly how
+                    // the agent_day_hours loop above writes AgentDayHours directly rather than
+                    // through the roster's day-hours choke point.
+                    for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+                        String rawCellValue = cellAt(row, col,
+                                EnrichedColumnLayout.normalize(EnrichedColumnLayout.usualShiftHeader(day)));
+                        if (rawCellValue == null || rawCellValue.isBlank()) {
+                            continue; // D-07: a blank Usual Shift cell means "none" and is valid
+                        }
+                        String normalizedValue = EnrichedColumnLayout.normalize(rawCellValue);
+                        if (ambiguousNormalizedNames.contains(normalizedValue)) {
+                            warnings.add("Row " + (i + 1) + " (id " + bamboohrId.trim() + ") "
+                                    + EnrichedColumnLayout.usualShiftHeader(day) + ": \""
+                                    + rawCellValue.trim() + "\" matches more than one live "
+                                    + "template on this desk (ambiguous name) — cell skipped");
+                            continue;
+                        }
+                        ShiftTemplate resolvedTemplate = liveTemplatesByNormalizedName.get(normalizedValue);
+                        if (resolvedTemplate == null) {
+                            // D-08: an unresolvable name skips only this cell, never the row.
+                            warnings.add("Row " + (i + 1) + " (id " + bamboohrId.trim() + ") "
+                                    + EnrichedColumnLayout.usualShiftHeader(day) + ": \""
+                                    + rawCellValue.trim() + "\" does not match a live template on "
+                                    + "this desk — cell skipped");
+                            continue;
+                        }
+                        if (!resolvedTemplate.getValidWeekdays().contains(day)) {
+                            // D-03 as a cell-level skip on the upload path -- deliberately not
+                            // the inline path's 400.
+                            warnings.add("Row " + (i + 1) + " (id " + bamboohrId.trim() + ") "
+                                    + EnrichedColumnLayout.usualShiftHeader(day) + ": template \""
+                                    + resolvedTemplate.getName() + "\" is not valid on "
+                                    + EnrichedColumnLayout.dayHeader(day) + " — cell skipped");
+                            continue;
+                        }
+                        AgentUsualShift usualShiftRow = agentUsualShiftRepository
+                                .findByAgent_IdAndDayOfWeek(agent.getId(), day)
+                                .orElseGet(AgentUsualShift::new);
+                        usualShiftRow.setTenantId(tenantId);
+                        usualShiftRow.setAgent(agent);
+                        usualShiftRow.setDayOfWeek(day);
+                        usualShiftRow.setShiftTemplate(resolvedTemplate);
+                        agentUsualShiftRepository.save(usualShiftRow);
+                    }
+
                     assigned.add("Row " + (i + 1) + ": " + agent.getName() + " -> " + desk.getName());
                     sheetImportedCount++;
                 }
@@ -560,6 +657,12 @@ public class DeskAssignmentUploadService {
             agent.getSecondarySpecializations().clear();
             agent.setContractedHoursPerDay(null);
             agentDayHoursRepository.deleteByAgent_Id(agent.getId());
+            // D-11: this wipe is only safe because the generated per-desk template pre-fills
+            // stored usual shifts (D-09, plan 16-03 Task 1), so the upload's own row loop below
+            // re-supplies whatever this call clears. These two decisions are load-bearing for
+            // each other and must never ship separately -- reaches the SAME clear implementation
+            // DeskAgentService.removeDeskAgent calls (D-11/D-12, one implementation, two callers).
+            usualShiftService.clearUsualShifts(agent.getId());
             agentRepository.save(agent);
         }
     }

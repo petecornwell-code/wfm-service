@@ -43,6 +43,9 @@ class DeskAssignmentUploadSpecialtyTest {
     private BambooHRClient bambooHRClient;
     private AgentMergeService agentMergeService;
     private TransactionTemplate transactionTemplate;
+    private AgentUsualShiftRepository agentUsualShiftRepository;
+    private ShiftTemplateRepository shiftTemplateRepository;
+    private UsualShiftService usualShiftService;
     private Map<String, BambooEmployee> bambooEmployees;
     private DeskAssignmentUploadService service;
 
@@ -82,10 +85,16 @@ class DeskAssignmentUploadSpecialtyTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        agentUsualShiftRepository = mock(AgentUsualShiftRepository.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        usualShiftService = mock(UsualShiftService.class);
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate,
+                agentUsualShiftRepository, shiftTemplateRepository, usualShiftService);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
         when(agentEligibilityService.isNonSchedulable(anyLong(), anyString())).thenReturn(false);
@@ -124,6 +133,11 @@ class DeskAssignmentUploadSpecialtyTest {
     private static String[] identityAndDayHeaders() {
         List<String> headers = new ArrayList<>(EnrichedColumnLayout.identityHeaders());
         for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.dayHeader(d));
+        // P-11: Usual Shift headers are required on an enriched-shape sheet. Placed here (before
+        // the Specialty N columns this test appends) so the header row's column order matches
+        // production (P-15); the row-value list below inserts matching blank placeholders so
+        // Specialty values keep landing in the columns their own headers point at.
+        for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.usualShiftHeader(d));
         return headers.toArray(new String[0]);
     }
 
@@ -143,6 +157,11 @@ class DeskAssignmentUploadSpecialtyTest {
 
         List<String> rowValues = new ArrayList<>(List.of(bamboohrId, "First", "Last", "Agent", "", "", ""));
         rowValues.addAll(List.of(FULL_WEEK));
+        // Usual Shift cells left blank (D-07) -- placeholders keep Specialty values aligned with
+        // their own headers, which now sit after the seven Usual Shift columns (P-11/P-15).
+        for (int u = 0; u < EnrichedColumnLayout.DAY_ORDER.length; u++) {
+            rowValues.add("");
+        }
         rowValues.addAll(List.of(specialtyValues));
 
         Row row = sheet.createRow(1);

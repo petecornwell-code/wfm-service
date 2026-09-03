@@ -6,6 +6,7 @@ import com.wfm.integration.BambooEmployee;
 import com.wfm.integration.BambooHRClient;
 import com.wfm.model.*;
 import com.wfm.repository.*;
+import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -16,6 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.time.DayOfWeek;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,14 +49,15 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
     private BambooHRClient bambooHRClient;
     private AgentMergeService agentMergeService;
     private TransactionTemplate transactionTemplate;
+    private AgentUsualShiftRepository agentUsualShiftRepository;
+    private ShiftTemplateRepository shiftTemplateRepository;
+    private UsualShiftService usualShiftService;
     private Map<String, BambooEmployee> bambooEmployees;
 
     private DeskAssignmentUploadService service;
 
     private static final long TENANT_ID = 1L;
     private static final String NON_SCHEDULABLE_TITLE = "Quality Assurance";
-    private static final String[] DAY_HEADERS =
-            {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
     private static final String[] FULL_WEEK = {"8", "8", "8", "8", "8", "0", "0"};
 
     @BeforeEach
@@ -82,10 +85,16 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        agentUsualShiftRepository = mock(AgentUsualShiftRepository.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        usualShiftService = mock(UsualShiftService.class);
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate,
+                agentUsualShiftRepository, shiftTemplateRepository, usualShiftService);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
 
@@ -112,7 +121,10 @@ class DeskAssignmentUploadNonSchedulableRejectTest {
         Sheet sheet = wb.createSheet(deskName);
 
         List<String> headers = new ArrayList<>(List.of("BambooHR ID", "Name", "Email"));
-        headers.addAll(List.of(DAY_HEADERS));
+        for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.dayHeader(d));
+        // P-11: Usual Shift headers are required on an enriched-shape sheet (D-06/D-07/D-08 are
+        // not exercised by this non-schedulable-focused suite, so every cell stays blank/valid).
+        for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.usualShiftHeader(d));
 
         Row header = sheet.createRow(0);
         for (int c = 0; c < headers.size(); c++) {

@@ -45,6 +45,9 @@ class DeskAssignmentUploadEnrichedShapeTest {
     private BambooHRClient bambooHRClient;
     private AgentMergeService agentMergeService;
     private TransactionTemplate transactionTemplate;
+    private AgentUsualShiftRepository agentUsualShiftRepository;
+    private ShiftTemplateRepository shiftTemplateRepository;
+    private UsualShiftService usualShiftService;
     private Map<String, BambooEmployee> bambooEmployees;
 
     private DeskAssignmentUploadService service;
@@ -79,10 +82,16 @@ class DeskAssignmentUploadEnrichedShapeTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        agentUsualShiftRepository = mock(AgentUsualShiftRepository.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        usualShiftService = mock(UsualShiftService.class);
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate,
+                agentUsualShiftRepository, shiftTemplateRepository, usualShiftService);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
 

@@ -7,11 +7,14 @@ import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentRepository;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.service.AgentEligibilityService;
 import com.wfm.service.ClientManagementService;
 import com.wfm.service.DeskAssignmentUploadService;
+import com.wfm.service.UsualShiftService;
 import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -56,6 +59,9 @@ class WorkingPatternMergeTest {
     private BambooHRClient bambooHRClient;
     private AgentMergeService agentMergeService;
     private TransactionTemplate transactionTemplate;
+    private AgentUsualShiftRepository agentUsualShiftRepository;
+    private ShiftTemplateRepository shiftTemplateRepository;
+    private UsualShiftService usualShiftService;
     private DeskAssignmentUploadService service;
 
     private Desk desk;
@@ -83,10 +89,16 @@ class WorkingPatternMergeTest {
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
+        agentUsualShiftRepository = mock(AgentUsualShiftRepository.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        usualShiftService = mock(UsualShiftService.class);
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
+
         service = new DeskAssignmentUploadService(
                 agentRepository, deskRepository, clientManagementService,
                 agentPreferenceRepository, agentExceptionRepository, agentDayHoursRepository,
-                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate);
+                specializationRepository, agentEligibilityService, agentMergeService, transactionTemplate,
+                agentUsualShiftRepository, shiftTemplateRepository, usualShiftService);
 
         com.wfm.config.TenantContext.setTenantId(TENANT_ID);
 
@@ -105,6 +117,7 @@ class WorkingPatternMergeTest {
     private static String[] newShapeHeaders() {
         List<String> headers = new ArrayList<>(EnrichedColumnLayout.identityHeaders());
         for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.dayHeader(d));
+        for (DayOfWeek d : EnrichedColumnLayout.DAY_ORDER) headers.add(EnrichedColumnLayout.usualShiftHeader(d));
         return headers.toArray(new String[0]);
     }
 
