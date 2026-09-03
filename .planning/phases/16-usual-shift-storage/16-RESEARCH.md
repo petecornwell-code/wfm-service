@@ -125,9 +125,21 @@ the planner, not something research can resolve to a single "correct" answer.
 column; desk-scoping goes through `agent.deskId`, exactly as `AgentDayHoursRepository`'s own
 comment states for its sibling). Give it a real `@ManyToOne` FK to `ShiftTemplate` (lazy fetch,
 mirroring `AgentDayHours.agent`) rather than a denormalized name column — the FK can never dangle
-(no delete endpoint on `ShiftTemplate`), so a read-through join is always safe and always reflects
+(~~no delete endpoint on `ShiftTemplate`~~ — **premise wrong, see correction below**), so a read-through join is always safe and always reflects
 current truth, which is what a *live target* should do (unlike `AgentShiftAssignment`'s frozen
 historical record, which denormalizes on purpose). Extract one `clearUsualShifts(UUID agentId)`
+
+> **Correction (2026-09-03, post-execution).** The parenthetical above is wrong: `ShiftTemplate`
+> HAS had a delete endpoint since Phase 15's `81117e3`. This research inherited the stale Phase 14
+> T-14-14 record, which had already been superseded. The *recommendation* stands — a real FK plus a
+> read-through join is still right for a live target — but it is safe for a different reason than
+> stated. What actually makes it safe: `agent_usual_shift.shift_template_id` carries
+> `ON DELETE CASCADE` (required so `DeskService.deleteDesk` still works), and plan 16-02 added a
+> refusal guard on `deleteShiftTemplate` so that cascade can never silently destroy a stored usual
+> shift. Had the premise been believed rather than checked, the phase would have shipped a live
+> endpoint that wiped operator data with no error at any layer. Plan 16-02 caught it (P-02 /
+> T-16-09) precisely because it verified the claim instead of inheriting it.
+
 helper used by both `DeskAssignmentUploadService.clearDesk` (add the call) and
 `DeskAgentService.removeDeskAgent` (add both the call and — separately — recognize that this method
 already IS the desk-move path).

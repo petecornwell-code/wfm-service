@@ -28,7 +28,7 @@ to Phase 15.
   `agent_id, day_of_week, shift_template_id` shape, unique on `(agent_id, day_of_week)`), **but the
   resolution service resolves by NAME**: it reads the stored row's template name and returns
   whichever era of that name is effective on the date being asked about. Rationale: Phase 14 made
-  the era key `(tenant_id, desk_id, name, effective_from)` with no delete endpoint, so an operator
+  the era key `(tenant_id, desk_id, name, effective_from)`, so an operator
   editing "Early" creates a *new era* rather than mutating the row — and in operator language
   "Ana's usual shift is Early" must move with Early. In-codebase precedent: `AgentShiftAssignment`
   already carries `templateName` and `sourceTemplateId` side by side.
@@ -42,6 +42,11 @@ to Phase 15.
   degrades into an existing state rather than a third one Phase 17 must handle. Retirement is never
   blocked or gated by the existence of referencing rows — Phase 14 (T-14-14) deliberately made
   retirement the one library edit that cannot be blocked by downstream references.
+  *(Correction 2026-09-03: T-14-14's wider claim that shift templates have **no delete endpoint at
+  all** was true when Phase 14 shipped but was superseded by Phase 15's `81117e3`, which added
+  `DELETE /desks/{deskId}/shift-templates/{id}`. D-02's substance is unaffected — retirement, the
+  `effective_to` edit, is still never blocked; it is **deletion** that refuses when references
+  exist. Plan 16-02 added the second such refusal, for `agent_usual_shift`.)*
 
 - **D-03:** Setting a usual shift for a weekday excluded by the template's `valid_weekdays` mask is
   **rejected with a 400**, on both the inline path and (as a cell-level skip) the upload path. This
