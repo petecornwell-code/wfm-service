@@ -67,7 +67,7 @@ class DeskAssignmentTemplateServiceTest {
                 "Billing", jobTitle, true,
                 null, null, List.of(),
                 null, null, null,
-                0, List.of(), Map.of());
+                0, List.of(), Map.of(), Map.of());
     }
 
     private List<String> expectedHeaders() {

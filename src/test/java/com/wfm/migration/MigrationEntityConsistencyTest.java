@@ -1,6 +1,7 @@
 package com.wfm.migration;
 
 import com.wfm.model.AgentShiftAssignment;
+import com.wfm.model.AgentUsualShift;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftTemplate;
@@ -85,7 +86,8 @@ class MigrationEntityConsistencyTest {
             "shift_template_break_band", ShiftTemplateBreakBand.class,
             "agent_shift_assignment", AgentShiftAssignment.class,
             "constraint_weights", ConstraintWeights.class,
-            "schedule", Schedule.class
+            "schedule", Schedule.class,
+            "agent_usual_shift", AgentUsualShift.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */

@@ -48,6 +48,15 @@ public final class EnrichedColumnLayout {
         return name.charAt(0) + name.substring(1).toLowerCase();
     }
 
+    /**
+     * Usual Shift column header, e.g. MONDAY -> "Usual Shift Monday" (D-06, D-18). This is the
+     * ONLY place the "Usual Shift " prefix may be written -- every consumer (parser, template
+     * generator, export) must call this function, never hardcode the string.
+     */
+    public static String usualShiftHeader(DayOfWeek d) {
+        return "Usual Shift " + dayHeader(d);
+    }
+
     /** Specialty column header, e.g. 1 -> "Specialty 1". Round-trips through {@link #specialtyIndex}. */
     public static String specialtyHeader(int index) {
         return "Specialty " + index;

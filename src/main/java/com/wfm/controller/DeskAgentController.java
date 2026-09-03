@@ -7,6 +7,7 @@ import com.wfm.service.AgentPreferenceService;
 import com.wfm.service.DeskAgentExportService;
 import com.wfm.service.DeskAgentService;
 import com.wfm.service.PreferenceUploadService;
+import com.wfm.service.UsualShiftService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,19 +30,22 @@ public class DeskAgentController {
     private final AgentExceptionService agentExceptionService;
     private final BambooRefreshService bambooRefreshService;
     private final PreferenceUploadService preferenceUploadService;
+    private final UsualShiftService usualShiftService;
 
     public DeskAgentController(DeskAgentService deskAgentService,
                                DeskAgentExportService deskAgentExportService,
                                AgentPreferenceService agentPreferenceService,
                                AgentExceptionService agentExceptionService,
                                BambooRefreshService bambooRefreshService,
-                               PreferenceUploadService preferenceUploadService) {
+                               PreferenceUploadService preferenceUploadService,
+                               UsualShiftService usualShiftService) {
         this.deskAgentService = deskAgentService;
         this.deskAgentExportService = deskAgentExportService;
         this.agentPreferenceService = agentPreferenceService;
         this.agentExceptionService = agentExceptionService;
         this.bambooRefreshService = bambooRefreshService;
         this.preferenceUploadService = preferenceUploadService;
+        this.usualShiftService = usualShiftService;
     }
 
     @GetMapping
@@ -88,6 +92,16 @@ public class DeskAgentController {
                                           @RequestBody SetDayHoursRequest request) {
         return deskAgentService.setDayHours(deskId, agentId, day,
                 request.hours(), request.dayOffType(), Boolean.TRUE.equals(request.clearRow()));
+    }
+
+    @PutMapping("/{agentId}/usual-shift/{day}")
+    public DeskAgentResponse setUsualShift(@PathVariable UUID deskId,
+                                            @PathVariable UUID agentId,
+                                            @PathVariable DayOfWeek day,
+                                            @RequestBody SetUsualShiftRequest request) {
+        usualShiftService.setUsualShift(deskId, agentId, day,
+                request.shiftTemplateId(), Boolean.TRUE.equals(request.clearRow()));
+        return deskAgentService.getDeskAgentResponse(deskId, agentId);
     }
 
     @PostMapping("/refresh")

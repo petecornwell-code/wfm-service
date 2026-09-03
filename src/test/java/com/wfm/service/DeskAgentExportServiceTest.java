@@ -46,7 +46,7 @@ class DeskAgentExportServiceTest {
                 null, List.of(),
                 contractedHoursPerDay, effectiveContractedHoursPerDay,
                 null,
-                0, List.of(), dayHours);
+                0, List.of(), dayHours, Map.of());
     }
 
     private Map<DayOfWeek, DayHoursEntry> uniformDayHours(DayHoursEntry entry) {
@@ -78,6 +78,9 @@ class DeskAgentExportServiceTest {
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
             headers.add(EnrichedColumnLayout.dayHeader(day));
         }
+        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+            headers.add(EnrichedColumnLayout.usualShiftHeader(day));
+        }
         headers.add(EnrichedColumnLayout.COL_FIRST_NAME);
         headers.add(EnrichedColumnLayout.COL_LAST_NAME);
         return headers;
@@ -90,7 +93,7 @@ class DeskAgentExportServiceTest {
         Row headerRow = sheet.getRow(0);
 
         List<String> expected = expectedHeaders();
-        assertThat(expected).hasSize(22);
+        assertThat(expected).hasSize(29);
         for (int i = 0; i < expected.size(); i++) {
             assertThat(headerRow.getCell(i).getStringCellValue())
                     .as("header cell %d", i)
@@ -233,8 +236,8 @@ class DeskAgentExportServiceTest {
         XSSFWorkbook workbook = exportAndReadBack(List.of(a));
         Row row = workbook.getSheet("Desk Agents").getRow(1);
 
-        // First Name shifted from index 13 to 20 by the 7-column insertion.
-        Cell firstNameCell = row.getCell(20);
+        // First Name shifted from index 13 to 27 -- 13 (day hours) + 7 (usual shift) insertion.
+        Cell firstNameCell = row.getCell(27);
         assertThat(firstNameCell.getCellType()).isEqualTo(CellType.STRING);
         assertThat(firstNameCell.getStringCellValue()).isEqualTo("'=SUM(A1)");
     }

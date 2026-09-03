@@ -20,7 +20,8 @@ public record DeskAgentResponse(UUID id, UUID deskId, String bamboohrId, String 
                                 EmploymentType employmentType,
                                 int pendingPtoCount,
                                 List<LocalDate> pendingPtoDates,
-                                Map<DayOfWeek, DayHoursEntry> dayHours) {
+                                Map<DayOfWeek, DayHoursEntry> dayHours,
+                                Map<DayOfWeek, UsualShiftEntry> usualShift) {
     public record SpecSummary(UUID id, String name) {}
 
     /**
@@ -29,4 +30,17 @@ public record DeskAgentResponse(UUID id, UUID deskId, String bamboohrId, String 
      * from hours/dayOffType being null, since a stored 0.00 row is itself a real state.
      */
     public record DayHoursEntry(boolean hasRow, BigDecimal hours, DayOffType dayOffType, BigDecimal effectiveHours) {}
+
+    /**
+     * One weekday's resolved usual-shift state (D-16, three-state discriminator). {@code name} is
+     * the RAW stored template name and is non-null for both LIVE and STORED_INACTIVE; {@code
+     * reason} is non-null only for STORED_INACTIVE. Backend-computed so the roster tile never
+     * recomputes the classification client-side (16-UI-SPEC.md Component Specifications §1).
+     */
+    public record UsualShiftEntry(UsualShiftStatus status, String name, UsualShiftReason reason) {}
+
+    public enum UsualShiftStatus { NOT_SET, LIVE, STORED_INACTIVE }
+
+    /** RETIRED = D-02 era no longer effective. NOT_WORKED is added by plan 16-02 (P-05). */
+    public enum UsualShiftReason { RETIRED, NOT_WORKED }
 }

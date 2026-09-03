@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.dto.DeskAgentResponse.DayHoursEntry;
+import com.wfm.dto.DeskAgentResponse.UsualShiftEntry;
 import com.wfm.model.DayOffType;
 import com.wfm.util.EnrichedColumnLayout;
 import com.wfm.util.FormulaInjectionSanitizer;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 public class DeskAgentExportService {
 
     private static final int FIRST_DAY_COLUMN = 13;
+    private static final int FIRST_USUAL_SHIFT_COLUMN = 20;
 
     public byte[] exportDeskAgentsToExcel(List<DeskAgentResponse> agents) {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
@@ -41,6 +43,12 @@ public class DeskAgentExportService {
             ));
             for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
                 columns.add(EnrichedColumnLayout.dayHeader(day));
+            }
+            // D-18: seven Usual Shift columns immediately after the day-hours group, from the
+            // same DAY_ORDER loop -- export/template/parser stay one shape and the sheet is
+            // directly re-uploadable.
+            for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+                columns.add(EnrichedColumnLayout.usualShiftHeader(day));
             }
             columns.add(EnrichedColumnLayout.COL_FIRST_NAME);
             columns.add(EnrichedColumnLayout.COL_LAST_NAME);
@@ -70,8 +78,9 @@ public class DeskAgentExportService {
                 row.createCell(11).setCellValue(agent.contractedHoursPerDay() != null ? agent.contractedHoursPerDay().doubleValue() : 0);
                 row.createCell(12).setCellValue(agent.effectiveContractedHoursPerDay() != null ? agent.effectiveContractedHoursPerDay().doubleValue() : 0);
                 writeDayCells(row, agent);
-                row.createCell(FIRST_DAY_COLUMN + 7).setCellValue(sanitize(agent.firstName()));
-                row.createCell(FIRST_DAY_COLUMN + 8).setCellValue(sanitize(agent.lastName()));
+                writeUsualShiftCells(row, agent);
+                row.createCell(FIRST_USUAL_SHIFT_COLUMN + 7).setCellValue(sanitize(agent.firstName()));
+                row.createCell(FIRST_USUAL_SHIFT_COLUMN + 8).setCellValue(sanitize(agent.lastName()));
             }
 
             for (int i = 0; i < columns.size(); i++) {
@@ -117,6 +126,28 @@ public class DeskAgentExportService {
             } else {
                 cell.setCellValue(entry.effectiveHours().doubleValue());
             }
+        }
+    }
+
+    /**
+     * Writes the seven Usual Shift columns (D-18). Per 16-UI-SPEC.md §3's contract this always
+     * writes the RAW stored template name, never the date-resolved three-state distinction the
+     * roster tile shows -- so an exported sheet stays a faithful, re-uploadable record. A missing
+     * entry, a null name, or a resolved status other than a stored row (i.e. NOT_SET) all leave
+     * the cell blank, matching D-07's "blank means no usual shift, and is valid" upload contract.
+     * Always the String overload of {@link Cell#setCellValue(String)} -- never numeric -- so a
+     * template named entirely of digits exports and re-imports as text unchanged.
+     */
+    private void writeUsualShiftCells(Row row, DeskAgentResponse agent) {
+        Map<DayOfWeek, UsualShiftEntry> usualShift = agent.usualShift();
+        DayOfWeek[] order = EnrichedColumnLayout.DAY_ORDER;
+        for (int i = 0; i < order.length; i++) {
+            UsualShiftEntry entry = usualShift != null ? usualShift.get(order[i]) : null;
+            String name = entry != null ? entry.name() : null;
+            if (name == null) {
+                continue; // leave the cell blank, never created (matches writeSanitized's null behaviour)
+            }
+            row.createCell(FIRST_USUAL_SHIFT_COLUMN + i).setCellValue(sanitize(name));
         }
     }
 

@@ -64,7 +64,7 @@ class DeskAssignmentTemplateFilterTest {
                 "Billing", jobTitle, active,
                 null, null, List.of(),
                 null, null, null,
-                0, List.of(), Map.of());
+                0, List.of(), Map.of(), Map.of());
     }
 
     /** BambooHR IDs of the data rows actually written to the sheet. */

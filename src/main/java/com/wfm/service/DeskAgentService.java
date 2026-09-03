@@ -30,6 +30,8 @@ public class DeskAgentService {
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final ScheduleRepository scheduleRepository;
+    private final AgentUsualShiftRepository agentUsualShiftRepository;
+    private final UsualShiftResolutionService usualShiftResolutionService;
 
     public DeskAgentService(AgentRepository agentRepository,
                             DeskRepository deskRepository,
@@ -38,7 +40,9 @@ public class DeskAgentService {
                             AgentExceptionRepository agentExceptionRepository,
                             AgentDayOffRepository agentDayOffRepository,
                             AgentDayHoursRepository agentDayHoursRepository,
-                            ScheduleRepository scheduleRepository) {
+                            ScheduleRepository scheduleRepository,
+                            AgentUsualShiftRepository agentUsualShiftRepository,
+                            UsualShiftResolutionService usualShiftResolutionService) {
         this.agentRepository = agentRepository;
         this.deskRepository = deskRepository;
         this.specializationRepository = specializationRepository;
@@ -47,6 +51,8 @@ public class DeskAgentService {
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.scheduleRepository = scheduleRepository;
+        this.agentUsualShiftRepository = agentUsualShiftRepository;
+        this.usualShiftResolutionService = usualShiftResolutionService;
     }
 
     /**
@@ -74,6 +80,15 @@ public class DeskAgentService {
                         Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h)));
     }
 
+    /** Single bulk per-desk fetch of usual-shift rows, grouped by agent then weekday — no N+1. */
+    private Map<UUID, Map<DayOfWeek, AgentUsualShift>> loadUsualShiftsByAgent(long tenantId, UUID deskId) {
+        List<AgentUsualShift> rows = agentUsualShiftRepository.findByTenantIdAndDeskId(tenantId, deskId);
+        return rows.stream()
+                .collect(Collectors.groupingBy(
+                        u -> u.getAgent().getId(),
+                        Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u)));
+    }
+
     @Transactional(readOnly = true)
     public List<DeskAgentResponse> listDeskAgentResponses(UUID deskId, String search, String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
@@ -92,16 +107,19 @@ public class DeskAgentService {
                         Collectors.mapping(AgentDayOff::getDate, Collectors.toList())));
 
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
+        Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
 
         return agents.stream()
                 .map(a -> toResponse(a, scheduleDefault,
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
+                        usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
                         pendingByAgent.getOrDefault(a.getId(), List.of())))
                 .toList();
     }
 
     private DeskAgentResponse toResponse(Agent a, BigDecimal scheduleDefault,
                                           Map<DayOfWeek, AgentDayHours> dayRows,
+                                          Map<DayOfWeek, AgentUsualShift> usualRows,
                                           List<LocalDate> pendingPtoDates) {
         Specialization ps = a.getPrimarySpecialization();
 
@@ -116,6 +134,29 @@ public class DeskAgentService {
             if (maxEffective == null || entry.effectiveHours().compareTo(maxEffective) > 0) {
                 maxEffective = entry.effectiveHours();
             }
+        }
+
+        // Usual shift (D-16 three-state discriminator). Per P-05 the NOT_WORKED arm is plan
+        // 16-02's -- this task computes only NOT_SET / LIVE / STORED_INACTIVE(RETIRED) and does
+        // not read agent_day_hours here.
+        Map<DayOfWeek, DeskAgentResponse.UsualShiftEntry> usualShift = new EnumMap<>(DayOfWeek.class);
+        LocalDate today = LocalDate.now();
+        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+            AgentUsualShift row = usualRows.get(day);
+            DeskAgentResponse.UsualShiftEntry entry;
+            if (row == null) {
+                entry = new DeskAgentResponse.UsualShiftEntry(
+                        DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null);
+            } else {
+                String storedName = row.getShiftTemplate().getName();
+                entry = usualShiftResolutionService.resolve(row, today).isPresent()
+                        ? new DeskAgentResponse.UsualShiftEntry(
+                                DeskAgentResponse.UsualShiftStatus.LIVE, storedName, null)
+                        : new DeskAgentResponse.UsualShiftEntry(
+                                DeskAgentResponse.UsualShiftStatus.STORED_INACTIVE, storedName,
+                                DeskAgentResponse.UsualShiftReason.RETIRED);
+            }
+            usualShift.put(day, entry);
         }
 
         return new DeskAgentResponse(
@@ -134,8 +175,32 @@ public class DeskAgentService {
                 a.getEmploymentType(),
                 pendingPtoDates.size(),
                 pendingPtoDates,
-                dayHours
+                dayHours,
+                usualShift
         );
+    }
+
+    /**
+     * P-06: the read half of the write-then-read composition {@code DeskAgentController} performs
+     * for the usual-shift endpoint -- mirrors the existing {@code refreshFromBamboo} pattern
+     * (write via one service, read via {@code listDeskAgentResponses}), scoped to a single agent.
+     */
+    @Transactional(readOnly = true)
+    public DeskAgentResponse getDeskAgentResponse(UUID deskId, UUID agentId) {
+        long tenantId = TenantContext.getTenantId();
+        BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+
+        Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
+
+        Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
+        Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
+
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, List.of());
     }
 
     @Transactional
@@ -170,9 +235,11 @@ public class DeskAgentService {
 
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
+        Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
         return assigned.stream()
                 .map(a -> toResponse(a, scheduleDefault,
-                        dayHoursByAgent.getOrDefault(a.getId(), Map.of()), List.of()))
+                        dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
+                        usualShiftsByAgent.getOrDefault(a.getId(), Map.of()), List.of()))
                 .toList();
     }
 
@@ -229,7 +296,10 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
-        return toResponse(saved, scheduleDefault, dayRows, List.of());
+        Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, List.of());
     }
 
     @Transactional
@@ -275,7 +345,10 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
-        return toResponse(saved, scheduleDefault, dayRows, List.of());
+        Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, List.of());
     }
 
     /**
@@ -324,7 +397,10 @@ public class DeskAgentService {
         Map<DayOfWeek, AgentDayHours> dayRows = agentDayHoursRepository
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentDayHours::getDayOfWeek, h -> h));
-        return toResponse(agent, scheduleDefault, dayRows, List.of());
+        Map<DayOfWeek, AgentUsualShift> usualRows = agentUsualShiftRepository
+                .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
+                .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, List.of());
     }
 
     /**

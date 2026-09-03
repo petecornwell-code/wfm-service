@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * which covers the surviving seven-row bulk fan-out (D-07).
  */
 @DataJpaTest
-@Import(DeskAgentService.class)
+@Import({DeskAgentService.class, UsualShiftResolutionService.class})
 @ActiveProfiles("test")
 class DeskAgentServiceDayHoursTest {
 
