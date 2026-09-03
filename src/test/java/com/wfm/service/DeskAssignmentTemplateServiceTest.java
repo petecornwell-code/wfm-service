@@ -4,6 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.model.Desk;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.util.EnrichedColumnLayout;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -36,6 +37,7 @@ class DeskAssignmentTemplateServiceTest {
     private DeskRepository deskRepository;
     private DeskAgentService deskAgentService;
     private AgentEligibilityService agentEligibilityService;
+    private ShiftTemplateRepository shiftTemplateRepository;
     private DeskAssignmentTemplateService service;
 
     @BeforeEach
@@ -43,12 +45,17 @@ class DeskAssignmentTemplateServiceTest {
         deskRepository = mock(DeskRepository.class);
         deskAgentService = mock(DeskAgentService.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
         // Default: allowlist inactive, so these pre-existing tests keep asserting the
         // unfiltered seeding behaviour. The allowlist itself is covered by
         // DeskAssignmentTemplateFilterTest.
         when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
+        // Default: no live templates for any desk, so these pre-existing tests keep asserting
+        // header/pre-fill behaviour without exercising the D-10 dropdown (covered by
+        // DeskAssignmentTemplateServiceUsualShiftTest).
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
         service = new DeskAssignmentTemplateService(
-                deskRepository, deskAgentService, agentEligibilityService);
+                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository);
         TenantContext.setTenantId(TENANT_ID);
     }
 
@@ -74,6 +81,9 @@ class DeskAssignmentTemplateServiceTest {
         List<String> headers = new ArrayList<>(EnrichedColumnLayout.identityHeaders());
         for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
             headers.add(EnrichedColumnLayout.dayHeader(day));
+        }
+        for (DayOfWeek day : EnrichedColumnLayout.DAY_ORDER) {
+            headers.add(EnrichedColumnLayout.usualShiftHeader(day));
         }
         headers.add(EnrichedColumnLayout.specialtyHeader(1));
         headers.add(EnrichedColumnLayout.specialtyHeader(2));
@@ -119,7 +129,7 @@ class DeskAssignmentTemplateServiceTest {
         Row headerRow = sheet.getRow(0);
 
         List<String> expected = expectedHeaders();
-        assertThat(expected).hasSize(16); // 7 identity + 7 days + 2 specialty
+        assertThat(expected).hasSize(23); // 7 identity + 7 days + 7 usual shift + 2 specialty
         for (int i = 0; i < expected.size(); i++) {
             assertThat(cellString(headerRow, i)).isEqualTo(expected.get(i));
         }
@@ -145,8 +155,9 @@ class DeskAssignmentTemplateServiceTest {
         assertThat(cellString(dataRow, 5)).isEqualTo("Billing");
         assertThat(cellString(dataRow, 6)).isEqualTo("Yes");
 
-        // Columns 7-13 = Monday..Sunday, 14-15 = Specialty 1/2 — must all be blank
-        for (int i = 7; i <= 15; i++) {
+        // Columns 7-13 = Monday..Sunday day hours, 14-20 = Usual Shift Mon..Sun (blank here
+        // because this agent has no stored usual shift, D-09), 21-22 = Specialty 1/2 — all blank
+        for (int i = 7; i <= 22; i++) {
             assertThat(cellString(dataRow, i)).isNull();
         }
     }

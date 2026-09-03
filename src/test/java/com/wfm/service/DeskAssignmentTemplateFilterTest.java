@@ -4,6 +4,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.model.Desk;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
@@ -37,6 +38,7 @@ class DeskAssignmentTemplateFilterTest {
     private DeskRepository deskRepository;
     private DeskAgentService deskAgentService;
     private AgentEligibilityService agentEligibilityService;
+    private ShiftTemplateRepository shiftTemplateRepository;
     private DeskAssignmentTemplateService service;
 
     @BeforeEach
@@ -44,8 +46,10 @@ class DeskAssignmentTemplateFilterTest {
         deskRepository = mock(DeskRepository.class);
         deskAgentService = mock(DeskAgentService.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
+        shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
         service = new DeskAssignmentTemplateService(
-                deskRepository, deskAgentService, agentEligibilityService);
+                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository);
         TenantContext.setTenantId(TENANT_ID);
     }
 
