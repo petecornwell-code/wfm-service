@@ -2,39 +2,39 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
-current_phase: 15
-current_phase_name: Shift Envelope, Breaks & Library Generation
-status: Phase 15 shipped — no PR (work already on default branch claude/create-system-specification-451ge)
-stopped_at: Completed 15-20-PLAN.md
-last_updated: "2026-09-03T02:41:24.467Z"
+current_phase: 16
+current_phase_name: Usual Shift Storage
+status: planning
+stopped_at: Phase 15 complete, ready to plan Phase 16
+last_updated: "2026-09-03T02:52:44.767Z"
 last_activity: 2026-09-02
-last_activity_desc: Phase 15 shipped — verified, secured, pushed to default branch
-state_head: 07949809f22ea6ef95d1a6b5e0b2fd08b487bb67
+last_activity_desc: Phase 15 complete, transitioned to Phase 16
+state_head: 09f28f8b92758ad4b8f80cdf08a4334dd54b3513
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 26
   completed_plans: 26
-  percent: 25
+  percent: 50
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-26)
+See: .planning/PROJECT.md (updated 2026-09-02)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 15 — Shift Envelope, Breaks & Library Generation
+**Current focus:** Phase 16 — Usual Shift Storage
 
 ## Current Position
 
-Phase: 15 (Shift Envelope, Breaks & Library Generation) — EXECUTING
-Plan: 6 of 20
-Status: Phase 15 shipped — no PR (work already on default branch claude/create-system-specification-451ge)
-Last activity: 2026-09-02 — Phase 15 shipped (verified, secured, pushed to default branch)
+Phase: 16 — Usual Shift Storage
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-02 — Phase 15 complete, transitioned to Phase 16
 
-Progress: [███░░░░░░░] 25% (1/4 phases — Phase 14 complete, 6/6 plans)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete, 26/26 plans)
 
 ## Milestone v1.3 Roadmap
 
@@ -240,10 +240,12 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ### Blockers/Concerns
 
+- **⚠ [Phase 15] G-15-28 — weekend demand forecast under-reports the roster, operator-owned and OPEN.** The live weekend forecast asserts ~1 FTE at hours where ~20 agents are rostered (Sat 2026-01-10 has no demand row before 11:00; Sun 2026-01-11 reads 1 FTE at 10:00). Because `bulkOverallocationLimit` derives its ceiling from demand, this manufactured the seat scarcity behind most of Phase 15's residual-hard symptoms — proven by experiment: raising `overallocationHardLimitPct` 250→500 with everything else held constant took the live desk to hard 0 for the first time. **The 500% ceiling is a workaround for bad data, not a fix, and must not be left in place** — it disables the over-allocation guard for the rest of the week. Once the forecast is corrected, re-run at 250%. Operator committed to the correction on 2026-09-01; not a code defect.
+- **[Phase 15] UAT tests 10 and 18 closed by operator ruling, not by measurement.** Test 10's residual −9 was judged acceptable rather than resolved; test 18 (production migration) was closed because no separate production tier exists and dev *is* the live system. Both rulings are recorded verbatim in `15-UAT.md`. If a production environment is ever stood up, test 18 becomes live again and must be re-run there.
 - BambooHR credential rotation was removed from GSD tracking on 2026-08-25 at operator request; ownership sits with the operator outside this planning system.
 - **[v1.3] Soft-quality plateau, measure not remedy.** `SPIKE-COUPLING.md` found the sound Option A coupling never reaches the known `0soft` optimum on its toy fixture (settles `-10soft`/`-5soft`). Operator ruling: Phase 15's XCUT-04 benchmark must measure this at realistic scale and report it honestly — no custom-move remedy is scoped into v1.3. If the real-scale gap turns out to matter, that is a future milestone's evidence-led decision, not an assumption to inherit.
 - **[v1.3] Migration numbering.** V39 is now applied (Phase 14) — next migration is **V40**. Confirm the actual latest-applied version before each phase's migration, per the project's own recorded discipline (V30 was confirmed against V29 the same way at Phase 10).
-- **⚠ [Phase 14] No test executes the real Flyway migrations.** `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2, so the test schema is built from the entities and migration SQL never runs. V39 shipped declaring `valid_weekdays CHAR(7)` against an entity mapped to `varchar(7)`: the migration applied cleanly and the app then failed to boot under `ddl-auto=validate`, with all 402 tests green. Fixed in place (`9a98029`, UAT gap G-14-1) but the blind spot is unchanged — future migration-vs-entity drift surfaces at first startup, not in CI. Wants a Testcontainers-backed boot test.
+- **⚠ [Phase 14] No test executes the real Flyway migrations.** `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2, so the test schema is built from the entities and migration SQL never runs. V39 shipped declaring `valid_weekdays CHAR(7)` against an entity mapped to `varchar(7)`: the migration applied cleanly and the app then failed to boot under `ddl-auto=validate`, with all 402 tests green. Fixed in place (`9a98029`, UAT gap G-14-1). **ADDRESSED in Phase 15 (`d5b4169`):** `src/test/java/com/wfm/support/PostgresBackedTest.java` runs tests against a real Postgres via Testcontainers with `spring.flyway.enabled=true` and `ddl-auto=validate`, so every migration V1..Vn executes and is checked against the entity mappings. Residual: only classes that extend it get this — the default suite still runs on H2, so coverage depends on tests opting in (currently `AgentRepositoryPostgresTest`). See also the unmodelled-dependency note in `15-SECURITY.md` F-15-01.
 - **[Phase 14] Pre-existing defect, unrelated to Phase 14.** `GET /api/v1/agents` returns 500 (`function lower(bytea) does not exist`). Observed during Phase 14 UAT on the deployed dev environment; not a Phase 14 file and not tracked as a Phase 14 gap. The desk-scoped `GET /desks/{id}/agents` path is unaffected.
 - **Solver data quality — mitigated by Phase 11 (2026-08-21).** BambooHR field 4517 is ~45% populated / ~24% parseable company-wide. Agents with blank or `Variable` values were excluded from solving via `Agent.workingDaysKnown`. MRG-06 shipped: a spreadsheet-supplied pattern now sets `Agent.workingDaysSource=SPREADSHEET` (V36) and makes the agent solver-eligible, with `BambooRefreshService.shouldDowngradeWorkingDaysKnown` preventing a later refresh from reclaiming it. Residual risk: the field-4517 alias dependency below.
 - **⚠ [Phase 11] BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517` but the parser reads back the JSON key `customWorkingdays`. If the tenant has no Field Alias configured, the value is always null in production and MRG-03 window arbitration + MRG-06 gap-fill/replace reporting never activate — while every unit test still passes, because the fixtures hand-construct `BambooEmployee`. Confirmed by operator at UAT 2026-08-21 (test 5); re-check after any BambooHR account change. Origin: code review IN-03.
@@ -254,8 +256,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-02T15:30:09.558Z
-Stopped at: Completed 15-20-PLAN.md
+Last session: 2026-09-02
+Stopped at: Phase 15 complete (verified, secured, UAT 20/20), ready to plan Phase 16
 Resume file: None
 
 ## Operator Next Steps

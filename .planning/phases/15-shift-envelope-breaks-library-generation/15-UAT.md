@@ -1795,10 +1795,11 @@ closed_by_operator_ruling_2026_09_02: |
 
   SUPERSEDED BY: Test 1 (live cloud data, same environment).
 
-  PRIOR STATE (kept for history, no longer the verdict):
-    result: blocked
-    blocked_by: server
-    reason: No production deploy has occurred. `deploy.yml` targets the dev environment (ECS
+  PRIOR STATE (kept for history, no longer the verdict). Field names are deliberately prefixed
+  with "was_" so no scanner reads this historical block as a live blocked result:
+    was_result: blocked
+    was_blocked_by: server
+    was_reason: No production deploy has occurred. `deploy.yml` targets the dev environment (ECS
       cluster `wfm-service-dev`) only. Unblock when a production deploy is planned.
 
 ### 19. Envelope divergence and unstaffed hours render correctly

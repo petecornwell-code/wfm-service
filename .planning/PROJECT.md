@@ -203,6 +203,12 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ Per-desk `SLOT`/`SHIFT` scheduling mode; every existing desk backfilled to `SLOT` with zero behaviour change, switch refused with the same named uncovered windows the report shows, and refused with a readable 409 during an in-flight solve without stopping it — v1.3 Phase 14 (MODE-01…03)
 - ✓ Mode switching never alters an already-accepted schedule, and no production solver file changed — proven structurally, not asserted — v1.3 Phase 14 (MODE-04, MODE-05)
 - ✓ All 19 existing solver constraints classified mode-agnostic / mode-gated / needs-shift-variant, with a reflection-derived completeness test that cannot be silenced by editing a count — v1.3 Phase 14 (XCUT-05, partial; mode-gating lands in Phase 15)
+- ✓ On a shift-scheduled desk the solver assigns each agent exactly one shift per day from that desk's library and never seats them outside it — a hard-constraint coupling (Option A) proven sound against a real-shaped fixture by a walker that shares no code path with the constraint it checks, with a non-vacuity assertion so a green pass cannot be empty — v1.3 Phase 15 (ENVL-01…04, XCUT-05 completed)
+- ✓ Breaks are distributed across bands rather than taken simultaneously; band capacity is operator-settable, `0` rejected and blank meaning unlimited, with a save-time advisory when capacity cannot seat the agents the envelope admits — v1.3 Phase 15 (ENVL-05, ENVL-06)
+- ✓ Shift assignment is legible in the operator view: the Agent Schedule Shift column agrees with the Agent Allocation group header, out-of-envelope seats (`E!`) are visually distinct from surrendered legal slots (`x`), and an hour no template reaches renders as deliberately unstaffed rather than as unfilled demand — v1.3 Phase 15 (ENVL-08, ENVL-09)
+- ✓ A starting shift library can be suggested from demand instead of composed by hand — the generator writes nothing, dedupes on full template identity, and places break bands away from demand peaks with a coverage re-check — v1.3 Phase 15 (ENVL-10, SHLB-07)
+- ✓ A shift-mode solve that cannot succeed is refused *before* it runs, naming the date, the per-hour seat shortfall and the levers the operator controls — including a per-agent-day forced-occupancy check, and refusal advice that withdraws the raise-the-ceiling suggestion when unassigned seats are hard-weighted — v1.3 Phase 15 (ENVL-07)
+- ✓ Shift-mode benchmarked honestly at realistic scale: threshold committed before results (`cd26db9`), and a result inside the comparison arm's own spread written up as "no measurable difference" rather than a win — v1.3 Phase 15 (XCUT-04)
 
 ### Active (carried to next milestone — see ROADMAP.md Backlog)
 
@@ -319,4 +325,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-26 after Phase 14 (Shift Library & Scheduling Mode) — SHLB-01…06 and MODE-01…05 validated; 999.4 / 999.7 / 999.9 remain deferred*
+*Last updated: 2026-09-02 after Phase 15 (Shift Envelope, Breaks & Library Generation) — ENVL-01…10, SHLB-07 and XCUT-04/05 validated; UAT 20/20, security threats_open 0. Two UAT items closed by operator ruling rather than measurement (tests 10 and 18), and G-15-28 (weekend demand forecast) remains open and operator-owned. 999.4 / 999.7 / 999.9 remain deferred*
