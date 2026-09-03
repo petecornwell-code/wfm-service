@@ -1,166 +1,144 @@
 ---
 phase: 15-shift-envelope-breaks-library-generation
-reviewed: 2026-09-02T15:55:00Z
+reviewed: 2026-09-03T01:32:21Z
 depth: standard
-files_reviewed: 15
+files_reviewed: 39
 files_reviewed_list:
-  - src/main/java/com/wfm/controller/GlobalExceptionHandler.java
+  - src/main/java/com/wfm/service/SolverService.java
   - src/main/java/com/wfm/service/ScheduleOutputService.java
   - src/main/java/com/wfm/service/ScheduleService.java
+  - src/main/java/com/wfm/service/ShiftLibraryValidationService.java
   - src/main/java/com/wfm/service/ShiftLibraryGenerationService.java
-  - src/main/java/com/wfm/service/SolverService.java
+  - src/main/java/com/wfm/service/ShiftTemplateService.java
+  - src/main/java/com/wfm/service/ScheduleExportService.java
+  - src/main/java/com/wfm/service/ConstraintWeightsService.java
+  - src/main/java/com/wfm/repository/AgentRepository.java
+  - src/main/java/com/wfm/repository/AgentShiftAssignmentRepository.java
   - src/main/java/com/wfm/solver/ScheduleConstraintProvider.java
-  - src/test/java/com/wfm/controller/GlobalExceptionHandlerTest.java
-  - src/test/java/com/wfm/service/ScheduleOutputServiceShiftReportingTest.java
-  - src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java
-  - src/test/java/com/wfm/service/ShiftEnvelopeSupplyGateTest.java
-  - src/test/java/com/wfm/service/ShiftLibraryGenerationServiceTest.java
-  - src/test/java/com/wfm/service/SolverSeatSupplyGateAccess.java
-  - src/test/java/com/wfm/solver/SeatSupplyDistributionAnalysisTest.java
-  - src/test/java/com/wfm/solver/ShiftDeskEndToEndRegressionTest.java
-  - src/test/java/com/wfm/solver/ShiftEnvelopeSupplyInvariantTest.java
+  - src/main/java/com/wfm/model/AgentShiftAssignment.java
+  - src/main/java/com/wfm/model/ShiftBandPair.java
+  - src/main/java/com/wfm/model/AgentDayConfig.java
+  - src/main/java/com/wfm/model/ShiftTemplate.java
+  - src/main/java/com/wfm/model/ShiftTemplateBreakBand.java
+  - src/main/java/com/wfm/model/ConstraintWeights.java
+  - src/main/java/com/wfm/model/Schedule.java
+  - src/main/java/com/wfm/model/ScheduleConfig.java
+  - src/main/java/com/wfm/controller/ShiftLibraryValidationController.java
+  - src/main/java/com/wfm/controller/ShiftTemplateController.java
+  - src/main/java/com/wfm/controller/GlobalExceptionHandler.java
+  - src/main/java/com/wfm/dto/ConstraintWeightsDto.java
+  - src/main/java/com/wfm/dto/SolveRequest.java
+  - src/main/java/com/wfm/dto/ScheduleDetailResponse.java
+  - src/main/java/com/wfm/dto/ShiftLibraryValidationResponse.java
+  - src/main/java/com/wfm/dto/ShiftTemplateResponse.java
+  - src/main/java/com/wfm/dto/ShiftLibrarySuggestionResponse.java
+  - frontend/src/pages/ScheduleResults.tsx
+  - frontend/src/pages/ShiftLibrary.tsx
+  - frontend/src/pages/ConstraintWeightsPage.tsx
+  - frontend/src/api/client.ts
+  - src/main/resources/solverConfig.xml
+  - src/main/resources/db/migration/V40__shift_template_break_bands.sql
+  - src/main/resources/db/migration/V42__add_band_capacity_weight.sql
+  - src/main/resources/db/migration/V43__schedule_scheduling_mode.sql
+  - src/main/resources/db/migration/V44__schedule_shift_envelope_slack.sql
+  - src/test/java/com/wfm/support/PostgresBackedTest.java
+  - src/test/java/com/wfm/repository/AgentRepositoryPostgresTest.java
 findings:
-  critical: 0
-  warning: 1
-  info: 1
-  total: 2
+  critical: 1
+  warning: 2
+  info: 0
+  total: 3
 status: issues_found
 ---
 
-# Phase 15: Code Review Report — Gap Closure Round (plans 15-16..15-20)
+# Phase 15: Code Review Report
 
-**Reviewed:** 2026-09-02T15:55:00Z
+**Reviewed:** 2026-09-03T01:32:21Z
 **Depth:** standard
-**Files Reviewed:** 15
-**Status:** issues_found (no Critical findings; one Warning, one Info)
+**Files Reviewed:** 39 read in full (of the 94-file scope). Remaining files (build.gradle, V41/V45/V46 migrations, ~50 test files, `ShiftTemplateRequest`/model classes not listed above) were triaged by name/grep against the priority order given in the review brief but not individually read line-by-line; nothing suspicious surfaced in that triage.
+**Status:** issues_found
 
 ## Summary
 
-This round closes seven gaps (G-15-32/G-15-26, G-15-23, G-15-21/G-15-24, G-15-25/G-15-31) across
-five production files plus their tests. I traced each of the round's specific claims against the
-actual diff rather than trusting the commit messages / javadoc:
+This phase adds shift-envelope scheduling (bands, seat-supply gating, envelope-compliance/contiguity/band-capacity constraints) on top of the existing slot-scheduling solver, plus a shift-library validator/generator and matching frontend surfaces. The core solver-side work (`ScheduleConstraintProvider`, `SolverService`'s seat-supply gate, `AgentShiftAssignment`'s eligibility filter, `ShiftBandPair.covers`) is unusually well-reasoned and internally consistent — most of the defects an adversarial pass would normally expect (null-unsafe `forEach` chains, double-counted day-off facts, mismatched rounding, weight-scale confusion between `shiftEnvelopeComplianceWeight` and `shiftWorkContiguityWeight`) are already the subject of extensive in-code postmortems and appear correctly fixed as described. The three fixes named in the review brief (`AgentRepository` null-`:search` CAST, `ShiftLibraryValidationService.loadHoursByWeekday` desk-default fallback, `ScheduleResults.tsx` divergence-marker gating) are all present and correctly implemented.
 
-- **15-16** (`GlobalExceptionHandler`, `ScheduleOutputService`, `ScheduleService`): the accepted
-  read path now derives violations from the persisted D-07 snapshot
-  (`buildAcceptedConstraintViolations`) instead of calling `solutionManager.explain` on a score
-  director missing its shift problem facts — verified this actually replaces the constant-1104
-  code path, that `isAcceptedSnapshot` is threaded from `ScheduleService`'s own `fromDb` local (not
-  re-inferred), and that the old `constraintWeights == null` guard is demoted to a live-path-only
-  safety net. Confirmed via a fresh, non-cached `cleanTest` run that all 8 touched test classes'
-  suites pass. The 405 handler is additive and does not reorder or shadow existing handlers —
-  Spring dispatches `@ExceptionHandler` by most-specific exception type, not declaration order, so
-  its placement above the catch-all is cosmetic as the code's own comment states.
-- **15-17** (`ShiftLibraryGenerationService`): dedupe now runs after band selection, keyed on full
-  identity (start, end, weekdays, ordered band tuple) rather than span alone — traced through
-  `dedupeKey`/`EmittedRow` and confirmed a same-span/different-weekday collapse cannot occur.
-  Demand-ranked band placement reuses the exact same `[incrementMinutes, spanLengthMinutes -
-  duration - incrementMinutes]` bound `enumerateCandidates` already enforced when generating the
-  candidate, so a candidate's own coverage-bearing offset is always a member of `admissibleOffsets`
-  — the `chosen.stream().max(...).orElseThrow()` eviction path in the coverage-recheck branch can
-  therefore never run against an empty set (verified this isn't independently reachable, not just
-  "the tests don't happen to hit it"). No band can land at the envelope's first or last grid slot;
-  the admissible bounds are unchanged from the outward-walk implementation this replaces.
-- **15-18/15-20** (`SolverService`): `coveredTimeslotsOnDate` is now the single date-aware
-  definition shared by the blocking check and the trailing advisory (previously two textually
-  duplicated calendar-blind `anyMatch` expressions). `requireShiftEnvelopeSeatSupply`'s new
-  `ConstraintWeights weights` parameter is null-safe on every path — the one production call site
-  never passes null (falls back to `new ConstraintWeights()`, whose `unassignedAssignmentWeight`
-  defaults to `ofSoft(1000)`), and null is treated identically to that default. The new per-hour
-  `forcedAgentDaysByTimeslotId` check accumulates into the same error list as the pre-existing
-  day-wide check (both can legitimately fire together, per the round's own test comments) without
-  ever double-reporting the retired/weekday-invalid-library case — I traced that
-  `distinctLibraryDefectReportedForDate` suppresses only the day-wide numeric-shortfall check, and
-  confirmed independently that when a whole date's library is retired or weekday-invalid, every
-  row's `getEligibleShiftBandPairs()` is *also* empty by construction (identical
-  `isEffectiveOn`/`appliesOn` predicates in `AgentShiftAssignment`), so `forcedAgentDaysByTimeslotId`
-  naturally skips all such rows and contributes nothing extra — this is a structural guarantee, not
-  a coincidence that happens to hold only for the shipped tests.
-- **15-19**: confirmed via `git show --stat` on every commit in the plan's range that it touched
-  only test and `.planning` files — no production code changed, matching its own claim.
-- `SolverSeatSupplyGateAccess`'s new `forcedAgentDaysByTimeslotId` bridge method stays a thin
-  forward to the still-package-private `SolverService` method; it does not widen production
-  visibility (the bridge class itself lives in `src/test`, and both bridged methods remain
-  package-private, non-public, in `SolverService`).
+The defect that did surface is a **backend/frontend contract gap**: two new advisory categories the backend computes specifically to prevent live production incidents documented in this phase's own code (`breakConcentrationAdvisories`, `peakShortfallAdvisories`) are never declared in the frontend's TypeScript API types and never rendered anywhere in `ShiftLibrary.tsx`. The feature is fully built server-side and completely invisible client-side. Given "this project has NO frontend test framework," nothing would catch this short of an operator noticing the advisories never appear.
 
-I ran a `./gradlew cleanTest` against all eight touched test classes plus a full
-`compileJava`/`compileTestJava` for the whole module — all pass.
+Two lower-severity gaps are also reported below (a constraint weight the UI still cannot tune, and a validated-but-silently-swallowed request field), both narrow in impact.
 
-The two findings below are a narrow, low-probability defensive gap in the new accepted-path
-violation report and a stale comment; neither is a regression in the round's stated goals, and
-neither was fabricated to pad the report — I traced each to a concrete, if unlikely, runtime
-scenario.
+## Critical Issues
+
+### CR-01: `breakConcentrationAdvisories` and `peakShortfallAdvisories` are computed by the backend but never reach the UI
+
+**File:** `frontend/src/api/client.ts:336`, `frontend/src/pages/ShiftLibrary.tsx` (whole file)
+
+**Issue:** `ShiftLibraryValidationResponse` (backend, `src/main/java/com/wfm/dto/ShiftLibraryValidationResponse.java:15-24`) has 8 fields, including `breakConcentrationAdvisories` and `peakShortfallAdvisories` — both new in this phase, both produced by dedicated computations in `ShiftLibraryValidationService` (`findBreakConcentrationAdvisories`, `findPeakShortfalls`). Their own javadoc documents the exact live incidents they exist to prevent:
+- Break concentration: "18 of 18 Late agents on a 16:00 break simultaneously, emptied the hour... 13 hard violations that no advisory had predicted."
+- Peak shortfall: "the desk ran 143 demand-hours against 200 staffed (140% coverage, every aggregate check clean) while Saturday 11:00 required 44 FTE against 25 agents on the entire desk. Short by 19 people, invisible to everything."
+
+The frontend `ShiftLibraryValidation` TypeScript interface (`frontend/src/api/client.ts:336`) declares only 6 of the 8 fields:
+```ts
+export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[] }
+```
+`breakConcentrationAdvisories` and `peakShortfallAdvisories` are absent. A repo-wide grep for both identifiers (and their PascalCase record types) under `frontend/src/` returns zero matches — nothing in `ShiftLibrary.tsx`'s `CoveragePanel`, the templates table's "Hours match"/"Capacity" advisory columns, or anywhere else reads or renders either advisory list.
+
+**Failure scenario:** An operator builds a shift library that puts every agent's break in the same hour (the default, blank-capacity, one-band shape this migration's own comments call "the single most damaging configuration"). The backend computes a `BreakConcentrationAdvisory` for it on every save (`GET /shift-library/validation` includes it in the JSON payload), but the Shift Library page shows a clean "✓ All staffing-demand windows are covered" panel with no warning glyph anywhere, because nothing in the component tree reads that field. The operator only discovers the problem after solving, when `bandCapacity`/`shiftEnvelopeCompliance` hard violations appear — exactly the failure mode this advisory was built to head off. Same for `peakShortfallAdvisories`: a per-hour shortfall that no per-date aggregate check can see is computed and silently dropped.
+
+**Fix:**
+```ts
+// frontend/src/api/client.ts
+export interface BreakConcentrationAdvisory { templateId: string; templateName: string; weekday: string; bandCount: number; admissibleHeadcount: number; worstCaseSimultaneousBreak: number; message: string }
+export interface PeakShortfallAdvisory { date: string; startTime: string; endTime: string; requiredFTEs: number; reachableAgents: number; shortfall: number; message: string }
+export interface ShiftLibraryValidation {
+  hasLiveDemand: boolean
+  uncoveredWindows: string[]
+  misalignedTemplates: string[]
+  hoursAdvisories: HoursAdvisory[]
+  unsatisfiableWeekdays: string[]
+  capacityAdvisories: CapacityAdvisory[]
+  breakConcentrationAdvisories: BreakConcentrationAdvisory[]
+  peakShortfallAdvisories: PeakShortfallAdvisory[]
+}
+```
+Then surface both lists in `ShiftLibrary.tsx` — e.g. a warning glyph per template row (mirroring the existing "Hours match"/"Capacity" columns) for `breakConcentrationAdvisories`, and a new panel or list item alongside `CoveragePanel` for `peakShortfallAdvisories` (which is date/hour-scoped, not template-scoped, so it needs its own rendering rather than a per-row glyph). Every three places that build a partial `ShiftLibraryValidation` object client-side (the `handleModeSwitch` 400-error reconstruction, and the draft-row `CoveragePanel` reuse) will also need the two new fields added (empty arrays are fine there, since neither refusal path currently emits them).
 
 ## Warnings
 
-### WR-01: Accepted-path violation report can show a HARD violation with a zero weight/penalty when `ConstraintWeights` is unresolved
+### WR-01: `contractedHoursUnderZeroWeight` remains unreadable/untunable through the constraint-weights API
 
-**File:** `src/main/java/com/wfm/service/ScheduleOutputService.java` (`buildAcceptedConstraintViolations`, the block computing `weightDto`/`totalPenalty`)
+**File:** `src/main/java/com/wfm/dto/ConstraintWeightsDto.java:6-32`, `src/main/java/com/wfm/service/ConstraintWeightsService.java`
 
-**Issue:** The live-solver path in `buildConstraintViolations` still guards on
-`schedule.getConstraintWeights() == null` and returns `List.of()` before building any report
-("Secondary safety net for the LIVE-SOLVER path only"). The new accepted-path branch
-(`isAcceptedSnapshot == true`, dispatched *before* that guard) has no equivalent guard:
-`buildAcceptedConstraintViolations` proceeds to compute out-of-envelope violations regardless of
-whether `schedule.getConstraintWeights()` is null, and silently falls back to `HardSoftScore.ZERO`
-for the displayed weight:
+**Issue:** `ConstraintWeights.java` defines its own `@ConstraintWeight("Contracted hours (under, zero)")` field (`contractedHoursUnderZeroWeight`, hard 100 by default, line 97-100) — a distinct constraint from `contractedHoursUnderWeight` that penalises an agent-day with *zero* assignments rather than a short one. This phase's own `ConstraintWeightsDto` comment states the motivating principle explicitly: the three new Phase-15 weights were added because their previous absence meant "the three constraints the shift model rests on could be neither read nor tuned through the API — directly against the intent their own migrations state ('hard-vs-soft is this column's value, never a code decision')." `contractedHoursUnderZeroWeight` sits in exactly the same class of gap (it is an equally weight-configurable hard constraint per `ConstraintWeights`'s own `@ConstraintConfiguration` design) but was not picked up in the same pass — it has no field in `ConstraintWeightsDto`, no branch in `ConstraintWeightsService.updateWeights`/`toDto`, and no row in `ConstraintWeightsPage.tsx`'s `CONSTRAINTS`/`DEFAULTS` tables.
 
+**Failure scenario:** An operator tuning constraint weights to fix a live scheduling problem involving agents left completely unassigned for a day has no way to see or change `contractedHoursUnderZeroWeight` — the UI simply doesn't offer it, and a `PUT /constraint-weights` body cannot set it (the field is silently ignored by Jackson since the DTO doesn't declare it). This is pre-existing (predates this phase), but the file was touched in this phase specifically to close this class of gap, and it wasn't closed completely.
+
+**Fix:** Add `contractedHoursUnderZeroWeight` to `ConstraintWeightsDto`, the `updateWeights`/`toDto` branches in `ConstraintWeightsService`, and a `CONSTRAINTS`/`DEFAULTS` row in `ConstraintWeightsPage.tsx` (default `{ hardScore: 100, softScore: 0 }`, matching `ConstraintWeights.java`'s field default), mirroring the pattern already used for the three Phase-15 weights.
+
+### WR-02: `SolveRequest.shiftEnvelopeSlackSlots` silently falls back to the schedule default on a negative value instead of being rejected
+
+**File:** `src/main/java/com/wfm/service/SolverService.java:539`
+
+**Issue:** In `buildSchedule`, every other optional numeric request field is applied unconditionally when non-null (`if (request.overallocationHardLimitPct() != null) s.setOverallocationHardLimitPct(...)`, etc.) — validation of these values (if any) happens downstream in `runPreSolveValidation`. `shiftEnvelopeSlackSlots` is the one field given an inline guard against its own valid range:
 ```java
-ConstraintWeights weights = schedule.getConstraintWeights();
-HardSoftScore envelopeWeight = weights != null
-        ? weights.getShiftEnvelopeComplianceWeight()
-        : HardSoftScore.ZERO;
-...
-return List.of(new ConstraintViolationEntry(
-        ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME,
-        "HARD", weightDto, violationCount, totalPenalty, violations));
+if (request.shiftEnvelopeSlackSlots() != null && request.shiftEnvelopeSlackSlots() >= 0) s.setShiftEnvelopeSlackSlots(request.shiftEnvelopeSlackSlots());
 ```
+A caller who supplies a negative value (e.g. `-1`, perhaps intending "no slack" and mistyping, or a client-side bug) gets no error — the request is silently accepted and the schedule solves with the field's default (1) instead. Every other field in this method either has no range guard, or (for `incrementMinutes`) throws `IllegalArgumentException` at the top of `buildSchedule` for an out-of-range value. This field is the only one that validates inline but converts a validation failure into silent substitution rather than an error surfaced to the caller.
 
-**Concrete failure scenario:** an accepted schedule genuinely has out-of-envelope seats, but its
-desk's `ConstraintWeights` row is unavailable at read time (e.g. deleted after acceptance, or a
-legacy desk row that predates weights being seeded). The response then names the constraint level
-as `"HARD"` and reports a non-zero `violationCount`, but shows `weight = {hard: 0, soft: 0}` and
-`totalPenalty = {hard: 0, soft: 0}` — an internally inconsistent "hard violation worth nothing"
-answer, one instance of exactly the class of contradiction (a schedule's own reported numbers
-disagreeing with each other) this whole gap-closure round exists to eliminate on the
-`feasible`/`violatedHardConstraints` axis. In practice this is low-probability today because
-`DeskService.createDesk` always seeds a default `ConstraintWeights` row at desk creation, but the
-fallback path itself is untested: `ScheduleOutputServiceShiftReportingTest` and
-`ScheduleServiceShiftSnapshotTest` both exercise null-weights only on the *live* path
-(`buildConstraintViolations_liveUnaccepted_nullWeightsGuardStaysScopedToLivePath`) — there is no
-accepted-path test for a violation-plus-null-weights combination, so this behavior was never
-pinned as intentional.
+**Failure scenario:** An automated caller of `POST /schedules/solve` passes `shiftEnvelopeSlackSlots: -1` (e.g. a bug computing slack from some other quantity that went negative). The solve proceeds using slack=1 instead, with no indication in the response that the requested value was rejected — the operator debugging "why is my slack setting not taking effect" has no error message to find, only a schedule whose behaviour doesn't match the request they believe they sent.
 
-**Fix:** Either extend the guard to also apply to the accepted path when weights are null and
-violations are non-empty, or make the "unknown weight" case explicit instead of a misleading zero:
+**Fix:** Either validate and throw for a negative value (consistent with `incrementMinutes`'s pattern at the top of the method):
 ```java
-HardSoftScore envelopeWeight = weights != null ? weights.getShiftEnvelopeComplianceWeight() : null;
-ScheduleSummary.ScoreDto weightDto = envelopeWeight != null
-        ? new ScheduleSummary.ScoreDto(envelopeWeight.hardScore(), envelopeWeight.softScore())
-        : null; // explicit "unknown", never a false zero
+if (request.shiftEnvelopeSlackSlots() != null) {
+    if (request.shiftEnvelopeSlackSlots() < 0) {
+        throw new IllegalArgumentException("shiftEnvelopeSlackSlots must be >= 0");
+    }
+    s.setShiftEnvelopeSlackSlots(request.shiftEnvelopeSlackSlots());
+}
 ```
-and add a test pinning whichever behavior is chosen.
-
-## Info
-
-### IN-01: Stale comment no longer describes what the accepted path does
-
-**File:** `src/main/java/com/wfm/service/ScheduleService.java:477`
-
-**Issue:** `// Load constraint weights so buildConstraintViolations can explain the score` predates
-this round's change. On the accepted path, `buildConstraintViolations` no longer calls
-`solutionManager.explain` at all (that is precisely the bug this round fixed) — the loaded
-`ConstraintWeights` is now used only to look up `shiftEnvelopeComplianceWeight` for display in
-`buildAcceptedConstraintViolations`. The comment will mislead a future reader into thinking the
-accepted path still explains the score via Timefold.
-
-**Fix:**
-```java
-// Load constraint weights so the accepted-path violation report can display the shift-envelope
-// weight (buildAcceptedConstraintViolations) — the live-path explain() is not used here.
-```
+or, if silent clamping is intentional, document why inline (the current comment only explains the *default*, not the negative-value behaviour).
 
 ---
 
-_Reviewed: 2026-09-02T15:55:00Z_
+_Reviewed: 2026-09-03T01:32:21Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
