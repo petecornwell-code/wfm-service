@@ -1,67 +1,49 @@
 {
   "version": "1.0",
-  "timestamp": "2026-08-22T01:52:02.416Z",
-  "phase": "13",
-  "phase_name": "Per-Day Hours Visibility",
-  "phase_dir": ".planning/phases/13-per-day-hours-visibility",
+  "timestamp": "2026-09-04T16:03:50.588Z",
+  "phase": "17",
+  "phase_name": "Consistency Constraint & Drift Reporting",
+  "phase_dir": ".planning/phases/17-consistency-constraint-drift-reporting",
+  "workflow": "plan-phase",
+  "workflow_step": "10 — spawn gsd-plan-checker",
   "plan": null,
   "task": null,
-  "total_tasks": 9,
+  "total_tasks": null,
   "status": "paused",
-  "stage": "post-verification, gaps_found — all 4 plans executed and committed, phase NOT marked complete",
   "completed_tasks": [
-    {"id": "13-01", "name": "Tracer: roster read path resolves from agent_day_hours (I-1/F-1)", "status": "done", "commit": "ad3fb5b", "tasks": "2/2"},
-    {"id": "13-02", "name": "Per-cell edit endpoint PUT .../day-hours/{day} (I-3)", "status": "done", "commit": "4b75f27", "tasks": "3/3"},
-    {"id": "13-03", "name": "Export Mon-Sun columns + EnrichedColumnLayout specialty headers (I-4)", "status": "done", "commit": "6870f44", "tasks": "2/2"},
-    {"id": "13-04", "name": "Per-cell combo editor + guarded bulk 'Set all days to...'", "status": "done", "commit": "84d9591", "tasks": "2/2"},
-    {"id": "post-merge-gate", "name": "Clean rebuild ./gradlew test --rerun-tasks (309 tests, 0 failures) + npm run build", "status": "done"},
-    {"id": "code-review", "name": "gsd-code-reviewer over 16 changed files", "status": "done", "commit": "bf58a5d", "result": "0 Critical / 3 Warning / 2 Info"},
-    {"id": "verification", "name": "gsd-verifier goal-backward verification", "status": "done", "commit": "80ec7f1", "result": "gaps_found, 50/58 must-haves"}
+    {"id": 1, "name": "init.plan-phase + closed-phase gate (status Pending, not gated)", "status": "done", "commit": null},
+    {"id": 2, "name": "Research decision — user chose 'Research first' despite ROADMAP saying no dedicated research phase", "status": "done", "commit": null},
+    {"id": 3, "name": "gsd-phase-researcher → 17-RESEARCH.md (HIGH confidence)", "status": "done", "commit": "5554cca"},
+    {"id": 4, "name": "Nyquist VALIDATION.md seeded from RESEARCH § Validation Architecture", "status": "done", "commit": "a905f3c"},
+    {"id": 5, "name": "plan:pre capability dispatch — security ACTIVE (ASVS L1/high), ui gate block=false, drift advisory, api-coverage detected=false, assumption-delta detected=true, schema-gate N/A", "status": "done", "commit": null},
+    {"id": 6, "name": "gsd-pattern-mapper → 17-PATTERNS.md (20/20 analogs; both researcher open questions resolved)", "status": "done", "commit": "bdec717"},
+    {"id": 7, "name": "Spec-less probe fallback — no plain SPEC.md, edge probe run, 14 applicable edges passed to planner", "status": "done", "commit": null},
+    {"id": 8, "name": "gsd-planner → 5 PLAN.md files in 4 waves + ROADMAP/VALIDATION updates", "status": "done", "commit": "bdec717"}
   ],
   "remaining_tasks": [
-    {"id": "gap-1", "name": "DeskAgents.tsx:506 — collapsed Hours/Day cell must render muted #9ca3af when every dayHours entry has hasRow === false (UI-SPEC E1 empty)", "status": "not_started"},
-    {"id": "gap-2", "name": "DeskAgents.tsx:25-30 — seedValueForEntry() must return literal 'Not set (default)' instead of '' for a not-set weekday (UI-SPEC E4 empty)", "status": "not_started"},
-    {"id": "wr-01", "name": "Add the same 0-24 upper-bound rejection to setContractedHours that setDayHours already has (advisory; also hardens the E1 5-char truth)", "status": "not_started"},
-    {"id": "wr-02", "name": "Add a MethodArgumentTypeMismatchException handler to GlobalExceptionHandler so a malformed {day} path segment returns 400, not 500", "status": "not_started"},
-    {"id": "secure-phase", "name": "Run /gsd-secure-phase 13 — security capability active at verify:post, no 13-SECURITY.md exists", "status": "not_started"},
-    {"id": "human-uat", "name": "5 unrun-verify items in WINDOWS.md + 2 behavior_unverified truths — need a live desk with an enriched upload", "status": "not_started"}
+    {"id": 9, "name": "Step 10 — spawn gsd-plan-checker (model sonnet) over the 5 plans", "status": "not_started"},
+    {"id": 10, "name": "Step 11/12 — handle checker return; revision loop max 3 iterations", "status": "not_started"},
+    {"id": 11, "name": "Step 13 — requirements coverage gate (CONS-01..06, DRFT-01..04)", "status": "not_started"},
+    {"id": 12, "name": "Step 13a — decision coverage gate (BLOCKING; check.decision-coverage-plan against 17-CONTEXT.md)", "status": "not_started"},
+    {"id": 13, "name": "Step 13b — state.planned-phase (STATE.md → 'Ready to execute', 5 plans)", "status": "not_started"},
+    {"id": 14, "name": "Step 13c — roadmap.annotate-dependencies 17 (wave headers + cross-cutting constraints)", "status": "not_started"},
+    {"id": 15, "name": "Step 13d — commit plans + STATE.md + ROADMAP.md (commit_docs is true)", "status": "not_started"},
+    {"id": 16, "name": "Step 13e — plan:post gap-analysis advisory gate", "status": "not_started"},
+    {"id": 17, "name": "Step 14/15 — final status. NOTE auto_advance is TRUE in config, so plan-phase would auto-chain into /gsd-execute-phase 17 unless the chain flag is cleared", "status": "not_started"}
   ],
-  "carried_over_from_phase_11": [
-    {"id": "consistency-stage-0", "name": "Fix the honourPreferredStartTime isBefore asymmetry (Stage 0 of the four-stage cross-day consistency plan)", "status": "not_started", "note": "Phase 11 is now Complete; this item was never phase-11-scoped and is still open. Standing preferences cannot express consistency: preferredBreakTime is an absolute LocalTime and honourPreferredStartTime only penalises starting EARLIER, so it is a floor not an anchor."},
-    {"id": "break-clustering", "name": "Implement breakClustering — registered as a constraint but still a no-op stub", "status": "not_started"}
-  ],
-  "blockers": [
-    {
-      "description": "5 human-check walkthroughs and 2 transactional-rollback truths cannot be verified without a live DB / BambooHR-configured desk carrying an enriched Mon-Sun upload",
-      "type": "external",
-      "workaround": "Recorded as unrun-verify entries 1-6 in .planning/WINDOWS.md and as behavior_unverified_items in 13-VERIFICATION.md; run /gsd-verify-work 13 against a real environment"
-    },
-    {
-      "description": "Worktree isolation auto-degraded to sequential for this entire run (#683 fork-base divergence: HEAD is on claude/create-system-specification-451ge, origin/HEAD is a83d426d)",
-      "type": "technical",
-      "workaround": "gsd-tools worktree set-baseref (or worktree.baseRef:\"head\" in .claude/settings.local.json) restores parallel worktree execution. Note the isolation sentinel is re-persisted to harness-worktree by any plain dispatch-isolation read, so --force-isolation none must be the LAST call before each dispatch."
-    }
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "Run /gsd-verify-work 13 against a live desk with an enriched Mon-Sun upload", "context": "5 WINDOWS.md unrun-verify items + 2 backend-rollback truths the automated suite cannot prove", "blocking": false},
-    {"action": "Run /gsd-secure-phase 13", "context": "security capability is active at verify:post and no 13-SECURITY.md exists yet", "blocking": true}
+    {"action": "Decide whether to let plan-phase auto-advance into execution", "context": "config auto_advance=true and mode=yolo; step 15 would launch /gsd-execute-phase 17 automatically once the gates pass. Plan 17-04 Task 3 carries a blocking-human checkpoint:decision on the one-way V49 migration against live tenant data (this project's 'dev' tier IS production).", "blocking": false}
   ],
   "decisions": [
-    {"decision": "Executors ran sequentially on the main working tree instead of in parallel worktrees", "rationale": "worktree.base-check returned shouldDegrade=true (#683): HEAD had diverged from origin/HEAD, so worktrees would have forked from a stale base and tripped the executor exit-42 branch check, losing wave-1 work", "phase": "13"},
-    {"decision": "Ran ./gradlew test --rerun-tasks + npm --prefix frontend run build manually as the post-merge gate", "rationale": "post-merge-gate.md's command sniffer has no Gradle branch, so it would have emitted 'No build command detected' and skipped the gate entirely on this project", "phase": "13"},
-    {"decision": "Treated the whole-repo ./gradlew test run as the regression gate", "rationale": "This project has a single whole-repo test command; there is no prior-phase test subset to run separately. 309 tests, 0 failures on a clean rebuild.", "phase": "13"},
-    {"decision": "Did not act on the ai-integration plan:pre keyword match", "rationale": "The detector matched 'agent' only via the domain term agent_day_hours (call-centre agents), not an AI system. Continued planning without an AI-SPEC.", "phase": "13"},
-    {"decision": "Annotated 13-RESEARCH.md's Open Questions as RESOLVED pointing at 13-02-PLAN.md P-05/P-06", "rationale": "Only warning raised by gsd-plan-checker; a documentation-trail gap, not a planning defect", "phase": "13"}
+    {"decision": "Ran research despite ROADMAP's 'no dedicated research phase' note", "rationale": "User explicitly chose 'Research first' when asked; research was scoped to CONFIRMING salvage material against HEAD rather than open-ended exploration", "phase": "17"},
+    {"decision": "Seeded 17-VALIDATION.md body from RESEARCH § Validation Architecture rather than leaving the bare template", "rationale": "The requirement→test map and Wave 0 list already existed verbatim in research; leaving placeholders would have starved the planner", "phase": "17"},
+    {"decision": "Skipped the api-coverage checkpoint and the schema-push gate", "rationale": "api-coverage detector returned detected=false; project uses Flyway, which matches none of the gate's ORM patterns", "phase": "17"},
+    {"decision": "Passed the fired assumption-delta signal to the planner rather than suppressing it", "rationale": "Signal was the phrase 'not a second implementation' (DRFT-03's prohibition) — likely a false positive, but the checkpoint is advisory and must be recorded, not dropped. Planner recorded it as no-change in 17-01", "phase": "17"},
+    {"decision": "Did not use the gsd_stall_watch polling helpers", "rationale": "This runtime delivers reliable subagent completion notifications; the helpers exist for runtimes where notifications can be lost", "phase": "17"}
   ],
-  "uncommitted_files": [
-    "StubHub-EN-combined-CSR-test.xlsx (untracked test artifact, real roster from the dev API)",
-    "stubhub_demand_ES.xlsx (untracked test artifact, hourly demand 2026-01-05..11)",
-    ".gsd/ (tooling)",
-    ".planning/research/.cache/ (tooling)",
-    ".planning/milestone.lock (tooling)",
-    ".planning/phases/13-per-day-hours-visibility/.gitkeep"
-  ],
-  "next_action": "Run /gsd-plan-phase 13 --gaps — it reads 13-VERIFICATION.md's structured `gaps:` frontmatter (2 failed truths, each with an exact `missing:` remediation) and emits gap_closure plans; then /gsd-execute-phase 13 --gaps-only.",
-  "context_notes": "Phase 13 is a read-path migration closing v1.2 audit gaps I-1/F-1, I-3 and I-4 (I-2, the BambooHR refresh bypass, was explicitly deferred to backlog). Its central claim verified cleanly under direct code inspection: roster and Excel export both resolve from agent_day_hours, the retired Agent.contractedHoursPerDay scalar is genuinely excluded from the read path (it stays a LIVE field by decision D-05 — do not drop the column or add a migration removing it; five writers still touch it), the read path bulk-fetches rather than N+1ing, and the new PUT endpoint is tenant+desk scoped before any per-day write. Both remaining gaps are one-line frontend fixes in DeskAgents.tsx. IMPORTANT for the gap run: gap 2 traces to a real self-contradiction inside 13-04-PLAN.md — its <action> prose says 'the empty string when hasRow is false' while its own must_haves.truths demand the literal 'Not set (default)', and the executor followed the action text. Fix the plan text too, not just the code, or a replan will reintroduce it. Separately, 13-REVIEW.md WR-01/WR-02 are real defects the verifier independently re-confirmed but that map to no declared must-have, so they were not gap-scored: the surviving bulk setContractedHours endpoint has no upper-bound check (a value like 999.99 overflows NUMERIC(5,2) into an opaque 500 AND breaks the E1 'at most 5 characters' truth via undeclared precondition), and a malformed {day} path segment returns 500 rather than the 400 the plan claimed, because GlobalExceptionHandler has a catch-all Exception handler and no MethodArgumentTypeMismatchException handler. Worth folding both into the gap-closure run. Codebase drift is at 14 structural elements since last mapping (advisory only)."
+  "uncommitted_files": [],
+  "next_action": "Re-run /gsd-plan-phase 17 --skip-research. It will detect the 5 existing plans and offer add/view/replan — choose to keep them — then continue into the plan-checker gate. Alternatively spawn gsd-plan-checker directly over .planning/phases/17-consistency-constraint-drift-reporting/*-PLAN.md and then run steps 13→13e manually.",
+  "context_notes": "plan-phase ran clean through the planner spawn. Everything up to and including PLANNING COMPLETE is committed and verified on disk (5 plans, plan_count_all=5, ROADMAP still has 13 phase headers after the planner's scoped Edit, VALIDATION.md has zero remaining TBD rows). The ONLY unrun part of the workflow is the verification tail: plan-checker → coverage gates → STATE/ROADMAP annotation → commit. Nothing is half-written. The planner made two evidence-based corrections to its own source artifacts that a reviewer should not 'fix' back: (1) the tolerance band travels to the solver on ScheduleConfig, not ConstraintWeights — ConstraintWeights is a @ConstraintConfigurationProvider, not a problem fact, and no constraint joins it; (2) ConstraintWeightsData in frontend/src/api/client.ts:379 is a pure index signature { [key: string]: Score } and must be widened before a number member can be added. Also note the drift gate flagged 14 'new directories' that are actually long-standing root files — the codebase map baseline is stale, not the tree."
 }
