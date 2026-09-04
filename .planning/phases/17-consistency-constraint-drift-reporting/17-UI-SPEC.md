@@ -381,8 +381,12 @@ change to pick it up, since it already spreads the whole map.
 all (reconfirmed this session), so purely visual claims cannot be proven by assertion — marked
 `backstop` deliberately, routing to `human_needed` at verify time unless visual evidence is wired.
 
-Applicable state considerations resolved: **4 elements, 26 applicable — 17 covered (explicit),
-5 backstop, 4 dismissed (not applicable, reason given), 0 unresolved.**
+Applicable state considerations resolved: **4 elements, 32 applicable — 19 covered (explicit),
+4 backstop, 9 dismissed (not applicable, reason given), 0 unresolved.**
+
+*Counts verified against `ui-consideration-probe.cjs` (Step 9.5), which raised all 8 state
+categories for each of the 4 elements (32 applicable). Per-element split: E1 5/1/2, E2 5/2/1,
+E3 3/1/4, E4 6/0/2 (explicit/backstop/dismissed).*
 
 ### E1 — Drift Report tab, main table *(list-collection, static-content)*
 
