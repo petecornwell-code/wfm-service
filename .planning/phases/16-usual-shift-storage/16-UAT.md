@@ -1,14 +1,14 @@
 ---
-status: partial
+status: complete
 phase: 16-usual-shift-storage
 source: 16-01-SUMMARY.md, 16-02-SUMMARY.md, 16-03-SUMMARY.md, 16-04-SUMMARY.md, 16-05-SUMMARY.md
 started: 2026-09-03T21:30:59Z
-updated: 2026-09-04T00:05:00Z
+updated: 2026-09-04T12:40:00Z
 ---
 
 ## Current Test
 
-[testing paused — 1 item outstanding: test 3 blocked on real Microsoft Excel]
+[testing complete]
 
 ## Tests
 
@@ -42,9 +42,9 @@ evidence: |
 
 ### 3. Excel Open-and-Inspect of a Generated Per-Desk Template
 expected: Download a per-desk template for a desk with a live shift library. It opens in real Microsoft Excel (not LibreOffice alone) with no repair prompt, and clicking a Usual Shift cell shows a working dropdown of that desk's live template names.
-result: blocked
-blocked_by: third-party
-reason: "Requires real Microsoft Excel, which is not available in this session. Operator elected to leave it blocked rather than open it now."
+result: pass
+source: human confirmation in real Microsoft Excel, 2026-09-04
+reason_previously_blocked: "Required real Microsoft Excel, unavailable in the session; unblocked when the operator opened the retained copy."
 structural_evidence: |
   Everything reachable without Excel was verified against the LIVE deployed template
   (GET /api/v1/client-management/desk-assignments/template, 2026-09-03):
@@ -317,11 +317,11 @@ covered_by: other: cd frontend && npm run build; cd frontend && npx tsc --noEmit
 ## Summary
 
 total: 34
-passed: 33
+passed: 34
 issues: 0
 pending: 0
 skipped: 0
-blocked: 1
+blocked: 0
 
 ## Gaps
 

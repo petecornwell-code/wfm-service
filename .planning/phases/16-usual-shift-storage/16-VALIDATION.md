@@ -4,7 +4,8 @@ slug: usual-shift-storage
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
 status: validated
-# false: 2 manual-only items (Excel render, roster visual) — no automation in this project can close them
+# false: 2 manual-only items (Excel render, roster visual) — both DISCHARGED by human
+# verification, but neither is automatable, so no regression protection exists for them
 nyquist_compliant: false
 wave_0_complete: true
 created: 2026-09-03
@@ -133,7 +134,7 @@ were restored to a clean diff after each break.
 
 | Behavior | Requirement | Why Manual | Status | Evidence / Instructions |
 |----------|-------------|------------|--------|-------------------------|
-| Generated template opens cleanly in Excel with a working Usual Shift dropdown | USHF-02 (D-10) | A POI round-trip test re-reads the file with the same library that wrote it; it cannot detect Excel-side corruption from the explicit-list 255-character limit | ⛔ **OPEN** — `16-UAT.md` test 3, `blocked_by: third-party` | Everything short of Excel itself is measured on the live deployed template: 7 `dataValidation` blocks at `O2:U1048576`, each `formula1` 104 chars against the 255 limit (151 spare), retired templates excluded, pre-fill round-trips. Remaining: open `~/Downloads/wfm-desk-assignment-template-2026-09-03.xlsx` in real Excel, click a Usual Shift cell, confirm the dropdown lists live names and no repair prompt appears |
+| Generated template opens cleanly in Excel with a working Usual Shift dropdown | USHF-02 (D-10) | A POI round-trip test re-reads the file with the same library that wrote it; it cannot detect Excel-side corruption from the explicit-list 255-character limit | ✅ **DISCHARGED** 2026-09-04 — `16-UAT.md` test 3 | Everything short of Excel itself is measured on the live deployed template: 7 `dataValidation` blocks at `O2:U1048576`, each `formula1` 104 chars against the 255 limit (151 spare), retired templates excluded, pre-fill round-trips. Closed 2026-09-04: the operator opened the retained copy (sha256 `919fa98d…`) in real Microsoft Excel — no repair prompt, dropdown working |
 | Roster tile renders all three D-16 states distinguishably | USHF-06 (D-15, D-16) | No frontend test framework exists in this project (Phase 13 P-11) | ✅ **DISCHARGED** 2026-09-03 — `16-UAT.md` test 4 | Verified in a live browser by driving all three states onto one agent row and reading `getComputedStyle` from the DOM rather than eyeballing: A `#d1d5db`/400/upright, B `#3b82f6`/600/upright, C `#9ca3af`/400/italic — distinct by colour AND weight AND slant, matching `16-UI-SPEC.md` §1. Clipping real (scrollWidth 96 > 90) with the full value in `title` |
 
 ---
@@ -145,11 +146,13 @@ were restored to a clean diff after each break.
 - [x] Wave 0 covers all MISSING references — every file listed above now exists
 - [x] No watch-mode flags
 - [x] Feedback latency: ~9s scoped (`UsualShiftTracerTest`) / ~610s full suite (720 tests)
-- [ ] `nyquist_compliant: true` — **NOT set.** Two Manual-Only items remain and no automation in
-      this project can close them: Excel-side rendering (a POI round-trip re-reads with the same
-      library that wrote it) and the roster visual (no frontend test framework exists — Phase 13
-      P-11). Both were reduced as far as automation allows: the dropdown's 255-char headroom is
-      measured (104 chars used, 151 spare) and the three roster states were verified in a live
-      browser against computed styles during UAT.
+- [ ] `nyquist_compliant: true` — **NOT set, deliberately.** Both Manual-Only items are now
+      DISCHARGED (Excel render 2026-09-04, roster visual 2026-09-03), but discharged is not the
+      same as automated: this flag asserts that every requirement has *automated* verification,
+      and these two have none available in this project — a POI round-trip cannot detect
+      Excel-side corruption, and no frontend test framework exists (Phase 13 P-11). A human
+      re-check is required if either surface changes. Setting this true would claim regression
+      protection that does not exist.
 
-**Approval:** validated 2026-09-04 — PARTIAL (automated coverage complete; 2 manual-only items)
+**Approval:** validated 2026-09-04 — PARTIAL (automated coverage complete; 2 manual-only items,
+both discharged by human verification, neither automatable)

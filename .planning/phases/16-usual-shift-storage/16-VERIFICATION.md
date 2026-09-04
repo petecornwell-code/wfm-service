@@ -1,20 +1,30 @@
 ---
 phase: 16-usual-shift-storage
 verified: 2026-09-03T18:24:20Z
-status: human_needed
-score: 5/5 ROADMAP success criteria verified in code; live QA 2026-09-03 discharged XCUT-01 fully and the Excel-dropdown item substantially, found and fixed 2 pre-existing layout defects, and discharged the three-state QA in full; 1 residual (Excel rendering unobserved, structurally sound)
+status: passed
+score: 5/5 ROADMAP success criteria verified in code; all 3 human-verification items discharged (XCUT-01 and three-state QA 2026-09-03, Excel render 2026-09-04); UAT 34/34 with 0 issues; suite 723 tests green. 1 documented sub-caveat: the STORED_INACTIVE/RETIRED reason word was never observed live (unreachable without retiring a live template), covered by unit tests only
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
   - test: "Excel open-and-inspect of a generated per-desk template (16-03 backstop, RESEARCH.md Pitfall 5)"
     expected: "Downloading a per-desk template for a desk with a live shift library opens in real Excel (not LibreOffice alone) with no repair prompt; clicking a Usual Shift cell shows a working dropdown of that desk's live template names."
     why_human: "A POI round-trip test re-reads the file with the same library that wrote it and structurally cannot detect Excel-side corruption from the 255-character explicit-list data-validation limit. No human with Excel access performed this check during execution (16-03-SUMMARY.md records it as the one unresolved D7 item)."
+    status: discharged
+    discharged: 2026-09-04
+    evidence: "Operator opened the retained live-generated template (~/Downloads/wfm-desk-assignment-template-2026-09-03.xlsx, sha256 919fa98d...) in real Microsoft Excel: no repair prompt, Usual Shift dropdown working. Structural side measured beforehand: 7 dataValidation blocks at O2:U1048576, formula1 104 chars against the 255 limit (151 spare), retired templates excluded."
   - test: "Roster tile three-state visual QA (16-05 backstop, five-point manual QA)"
     expected: "On a desk with a live shift library: set one weekday's usual shift → tile turns accent-blue bold; leave another unset → light-gray en dash; retire the template behind a third → italic muted gray with 'retired'; set a fourth weekday's hours to MANDATORY → italic muted 'not worked'; hover a clipped long name → tooltip shows the full value."
     why_human: "This repository has no frontend test framework (Phase 13 P-11, reconfirmed against frontend/package.json). The execution environment had no browser/screenshot tooling (no chromium/Playwright). 16-05-SUMMARY.md explicitly records all five checks as 'not observed' — proven only by source assertion (correct color tokens, correct branch structure), not by visual rendering."
+    status: discharged
+    discharged: 2026-09-03
+    evidence: "Live browser QA drove all three primary states onto one agent row and read getComputedStyle from the DOM rather than eyeballing: NOT_SET rgb(209,213,219)=#d1d5db w400 upright; LIVE rgb(59,130,246)=#3b82f6 w600 upright; STORED_INACTIVE rgb(156,163,175)=#9ca3af w400 italic. Distinct by colour AND weight AND slant, matching 16-UI-SPEC.md S1. Clipping real (scrollWidth 96 > clientWidth 90) with the full value in title, so hover works. Tile geometry 7x90 + 6x8 = 678px."
+    caveat: "4 of the 5 listed checks were observed. The STORED_INACTIVE/RETIRED variant was NOT: it renders through the same branch as NOT_WORKED and differs only in the reason word, and reaching it live would require retiring a template already in use on the live desk. Covered by DeskAgentServiceUsualShiftTest (RETIRED precedence over NOT_WORKED) but never rendered in a browser."
   - test: "XCUT-01 roster-vs-export end-to-end trace (16-05 backstop human-check)"
     expected: "Set a usual shift inline in the roster, then export the desk to Excel, and confirm the same template name appears in that weekday's Usual Shift export column."
     why_human: "This specific roster-inline-write → export round trip was never exercised in a live browser session; the backend tracer test (UsualShiftTracerTest) proves store → roster-read → export for the choke-point write path, but does not exercise the frontend <select> commit. 16-05-SUMMARY.md records this human-check as unresolved."
+    status: discharged
+    discharged: 2026-09-03
+    evidence: "Set Monday and Tuesday through the live frontend <select>, then downloaded the live desk export: col U 'Usual Shift Monday' = Early and col V 'Usual Shift Tuesday' = Early (the raw stored names), cols W-AA blank, day-hours col N still MANDATORY, First/Last Name displaced to AB/AC exactly as D6 specifies. Test data cleared afterwards; desk restored to all-NOT_SET."
 ---
 
 # Phase 16: Usual Shift Storage Verification Report
