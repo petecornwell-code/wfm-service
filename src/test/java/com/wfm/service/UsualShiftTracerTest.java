@@ -75,6 +75,8 @@ class UsualShiftTracerTest {
     private AgentUsualShiftRepository agentUsualShiftRepository;
 
     private static final long TENANT_ID = 1L;
+    /** T-13-05 shape: a second tenant that must never reach tenant 1's rows. */
+    private static final long OTHER_TENANT_ID = 2L;
 
     private Desk desk;
     private Agent agent;
@@ -247,6 +249,62 @@ class UsualShiftTracerTest {
                 usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY,
                         otherDeskTemplate.getId(), false))
                 .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    void crossTenantWrite_throwsEntityNotFound_andWritesNoRow() {
+        // T-13-05/USHF-03: the desk-scoping tests above hold the tenant FIXED, so they cannot
+        // catch a guard that scopes by desk but forgets the tenant. setUsualShift resolves the
+        // agent through findByIdAndTenantIdAndDeskId against TenantContext, so a caller in
+        // another tenant must not reach tenant 1's agent even with correct desk and agent ids.
+        TenantContext.setTenantId(OTHER_TENANT_ID);
+
+        assertThatThrownBy(() ->
+                usualShiftService.setUsualShift(
+                        desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        TenantContext.setTenantId(TENANT_ID);
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId()))
+                .isEmpty();
+    }
+
+    @Test
+    void crossTenantRead_doesNotSeeAnotherTenantsStoredUsualShift() {
+        // The read half of the same guard: tenant 1 stores a row, tenant 2 must not see it.
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId()))
+                .hasSize(1);
+
+        TenantContext.setTenantId(OTHER_TENANT_ID);
+
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(OTHER_TENANT_ID, agent.getId()))
+                .isEmpty();
+        assertThatThrownBy(() ->
+                deskAgentService.getDeskAgentResponse(desk.getId(), agent.getId()))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    void crossTenantClear_cannotDeleteAnotherTenantsStoredUsualShift() {
+        // The destructive half: a clear from another tenant must not remove tenant 1's row.
+        //
+        // LOAD-BEARING, and the only test that is. On the clearRow=true path setUsualShift skips
+        // the shift-template lookup entirely, so the agent lookup's tenant scope is the ONLY thing
+        // standing between another tenant and a delete. Verified by deliberate break (2026-09-04):
+        // dropping the tenant from agentRepository.findByIdAndTenantIdAndDeskId fails THIS test
+        // alone -- crossTenantWrite above still passes, because the template lookup backstops it.
+        usualShiftService.setUsualShift(desk.getId(), agent.getId(), DayOfWeek.MONDAY, early.getId(), false);
+
+        TenantContext.setTenantId(OTHER_TENANT_ID);
+        assertThatThrownBy(() ->
+                usualShiftService.setUsualShift(
+                        desk.getId(), agent.getId(), DayOfWeek.MONDAY, null, true))
+                .isInstanceOf(EntityNotFoundException.class);
+
+        TenantContext.setTenantId(TENANT_ID);
+        assertThat(agentUsualShiftRepository.findByTenantIdAndAgent_Id(TENANT_ID, agent.getId()))
+                .hasSize(1);
     }
 
     @Test
