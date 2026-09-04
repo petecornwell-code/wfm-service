@@ -60,7 +60,8 @@ structural_evidence: |
   What remains unproven is ONLY whether Microsoft Excel itself opens the file without a
   repair prompt and renders the dropdowns interactively. The 255-char limit — the failure
   mode this test exists to catch — is measured and clear.
-  Downloaded copy left at /tmp/desk-template.xlsx.
+  Downloaded copy retained at ~/Downloads/wfm-desk-assignment-template-2026-09-03.xlsx
+  (sha256 919fa98dbfdb988a82df9b893eb4a73d33bc0f6c46499e2102fd4f3b4c0eccce).
 
 ### 4. Roster Tile Three-State Visual QA
 expected: On a desk with a live shift library, all three D-16 states render as a distinguishable second line inside each day tile — never-set (light gray en dash), live (accent-blue bold), stored-but-not-in-effect (italic muted gray). The states differ by colour and slant without reading the text, and a clipped long name shows the full value on hover.
