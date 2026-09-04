@@ -5,11 +5,11 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 17
 current_phase_name: Consistency Constraint & Drift Reporting
 status: planning
-stopped_at: Phase 16 complete, ready to plan Phase 17
-last_updated: "2026-09-04T12:36:54.163Z"
+stopped_at: Phase 17 context gathered
+last_updated: "2026-09-04T13:52:53.673Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
-state_head: 54d035fc4282fc0ed8b69ce73484be9e0e0d2456
+last_activity_desc: Phase 17 context gathered — 14 decisions captured
+state_head: 15dde725d7f6dca9702f6a36a16ea781dc02fa47
 progress:
   total_phases: 4
   completed_phases: 2
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-02)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 16 — Usual Shift Storage
+**Current focus:** Phase 17 — Consistency Constraint & Drift Reporting
 
 ## Current Position
 
 Phase: 17 — Consistency Constraint & Drift Reporting
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-04 — Phase 16 complete, transitioned to Phase 17
+Last activity: 2026-09-04 — Phase 17 context gathered (17-CONTEXT.md)
 
 Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 31/31 plans, Phase 16 5/5 plans done)
 
@@ -267,9 +267,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:26:52.504Z
-Stopped at: Phase 16 complete, ready to plan Phase 17
-Resume file: .planning/phases/16-usual-shift-storage/16-VERIFICATION.md
+Last session: 2026-09-04T13:52:53.170Z
+Stopped at: Phase 17 context gathered
+Resume file: .planning/phases/17-consistency-constraint-drift-reporting/17-CONTEXT.md
 
 ## Operator Next Steps
 
