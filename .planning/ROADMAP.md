@@ -302,7 +302,16 @@ which agents drifted from their usual shift, on which dates, and by how much.
 
 **Research needed at plan time**: No dedicated research phase — the `groupBy(agent, date, ...)` pattern is confirmed to compile from the reverted commits, and weight validation via `SolutionManager.explain()` is an existing, already-used mechanism (`SolverService.runPreSolveScoreDiagnostic`). Confirm the salvage-material rework scope (Notes above) during planning.
 
-**Plans**: TBD
+**Plans**: 5 plans (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
+
+Plans:
+
+- [ ] 17-01-PLAN.md — Tracer: one drifted agent-day end to end — V48, the shared distance function, pre-solve era resolution as a problem fact, the `Usual shift consistency` constraint, and `buildDriftReport`
+- [ ] 17-02-PLAN.md — `Preferred start (shift mode)` constraint, per-desk config for both weights and the tolerance band, and the save-time rejections that make CONS-04's softness and CONS-06's precedence structural
+- [ ] 17-03-PLAN.md — Over-subscription ranking, drift date-filter with a truthful summary, the Excel `Drift Report` sheet, and the XCUT-02 solver write-path guard
+- [ ] 17-04-PLAN.md — Threshold-first seeded A/B benchmark, the redone per-agent-day arithmetic, a human gate on the shipped defaults, and V49
+- [ ] 17-05-PLAN.md — Drift Report tab (table + popularity), three new Constraint Weights rows including the page's first non-score field, and the precedence copy
+
 **UI hint**: yes
 
 ## Backlog

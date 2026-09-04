@@ -44,19 +44,19 @@ created: 2026-09-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | CONS-01 | — | N/A | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.UsualShiftConsistencyConstraintTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONS-02 | — | N/A | unit (`ConstraintVerifier`) | same class — dedicated `@Test` at exactly the band boundary | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONS-03 | — | N/A | unit + integration | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONS-04 | T-17-02 | Hard score must be 0; reject, don't clamp (400) | unit (service validation) + structural | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONS-05 | — | N/A | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.PreferredStartShiftModeConstraintTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONS-06 | T-17-02 | Precedence-ordering rejection is server-side | unit (save-time rejection) + manual (UI copy, `explain()` breakdown) | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | DRFT-01 | T-17-03 | Report computed from an already-authorized `Schedule` | unit | `./gradlew test --tests "com.wfm.service.*DriftReport*"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | DRFT-02 | — | N/A | unit — one case per state (NO_USUAL_SHIFT / HONOURED / DRIFTED) | same class | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | DRFT-03 | — | N/A | unit/structural — assert the deviation calculation has a single call site shared by constraint and report | shared-fixture test asserting constraint penalty and report delta agree on one schedule | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | DRFT-04 | — | N/A | unit | `./gradlew test --tests "com.wfm.service.*DriftReport*"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XCUT-01 | — | N/A | unit (export sheet) + manual (tab render — `backstop` per UI-SPEC) | `./gradlew test --tests "com.wfm.service.ScheduleExportServiceTest"` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XCUT-02 | T-17-01 | Solver path never calls `AgentUsualShiftRepository.save(...)` | structural guard test | guard test mirroring `src/test/resources/ushf-05-write-paths.md`'s enumerated-write-paths discipline | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XCUT-04 | — | N/A | benchmark (gated, not in default suite) | `./gradlew test --tests "com.wfm.solver.*Benchmark*" -Dwfm.benchmark=true` | ❌ W0 | ⬜ pending |
+| TBD | 17-01 | 1 | CONS-01 | — | N/A | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.UsualShiftConsistencyConstraintTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-01 | 1 | CONS-02 | — | N/A | unit (`ConstraintVerifier`) | same class — dedicated `@Test` at exactly the band boundary | ❌ W0 | ⬜ pending |
+| TBD | 17-02 | 2 | CONS-03 | — | N/A | unit + integration | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-02 | 2 | CONS-04 | T-17-02 | Hard score must be 0; reject, don't clamp (400) | unit (service validation) + structural | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-02 | 2 | CONS-05 | — | N/A | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.PreferredStartShiftModeConstraintTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-02 | 2 | CONS-06 | T-17-02 | Precedence-ordering rejection is server-side | unit (save-time rejection) + manual (UI copy, `explain()` breakdown) | `./gradlew test --tests "com.wfm.service.ConstraintWeightsServiceTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-01 | 1 | DRFT-01 | T-17-03 | Report computed from an already-authorized `Schedule` | unit | `./gradlew test --tests "com.wfm.service.*DriftReport*"` | ❌ W0 | ⬜ pending |
+| TBD | 17-01 | 1 | DRFT-02 | — | N/A | unit — one case per state (NO_USUAL_SHIFT / HONOURED / DRIFTED) | same class | ❌ W0 | ⬜ pending |
+| TBD | 17-01 | 1 | DRFT-03 | — | N/A | unit/structural — assert the deviation calculation has a single call site shared by constraint and report | shared-fixture test asserting constraint penalty and report delta agree on one schedule | ❌ W0 | ⬜ pending |
+| TBD | 17-03 | 2 | DRFT-04 | — | N/A | unit | `./gradlew test --tests "com.wfm.service.*DriftReport*"` | ❌ W0 | ⬜ pending |
+| TBD | 17-03 | 2 | XCUT-01 | — | N/A | unit (export sheet) + manual (tab render — `backstop` per UI-SPEC) | `./gradlew test --tests "com.wfm.service.ScheduleExportServiceTest"` | ❌ W0 | ⬜ pending |
+| TBD | 17-03 | 2 | XCUT-02 | T-17-01 | Solver path never calls `AgentUsualShiftRepository.save(...)` | structural guard test | guard test mirroring `src/test/resources/ushf-05-write-paths.md`'s enumerated-write-paths discipline | ❌ W0 | ⬜ pending |
+| TBD | 17-04 | 3 | XCUT-04 | — | N/A | benchmark (gated, not in default suite) | `./gradlew test --tests "com.wfm.solver.*Benchmark*" -Dwfm.benchmark=true` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -66,7 +66,7 @@ created: 2026-09-04
 
 - [ ] `src/test/java/com/wfm/solver/UsualShiftConsistencyConstraintTest.java` — CONS-01, CONS-02, CONS-04. Tolerance-band boundary cases, per-agent-day charging, `SchedulingMode.SHIFT` gate, unassigned-shift null-safety mirroring `shiftEnvelopeCompliance`'s `forEachIncludingUnassigned` handling.
 - [ ] `src/test/java/com/wfm/solver/PreferredStartShiftModeConstraintTest.java` — CONS-05 and CONS-06's constraint-firing half; D-09's "fires independently of stored usual shift" case.
-- [ ] `src/test/java/com/wfm/service/ConstraintWeightsServiceTest.java` — D-07's hard-must-be-0 rejection and D-08's precedence-ordering rejection, both asserted against the **merged** result, not the raw partial-update DTO (Pitfall 5). **Confirm at plan time whether this class and `ConstraintWeightsControllerTest` already exist** — not verified during research. If absent, Wave 0 creates the harness rather than extending it.
+- [ ] `src/test/java/com/wfm/service/ConstraintWeightsServiceTest.java` — D-07's hard-must-be-0 rejection and D-08's precedence-ordering rejection, both asserted against the **merged** result, not the raw partial-update DTO (Pitfall 5). **Confirmed at plan time (2026-09-04): neither `ConstraintWeightsServiceTest` nor `ConstraintWeightsControllerTest` exists** — `find src/test -iname "*ConstraintWeights*"` returns nothing, so plan 17-02 builds both from scratch. Also confirmed: this repo has no Spring web-layer test context at all (`GlobalExceptionHandlerTest` records that standing decision), so the controller test is a plain instantiation test, not `@WebMvcTest`/MockMvc.
 - [ ] A drift-report unit test class in `src/test/java/com/wfm/service/` (name at planner's discretion, e.g. `DriftReportTest.java`) — DRFT-01, DRFT-02, DRFT-03, DRFT-04.
 - [ ] `src/test/java/com/wfm/solver/UsualShiftConsistencyBenchmarkTest.java` (or extend `ShiftModelBenchmarkTest`) — XCUT-04, gated `@EnabledIfSystemProperty("wfm.benchmark")`.
 - [ ] Extend the backing map in `src/test/java/com/wfm/solver/ScheduleConstraintClassification.java` — **required for the build to pass at all** once the new constraints exist (Pitfall 2). This is an edit to an existing file, not a new test.
