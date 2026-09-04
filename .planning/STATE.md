@@ -5,11 +5,11 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 17
 current_phase_name: Consistency Constraint & Drift Reporting
 status: planning
-stopped_at: Phase 17 context gathered
-last_updated: "2026-09-04T13:52:53.673Z"
+stopped_at: Phase 17 UI-SPEC approved
+last_updated: "2026-09-04T14:24:41.139Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 17 context gathered — 14 decisions captured
-state_head: 15dde725d7f6dca9702f6a36a16ea781dc02fa47
+last_activity_desc: Phase 17 UI-SPEC approved — 6 dimensions, 1 non-blocking FLAG
+state_head: 1593ca4c638ad3d25518fcf267561300b94b7bb2
 progress:
   total_phases: 4
   completed_phases: 2
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 Phase: 17 — Consistency Constraint & Drift Reporting
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-04 — Phase 17 context gathered (17-CONTEXT.md)
+Last activity: 2026-09-04 — Phase 17 UI-SPEC approved (17-UI-SPEC.md)
 
 Progress: [█████░░░░░] 50% (2/4 phases — Phases 14–15 complete; 31/31 plans, Phase 16 5/5 plans done)
 
@@ -267,9 +267,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-04T13:52:53.170Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-consistency-constraint-drift-reporting/17-CONTEXT.md
+Last session: 2026-09-04T14:24:39.224Z
+Stopped at: Phase 17 UI-SPEC approved
+Resume file: .planning/phases/17-consistency-constraint-drift-reporting/17-UI-SPEC.md
 
 ## Operator Next Steps
 
