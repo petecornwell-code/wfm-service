@@ -108,6 +108,47 @@ public class ConstraintWeightsService {
         if (updates.getShiftWorkContiguityWeight() != null) {
             weights.setShiftWorkContiguityWeight(toScore(updates.getShiftWorkContiguityWeight()));
         }
+        if (updates.getConsistentStartWeight() != null) {
+            weights.setConsistentStartWeight(toScore(updates.getConsistentStartWeight()));
+        }
+        if (updates.getConsistencyToleranceMinutes() != null) {
+            weights.setConsistencyToleranceMinutes(updates.getConsistencyToleranceMinutes());
+        }
+        if (updates.getPreferredStartShiftModeWeight() != null) {
+            weights.setPreferredStartShiftModeWeight(toScore(updates.getPreferredStartShiftModeWeight()));
+        }
+
+        // Phase 17 (D-07/D-08/T-17-04): validated against the MERGED entity, after every
+        // partial-update block above and before persist, inside this same @Transactional method.
+        // A partial-update DTO carries nulls for fields the client did not send -- validating the
+        // raw DTO would either pass a genuinely invalid merged state (a stored hard-nonzero
+        // consistency weight the client never touched) or reject a value the client never sent
+        // (17-RESEARCH.md Pitfall 5). Reading `weights` here, not `updates`, is the whole point.
+        //
+        // D-07: hard-versus-soft is normally a per-desk configuration row, not a code decision
+        // (Phase 15's shiftEnvelopeComplianceWeight/bandCapacityWeight precedent) -- but here hard
+        // is a documented FAILURE MODE, not a valid setting: V38's own migration comment already
+        // states a hard consistency rule does not force consistent starts, it forces shorter
+        // shifts. Rejecting rather than merely documenting is what makes CONS-04 structural.
+        if (weights.getConsistentStartWeight().hardScore() != 0) {
+            throw new IllegalArgumentException("Usual Shift Consistency's hard score must be 0 — "
+                    + "a hard score would risk making an otherwise-feasible schedule infeasible.");
+        }
+        // D-08: a lower weight on its own is exactly the "implicit in relative constraint weights
+        // a reader would have to reverse-engineer" that CONS-06 rules out -- this rejection plus
+        // its named test (ConstraintWeightsServiceTest) is what converts the ordering into a
+        // stated, checkable invariant instead of an emergent property of two numbers.
+        if (weights.getPreferredStartShiftModeWeight().softScore()
+                >= weights.getConsistentStartWeight().softScore()) {
+            throw new IllegalArgumentException("Preferred Start (Shift Mode) weight must be lower "
+                    + "than Usual Shift Consistency's weight.");
+        }
+        // T-17-04: server-side reject of a negative band -- the Constraint Weights page's
+        // min="0" input attribute is a client-side hint, not a control.
+        if (weights.getConsistencyToleranceMinutes() < 0) {
+            throw new IllegalArgumentException(
+                    "Usual Shift Consistency Tolerance must be 0 minutes or more.");
+        }
 
         ConstraintWeights saved = constraintWeightsRepository.save(weights);
         return toDto(saved);
@@ -137,6 +178,9 @@ public class ConstraintWeightsService {
         dto.setShiftEnvelopeComplianceWeight(fromScore(w.getShiftEnvelopeComplianceWeight()));
         dto.setBandCapacityWeight(fromScore(w.getBandCapacityWeight()));
         dto.setShiftWorkContiguityWeight(fromScore(w.getShiftWorkContiguityWeight()));
+        dto.setConsistentStartWeight(fromScore(w.getConsistentStartWeight()));
+        dto.setConsistencyToleranceMinutes(w.getConsistencyToleranceMinutes());
+        dto.setPreferredStartShiftModeWeight(fromScore(w.getPreferredStartShiftModeWeight()));
         return dto;
     }
 
