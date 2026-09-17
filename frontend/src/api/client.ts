@@ -376,7 +376,7 @@ export interface DayOffWithAgent { id: string; date: string; type: string; statu
 export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
 export interface Score { hardScore: number; softScore: number }
-export interface ConstraintWeightsData { [key: string]: Score }
+export interface ConstraintWeightsData { [key: string]: Score | number }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
 export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
 

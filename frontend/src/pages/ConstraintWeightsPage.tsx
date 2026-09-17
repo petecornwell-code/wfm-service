@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { constraintWeights as cwApi, type ConstraintWeightsData, type Score, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
@@ -25,10 +25,13 @@ const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = 
   { key: 'honourBreakTimeWeight', label: 'Honour Preferred Break Time', description: 'Try to honour agent preferred break time' },
   { key: 'breakClusteringWeight', label: 'Break Clustering', description: 'Avoid too many agents on break at the same time' },
   { key: 'bulkUnderallocationSoftWeight', label: 'Bulk Under-allocation (Soft)', description: 'Soft penalty for under-staffing' },
+  { key: 'consistentStartWeight', label: 'Usual Shift Consistency', description: 'Shift mode: nudge agents toward their stored usual shift start time, past the tolerance band below. Hard score must stay 0 — a hard score here would shorten shifts instead of keeping agents consistent, so it is rejected on save' },
+  { key: 'consistencyToleranceMinutes', label: 'Usual Shift Consistency Tolerance', description: 'Shift mode: deviation from the usual shift start within this many minutes carries zero penalty' },
+  { key: 'preferredStartShiftModeWeight', label: 'Preferred Start (Shift Mode)', description: 'Shift mode: tie-break only, used when Usual Shift Consistency scores two shifts equally. Weight must stay below Usual Shift Consistency’s — enforced on save' },
   { key: 'minStaffingWeight', label: 'Minimum Staffing', description: 'Keep at least one agent on every hour, even where forecast demand is zero' },
 ]
 
-const DEFAULTS: Record<string, Score> = {
+const DEFAULTS: Record<string, Score | number> = {
   unassignedAssignmentWeight: { hardScore: 0, softScore: 1000 },
   agentDayOffWeight: { hardScore: 1, softScore: 0 },
   specMatchWeight: { hardScore: 1, softScore: 0 },
@@ -50,6 +53,9 @@ const DEFAULTS: Record<string, Score> = {
   honourBreakTimeWeight: { hardScore: 0, softScore: 5 },
   breakClusteringWeight: { hardScore: 0, softScore: 2 },
   bulkUnderallocationSoftWeight: { hardScore: 0, softScore: 1 },
+  consistentStartWeight: { hardScore: 0, softScore: 2 },
+  consistencyToleranceMinutes: 60,
+  preferredStartShiftModeWeight: { hardScore: 0, softScore: 1 },
   minStaffingWeight: { hardScore: 0, softScore: 1000 },
 }
 
@@ -91,9 +97,34 @@ export default function ConstraintWeightsPage() {
         </thead>
         <tbody>
           {CONSTRAINTS.map(({ key, label, description }) => {
-            const score = (weights as Record<string, Score>)[key] || DEFAULTS[key]
+            // Component Specifications §3: the tolerance band is the page's first non-score
+            // field -- it has no hard/soft dimension, so it must never be read through the
+            // Record<string, Score> cast the other rows share. Its own render branch reads and
+            // writes the plain number through its own state path.
+            if (key === 'consistencyToleranceMinutes') {
+              const rawValue = weights[key]
+              const minutes = typeof rawValue === 'number' ? rawValue : (DEFAULTS[key] as number)
+              return (
+                <tr key={key}>
+                  <td style={{ fontWeight: 500 }}>{label}</td>
+                  <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{description}</td>
+                  <td>
+                    <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                      background: '#e5e7eb', color: '#374151' }}>
+                      Minutes
+                    </span>
+                  </td>
+                  <td colSpan={2}>
+                    <input type="number" min={0} value={minutes} onChange={e => setWeights({ ...weights, [key]: Number(e.target.value) })} style={{ width: '70px' }} />
+                    <span style={{ fontSize: '0.75rem', color: '#6b7280', marginLeft: '4px' }}> min</span>
+                  </td>
+                </tr>
+              )
+            }
+
+            const score = (weights as Record<string, Score>)[key] || (DEFAULTS[key] as Score)
             const level = score.hardScore > 0 ? 'Hard' : 'Soft'
-            return (
+            const row = (
               <tr key={key}>
                 <td style={{ fontWeight: 500 }}>{label}</td>
                 <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{description}</td>
@@ -108,6 +139,26 @@ export default function ConstraintWeightsPage() {
                 <td><input type="number" value={score.softScore} onChange={e => setWeights({ ...weights, [key]: { ...score, softScore: Number(e.target.value) } })} style={{ width: '70px' }} /></td>
               </tr>
             )
+
+            // D-10 artefact 3: the precedence note sits directly beneath the third new row
+            // (immediately above Minimum Staffing), stated in plain words rather than left for
+            // an operator to reverse-engineer from the two weights' relative size.
+            if (key === 'preferredStartShiftModeWeight') {
+              return (
+                <Fragment key={key}>
+                  {row}
+                  <tr>
+                    <td colSpan={5}>
+                      <div style={{ background: '#f9fafb', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                        Usual Shift Consistency decides first. Preferred Start (Shift Mode) only breaks ties where Usual Shift Consistency scores two shifts equally — its weight must be lower than Usual Shift Consistency's, checked when you save.
+                      </div>
+                    </td>
+                  </tr>
+                </Fragment>
+              )
+            }
+
+            return row
           })}
         </tbody>
       </table>
