@@ -1,18 +1,35 @@
 package com.wfm.service;
 
 import ai.timefold.solver.core.api.solver.SolverFactory;
+import com.wfm.config.TenantContext;
+import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleDetailResponse.DriftReport;
 import com.wfm.dto.ScheduleDetailResponse.DriftReportEntry;
 import com.wfm.dto.ScheduleDetailResponse.DriftStatus;
+import com.wfm.dto.ScheduleDetailResponse.DriftSummary;
+import com.wfm.dto.ScheduleDetailResponse.ShiftPopularityEntry;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.AgentUsualShift;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Schedule;
+import com.wfm.model.ScheduleStatus;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.repository.AcceptedScheduleDateRepository;
+import com.wfm.repository.AgentAssignmentRepository;
+import com.wfm.repository.AgentDayOffRepository;
+import com.wfm.repository.AgentPreferenceRepository;
+import com.wfm.repository.AgentShiftAssignmentRepository;
 import com.wfm.repository.AgentUsualShiftRepository;
+import com.wfm.repository.ConstraintWeightsRepository;
+import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.ShiftTemplateRepository;
+import com.wfm.repository.StaffingRequirementRepository;
+import com.wfm.repository.TimeslotRepository;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.DayOfWeek;
@@ -24,6 +41,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +68,11 @@ class DriftReportTest {
     private final AgentUsualShiftRepository agentUsualShiftRepository = mock(AgentUsualShiftRepository.class);
     private final ScheduleOutputService service = new ScheduleOutputService(SOLVER_FACTORY,
             new UsualShiftResolutionService(shiftTemplateRepository), agentUsualShiftRepository);
+
+    @AfterEach
+    void clearTenantContext() {
+        TenantContext.clear();
+    }
 
     private static Agent agent(String name) {
         Agent a = new Agent();
@@ -386,5 +409,260 @@ class DriftReportTest {
                         org.assertj.core.groups.Tuple.tuple(MONDAY, "Amir"),
                         org.assertj.core.groups.Tuple.tuple(MONDAY, "Zoe"),
                         org.assertj.core.groups.Tuple.tuple(tuesday, "Zoe"));
+    }
+
+    // ==================================================================
+    //  Plan 17-03, Task 1 -- popularity ranking (DRFT-04, D-13): counts DISTINCT agents per
+    //  resolved template name, read from stored usual shifts, never from this solve's results.
+    // ==================================================================
+
+    @Test
+    void popularityRanking_fourAgentsEarlyTwoAgentsLate_sortedDescendingByCount() {
+        ShiftTemplate early = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftTemplate late = template("Late", LocalTime.of(12, 0), LocalTime.of(21, 0));
+
+        List<AgentUsualShift> rows = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            rows.add(usualShift(agent("Early-" + i), DayOfWeek.MONDAY, early));
+        }
+        for (int i = 0; i < 2; i++) {
+            rows.add(usualShift(agent("Late-" + i), DayOfWeek.MONDAY, late));
+        }
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(rows);
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(early));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Late"))
+                .thenReturn(List.of(late));
+
+        DriftReport report = service.buildDriftReport(schedule(60, List.of()));
+
+        assertThat(report.popularity()).containsExactly(
+                new ShiftPopularityEntry("Early", 4),
+                new ShiftPopularityEntry("Late", 2));
+    }
+
+    @Test
+    void popularityRanking_tiedCounts_sortedAscendingByTemplateName() {
+        ShiftTemplate zed = template("Zed", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftTemplate alpha = template("Alpha", LocalTime.of(9, 0), LocalTime.of(18, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(List.of(
+                usualShift(agent("A1"), DayOfWeek.MONDAY, zed),
+                usualShift(agent("A2"), DayOfWeek.MONDAY, alpha)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Zed"))
+                .thenReturn(List.of(zed));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Alpha"))
+                .thenReturn(List.of(alpha));
+
+        DriftReport report = service.buildDriftReport(schedule(60, List.of()));
+
+        assertThat(report.popularity()).extracting(ShiftPopularityEntry::templateName)
+                .containsExactly("Alpha", "Zed");
+    }
+
+    @Test
+    void popularityRanking_templateNoAgentHolds_doesNotAppearInTheList() {
+        ShiftTemplate early = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        // "Unsubscribed" is a live template in the library, but no AgentUsualShift row anywhere
+        // references it -- it must never surface as a zero-count row (17-UI-SPEC.md §2: "one row
+        // per template with at least one subscribing agent").
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(List.of(
+                usualShift(agent("Ana"), DayOfWeek.MONDAY, early)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(early));
+
+        DriftReport report = service.buildDriftReport(schedule(60, List.of()));
+
+        assertThat(report.popularity()).extracting(ShiftPopularityEntry::templateName)
+                .containsExactly("Early");
+    }
+
+    @Test
+    void popularityRanking_noStoredUsualShifts_returnsEmptyNotNull() {
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(List.of());
+
+        DriftReport report = service.buildDriftReport(schedule(60, List.of()));
+
+        assertThat(report.popularity()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void popularityRanking_agentWithSameUsualShiftOnThreeWeekdays_countsOnce() {
+        ShiftTemplate early = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        Agent ana = agent("Ana");
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(List.of(
+                usualShift(ana, DayOfWeek.MONDAY, early),
+                usualShift(ana, DayOfWeek.TUESDAY, early),
+                usualShift(ana, DayOfWeek.WEDNESDAY, early)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(early));
+
+        DriftReport report = service.buildDriftReport(schedule(60, List.of()));
+
+        assertThat(report.popularity()).containsExactly(new ShiftPopularityEntry("Early", 1));
+    }
+
+    // ==================================================================
+    //  Plan 17-03, Task 1 -- ScheduleService's date-filter block (DRFT-01): the drift summary
+    //  must be RECOMPUTED from the filtered entries (unlike PreferenceReport's whole-schedule
+    //  summary, carried through unfiltered), and popularity must survive untouched.
+    //
+    //  ScheduleService is instantiated directly (plain Mockito mocks for every repository
+    //  dependency, a real InMemoryScheduleStore since it is a plain POJO with no Spring wiring
+    //  needed for direct use, and a mocked ScheduleOutputService) so this narrow filtering
+    //  behaviour is provable without a @DataJpaTest slice.
+    // ==================================================================
+
+    private static ScheduleService buildScheduleService(ScheduleOutputService scheduleOutputServiceMock,
+            InMemoryScheduleStore store) {
+        return new ScheduleService(
+                mock(ScheduleRepository.class),
+                mock(AcceptedScheduleDateRepository.class),
+                mock(DeskRepository.class),
+                store,
+                mock(TimeslotRepository.class),
+                mock(StaffingRequirementRepository.class),
+                mock(AgentAssignmentRepository.class),
+                mock(AgentShiftAssignmentRepository.class),
+                mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class),
+                mock(ConstraintWeightsRepository.class),
+                scheduleOutputServiceMock,
+                mock(EntityManager.class));
+    }
+
+    private static Schedule inMemorySchedule(UUID scheduleId) {
+        Schedule schedule = new Schedule();
+        schedule.setId(scheduleId);
+        schedule.setTenantId(TENANT_ID);
+        schedule.setDeskId(DESK_ID);
+        schedule.setStatus(ScheduleStatus.COMPLETED);
+        return schedule;
+    }
+
+    private DriftReport unfilteredTwoDateDriftReport(Agent ana, Agent ben, LocalDate tuesday) {
+        DriftReportEntry mondayEntry = new DriftReportEntry(ana.getId(), "Ana", MONDAY,
+                DriftStatus.DRIFTED, LocalTime.of(8, 0), LocalTime.of(9, 30), 90);
+        DriftReportEntry tuesdayEntry = new DriftReportEntry(ben.getId(), "Ben", tuesday,
+                DriftStatus.HONOURED, LocalTime.of(8, 0), LocalTime.of(8, 10), null);
+        return new DriftReport(
+                List.of(mondayEntry, tuesdayEntry),
+                new DriftSummary(2, 0, 1, 1),
+                List.of(new ShiftPopularityEntry("Early", 2)));
+    }
+
+    @Test
+    void dateFilter_narrowsDriftEntriesToThatDateOnly() {
+        TenantContext.setTenantId(TENANT_ID);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = inMemorySchedule(scheduleId);
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        LocalDate tuesday = MONDAY.plusDays(1);
+        DriftReport unfiltered = unfilteredTwoDateDriftReport(ana, ben, tuesday);
+
+        ScheduleOutputService outputMock = mock(ScheduleOutputService.class);
+        when(outputMock.buildStaffingSummary(schedule)).thenReturn(List.of());
+        when(outputMock.buildAgentSchedule(schedule)).thenReturn(List.of());
+        when(outputMock.buildPreferenceReport(schedule)).thenReturn(null);
+        when(outputMock.buildConstraintViolations(schedule, false)).thenReturn(List.of());
+        when(outputMock.buildDriftReport(schedule)).thenReturn(unfiltered);
+
+        ScheduleService scheduleService = buildScheduleService(outputMock, store);
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(DESK_ID, scheduleId, MONDAY.toString());
+
+        assertThat(response.getDriftReport().entries())
+                .extracting(DriftReportEntry::date)
+                .containsExactly(MONDAY);
+    }
+
+    @Test
+    void dateFilter_recomputesSummaryFromTheFilteredEntries() {
+        TenantContext.setTenantId(TENANT_ID);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = inMemorySchedule(scheduleId);
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        LocalDate tuesday = MONDAY.plusDays(1);
+        DriftReport unfiltered = unfilteredTwoDateDriftReport(ana, ben, tuesday);
+
+        ScheduleOutputService outputMock = mock(ScheduleOutputService.class);
+        when(outputMock.buildStaffingSummary(schedule)).thenReturn(List.of());
+        when(outputMock.buildAgentSchedule(schedule)).thenReturn(List.of());
+        when(outputMock.buildPreferenceReport(schedule)).thenReturn(null);
+        when(outputMock.buildConstraintViolations(schedule, false)).thenReturn(List.of());
+        when(outputMock.buildDriftReport(schedule)).thenReturn(unfiltered);
+
+        ScheduleService scheduleService = buildScheduleService(outputMock, store);
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(DESK_ID, scheduleId, MONDAY.toString());
+
+        DriftSummary summary = response.getDriftReport().summary();
+        assertThat(summary.workingAgentDays()).isEqualTo(1);
+        assertThat(summary.driftedCount()).isEqualTo(1);
+        assertThat(summary.honouredCount()).isEqualTo(0);
+        assertThat(summary.noUsualShiftCount()).isEqualTo(0);
+        assertThat(summary.workingAgentDays())
+                .isEqualTo(summary.noUsualShiftCount() + summary.honouredCount() + summary.driftedCount());
+    }
+
+    @Test
+    void dateFilter_popularityListUnchangedFromTheUnfilteredResponse() {
+        TenantContext.setTenantId(TENANT_ID);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = inMemorySchedule(scheduleId);
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        LocalDate tuesday = MONDAY.plusDays(1);
+        DriftReport unfiltered = unfilteredTwoDateDriftReport(ana, ben, tuesday);
+
+        ScheduleOutputService outputMock = mock(ScheduleOutputService.class);
+        when(outputMock.buildStaffingSummary(schedule)).thenReturn(List.of());
+        when(outputMock.buildAgentSchedule(schedule)).thenReturn(List.of());
+        when(outputMock.buildPreferenceReport(schedule)).thenReturn(null);
+        when(outputMock.buildConstraintViolations(schedule, false)).thenReturn(List.of());
+        when(outputMock.buildDriftReport(schedule)).thenReturn(unfiltered);
+
+        ScheduleService scheduleService = buildScheduleService(outputMock, store);
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(DESK_ID, scheduleId, MONDAY.toString());
+
+        assertThat(response.getDriftReport().popularity()).isEqualTo(unfiltered.popularity());
+    }
+
+    @Test
+    void dateFilter_malformedDate_stillThrowsIllegalArgumentException() {
+        TenantContext.setTenantId(TENANT_ID);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = inMemorySchedule(scheduleId);
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        LocalDate tuesday = MONDAY.plusDays(1);
+        DriftReport unfiltered = unfilteredTwoDateDriftReport(ana, ben, tuesday);
+
+        ScheduleOutputService outputMock = mock(ScheduleOutputService.class);
+        when(outputMock.buildStaffingSummary(schedule)).thenReturn(List.of());
+        when(outputMock.buildAgentSchedule(schedule)).thenReturn(List.of());
+        when(outputMock.buildPreferenceReport(schedule)).thenReturn(null);
+        when(outputMock.buildConstraintViolations(schedule, false)).thenReturn(List.of());
+        when(outputMock.buildDriftReport(schedule)).thenReturn(unfiltered);
+
+        ScheduleService scheduleService = buildScheduleService(outputMock, store);
+
+        assertThatThrownBy(() -> scheduleService.getScheduleDetail(DESK_ID, scheduleId, "not-a-date"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
