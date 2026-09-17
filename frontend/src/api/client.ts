@@ -455,6 +455,34 @@ export interface PreferenceReport {
   summary: PreferenceSummary
 }
 
+export interface DriftReportEntry {
+  agentId: string
+  agentName: string
+  date: string
+  status: 'NO_USUAL_SHIFT' | 'HONOURED' | 'DRIFTED'
+  usualStartTime: string | null
+  actualStartTime: string
+  deltaMinutes: number | null
+}
+
+export interface DriftSummary {
+  workingAgentDays: number
+  noUsualShiftCount: number
+  honouredCount: number
+  driftedCount: number
+}
+
+export interface ShiftPopularityEntry {
+  templateName: string
+  agentCount: number
+}
+
+export interface DriftReport {
+  entries: DriftReportEntry[]
+  summary: DriftSummary
+  popularity: ShiftPopularityEntry[]
+}
+
 export interface ViolationDetail {
   agentId: string | null
   agentName: string | null
@@ -477,6 +505,7 @@ export interface ScheduleDetail extends ScheduleSummary {
   staffingSummary: StaffingSummaryEntry[]
   agentSchedule: AgentScheduleEntry[]
   preferenceReport: PreferenceReport | null
+  driftReport: DriftReport | null
   constraintViolations: ConstraintViolationEntry[]
   violatedHardConstraints: string[]
   warnings?: string[]

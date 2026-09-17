@@ -13,7 +13,7 @@ export default function ScheduleResults() {
   const { deskId, scheduleId } = useParams<{ deskId: string; scheduleId: string }>()
   const navigate = useNavigate()
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null)
-  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'violations' | 'pto'>('staffing')
+  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'drift' | 'violations' | 'pto'>('staffing')
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
@@ -253,10 +253,10 @@ export default function ScheduleResults() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {(['staffing', 'agents', 'allocation', 'preferences', 'violations', 'pto'] as const).map(tab => (
+        {(['staffing', 'agents', 'allocation', 'preferences', 'drift', 'violations', 'pto'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ background: activeTab === tab ? '#3b82f6' : '#e5e7eb', color: activeTab === tab ? '#fff' : '#374151', borderRadius: 0, padding: '0.5rem 1.25rem' }}>
-            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
+            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'drift' ? 'Drift Report' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
           </button>
         ))}
       </div>
@@ -267,6 +267,7 @@ export default function ScheduleResults() {
         {activeTab === 'agents' && <AgentScheduleTab data={filteredAgents} specs={specs} />}
         {activeTab === 'allocation' && <AgentAllocationTab schedule={schedule} dateFilter={dateFilter} specs={specs} specFilter={specFilter} onSpecFilterChange={setSpecFilter} />}
         {activeTab === 'preferences' && <PreferenceTab schedule={schedule} dateFilter={dateFilter} />}
+        {activeTab === 'drift' && <DriftTab schedule={schedule} dateFilter={dateFilter} />}
         {activeTab === 'violations' && (
           <ViolationsTab
             data={filteredViolations}
@@ -1038,6 +1039,106 @@ function PreferenceTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dat
           ))}
         </tbody>
       </table>
+    </>
+  )
+}
+
+// DRFT-02/D-12: the component branches on `status` only -- it never recomputes whether a
+// deviation is inside the tolerance band (the same one-calculation discipline DRFT-03 imposes
+// on the server), and it never re-sorts -- the backend already returns entries date ascending
+// then agent name ascending.
+function DriftTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilter: string }) {
+  // Locked design decision (17-UI-SPEC.md Component Specifications §1, mirrors
+  // AgentAllocationTab's schedulingMode branch-at-the-top discipline): one not-applicable
+  // message covers BOTH sections on a slot-scheduled desk, since there is no drift to explain.
+  if (schedule.schedulingMode !== 'SHIFT') {
+    return <p style={{ color: '#6b7280' }}>This desk is slot-scheduled — usual-shift drift only applies to shift-scheduled desks.</p>
+  }
+
+  const report = schedule.driftReport
+  if (!report || !report.entries || report.entries.length === 0) {
+    return <p style={{ color: '#6b7280' }}>No drift report data available.</p>
+  }
+
+  const entries = dateFilter ? report.entries.filter(e => e.date === dateFilter) : report.entries
+
+  // Summary bar is computed from the date-filtered entry set (not report.summary) so the four
+  // numbers always agree with the rows rendered beneath them.
+  const workingAgentDays = entries.length
+  const honouredCount = entries.filter(e => e.status === 'HONOURED').length
+  const driftedCount = entries.filter(e => e.status === 'DRIFTED').length
+  const noUsualShiftCount = entries.filter(e => e.status === 'NO_USUAL_SHIFT').length
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', fontSize: '0.85rem', background: '#f9fafb', padding: '0.75rem', borderRadius: '6px' }}>
+        <div>Working agent-days: <strong>{workingAgentDays}</strong></div>
+        <div>Honoured: <strong>{honouredCount}</strong></div>
+        <div>Drifted: <strong>{driftedCount}</strong></div>
+        <div>No usual shift: <strong>{noUsualShiftCount}</strong></div>
+      </div>
+      <div style={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic', marginBottom: '0.75rem' }}>
+        This report is computed live from each agent's current usual shift. If a usual shift changes after this schedule was accepted, this report changes too — even for a schedule from the past.
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Agent</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Date</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Status</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Usual Start</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Actual Start</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px' }}>Delta (min)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e, i) => (
+            <tr key={i}>
+              <td style={{ padding: '4px 8px' }}>{e.agentName}</td>
+              <td style={{ padding: '4px 8px' }}>{e.date}</td>
+              <td style={{
+                padding: '4px 8px',
+                color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#16a34a' : '#d1d5db',
+                fontWeight: e.status === 'DRIFTED' ? 600 : 400,
+              }}>
+                {e.status === 'DRIFTED' ? 'Drifted' : e.status === 'HONOURED' ? 'Honoured' : 'No usual shift'}
+              </td>
+              <td style={{ padding: '4px 8px' }}>{e.status === 'NO_USUAL_SHIFT' ? '—' : (e.usualStartTime || '—')}</td>
+              <td style={{ padding: '4px 8px' }}>{e.actualStartTime}</td>
+              <td style={{ textAlign: 'right', padding: '4px 8px', color: e.status === 'DRIFTED' ? '#dc2626' : undefined }}>
+                {e.status === 'DRIFTED' && e.deltaMinutes !== null ? `${e.deltaMinutes > 0 ? '+' : ''}${e.deltaMinutes} min` : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: '1.5rem' }}>
+        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.25rem' }}>Most-Subscribed Usual Shifts</h3>
+        <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+          Reads each agent's current usual shift, not this solve's results — it does not change when you re-solve.
+        </p>
+        {report.popularity.length === 0 ? (
+          <p style={{ color: '#6b7280' }}>No usual shifts are stored for this desk yet.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Shift Template</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Agents (Usual Shift)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.popularity.map((p, i) => (
+                <tr key={i}>
+                  <td style={{ padding: '4px 8px' }}>{p.templateName}</td>
+                  <td style={{ padding: '4px 8px' }}>{p.agentCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </>
   )
 }
