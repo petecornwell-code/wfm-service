@@ -36,6 +36,15 @@ public class ConstraintWeightsDto {
     private ScoreDto bandCapacityWeight;
     private ScoreDto shiftWorkContiguityWeight;
 
+    // Phase 17 (CONS-03/CONS-04/CONS-05): the consistency weight, its tolerance band, and the
+    // preferred-start-at-shift-granularity weight this plan adds save-time precedence enforcement
+    // for (D-07/D-08). consistencyToleranceMinutes is a plain Integer -- NOT a ScoreDto -- because
+    // it is a minutes count, not a HardSoftScore; nullable so the partial-update merge can tell
+    // "not sent" (null) apart from "sent as 0".
+    private ScoreDto consistentStartWeight;
+    private Integer consistencyToleranceMinutes;
+    private ScoreDto preferredStartShiftModeWeight;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -81,4 +90,10 @@ public class ConstraintWeightsDto {
     public void setBandCapacityWeight(ScoreDto v) { this.bandCapacityWeight = v; }
     public ScoreDto getShiftWorkContiguityWeight() { return shiftWorkContiguityWeight; }
     public void setShiftWorkContiguityWeight(ScoreDto v) { this.shiftWorkContiguityWeight = v; }
+    public ScoreDto getConsistentStartWeight() { return consistentStartWeight; }
+    public void setConsistentStartWeight(ScoreDto v) { this.consistentStartWeight = v; }
+    public Integer getConsistencyToleranceMinutes() { return consistencyToleranceMinutes; }
+    public void setConsistencyToleranceMinutes(Integer v) { this.consistencyToleranceMinutes = v; }
+    public ScoreDto getPreferredStartShiftModeWeight() { return preferredStartShiftModeWeight; }
+    public void setPreferredStartShiftModeWeight(ScoreDto v) { this.preferredStartShiftModeWeight = v; }
 }
