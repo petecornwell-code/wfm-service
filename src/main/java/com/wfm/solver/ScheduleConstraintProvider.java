@@ -882,7 +882,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         equal((sa, cfg) -> sa.getAgent().getId(), p -> p.getAgent().getId()),
                         equal((sa, cfg) -> sa.getDate(), AgentPreference::getDate))
                 .filter((sa, cfg, p) -> sa.getShiftBandPair() != null && p.getPreferredStartTime() != null)
-                .penalizeConfigurable((sa, cfg, p) -> 0)
+                .penalizeConfigurable((sa, cfg, p) -> {
+                    int deviationMinutes = ShiftBandPair.startDeviationMinutes(
+                            sa.getShiftBandPair().template().getStartTime(), p.getPreferredStartTime());
+                    return BigDecimal.valueOf(deviationMinutes)
+                            .divide(BigDecimal.valueOf(cfg.incrementMinutes()), 0,
+                                    java.math.RoundingMode.CEILING)
+                            .intValue();
+                })
                 .asConstraint("Preferred start (shift mode)");
     }
 
