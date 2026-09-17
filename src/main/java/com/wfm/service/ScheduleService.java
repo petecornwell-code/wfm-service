@@ -224,6 +224,31 @@ public class ScheduleService {
                 response.setPreferenceReport(new ScheduleDetailResponse.PreferenceReport(
                         filteredEntries, response.getPreferenceReport().summary()));
             }
+            // DRFT-01: unlike the PreferenceReport block above (which carries its whole-schedule
+            // summary through unfiltered), 17-UI-SPEC.md requires the drift summary-bar counts to
+            // reflect the CURRENTLY date-filtered entry set, so the four numbers always agree with
+            // the rows the operator can see -- a promise the preference report's summary does not
+            // make. popularity is carried through UNTOUCHED: it reads stored usual shifts, not
+            // this date's solve results, so it is never affected by a date filter (D-13).
+            if (response.getDriftReport() != null) {
+                var filteredDriftEntries = response.getDriftReport().entries().stream()
+                        .filter(e -> e.date().equals(filterDate)).toList();
+                int filteredNoUsualShiftCount = 0;
+                int filteredHonouredCount = 0;
+                int filteredDriftedCount = 0;
+                for (var driftEntry : filteredDriftEntries) {
+                    switch (driftEntry.status()) {
+                        case NO_USUAL_SHIFT -> filteredNoUsualShiftCount++;
+                        case HONOURED -> filteredHonouredCount++;
+                        case DRIFTED -> filteredDriftedCount++;
+                    }
+                }
+                var recomputedSummary = new ScheduleDetailResponse.DriftSummary(
+                        filteredDriftEntries.size(), filteredNoUsualShiftCount,
+                        filteredHonouredCount, filteredDriftedCount);
+                response.setDriftReport(new ScheduleDetailResponse.DriftReport(
+                        filteredDriftEntries, recomputedSummary, response.getDriftReport().popularity()));
+            }
         }
 
         return response;

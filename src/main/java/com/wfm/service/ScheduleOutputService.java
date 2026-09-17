@@ -445,9 +445,15 @@ public class ScheduleOutputService {
      * {@code ScheduleConstraintProvider.usualShiftConsistency} can never disagree about how far an
      * agent-day drifted, because both call the one static method.
      *
-     * <p>{@code popularity} is always {@code List.of()} on this task — plan 17-03 owns D-13's
-     * over-subscription ranking (a separate, independent read of stored {@code AgentUsualShift}
-     * rows, not of solve results). A deliberate, later-fillable gap, not a bug.
+     * <p>{@code popularity} (DRFT-04, D-13) answers a DIFFERENT question from the rest of this
+     * report: it counts, per shift template, how many DISTINCT agents currently hold it as a
+     * usual shift — read from the same {@code allUsualShifts} fetch above (the tenant-and-desk
+     * -scoped finder), resolved through {@link UsualShiftResolutionService#resolve} at "today" so
+     * an era-renamed template ranks under the name the operator currently sees (Phase 16 D-01).
+     * It is NOT derived from this solve's {@code AgentShiftAssignment} rows, so it does not change
+     * when the desk is re-solved and is unaffected by {@code ScheduleService}'s date filter — that
+     * is why {@code 17-UI-SPEC.md} gives it its own section heading and subtext rather than
+     * folding it into the main table.
      */
     public DriftReport buildDriftReport(Schedule schedule) {
         List<AgentUsualShift> allUsualShifts = agentUsualShiftRepository
@@ -534,7 +540,28 @@ public class ScheduleOutputService {
         int workingAgentDays = noUsualShiftCount + honouredCount + driftedCount;
         DriftSummary summary = new DriftSummary(workingAgentDays, noUsualShiftCount, honouredCount, driftedCount);
 
-        return new DriftReport(entries, summary, List.of());
+        // Popularity ranking (DRFT-04, D-13) -- reuses allUsualShifts already fetched above (the
+        // tenant-and-desk-scoped finder), never a second repository read (T-17-05). Counts
+        // DISTINCT AGENTS per resolved template name, not stored rows: an agent whose usual
+        // shift is the same template on five weekdays contributes one to that template, because
+        // each weekday's row is deduplicated into a per-template Set<UUID> of agent ids.
+        // Resolved at "today" (LocalDate.now()) -- the same era-following precedent as
+        // DeskAgentService.toResponse's isLive check -- so an era-renamed template ranks under
+        // the name the operator currently sees, not a stale pointer's name.
+        LocalDate today = LocalDate.now();
+        Map<String, Set<UUID>> agentIdsByTemplateName = new HashMap<>();
+        for (AgentUsualShift u : allUsualShifts) {
+            usualShiftResolutionService.resolve(u, today).ifPresent(t ->
+                    agentIdsByTemplateName.computeIfAbsent(t.getName(), k -> new HashSet<>())
+                            .add(u.getAgent().getId()));
+        }
+        List<ShiftPopularityEntry> popularity = agentIdsByTemplateName.entrySet().stream()
+                .map(e -> new ShiftPopularityEntry(e.getKey(), e.getValue().size()))
+                .sorted(Comparator.comparingInt(ShiftPopularityEntry::agentCount).reversed()
+                        .thenComparing(ShiftPopularityEntry::templateName))
+                .toList();
+
+        return new DriftReport(entries, summary, popularity);
     }
 
     /**
