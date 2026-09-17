@@ -45,6 +45,13 @@
 -- T-17-06: every UPDATE below is predicated on the row still holding its prior shipped
 -- default, so a per-desk value an operator has already tuned is left untouched. The
 -- ALTER COLUMN ... SET DEFAULT clauses apply separately, to rows created after this migration.
+--
+-- Note: because both chosen values above are identical to what V38/V48 already shipped, each
+-- UPDATE's SET and WHERE clauses currently name the same literal -- the two statements below are
+-- self-referential no-ops by construction today; they exist to document/prove the predicate shape
+-- (and are exercised as such by ConstraintWeightsMigrationTest), not to change any row's data.
+-- They would only start doing real work if a future migration changed the chosen default away
+-- from the value shipped here, at which point the SET value and the WHERE value would diverge.
 ALTER TABLE constraint_weights
     ALTER COLUMN consistent_start_weight SET DEFAULT '0hard/2soft';
 
