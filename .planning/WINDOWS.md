@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 0
-total_count: 8
-last_updated: 2026-08-27T05:52:41.259Z
+total_count: 9
+last_updated: 2026-09-17T16:33:12.009Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-08-27T05:52:41.259Z
 | 6 | 13 | unrun-verify | frontend/src/pages/DeskAgents.tsx |  | 13-04 Task 2 <human-check> bulk 'Set all days to…' walkthrough (no-dialog on unlabelled agent, accurate label-count confirm dialog, decline/accept paths, single-line layout) not run — no live desk with an enriched upload available in this executor session | open |  | 2026-08-22T01:01:23.451Z |  |
 | 7 | 13 | unrun-verify | src/main/java/com/wfm/controller/GlobalExceptionHandler.java |  | 13-06 Task 2 <human-check> HTTP-level walkthrough (malformed day-segment returns 400 not 500, valid/out-of-range day-hours paths unchanged, bulk contracted-hours 400 message, genuine 500 still generic) not run — no live backend available in this executor session; only the direct handler unit test (GlobalExceptionHandlerTest) proves the response the handler builds, not Spring's dispatch to it (P-17) | open |  | 2026-08-24T12:54:26.239Z |  |
 | 8 | 15 | deviation | build.gradle |  | Rule 3 blocking fix: restored the wfm.benchmark system-property test-JVM passthrough (removed at commit 299c42c alongside the Phase 12 harness) — without it -Dwfm.benchmark=true never reaches the test JVM and ShiftModelBenchmarkTest silently never runs | open |  | 2026-08-27T05:52:41.259Z |  |
+| 9 | 17 | stub | src/main/java/com/wfm/service/ScheduleOutputService.java |  | buildDriftReport's popularity field always returns List.of() -- DRFT-04's over-subscription ranking is plan 17-03's deliverable (D-13), explicitly deferred per the plan's own Task 1 action text | open |  | 2026-09-17T16:33:12.009Z |  |
 
 ````json
 [
@@ -121,6 +122,19 @@ last_updated: 2026-08-27T05:52:41.259Z
     "reason": "",
     "recorded_at": "2026-08-27T05:52:41.259Z",
     "resolved_at": null
+  },
+  {
+    "id": 9,
+    "kind": "stub",
+    "phase": "17",
+    "file": "src/main/java/com/wfm/service/ScheduleOutputService.java",
+    "line": null,
+    "description": "buildDriftReport's popularity field always returns List.of() -- DRFT-04's over-subscription ranking is plan 17-03's deliverable (D-13), explicitly deferred per the plan's own Task 1 action text",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T16:33:12.009Z",
+    "resolved_at": null,
+    "milestone": "v1.3"
   }
 ]
 ````
