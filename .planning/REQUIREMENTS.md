@@ -70,8 +70,8 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 - [x] **CONS-01**: The solver is penalised for assigning an agent a shift that differs from their stored usual shift for that weekday
 - [ ] **CONS-02**: Operator can configure a tolerance band per desk, within which deviation from the usual shift carries no penalty at all
 - [ ] **CONS-03**: Operator can configure the consistency penalty weight per desk
-- [ ] **CONS-04**: Consistency is a soft constraint — it never makes an otherwise-feasible schedule infeasible
-- [ ] **CONS-05**: Where the consistency constraint scores two shifts equally, an agent's recorded `AgentPreference` start time decides between them
+- [x] **CONS-04**: Consistency is a soft constraint — it never makes an otherwise-feasible schedule infeasible
+- [x] **CONS-05**: Where the consistency constraint scores two shifts equally, an agent's recorded `AgentPreference` start time decides between them
 - [ ] **CONS-06**: The precedence between usual shift and agent preference is documented and observable, not implicit in relative weights
 
 ### Drift Reporting (DRFT)
