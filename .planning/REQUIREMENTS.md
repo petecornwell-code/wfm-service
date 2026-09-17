@@ -67,19 +67,19 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 
 ### Consistency (CONS)
 
-- [x] **CONS-01**: The solver is penalised for assigning an agent a shift that differs from their stored usual shift for that weekday
-- [x] **CONS-02**: Operator can configure a tolerance band per desk, within which deviation from the usual shift carries no penalty at all
-- [x] **CONS-03**: Operator can configure the consistency penalty weight per desk
-- [x] **CONS-04**: Consistency is a soft constraint — it never makes an otherwise-feasible schedule infeasible
-- [x] **CONS-05**: Where the consistency constraint scores two shifts equally, an agent's recorded `AgentPreference` start time decides between them
-- [x] **CONS-06**: The precedence between usual shift and agent preference is documented and observable, not implicit in relative weights
+- [ ] **CONS-01**: The solver is penalised for assigning an agent a shift that differs from their stored usual shift for that weekday
+- [ ] **CONS-02**: Operator can configure a tolerance band per desk, within which deviation from the usual shift carries no penalty at all
+- [ ] **CONS-03**: Operator can configure the consistency penalty weight per desk
+- [ ] **CONS-04**: Consistency is a soft constraint — it never makes an otherwise-feasible schedule infeasible
+- [ ] **CONS-05**: Where the consistency constraint scores two shifts equally, an agent's recorded `AgentPreference` start time decides between them
+- [ ] **CONS-06**: The precedence between usual shift and agent preference is documented and observable, not implicit in relative weights
 
 ### Drift Reporting (DRFT)
 
-- [x] **DRFT-01**: After a solve, the operator can see which agents were assigned a shift other than their usual one, on which dates, and by how much
-- [x] **DRFT-02**: The drift report distinguishes an agent with no stored usual shift from an agent whose usual shift was honoured
-- [x] **DRFT-03**: The drift report is derived from the same distance calculation the consistency constraint uses, not a second implementation
-- [x] **DRFT-04**: Operator can see which shift templates are most over-subscribed as agents' usual shifts, making the consistency-versus-fairness tension visible
+- [ ] **DRFT-01**: After a solve, the operator can see which agents were assigned a shift other than their usual one, on which dates, and by how much
+- [ ] **DRFT-02**: The drift report distinguishes an agent with no stored usual shift from an agent whose usual shift was honoured
+- [ ] **DRFT-03**: The drift report is derived from the same distance calculation the consistency constraint uses, not a second implementation
+- [ ] **DRFT-04**: Operator can see which shift templates are most over-subscribed as agents' usual shifts, making the consistency-versus-fairness tension visible
 
 ## Cross-Cutting Requirements
 
@@ -136,8 +136,8 @@ Explicitly excluded, with reasoning, to prevent re-adding.
 | MODE-01…05 | Phase 14 | Complete (2026-08-26) |
 | ENVL-01…10 | Phase 15 | Complete (2026-08-27) — verification `passed`; this row read "Pending" until 2026-09-03 while the checkbox list above already marked all ten `[x]` |
 | USHF-01…06 | Phase 16 | Complete in code (2026-09-03) — all six verified against the codebase by `16-VERIFICATION.md`; phase status is `human_needed`, not `passed`, for three visual/Excel items no automation in this project can close (see below) |
-| CONS-01…06 | Phase 17 | Complete in code (2026-09-17) — CONS-01/04/05 delivered by plans 17-01/17-02; CONS-02/03 (per-desk tolerance band and weight) and CONS-06 (D-10 precedence, observable not inferred) delivered by plan 17-05's Constraint Weights page rows and precedence note. The tolerance-band row's visual read (Minutes badge, merged cell) is a backstop truth per `17-UI-SPEC.md` — no frontend test framework exists in this project, so it is human-verification-only |
-| DRFT-01…04 | Phase 17 | Complete in code (2026-09-17) — DRFT-03 delivered by plan 17-01; the popularity ranking and date-filter summary recompute by plan 17-03; DRFT-01/02/04's operator-facing surface (the Drift Report tab and Most-Subscribed Usual Shifts section) delivered by plan 17-05. The three-state Status column's visual distinctness and the popularity list's density/wrap behaviour are backstop truths per `17-UI-SPEC.md` — human-verification-only, no frontend test framework exists in this project |
+| CONS-01…06 | Phase 17 | Pending — `17-VERIFICATION.md` returned `gaps_found` (2026-09-17); reverted from "Complete in code" pending gap closure (CR-01, drift slot-mode contract). Code delivered: CONS-01/04/05 delivered by plans 17-01/17-02; CONS-02/03 (per-desk tolerance band and weight) and CONS-06 (D-10 precedence, observable not inferred) delivered by plan 17-05's Constraint Weights page rows and precedence note. The tolerance-band row's visual read (Minutes badge, merged cell) is a backstop truth per `17-UI-SPEC.md` — no frontend test framework exists in this project, so it is human-verification-only |
+| DRFT-01…04 | Phase 17 | Pending — `17-VERIFICATION.md` returned `gaps_found` (2026-09-17); DRFT-01's operator-facing surface is the one CR-01 touches (drift report non-null on a slot desk, leaking popularity into the Excel export). Code delivered: DRFT-03 delivered by plan 17-01; the popularity ranking and date-filter summary recompute by plan 17-03; DRFT-01/02/04's operator-facing surface (the Drift Report tab and Most-Subscribed Usual Shifts section) delivered by plan 17-05. The three-state Status column's visual distinctness and the popularity list's density/wrap behaviour are backstop truths per `17-UI-SPEC.md` — human-verification-only, no frontend test framework exists in this project |
 | XCUT-01 (display verification) | Phases 14, 15, 16, 17 | Complete in code (2026-09-17) — Phases 14/15 complete; Phase 16's store → roster → export trace proven end-to-end in one test (`UsualShiftTracerTest#happyPath_storeRosterExport_endToEnd`); Phase 17 plan 17-03 added the drift report's backend/export leg (`ScheduleDetailResponse.driftReport` + the Excel `Drift Report` sheet, headers byte-identical between the two surfaces); plan 17-05 closed the frontend leg with the Drift Report tab, whose headers are byte-identical to the export sheet's — the on-screen visual read remains human-verification-only, no frontend test framework exists in this project |
 | XCUT-02 (every write path) | Phases 16, 17 | Complete (2026-09-17) — Phase 16 delivered nine enumerated write paths in `src/test/resources/ushf-05-write-paths.md`, one test per path, plus `UsualShiftWritePathGuardTest`'s set-equality structural guard proven able to fail twice (test-of-the-test and a real deliberate break). Phase 17 plan 17-01 added the solver's new read path (row 7, updated); plan 17-03 added a tenth row and `SolverUsualShiftWritePathGuardTest`, proving that read path is genuinely read-only by a behavioural mock-interaction proof plus a structural comment-stripped source scan, not asserted in prose |
 | XCUT-03 (solverConfig.xml build test) | Phase 15 | Complete (2026-08-27) — every gap-closure plan's solver tests (15-04, 15-08, 15-09, 15-11, 15-13) build a solver via `SolverConfig.createFromXmlResource("solverConfig.xml")` and solve through it; `ShiftDeskEndToEndRegressionTest` (15-13) is the closing end-to-end proof |
