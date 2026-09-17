@@ -295,6 +295,18 @@ public final class ScheduleConstraintClassification {
                         + "compliance' and 'Band capacity'.",
                 null));
 
+        map.put("Preferred start (shift mode)", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 17 (CONS-05/CONS-06/D-08/D-09): joins AgentShiftAssignment to ScheduleConfig, "
+                        + "filters to SHIFT mode, then joins AgentPreference on (agent, date), "
+                        + "penalising per-agent-day absolute deviation from the agent's preferred "
+                        + "start time -- an anchor in both directions, never a lateness-only floor. "
+                        + "Fires whether or not a usual shift is stored (D-09), independent of "
+                        + "ResolvedUsualShiftTarget entirely. Structurally inert on a SLOT desk -- no "
+                        + "AgentShiftAssignment rows exist there to join against, the same "
+                        + "double-inertness shape as 'Usual shift consistency'.",
+                null));
+
         return java.util.Collections.unmodifiableMap(map);
     }
 }

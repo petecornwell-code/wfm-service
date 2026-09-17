@@ -182,10 +182,11 @@ class ScheduleConstraintClassificationTest {
      * plus the pre-existing "Shift envelope compliance" (plan 15-03), plan 15-06 Task 2's
      * "Break clustering" (reclassified once it gained a real body, ENVL-09), plan 15-06 Task 3's
      * "Band capacity" (ENVL-08/D-03), plan 15-09's "Minimum staffing" (G-15-10 — seat supply
-     * is now mode-dependent), and plan 17-01's "Usual shift consistency" (CONS-01/CONS-02/
-     * CONS-04) must all carry MODE_GATED, and the two preference rows must keep PHASE_15_OWNER
-     * verbatim (P-27) even though they are no longer OPEN — the Entry record permits an owner on
-     * any classification.
+     * is now mode-dependent), plan 17-01's "Usual shift consistency" (CONS-01/CONS-02/
+     * CONS-04), and plan 17-02's "Preferred start (shift mode)" (CONS-05/CONS-06/D-08/D-09) must
+     * all carry MODE_GATED, and the two preference rows must keep PHASE_15_OWNER verbatim (P-27)
+     * even though they are no longer OPEN — the Entry record permits an owner on any
+     * classification.
      */
     @Test
     void thePhase15ModeGatedSetIsExactlyTheExpectedRows() {
@@ -200,7 +201,10 @@ class ScheduleConstraintClassificationTest {
                 "Shift work contiguity",
                 // Phase 17 plan 17-01: joins AgentShiftAssignment to ScheduleConfig to
                 // ResolvedUsualShiftTarget, structurally inert on a SLOT desk the same way.
-                "Usual shift consistency");
+                "Usual shift consistency",
+                // Phase 17 plan 17-02: joins AgentShiftAssignment to ScheduleConfig to
+                // AgentPreference, the same double-inertness shape on a SLOT desk.
+                "Preferred start (shift mode)");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -213,9 +217,10 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the twelve constraints whose behaviour depends "
+                .as("MODE_GATED must be exactly the thirteen constraints whose behaviour depends "
                         + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09), its G-15-27 "
-                        + "follow-up, and Phase 17 plan 17-01's 'Usual shift consistency'")
+                        + "follow-up, Phase 17 plan 17-01's 'Usual shift consistency', and plan "
+                        + "17-02's 'Preferred start (shift mode)'")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

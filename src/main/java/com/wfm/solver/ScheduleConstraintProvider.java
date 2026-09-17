@@ -93,6 +93,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             bulkUnderallocationHard(factory),
             minimumStaffing(factory),
             usualShiftConsistency(factory),
+            preferredStartShiftMode(factory),
         };
     }
 
@@ -832,6 +833,57 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                             .intValue();
                 })
                 .asConstraint("Usual shift consistency");
+    }
+
+    /**
+     * (Phase 17, CONS-05/CONS-06/D-08/D-09) Preferred start (shift mode) — a NEW
+     * shift-granularity preference constraint, not a revival of {@link #honourPreferredStartTime}.
+     * That method is mode-gated OFF for {@code SchedulingMode.SHIFT} (Phase 15's ENVL-05/P-26; see
+     * its own javadoc) because in shift mode the start comes from the assigned library shift, not
+     * a per-slot solver decision — this constraint's use of {@code preferredStartTime} at shift
+     * granularity is a NEW use of that field, not a reason to turn the per-slot constraint back on.
+     *
+     * <p>ANCHOR, NOT FLOOR: penalises the absolute deviation between the assigned envelope start
+     * and the agent's {@code preferredStartTime} in both directions, via the same
+     * {@link ShiftBandPair#startDeviationMinutes} magnitude {@link #usualShiftConsistency} and the
+     * drift report both use. An assignment earlier than preferred costs exactly what one later than
+     * preferred costs — unlike {@link #honourPreferredStartTime}'s {@code isBefore}-only per-slot
+     * form, which only ever penalises lateness.
+     *
+     * <p>FIRES WHETHER OR NOT A USUAL SHIFT IS STORED (D-09) — this reads WIDER than CONS-05's
+     * literal "where the consistency constraint scores two shifts equally", deliberately: USHF-04
+     * makes "no stored usual shift" a penalty-free state for {@link #usualShiftConsistency}, so an
+     * agent with no stored usual shift has no start-time signal at all unless this constraint
+     * supplies one from their recorded preference. This constraint never joins
+     * {@link ResolvedUsualShiftTarget} — its independence from that fact IS the mechanism, not an
+     * oversight.
+     *
+     * <p>Its weight is REQUIRED by {@code ConstraintWeightsService} (plan 17-02) to stay strictly
+     * below {@link ConstraintWeights#getConsistentStartWeight()}'s soft score — enforced at save
+     * time, not merely by convention, which is what converts CONS-06's precedence into a checked
+     * invariant rather than something "implicit in relative constraint weights a reader would have
+     * to reverse-engineer".
+     *
+     * <p>Deviation-to-increment conversion uses {@link java.math.RoundingMode#CEILING} — the same
+     * rounding mode {@link #usualShiftConsistency} uses, not a third mode — so no non-zero
+     * deviation is ever free, matching CONS-05's precision edge.
+     *
+     * <p>Stream order mirrors {@link #usualShiftConsistency}: leads with the (empty-in-SLOT-mode)
+     * {@link AgentShiftAssignment} stream via plain {@code forEach} (which silently drops rows
+     * whose genuine {@code shiftBandPair} planning variable is null — an unassigned shift has no
+     * envelope start to compare), gates {@code SchedulingMode.SHIFT} before touching
+     * {@link AgentPreference}.
+     */
+    Constraint preferredStartShiftMode(ConstraintFactory factory) {
+        return factory.forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(AgentPreference.class,
+                        equal((sa, cfg) -> sa.getAgent().getId(), p -> p.getAgent().getId()),
+                        equal((sa, cfg) -> sa.getDate(), AgentPreference::getDate))
+                .filter((sa, cfg, p) -> sa.getShiftBandPair() != null && p.getPreferredStartTime() != null)
+                .penalizeConfigurable((sa, cfg, p) -> 0)
+                .asConstraint("Preferred start (shift mode)");
     }
 
     // ============================================================

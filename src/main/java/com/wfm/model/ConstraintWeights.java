@@ -220,25 +220,16 @@ public class ConstraintWeights {
 
     /**
      * Weight for "Preferred start (shift mode)" (Phase 17, CONS-05/CONS-06/D-08) — a NEW
-     * shift-granularity preference constraint (added by plan 17-02) penalising the absolute
-     * deviation between the assigned envelope start and the agent's {@code preferredStartTime},
-     * anchor-style in both directions (never lateness-only). This field is declared here, with
-     * V48, so the column and the entity land together; the constraint body itself is 17-02's.
+     * shift-granularity preference constraint (plan 17-02's {@code
+     * ScheduleConstraintProvider.preferredStartShiftMode}) penalising the absolute deviation
+     * between the assigned envelope start and the agent's {@code preferredStartTime},
+     * anchor-style in both directions (never lateness-only).
      *
-     * <p><b>Deliberately carries NO {@code @ConstraintWeight} annotation yet</b> — a Rule-3
-     * fix discovered during 17-01's execution, not part of the plan's original interfaces text.
-     * {@code ScheduleConstraintClassificationTest} reflectively derives the registered-constraint
-     * set from every {@code @ConstraintWeight} field on this class AND from every
-     * {@code Constraint}-returning builder method on {@code ScheduleConstraintProvider}, then
-     * asserts the two sets agree (Phase 14 P-07, XCUT-05). Annotating this field now — before
-     * plan 17-02 adds the {@code preferredStartShiftMode} builder method that reads it — would
-     * create an orphan weight with no constraint, failing that completeness guard for the whole
-     * suite (a plan-internal contradiction: the interfaces text asks for the annotation here, but
-     * this task's own acceptance criteria require {@code ./gradlew test} green). This mirrors
-     * {@link #consistentStartWeight}'s own adopted-orphan-column precedent, just for the
-     * annotation instead of the column: the column and this field exist now; the
-     * {@code @ConstraintWeight} annotation and the constraint method that reads it land together
-     * in plan 17-02.
+     * <p>Plan 17-01 declared this field, with V48, WITHOUT this annotation — annotating it before
+     * the constraint method that reads it existed would have orphaned a constraint-weight with no
+     * builder method, failing {@code ScheduleConstraintClassificationTest}'s reflective
+     * completeness guard (Phase 14 P-07, XCUT-05). Plan 17-02 adds both the annotation and the
+     * constraint method in the same commit, closing that gap (see 17-01-SUMMARY.md Deviation 1).
      *
      * <p>D-08: this weight's soft score MUST stay strictly below {@link #consistentStartWeight}'s
      * soft score — consistency always outranks preference. Enforced at save time (plan 17-02's
@@ -246,6 +237,7 @@ public class ConstraintWeights {
      * (CONS-06's "documented and observable", not "implicit in relative constraint weights a
      * reader would have to reverse-engineer").
      */
+    @ConstraintWeight("Preferred start (shift mode)")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "preferred_start_shift_mode_weight")
     private HardSoftScore preferredStartShiftModeWeight = HardSoftScore.ofSoft(1);
