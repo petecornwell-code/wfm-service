@@ -153,10 +153,13 @@ class UsualShiftWritePathGuardTest {
     }
 
     @Test
-    void theTableHasExactlyNineDataRows_withNoBlankRequiredCells() throws IOException, URISyntaxException {
+    void theTableHasExactlyTenDataRows_withNoBlankRequiredCells() throws IOException, URISyntaxException {
         List<TableRow> rows = parseTableRows();
-        assertThat(rows).as("USHF-05 table must have exactly nine data rows (D-14's seven + P-18's two)")
-                .hasSize(9);
+        // D-14's original seven + P-18's two planner additions + Phase 17 plan 17-03's dedicated
+        // read-path guard row (T-17-01/XCUT-02) for SolverService#resolveUsualShiftTargets.
+        assertThat(rows).as("USHF-05 table must have exactly ten data rows (D-14's seven + P-18's "
+                        + "two + plan 17-03's solver read-path guard row)")
+                .hasSize(10);
 
         for (TableRow row : rows) {
             assertThat(row.path()).as("Row '%s': Path cell must not be blank", row).isNotBlank();
