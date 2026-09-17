@@ -1,250 +1,342 @@
+---
+last_mapped_commit: 7e18ca2766e5fc34d93136d520c5a1529f8dc3b5
+last_mapped_at: 2026-09-17
+---
+<!-- refreshed: 2026-09-17 -->
+
 # Architecture
 
-**Analysis Date:** 2026-04-02
+**Analysis Date:** 2026-09-17
+
+## System Overview
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Frontend Layer (React/TypeScript)                  │
+│                          `frontend/src/pages/`, `src/api/`                   │
+│  DeskSelector → DeskAgents → ShiftLibrary → ScheduleSetup → ScheduleResults │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ REST API calls
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    Controller Layer (HTTP Entry Points)                       │
+│                `src/main/java/com/wfm/controller/`                           │
+│  ScheduleController → DeskController → ShiftTemplateController → etc.        │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                 ┌─────────────────────┼─────────────────────┐
+                 ▼                     ▼                     ▼
+┌──────────────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│   Service Layer (Core    │ │ Service Layer    │ │ Service Layer    │
+│   Scheduling Logic)      │ │ (Shift/Template) │ │ (Data Mgmt)      │
+│ `SolverService`          │ │ `ShiftTemplate`  │ │ `Agent*Service`  │
+│ `ScheduleOutputService`  │ │ `ShiftLibrary*`  │ │ `DeskService`    │
+│ `ScheduleExportService`  │ │ `UsualShiftSvc`  │ │ `ClientMgmt*`    │
+└──────────┬───────────────┘ └────────┬─────────┘ └────────┬─────────┘
+           │                         │                    │
+           ▼                         ▼                    ▼
+┌──────────────────────────────────────────────────────────────┐
+│             Repository Layer (Data Access)                   │
+│   `src/main/java/com/wfm/repository/`                        │
+│   Schedule/Agent/Shift/DeskRepository, etc.                  │
+└──────────────────────────────────────┬──────────────────────┘
+                                       │
+            ┌──────────────────────────┼──────────────────────────┐
+            ▼                          ▼                          ▼
+    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+    │   PostgreSQL     │    │  Timefold Solver │    │ In-Memory Store  │
+    │   Database       │    │  (Constraint     │    │ (Schedule Queue) │
+    │                  │    │   Optimization)  │    │                  │
+    └──────────────────┘    └──────────────────┘    └──────────────────┘
+```
+
+## Component Responsibilities
+
+| Component | Responsibility | File |
+|-----------|----------------|------|
+| **ScheduleController** | HTTP endpoint: initiate solves, retrieve status, accept/reject schedules | `src/main/java/com/wfm/controller/ScheduleController.java` |
+| **SolverService** | Core orchestration: pre-solve setup, schedule building, solve initiation, acceptance flow | `src/main/java/com/wfm/service/SolverService.java` |
+| **ScheduleConstraintProvider** | All 24 constraints: hard constraints (specialization, breaks, contiguity), soft constraints (allocation, preferences) | `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java` |
+| **ScheduleOutputService** | Post-solve reporting: staffing summary, agent schedules, constraint violations, drift reports | `src/main/java/com/wfm/service/ScheduleOutputService.java` |
+| **DeskAgentService** | Agent-desk assignment, eligibility checking, working pattern merging | `src/main/java/com/wfm/service/DeskAgentService.java` |
+| **ShiftTemplateService** | Shift template CRUD, break band management | `src/main/java/com/wfm/service/ShiftTemplateService.java` |
+| **ShiftLibraryGenerationService** | Generate shift templates from demand patterns | `src/main/java/com/wfm/service/ShiftLibraryGenerationService.java` |
+| **ShiftLibraryValidationService** | Validate shift templates against desk demand and capacity | `src/main/java/com/wfm/service/ShiftLibraryValidationService.java` |
+| **UsualShiftService** | Manage agent usual-shift preferences (stored per agent per weekday) | `src/main/java/com/wfm/service/UsualShiftService.java` |
+| **UsualShiftResolutionService** | Resolve usual-shift targets for each working agent-day before solve | `src/main/java/com/wfm/service/UsualShiftResolutionService.java` |
+| **InMemoryScheduleStore** | Volatile queue of in-flight schedules during solving | `src/main/java/com/wfm/service/InMemoryScheduleStore.java` |
+| **ScheduleRepository** | Persist and retrieve schedule snapshots | `src/main/java/com/wfm/repository/ScheduleRepository.java` |
+| **AgentAssignmentRepository** | Persist slot assignments (one per timeslot-agent pairing) | `src/main/java/com/wfm/repository/AgentAssignmentRepository.java` |
+| **AgentShiftAssignmentRepository** | Persist shift assignments (one per agent-date in shift mode) | `src/main/java/com/wfm/repository/AgentShiftAssignmentRepository.java` |
+| **Frontend** | React TypeScript UI for desk setup, shift library, schedule visualization, result review | `frontend/src/pages/`, `frontend/src/api/client.ts` |
 
 ## Pattern Overview
 
-**Overall:** Layered Spring Boot service with an embedded constraint optimization engine (Timefold Solver).
+**Overall:** Spring Boot REST backend + Constraint Optimization + Multi-Mode Scheduling
 
 **Key Characteristics:**
-- REST API backed by a single Spring Boot application (no microservices)
-- Multi-tenant: every request must carry `X-Tenant-ID` (long); a servlet filter extracts it into a thread-local `TenantContext`
-- All scheduling optimization is performed in-process by Timefold Solver running asynchronously; in-flight solves live in an `InMemoryScheduleStore`, not the database
-- Accepted (finalized) schedules are snapshotted into PostgreSQL with immutable copies of timeslots, staffing requirements, and agent assignments
-- A React SPA (Vite + TypeScript) communicates exclusively through the REST API
+
+- **Planning Problem:** Timefold-based workforce scheduling with two planning entities (`AgentAssignment` and `AgentShiftAssignment`)
+- **Dual Scheduling Modes:** SLOT-mode (legacy, timeslot-based) and SHIFT-mode (new, shift-envelope-based per agent-day)
+- **Hard/Soft Constraint Model:** Hard constraints (specialization, breaks, contiguity, shift envelope compliance), soft constraints (allocation balance, preferences, usual-shift consistency)
+- **Lazy Entity Persistence:** Planning entities only exist in-memory during solving; they are persisted only on schedule acceptance via denormalized snapshots
+- **Multi-Tenant:** Every entity is scoped to `tenant_id`; isolation enforced via `TenantContext` and `TenantFilter`
+- **Asynchronous Solving:** Solves run in background via Timefold's `SolverManager`; frontend polls status and retrieves results via REST
 
 ## Layers
 
-**Controller (HTTP):**
-- Purpose: Accept requests, validate path/query params, delegate to service, serialize response
+**Presentation (Frontend):**
+
+- Purpose: User interface for desk configuration, shift library design, schedule request and review
+- Location: `frontend/src/`
+- Contains: React components, TypeScript client, pages
+- Depends on: REST API layer (via `frontend/src/api/client.ts`)
+- Used by: Browser clients
+
+**Controller (HTTP/REST):**
+
+- Purpose: Expose operations as HTTP endpoints, translate requests/responses
 - Location: `src/main/java/com/wfm/controller/`
-- Contains: `@RestController` classes, `GlobalExceptionHandler` (`@RestControllerAdvice`)
-- Depends on: Service layer, `TenantContext`
-- Used by: Frontend SPA, external API consumers
+- Contains: `@RestController` classes mapping HTTP to service methods
+- Depends on: Service layer, DTOs
+- Used by: Frontend, external callers
 
 **Service (Business Logic):**
-- Purpose: Orchestrate domain operations, load and persist data, drive the solver lifecycle
+
+- Purpose: Orchestrate domain operations, enforce rules, call repositories
 - Location: `src/main/java/com/wfm/service/`
-- Contains: `SolverService`, `ScheduleService`, `AgentService`, `ScheduleOutputService`, `ErlangXService`, export/upload services, `InMemoryScheduleStore`
-- Depends on: Repository layer, `InMemoryScheduleStore`, Timefold `SolverManager`/`SolutionManager`
+- Contains: Multi-purpose services (solver, output, shifts, agents, data import/export)
+- Depends on: Repository layer, model entities, Timefold API
 - Used by: Controllers
 
-**Repository (Persistence):**
-- Purpose: JPA data access scoped to tenant/desk
+**Solver (Constraint Optimization):**
+
+- Purpose: Define all hard and soft constraints and score the solution
+- Location: `src/main/java/com/wfm/solver/`
+- Contains: `ScheduleConstraintProvider` (24 constraints), difficulty comparator
+- Depends on: Timefold API, model entities
+- Used by: SolverService via Timefold's `SolverManager`
+
+**Repository (Data Access):**
+
+- Purpose: Database queries and persistence
 - Location: `src/main/java/com/wfm/repository/`
-- Contains: Spring Data JPA interfaces for every aggregate (Agent, Schedule, Timeslot, StaffingRequirement, AgentAssignment, etc.)
-- Depends on: JPA, PostgreSQL
+- Contains: Spring Data JPA `Repository` interfaces
+- Depends on: JPA/Hibernate, PostgreSQL driver
 - Used by: Service layer
 
-**Domain Model:**
-- Purpose: JPA entities that simultaneously serve as Timefold planning model objects
+**Model (Domain Objects):**
+
+- Purpose: Entity definitions with JPA and Timefold annotations
 - Location: `src/main/java/com/wfm/model/`
-- Contains: `Schedule` (`@PlanningSolution`), `AgentAssignment` (`@PlanningEntity`), all problem facts, enums, and the `ScheduleConfig` record
-- Depends on: Nothing (pure model)
-- Used by: All layers
+- Contains: `@Entity` classes and enums (Schedule, Agent, AgentAssignment, etc.)
+- Depends on: JPA, Timefold core API
+- Used by: All layers above repository
 
-**Solver:**
-- Purpose: Define constraint rules and construction heuristic helpers
-- Location: `src/main/java/com/wfm/solver/`
-- Contains: `ScheduleConstraintProvider` (18 constraints), `BreakAwareConstructionPhase` (delegates all assignment to Timefold CH), `AgentAssignmentDifficultyComparator`, `CustomConstraint` plugin interface
-- Depends on: Domain model
-- Used by: `SolverService`, Timefold framework
+**DTO (Data Transfer Objects):**
 
-**Integration:**
-- Purpose: Sync agent roster and days-off from BambooHR
-- Location: `src/main/java/com/wfm/integration/`
-- Contains: `BambooHRClient` interface, `HttpBambooHRClient` (production), `MockBambooHRClient` (dev/test), `DelegatingBambooHRClient`, `BambooRefreshService`
-- Depends on: Repository layer
-- Used by: `DeskAgentController` (refresh endpoint), `ClientManagementController`
-
-**Config:**
-- Purpose: Cross-cutting concerns — multi-tenancy, CORS, JSON serialization
-- Location: `src/main/java/com/wfm/config/`
-- Contains: `TenantFilter`, `TenantContext` (ThreadLocal), `CorsConfig`, `JacksonConfig`, `HardSoftScoreSerializer`/`Deserializer`
-
-**DTO:**
-- Purpose: Request/response shapes decoupled from entities
+- Purpose: API request/response shape isolation from entities
 - Location: `src/main/java/com/wfm/dto/`
-- Contains: Request records (`SolveRequest`, `DeskRequest`, `ErlangXRequest`, etc.) and response classes (`ScheduleDetailResponse`, `ScheduleSummary`, `AgentResponse`, etc.)
-
-**Exception:**
-- Purpose: Typed business exceptions mapped to HTTP status codes by `GlobalExceptionHandler`
-- Location: `src/main/java/com/wfm/exception/`
-- Contains: `EntityNotFoundException` (404), `ConflictException` (409), `UnprocessableException` (422), `PreSolveValidationException` (400), `RefreshInProgressException` (409)
-
-**Util:**
-- Purpose: Standalone helpers
-- Location: `src/main/java/com/wfm/util/`
-- Contains: `CursorPagination`, `BigDecimals`, `FteSpreadsheetGenerator`
+- Contains: Request and response records/classes
+- Depends on: Model entities (for copying/mapping)
+- Used by: Controllers, service export paths
 
 ## Data Flow
 
-**Solve Request Flow:**
+### Primary Request Path: Solving a Schedule
 
-1. `POST /api/v1/desks/{deskId}/schedules/solve` arrives; `TenantFilter` resolves `X-Tenant-ID`
-2. `ScheduleController.startSolve` delegates to `SolverService.startSolve`
-3. `SolverService` loads all problem facts (agents, timeslots, staffing requirements, preferences, days off, exceptions, constraint weights) in a single `@Transactional(readOnly=true)` — entities detach when the transaction closes
-4. Pre-solve validation runs (12 checks per spec §7.11)
-5. `AgentAssignment` planning entities are expanded from staffing requirements: demand seats plus overflow seats up to `overallocationHardLimitPct`
-6. `Schedule` object is populated with all collections and placed in `InMemoryScheduleStore`
-7. Timefold `SolverManager.solveBuilder()` starts the solve asynchronously; each best-solution callback updates the in-memory store
-8. First best solution with `hardScore >= 0` records `feasibleAt` timestamp on the `Schedule`
-9. When time limit expires (default 5 min), status transitions to `COMPLETED`
-10. Clients poll `GET /{id}` to read solve progress from the in-memory store
+1. **Frontend initiates** (`ScheduleSetup.tsx` → POST `/api/schedule`)
+   - Sends `SolveRequest`: deskId, periodStartDate, periodEndDate, etc.
 
-**Accept/Persist Flow:**
+2. **ScheduleController.startSolve()** (`src/main/java/com/wfm/controller/ScheduleController.java`)
+   - Validates request, calls `SolverService.startSolve(deskId, request)`
 
-1. `PUT /api/v1/desks/{deskId}/schedules/{id}/accept?version=N`
-2. `ScheduleService.acceptSchedule` validates optimistic lock version, status (`COMPLETED` or `STOPPED`), and tenant/desk ownership
-3. Supersedes any existing `ACCEPTED` date rows for overlapping dates in `accepted_schedule_date`
-4. `entityManager.flush()` ensures supersede writes land before the insert
-5. Snapshots live timeslots → new `Timeslot` rows with `schedule_id` set
-6. Snapshots staffing requirements and solver `AgentAssignment` list, remapping to snapshot timeslot IDs
-7. Inserts `AcceptedScheduleDate` rows for every covered date
-8. `Schedule` is persisted with status `ACCEPTED`; removed from `InMemoryScheduleStore`
+3. **SolverService.startSolve()** (transactional read-only, `src/main/java/com/wfm/service/SolverService.java`)
+   - Load desk, agents, timeslots, staffing requirements, constraints, shift templates
+   - Call `buildSchedule()` → constructs `Schedule` entity with all problem facts
+   - Call `buildAssignments()` → creates `AgentAssignment` entities (one per timeslot-specialization pair)
+   - Call `buildShiftAssignments()` → creates `AgentShiftAssignment` entities if SHIFT mode (one per agent-date)
+   - Call `resolveUsualShiftTargets()` → populates `ResolvedUsualShiftTarget` for consistency checking
+   - Call `startSolveAsync()` → detach entities and hand to Timefold's `SolverManager`
 
-**BambooHR Refresh Flow:**
+4. **Timefold Solving** (async, background thread)
+   - `SolverManager` instantiates `SolverConfigOverride` with `ScheduleConstraintProvider`
+   - Construction heuristic + local search + termination (5-min default)
+   - Modifies planning variables: `AgentAssignment.agent` and `AgentShiftAssignment.shiftBandPair`
+   - Computes `HardSoftScore` from constraints
 
-1. `POST /api/v1/desks/{deskId}/agents/refresh` triggers `BambooRefreshService`
-2. `refreshInProgress` map (per deskId) prevents concurrent refreshes — throws `RefreshInProgressException` if busy
-3. `BambooHRClient.listEmployees` fetches roster; agents are upserted using `bamboohrId` as natural key
-4. `BambooHRClient.listTimeOff` fetches absences over a configurable lookback/lookahead window; upserts `AgentDayOff` records
-5. Desk assignment and specialization mapping applied per hardcoded desk-name → specialization rules in `BambooRefreshService`
+5. **Frontend polls** (`ScheduleResults.tsx` → GET `/api/schedule/{scheduleId}`)
+   - Calls `ScheduleController.getScheduleStatus(scheduleId)`
+   - Returns `ScheduleSummary` with status (RUNNING/FEASIBLE/INFEASIBLE) and score
 
-**Staffing Requirements via Erlang X:**
+6. **Frontend retrieves detail** (after solve completes, GET `/api/schedule/{scheduleId}/detail`)
+   - Calls `ScheduleOutputService.buildScheduleDetail(schedule)`
+   - Builds staffing summary, agent schedule, constraint violations, drift report
 
-1. Client submits call volumes and SLA parameters via `POST .../staffing-requirements/erlang-x`
-2. `ErlangXService.calculateRequiredAgents` runs iterative Erlang X formula (converges within 100 iterations)
-3. Result: required FTE integer per timeslot per specialization; saved as `StaffingRequirement` rows
+### Secondary Path: Accepting a Schedule
 
-## Domain Model
+1. **Frontend clicks Accept** (`ScheduleResults.tsx` → POST `/api/schedule/{scheduleId}/accept`)
+   - Calls `ScheduleController.acceptSchedule(scheduleId)`
 
-**`Schedule`** (`@PlanningSolution`, `@Entity`):
-- Dual-purpose: JPA entity (persisted: id, tenant_id, desk_id, schedule window, break config, score, status, version) and Timefold solution wrapper (transient: agents, timeslots, staffingRequirements, assignments, preferences, daysOff, constraintWeights, agentDayConfigs, timeslotDemandConfigs)
-- Status lifecycle: `RUNNING → COMPLETED | STOPPED | FAILED` (in-memory), then `ACCEPTED` (persisted)
-- `version` column provides optimistic locking for the accept operation
+2. **SolverService.acceptSchedule()** (transactional read-write)
+   - Reload all entities from in-memory store (entities were detached during solve)
+   - Mark each `AgentAssignment` and `AgentShiftAssignment` with denormalized snapshots (D-07)
+   - Persist all entities to PostgreSQL
+   - Mark schedule status as ACCEPTED
+   - Update `AgentUsualShift` rows from the accepted shift assignments (for SHIFT mode)
 
-**`AgentAssignment`** (`@PlanningEntity`, `@Entity`):
-- The sole planning variable: `agent` (`@PlanningVariable`, nullable=true) pointing to an `Agent`
-- Fixed fields: `timeslot`, `requiredSpecialization`, `scheduleId`, `deskId`, `tenantId`
-- One row = one agent seat in one timeslot for one required specialization
+3. **Database records** the permanent schedule state
 
-**`Agent`** (`@Entity`, `@PlanningId`):
-- Linked to BambooHR via unique `(tenant_id, bamboohr_id)`
-- Carries `primarySpecialization` (ManyToOne), `secondarySpecializations` (ManyToMany), and `contractedHoursPerDay`
-- `deskId` column is non-null when assigned to a desk; null when unassigned
+### Tertiary Path: Drift Report (Post-Accept)
 
-**`Timeslot`** (`@Entity`):
-- One scheduling slot: `date`, `startTime`, `endTime`
-- `scheduleId` null = live template; non-null = immutable snapshot attached to an accepted schedule
+1. **ScheduleOutputService.buildDriftReport()** 
+   - Load the accepted `AgentShiftAssignment` rows from the schedule
+   - Load stored `AgentUsualShift` entries per agent per weekday
+   - For each agent-day, compute the assigned shift vs. the stored usual preference
+   - Generate `DriftReportEntry` per agent-day showing delta
 
-**`StaffingRequirement`** (`@Entity`):
-- Demand for a `(timeslot, specialization)` pair expressed in integer FTEs
-- `source` enum distinguishes `DIRECT` (manually entered) from `ERLANG_X` (calculated)
-- `scheduleId` null = live; non-null = snapshot
+**State Management:**
 
-**`ConstraintWeights`** (`@ConstraintConfiguration`, `@Entity`):
-- One row per (tenant, desk) with a `HardSoftScore` weight for each of the 18 constraints
-- Loaded into `Schedule.constraintWeights` before every solve; defaults applied if no row exists
+- **Pre-Solve:** All planning entities live in-memory only, not yet in database
+- **During Solve:** In-memory store `InMemoryScheduleStore` holds the `Schedule`; database untouched
+- **Post-Solve (Before Accept):** Entities remain in-memory; JSON serialization for API responses
+- **Post-Accept:** Entities persisted to database with denormalized snapshots; in-memory copy removed
 
-**`AgentPreference`** (`@Entity`):
-- Preferred start time and/or break time per agent per day-of-week (standing) or per specific date (weekly override)
-- Weekly overrides supersede standing preferences during solve and in output reports (spec §5.8)
+## Key Abstractions
 
-**`AgentDayOff`** (`@Entity`):
-- Records PTO/holiday/sick days; drives the hard `Agent day off` constraint (weight 10,000 hard)
-- `status` enum: `APPROVED` | `PENDING` (solver only uses `APPROVED`)
+**Schedule (Planning Solution):**
 
-**`AgentException`** (`@Entity`):
-- Overrides `contractedHoursPerDay` for a specific agent on a specific date within a desk context
-- Used to compute `AgentDayConfig` problem facts before each solve
+- Purpose: Root object that holds the problem facts and planning entities
+- Examples: `src/main/java/com/wfm/model/Schedule.java`
+- Pattern: Timefold `@PlanningSolution` with `@ProblemFactCollectionProperty` and `@PlanningEntityCollectionProperty`
 
-**`AcceptedScheduleDate`** (`@Entity`, composite PK `scheduleId + date`):
-- Maps accepted schedule IDs to individual dates; status `ACCEPTED` or `SUPERSEDED`
-- Enables one active accepted schedule per (tenant, desk, date) without deleting historical data
+**AgentAssignment (Planning Entity 1):**
 
-**`ScheduleConfig`** (record, `@ProblemFact`):
-- Immutable snapshot of schedule-level parameters passed directly to constraint streams
+- Purpose: One slot to be assigned to zero or one agent
+- Examples: `src/main/java/com/wfm/model/AgentAssignment.java`
+- Pattern: Timefold `@PlanningEntity` with `@PlanningVariable(valueRangeProviderRefs = "agentRange", nullable = true)`
 
-**`TimeslotDemandConfig`** (record, `@ProblemFact`):
-- Pre-computed total demand FTEs per timeslot; used by `unassignedAssignment` and bulk allocation constraints
+**AgentShiftAssignment (Planning Entity 2):**
 
-**`AgentDayConfig`** (`@ProblemFact`):
-- Pre-computed effective contracted hours per agent per day, accounting for exceptions and days off
+- Purpose: One agent-day's shift envelope choice (SHIFT mode only)
+- Examples: `src/main/java/com/wfm/model/AgentShiftAssignment.java`
+- Pattern: Timefold `@PlanningEntity` with `@PlanningVariable(valueRangeProviderRefs = "shiftBandRange", allowsUnassigned = true)`
 
-## Solver Design
+**ShiftTemplate:**
 
-**Algorithm:** Timefold Solver 1.16.0 (Constraint Streams API, `HardSoftScore`)
-**Config file:** `src/main/resources/solverConfig.xml`
+- Purpose: A named shift pattern (start/end time, breaks)
+- Examples: `src/main/java/com/wfm/model/ShiftTemplate.java`
+- Pattern: Parent to `ShiftTemplateBreakBand` entities; immutable once used in solved schedules
 
-**Construction Heuristic (CH):**
-- Default Timefold CH configuration
-- All `AgentAssignment.agent` variables start null; CH assigns them evaluating all 18 constraints simultaneously per move
-- `AgentAssignmentDifficultyComparator` orders assignments by descending difficulty for CH traversal
+**ShiftBandPair (Problem Fact):**
 
-**Local Search:**
-- Tabu search with `entityTabuSize=7` combined with simulated annealing (`startingTemperature=0hard/3000soft`)
-- Time limit set programmatically via `SolverConfigOverride` from `solver.time-limit` property (default PT5M)
+- Purpose: A (template, band) choice for an agent-day shift envelope
+- Examples: `src/main/java/com/wfm/model/ShiftBandPair.java`
+- Pattern: Denotes a contiguous working span + break window; immutable; no PK
 
-**18 Constraints in `ScheduleConstraintProvider`:**
+**ResolvedUsualShiftTarget (Problem Fact):**
 
-Hard constraints (default weights shown):
-1. `Agent day off` — 10,000 hard
-2. `Specialization match` — 1 hard
-3. `One assignment per timeslot` — 1,000 hard
-4. `Exactly one break` — 100 hard
-5. `Break duration` — 10 hard
-6. `Break blocked window` — 10 hard
-7. `Break start alignment` — 10 hard
-8. `Contracted hours (over)` — 1,001 hard
-9. `Contracted hours (under)` — 100 hard
-10. `Contracted hours (under, zero)` — 100 hard
-11. `Bulk over-allocation limit` — 1 hard
-12. `Bulk under-allocation hard` — 1 hard
+- Purpose: Per-agent-date desired shift computed from stored `AgentUsualShift`
+- Examples: `src/main/java/com/wfm/model/ResolvedUsualShiftTarget.java`
+- Pattern: Pre-solve-built fact used by `usualShiftConsistency` soft constraint; empty list in SLOT mode
 
-Soft constraints (default weights shown):
-13. `Unassigned assignment` — 1,000 soft
-14. `Prefer primary specialization` — 1 soft
-15. `Honour preferred start time` — 5 soft
-16. `Honour preferred break time` — 5 soft
-17. `Break clustering` — 2 soft
-18. `Bulk under-allocation soft` — 1 soft
+**ScheduleConfig (Problem Fact):**
 
-All weights are stored in `ConstraintWeights` per desk and can be overridden via the API.
+- Purpose: Transient configuration passed to solver (increment, break geometry, modes, consistency tolerance)
+- Examples: `src/main/java/com/wfm/model/ScheduleConfig.java`
+- Pattern: Derived from `Schedule` and `ConstraintWeights` on each solve; computed at `getScheduleConfig()`
 
-## In-Memory Schedule Store
+**ConstraintWeights (Configuration):**
 
-`InMemoryScheduleStore` (`src/main/java/com/wfm/service/InMemoryScheduleStore.java`) holds `RUNNING / COMPLETED / STOPPED / FAILED` schedules in a `ConcurrentHashMap` with a `ReentrantLock` guarding writes. A secondary `deskToScheduleIndex` map enforces the one-in-flight-per-desk invariant. Accepted schedules are removed from the store and exist only in the database.
+- Purpose: Hard and soft constraint penalties; stored per desk or globally
+- Examples: `src/main/java/com/wfm/model/ConstraintWeights.java`
+- Pattern: Loaded pre-solve and attached to `Schedule`; tuned via UI
+
+## Entry Points
+
+**ScheduleController.startSolve():**
+
+- Location: `src/main/java/com/wfm/controller/ScheduleController.java:87`
+- Triggers: POST `/api/schedule`
+- Responsibilities: Validate request, call `SolverService.startSolve()`, return schedule summary
+
+**ScheduleController.getScheduleStatus():**
+
+- Location: `src/main/java/com/wfm/controller/ScheduleController.java:95`
+- Triggers: GET `/api/schedule/{scheduleId}`
+- Responsibilities: Retrieve in-memory schedule, return status and score
+
+**ScheduleController.acceptSchedule():**
+
+- Location: `src/main/java/com/wfm/controller/ScheduleController.java:115`
+- Triggers: POST `/api/schedule/{scheduleId}/accept`
+- Responsibilities: Persist solved entities to database, mark ACCEPTED
+
+**DeskAgentController.assignAgentToDeskPartially():**
+
+- Location: `src/main/java/com/wfm/controller/DeskAgentController.java`
+- Triggers: POST `/api/desk/{deskId}/agents/assign`
+- Responsibilities: Merge agent working patterns into desk, persist desk assignment
+
+**ShiftTemplateController.createShiftTemplate():**
+
+- Location: `src/main/java/com/wfm/controller/ShiftTemplateController.java`
+- Triggers: POST `/api/shift-template`
+- Responsibilities: Create template, validate against desk demand, return created template
+
+## Architectural Constraints
+
+- **Threading:** Single-threaded event loop on the main Spring Boot thread; Timefold solve runs on managed thread pool (`SolverManager` executor)
+- **Global state:** `InMemoryScheduleStore` is a singleton holding at most one in-flight `Schedule` per desk; protected via `ConcurrentHashMap`
+- **Circular imports:** None detected; dependency graph flows: Controller → Service → Repository → Model
+- **Lazy loading:** All fetch policies set to `LAZY` on JPA `@ManyToOne` relationships; entities detached after `@Transactional(readOnly=true)` methods exit
+- **Tenant isolation:** Every query includes `tenant_id` filter; enforced via `TenantFilter` servlet filter on every request
+- **Asynchronicity:** Solve initiated via `SolverManager.solve()` (async); frontend polls; no server push (WebSocket)
+
+## Anti-Patterns
+
+### In-Memory Store Over Database
+
+**What happens:** In-flight schedules are held in `InMemoryScheduleStore` (a `ConcurrentHashMap`) during solving, not persisted until acceptance
+
+**Why it's wrong:** Loss of schedule history; no recovery after server crash; violates audit trail expectations
+
+**Do this instead:** Implement optional write-through caching to PostgreSQL (snapshot tables) if durability is needed; add recovery on startup to reload in-flight schedules from snapshots (`src/main/java/com/wfm/service/InMemoryScheduleStore.java`)
+
+### Denormalized Snapshots at Accept Time
+
+**What happens:** `AgentShiftAssignment` rows have nullable columns (`templateName`, `shiftStartTime`, etc.) populated only at accept time (D-07), left `null` during solve
+
+**Why it's wrong:** Confuses readers about the entity's state; normalization principle violated; complicates queries
+
+**Do this instead:** Create a separate `AcceptedShiftAssignmentSnapshot` entity; populate it at accept time instead of mutating the live entity; keep live entities clean
+
+### Constraint Weights Coupling
+
+**What happens:** `ConstraintWeights` is both a persisted entity and a `@ConstraintConfigurationProvider` fed directly into the solver
+
+**Why it's wrong:** Configuration leaks into the domain model; schema changes to tuning require migrations
+
+**Do this instead:** Separate `ConstraintWeightsEntity` (persisted) from `ConstraintWeightDTO` (passed to solver); map on load
 
 ## Error Handling
 
-**Strategy:** Typed exceptions thrown from service layer; `GlobalExceptionHandler` (`@RestControllerAdvice` in `src/main/java/com/wfm/controller/GlobalExceptionHandler.java`) maps each to an HTTP status.
+**Strategy:** Fail fast in pre-solve validation; return detailed error responses; log constraint violations and warnings
 
-**Mapping:**
-- `EntityNotFoundException` → 404 NOT_FOUND
-- `ConflictException` → 409 CONFLICT
-- `RefreshInProgressException` → 409 REFRESH_IN_PROGRESS
-- `PreSolveValidationException` → 400 VALIDATION_FAILED (with `details` array)
-- `UnprocessableException` → 422 UNPROCESSABLE_ENTITY
-- `IllegalArgumentException` → 400 VALIDATION_FAILED
-- `MethodArgumentNotValidException` → 400 VALIDATION_FAILED with field-level details
-- Uncaught exceptions → 500 INTERNAL_ERROR (logged)
+**Patterns:**
 
-**Error response shape:** `{ "error": { "code": "...", "message": "...", "details": [...] } }`
-
-## Multi-Tenancy
-
-**Mechanism:** HTTP header `X-Tenant-ID` (long integer). `TenantFilter` (order 1) extracts it, stores in `TenantContext` ThreadLocal, clears in `finally`. All repository queries include `tenantId` as a filter — tenant isolation is enforced in application code only; there is no database-level row security.
+- **Pre-Solve Validation:** `SolverService.startSolve()` validates desk, agents, timeslots; throws `PreSolveValidationException` with `ErrorDetail[]` listing violations
+- **Constraint Violations:** `ScheduleOutputService.buildAcceptedConstraintViolations()` reuses Timefold's `SolutionManager` to compute post-solve violations
+- **Warnings:** `Schedule.warnings` list accumulates non-fatal issues (e.g., "Agent X has no shift template available")
+- **Global Error Handler:** `GlobalExceptionHandler` catches exceptions and returns structured `ErrorResponse` with HTTP status
 
 ## Cross-Cutting Concerns
 
-**Logging:** SLF4J + Logback via Spring Boot. Solver phases and `SolverService` logged at DEBUG; root at INFO.
-**Validation:** Jakarta Bean Validation on DTO fields; 12-point pre-solve validation in `SolverService.runPreSolveValidation`.
-**Transactions:** `@Transactional` on service methods that write; `@Transactional(readOnly=true)` on `SolverService.startSolve` to load all data in a single session before entity detachment.
-**Pagination:** Cursor-based via `CursorPagination` utility (`src/main/java/com/wfm/util/CursorPagination.java`); opaque base64 cursor encoding a map (e.g. `{ "id": "..." }`).
-**Schema migrations:** Flyway; 24 versioned scripts in `src/main/resources/db/migration/` (V1–V24).
-**Actuator:** Only `/actuator/health` exposed; excluded from `TenantFilter`.
+**Logging:** SLF4J with `@Slf4j` on service classes; solver progress logged at INFO; errors at ERROR
+**Validation:** `@Valid` on request bodies; `PreSolveValidationException` for domain-level validation; Timefold constraints validate on every move
+**Authentication:** None (dev environment assumes admin access); `TenantContext` provides tenant isolation
+**Multi-Tenancy:** Via `TenantFilter` (servlet filter), every request populates thread-local `TenantContext.tenantId`; all queries filter by tenant
 
 ---
 
-*Architecture analysis: 2026-04-02*
+*Architecture analysis: 2026-09-17*

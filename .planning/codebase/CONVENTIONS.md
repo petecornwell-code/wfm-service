@@ -1,154 +1,324 @@
+---
+last_mapped_commit: 7e18ca2766e5fc34d93136d520c5a1529f8dc3b5
+last_mapped_at: 2026-09-17
+---
 # Coding Conventions
 
-**Analysis Date:** 2026-04-02
+**Analysis Date:** 2026-09-17
 
 ## Naming Patterns
 
 **Files:**
-- Classes: `PascalCase` matching the class name exactly (e.g., `AgentService.java`, `ScheduleConstraintProvider.java`)
-- Interfaces: `PascalCase`, often ending in `Client` or `Repository` (e.g., `BambooHRClient.java`, `AgentRepository.java`)
-- Enums: `PascalCase` (e.g., `BreakAlignment.java`, `DayOffType.java`)
-- Outlier: two standalone utility classes live under `src/main/java/utils/` (no package prefix) rather than `com.wfm.*`
+
+- Java classes: `PascalCase.java` (e.g., `DeskService.java`, `AgentRepository.java`)
+- Test files: `{ClassName}Test.java` or `{ClassName}{Variant}Test.java` (e.g., `BandCapacityConstraintTest.java`, `UsualShiftWritePathTest.java`)
+- DTOs: `{Name}{Purpose}.java` (e.g., `DeskRequest.java`, `DeskResponse.java`)
+- TypeScript: `camelCase.ts` or `PascalCase.tsx` (e.g., `client.ts`, `Toast.tsx`)
+
+**Packages:**
+
+- Pattern: `com.wfm.{module}`
+- Modules: `controller`, `service`, `model`, `repository`, `exception`, `dto`, `util`, `config`, `integration`, `solver`
+- Example: `com.wfm.service.DeskService`, `com.wfm.repository.AgentRepository`
 
 **Classes:**
-- Controllers: `*Controller` (e.g., `AgentController`, `ScheduleController`)
-- Services: `*Service` (e.g., `AgentService`, `SolverService`)
-- Repositories: `*Repository` (e.g., `AgentRepository`, `TimeslotRepository`)
-- DTOs: noun + purpose suffix — `*Request`, `*Response`, `*Dto` (e.g., `SolveRequest`, `AgentResponse`, `ConstraintWeightsDto`)
-- Exceptions: descriptive + `Exception` (e.g., `EntityNotFoundException`, `PreSolveValidationException`)
-- Models/Entities: plain noun (e.g., `Agent`, `Schedule`, `Timeslot`)
 
-**Methods:**
-- camelCase throughout
-- Boolean accessors: `is*` prefix for primitive booleans (`isActive()`), `get*` for object getters
-- Service list methods: `list*` prefix (e.g., `listAgents`, `listDesks`)
-- Service fetch methods: `get*` prefix (e.g., `getAgent`, `getSchedule`)
-- Private helpers: descriptive verbs (e.g., `toResponse`, `buildPage`, `resolvePreferences`)
+- PascalCase
+- Services: `{Entity}{Function}Service` (e.g., `DeskService`, `BambooRefreshService`, `UsualShiftService`)
+- Repositories: `{Entity}Repository` (e.g., `DeskRepository`, `AgentRepository`, `ConstraintWeightsRepository`)
+- Exceptions: `{Error}Exception` or `{Condition}Exception` (e.g., `EntityNotFoundException`, `ConflictException`, `PreSolveValidationException`)
+- DTOs: `{Entity}{Type}` (e.g., `DeskRequest`, `DeskResponse`, `ConstraintWeightsDto`)
+- Tests: `{SubjectClass}{TestType}` (e.g., `BandCapacityConstraintTest`, `SolverQualityGuardTest`)
 
-**Variables and Fields:**
-- camelCase for instance fields and local variables
-- `SCREAMING_SNAKE_CASE` for `static final` constants (e.g., `TENANT_HEADER`, `DEFAULT_LIMIT`, `MAX_LIMIT`)
-- Test fixtures: short but descriptive local constants — `TENANT`, `DAY`, `START`, `END`, `INCREMENT`
+**Functions/Methods:**
 
-**Types:**
-- Entity IDs: `UUID` (generated via `@GeneratedValue(strategy = GenerationType.UUID)`)
-- Tenant isolation: `long tenantId` on every entity and every repository query
-- Monetary/hour values: `BigDecimal` with explicit precision/scale in `@Column` annotations
-- Timestamps: `OffsetDateTime` for audit fields; `LocalDate` / `LocalTime` for schedule domain values
+- camelCase with verb prefix for actions: `get*`, `list*`, `create*`, `update*`, `delete*`, `switch*`, `save*`, `find*`
+- Examples: `getDeskId()`, `listDesks()`, `createDesk()`, `switchSchedulingMode()`, `refreshDeskAgents()`
+- Test methods: `{subject}_{condition}_{expectedResult}[_{proofType}]` (e.g., `refreshDeskAgents_leavesStoredUsualShiftsByteIdentical_behavioural()`, `capacityN_exactlyNAgentDays_noPenalty()`)
+
+**Variables & Fields:**
+
+- Local variables: camelCase (e.g., `deskId`, `agentName`, `contractedHours`)
+- Record fields: camelCase in `record` declarations (e.g., `new UsualShiftSnapshot(id, tenantId, agentId, dayOfWeek, shiftTemplateId)`)
+- Instance fields: camelCase (e.g., `private DeskRepository deskRepository;`)
+- Constants: assumed UPPER_SNAKE_CASE (rarely used in codebase; see `TENANT_ID = 1L;` in tests)
+
+**Types (TypeScript):**
+
+- Interfaces: PascalCase with suffix `Interface` when necessary (e.g., `ApiErrorBody`, `ToastMessage`, `ApiErrorDetail`)
+- Enums: PascalCase, enum values UPPER_SNAKE_CASE (e.g., `type ToastType = 'success' | 'error' | 'warning'`)
 
 ## Code Style
 
 **Formatting:**
-- No formatter configuration file present (no `.editorconfig`, no Checkstyle, no Spotless)
-- Indentation: 4 spaces (consistent throughout all observed files)
-- Opening braces on same line as declaration
-- Single blank line between methods; section comments (`// ---`) used to group methods within long classes
+
+- No ESLint or Prettier configuration detected in project root
+- Backend: IntelliJ IDEA defaults (4-space indentation, Unix line endings)
+- Frontend: TypeScript with Vite build (no enforced formatter)
+- Line length: no strict limit observed; practical constraint ~120 chars in Java code
 
 **Linting:**
-- No static analysis tooling configured (no PMD, SpotBugs, or Checkstyle in `build.gradle`)
+
+- No eslint, biome, or checkstyle configuration detected
+- Code review and test suite provide primary quality gates
+
+**Indentation:**
+
+- Java: 4 spaces
+- TypeScript/React: 2 spaces (Vite/React convention)
 
 ## Import Organization
 
-**Order (observed pattern):**
-1. Framework/library imports (Spring, Timefold, Jakarta)
-2. Project-internal imports (`com.wfm.*`)
-3. Java standard library (`java.*`)
-4. Static imports last (`import static ...`)
+**Order (Java):**
 
-**Wildcard imports:**
-- Used when importing many items from the same package (e.g., `import com.wfm.model.*` in test files, `import static ai.timefold.solver.core.api.score.stream.ConstraintCollectors.*`)
+1. Java/Jakarta standard library imports (`java.*`, `jakarta.*`)
+2. Third-party framework imports (Spring, Timefold, Testcontainers, etc.)
+3. Project imports (`com.wfm.*`)
+4. Static imports (rare, placed last)
 
-## Dependency Injection
+**Example from `DeskService.java`:**
 
-- Constructor injection only — no field injection (`@Autowired` is not used)
-- All dependencies declared `private final` and assigned in a single explicit constructor
-- `@Value` used for externalized config (e.g., `@Value("${solver.time-limit:PT5M}") Duration defaultTimeLimit`)
-- Spring beans annotated with `@Service`, `@RestController`, `@Component`, `@Configuration`, `@Repository`
+```java
+import com.wfm.config.TenantContext;
+import com.wfm.exception.ConflictException;
+import com.wfm.exception.EntityNotFoundException;
+import com.wfm.model.ConstraintWeights;
+import com.wfm.model.Desk;
+import com.wfm.repository.AgentRepository;
+import com.wfm.repository.*;
+import com.wfm.util.BigDecimals;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
+```
 
-## DTOs and Data Transfer
+**Wildcard Imports:**
 
-- Response DTOs are Java `record` types (immutable, no setters): e.g., `AgentResponse`, `SolveRequest`, `TimeslotResponse`
-- Request bodies also use `record` where no validation annotations are needed
-- Service `toResponse(Entity)` private helper methods convert entities to DTOs — never expose raw entities from controllers
-- Pagination wrapped in `PaginatedResponse<T>` record (`src/main/java/com/wfm/dto/PaginatedResponse.java`) with cursor, hasMore, and total fields
+- Used sparingly in production code when many repository dependencies exist (e.g., `import com.wfm.repository.*;` in `DeskService`)
+- Avoided in test files
 
-## Model / Entity Design
+**Path Aliases:**
 
-- Plain Java classes (no Lombok) — explicit no-arg constructor, explicit getters/setters, one per line
-- JPA annotations on fields, not on getter methods
-- `@ManyToOne(fetch = FetchType.LAZY)` default for all associations
-- `@EntityGraph` used on repository methods that need eager loading to avoid N+1 (e.g., `AgentRepository`)
-- Timefold planning annotations (`@PlanningSolution`, `@PlanningEntity`, `@PlanningVariable`) co-located with JPA annotations on the same class
+- No path aliases configured in frontend `tsconfig.json` or backend build
+- Absolute package names used throughout
 
 ## Error Handling
 
-**Strategy:** Custom exception hierarchy mapped to HTTP status codes in `src/main/java/com/wfm/controller/GlobalExceptionHandler.java`
+**Custom Exception Hierarchy:**
 
-**Exception types:**
-- `EntityNotFoundException` → 404 NOT_FOUND
-- `ConflictException` → 409 CONFLICT
-- `RefreshInProgressException` → 409 CONFLICT (distinct error code `REFRESH_IN_PROGRESS`)
-- `UnprocessableException` → 422 UNPROCESSABLE_ENTITY
-- `PreSolveValidationException` → 400 VALIDATION_FAILED (with structured `ErrorDetail` list)
-- `IllegalArgumentException` → 400 VALIDATION_FAILED
-- Uncaught `Exception` → 500 INTERNAL_ERROR (logged via SLF4J)
+- All custom exceptions extend `RuntimeException` (unchecked)
+- Located in `src/main/java/com/wfm/exception/`
 
-**Pattern:** Exceptions are simple `RuntimeException` subclasses with message-only constructors. Structured details (`List<ErrorDetail>`) added only where field-level feedback is needed.
+**Exception Classes:**
 
-**Error response shape:**
-```json
-{ "error": { "code": "NOT_FOUND", "message": "...", "details": [] } }
+- `EntityNotFoundException(String entityName, Object id)` — missing entity, e.g., `new EntityNotFoundException("Desk", deskId)`
+- `ConflictException(String message)` — business logic violation, e.g., `new ConflictException("A desk with name '" + name + "' already exists")`
+- `PreSolveValidationException(String message)` — pre-solve constraint failure
+- `UnprocessableException(String message)` — malformed input or state
+- `BambooHRSyncFailedException(String message)` — external integration failure
+- `BambooHRRateLimitedException(String message)` — rate limit hit
+- `RefreshInProgressException(String message)` — concurrent operation collision
+
+**Validation Pattern:**
+
+- Null/blank checks at method entry: `if (name == null || name.isBlank()) throw new IllegalArgumentException(...)`
+- Business rule violations: throw specific custom exceptions, never IllegalArgumentException
+- Example from `DeskService#createDesk`:
+
+```java
+if (name == null || name.isBlank()) {
+    throw new IllegalArgumentException("Desk name is required");
+}
+if (deskRepository.existsByTenantIdAndName(tenantId, name)) {
+    throw new ConflictException("A desk with name '" + name + "' already exists");
+}
 ```
-Defined in `src/main/java/com/wfm/dto/ErrorResponse.java` as nested records (`ErrorResponse`, `Error`, `ErrorDetail`).
 
 ## Logging
 
-**Framework:** SLF4J with Logback (via Spring Boot default)
+**Framework:** `org.slf4j` (SLF4J, via Spring Boot starter)
 
-**Declaration pattern:**
-```java
-private static final Logger log = LoggerFactory.getLogger(SolverService.class);
-```
+**Patterns:**
 
-**Usage:**
-- `log.error(...)` for uncaught exceptions in `GlobalExceptionHandler`
-- `log.debug(...)` / `log.info(...)` in service layer for solver lifecycle events
-- `System.out.println(...)` used inside solver tests for diagnostic output (score breakdowns, assignment counts) — not in production code
+- Logging calls not explicitly observed in code review (Spring Data and Timefold logs dominate output)
+- Assume standard SLF4J conventions: `logger.debug()`, `logger.info()`, `logger.warn()`, `logger.error()`
+- Error conditions logged by exception handlers, not at every throw site
 
 ## Comments
 
-**Javadoc:**
-- Class-level Javadoc on test classes explaining scenario, agents, constraints, and why a solution is feasible
-- Class-level Javadoc on utility classes explaining algorithm (e.g., `CursorPagination`)
-- Method-level Javadoc on public utility methods and constraint methods in `ScheduleConstraintProvider`
+**When to Comment:**
 
-**Inline comments:**
-- Section dividers: `// --- Section Name ---` used to separate logical groups within long methods and classes
-- Constraint methods in `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java` each have a numbered Javadoc comment describing the constraint intent
-- No TODO/FIXME/HACK/XXX comments found anywhere in the codebase
+- Complex business logic and architectural decisions (phased work, constraints, invariants)
+- Why a choice was made, not what the code does
+- Phase/plan references for traceability (e.g., "Phase 17 plan 17-01")
+- Warnings about subtle bugs or side effects
+
+**Example from `PostgresBackedTest`:**
+
+```java
+/**
+
+ * Base class for tests that must run against a REAL Postgres with the REAL Flyway migrations
+ * applied, rather than against H2 with a schema generated from the entity mappings.
+ *
+ * <p><b>Why this exists.</b> The rest of the suite runs on H2 with {@code ddl-auto: create-drop}
+ * and {@code flyway.enabled: false}. That configuration is structurally blind to two whole classes
+ * of defect, and both shipped:
+ * <ul>
+ *   <li><b>Postgres type resolution.</b> An untyped JDBC null reaches Postgres as {@code unknown}...</li>
+ *   <li><b>The migrations themselves.</b> With {@code ddl-auto: create-drop} the test schema comes
+ *       from the JPA entities...</li>
+ * </ul>
+ */
+```
+
+**JSDoc/Javadoc:**
+
+- Extensive Javadoc on public methods, classes, and complex helper methods
+- Format: `/** ... */` with `<p>`, `<b>`, `<ul>`, `<li>` for structure
+- `{@code ...}` for code references, `{@link ...}` for cross-references
+- Method docstrings include purpose, parameters (when not obvious), side effects, and examples
+
+**Example from `UsualShiftWritePathTest`:**
+
+```java
+/**
+
+ * Discharges table rows 5 (BambooHR refresh), 6 (mode switch) and 7 (the solver) of {@code
+ * src/test/resources/ushf-05-write-paths.md} — the three USHF-05 paths no earlier plan runs.
+ * ...
+ */
+@DataJpaTest
+@Import({DeskService.class, InMemoryScheduleStore.class})
+@ActiveProfiles("test")
+class UsualShiftWritePathTest {
+```
 
 ## Function Design
 
-**Size:** Services have medium-length methods; complex orchestration (e.g., `SolverService`) broken into private helpers with descriptive names
+**Size:**
 
-**Parameters:** Constructor injection preferred over method parameters for dependencies; public method parameters kept minimal
+- Methods kept focused (50-150 lines typical for services, smaller for utilities)
+- Complex business logic extracted to helper methods or services
 
-**Return Values:** Services return DTOs or `void`; repositories return `Optional<T>` for single-entity lookups, `List<T>` for collections
+**Parameters:**
+
+- Constructor injection preferred for dependencies (Spring services)
+- Method parameters: primitive types, collections, entities
+- Avoid boolean parameters (use enums or builder pattern)
+- Example: `void switchSchedulingMode(UUID deskId, SchedulingMode mode)` ✓
+
+**Return Values:**
+
+- Services return domain entities or DTOs, never raw database results
+- Repositories return entities or `List<Entity>` or `Optional<Entity>`
+- Controllers return DTOs (mapped from entities via helper methods)
+- Example from `DeskController`:
+
+```java
+private DeskResponse toResponse(Desk desk) {
+    return new DeskResponse(desk.getId(), desk.getName(), desk.getDescription(),
+            desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode());
+}
+```
 
 ## Module Design
 
-**Package structure:**
-- `com.wfm.controller` — REST layer (`src/main/java/com/wfm/controller/`)
-- `com.wfm.service` — business logic (`src/main/java/com/wfm/service/`)
-- `com.wfm.repository` — Spring Data JPA interfaces (`src/main/java/com/wfm/repository/`)
-- `com.wfm.model` — JPA entities + Timefold planning model (`src/main/java/com/wfm/model/`)
-- `com.wfm.dto` — request/response records (`src/main/java/com/wfm/dto/`)
-- `com.wfm.exception` — custom exception types (`src/main/java/com/wfm/exception/`)
-- `com.wfm.config` — Spring configuration and servlet filters (`src/main/java/com/wfm/config/`)
-- `com.wfm.integration` — BambooHR client interface and implementations (`src/main/java/com/wfm/integration/`)
-- `com.wfm.solver` — Timefold constraint provider and construction phase (`src/main/java/com/wfm/solver/`)
-- `com.wfm.util` — stateless utility classes (`src/main/java/com/wfm/util/`)
+**Exports:**
+
+- Each package exports its primary class (e.g., `DeskService` from `com.wfm.service`)
+- Repositories exposed as Spring Data interfaces
+- Exceptions public and imported by client code
+- DTOs/models exposed via package-level classes
+
+**Package Structure:**
+
+- `com.wfm.model` — JPA entities, enums (no interfaces)
+- `com.wfm.dto` — Request/Response records and DTOs
+- `com.wfm.repository` — JPA repository interfaces (extends `JpaRepository`)
+- `com.wfm.service` — business logic, transactional operations
+- `com.wfm.controller` — REST endpoints, request mapping
+- `com.wfm.exception` — custom exception classes
+- `com.wfm.util` — stateless utility classes
+- `com.wfm.config` — Spring configuration, context holders
+- `com.wfm.integration` — external system clients (BambooHR)
+- `com.wfm.solver` — Timefold constraint definitions and solvers
+
+**No Barrel Files:**
+
+- Each import is explicit (no `index.ts` exports in frontend; Java has no equivalent pattern)
+
+## Annotation Usage
+
+**Spring Framework:**
+
+- `@Service` — service classes for business logic
+- `@Repository` — DAO/repository layer (often implicit with `JpaRepository`)
+- `@RestController` — REST endpoints
+- `@RequestMapping`, `@GetMapping`, `@PostMapping`, etc. — endpoint routing
+- `@Transactional` — transaction boundaries on write operations
+- `@Autowired` — field injection (constructor injection preferred in new code)
+
+**JPA/Jakarta:**
+
+- `@Entity` — persistent classes
+- `@Table` — table mapping
+- `@Column`, `@JoinColumn` — column mappings
+- `@Id`, `@GeneratedValue` — primary key
+- `@Enumerated(EnumType.STRING)` — enum storage
+- `@ManyToOne`, `@OneToMany`, `@ManyToMany` — relationships
+
+**Timefold Solver:**
+
+- `@PlanningSolution` — optimization problem class
+- `@PlanningEntity` — movable elements (e.g., `AgentAssignment`)
+- `@PlanningVariable` — variable to optimize (e.g., `Agent agent`)
+- `@PlanningScore` — score field
+- `@ConstraintWeight` — weight annotation on ConstraintWeights
+- `@ProblemFactCollectionProperty`, `@ValueRangeProvider` — problem facts
+
+**Testing:**
+
+- `@Test` — test method (JUnit 5)
+- `@DataJpaTest` — Spring Data test slice (in-memory database)
+- `@ExtendWith(MockitoExtension.class)` — Mockito support
+- `@Mock`, `@InjectMocks` — Mockito annotations
+- `@MockitoBean` — Spring test bean replacement
+- `@EnabledIfSystemProperty` — conditional test execution
+- `@DisplayName` — readable test name
+
+## Type Patterns
+
+**Records (DTOs/Requests/Responses):**
+
+- Used for immutable data transfer objects
+- Examples: `DeskRequest`, `DeskResponse`, `SetUsualShiftRequest`
+
+```java
+// Frontend DTOs are records in TypeScript via interfaces
+export interface DeskRequest {
+  name: string
+  description?: string
+  defaultContractedHoursPerDay: string
+}
+
+// Backend uses Java records for simple DTOs
+public record DeskRequest(String name, String description, BigDecimal defaultContractedHoursPerDay) {}
+```
+
+**Entities:**
+
+- Mutable JPA entity classes with getters/setters
+- Never records (JPA requires no-arg constructor)
+- Example: `Agent.java`, `Schedule.java`
+
+**Enums:**
+
+- Java: `public enum SchedulingMode { SLOT, SHIFT }` or `@Enumerated(EnumType.STRING) private SchedulingMode mode`
+- TypeScript: union types (`type ToastType = 'success' | 'error' | 'warning'`)
 
 ---
 
-*Convention analysis: 2026-04-02*
+*Convention analysis: 2026-09-17*

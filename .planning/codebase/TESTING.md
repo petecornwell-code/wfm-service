@@ -1,280 +1,587 @@
+---
+last_mapped_commit: 7e18ca2766e5fc34d93136d520c5a1529f8dc3b5
+last_mapped_at: 2026-09-17
+---
 # Testing Patterns
 
-**Analysis Date:** 2026-04-02
+**Analysis Date:** 2026-09-17
 
 ## Test Framework
 
 **Runner:**
-- JUnit 5 (Jupiter) — declared via `useJUnitPlatform()` in `build.gradle`
-- Spring Boot Test (`spring-boot-starter-test`) for integration test support
-- Timefold solver test (`timefold-solver-test`) for solver-specific assertions
+
+- JUnit 5 (Jupiter API)
+- Gradle task: `./gradlew test`
+- Platform: `useJUnitPlatform()` configured in `build.gradle`
 
 **Assertion Library:**
-- AssertJ (`org.assertj.core.api.Assertions.assertThat`) — used exclusively; no raw JUnit `assertEquals`
 
-**In-memory database:**
-- H2 (`com.h2database:h2`, `testRuntimeOnly`) used for the Spring context integration test
+- AssertJ (`org.assertj.core.api.Assertions.assertThat`)
+- Readable fluent syntax (e.g., `assertThat(list).hasSize(2).containsExactly(...)`)
+
+**Test Count:**
+
+- 112 test classes across 14 directories
+- 780+ tests total (11 skipped)
+- Breakdown: 57 service tests, 28 solver tests, 8 integration tests, 3 model tests, 2 util tests, 2 repository tests, 2 controller tests, 1 migration test, 1 config test
 
 **Run Commands:**
+
 ```bash
-./gradlew test --no-daemon     # Run all tests
-./gradlew test                 # Run all tests (daemon)
+./gradlew test                           # Run all tests (780+, 11 skipped)
+./gradlew test -Dwfm.benchmark=true     # Include benchmark tests (ShiftModelBenchmarkTest)
+./gradlew test --tests BandCapacityConstraintTest  # Run specific test class
 ```
-Coverage reporting is not configured. No watch-mode task is defined.
 
 ## Test File Organization
 
-**Location:** All tests under `src/test/java/` mirroring the main package structure
+**Location:**
 
-**Naming:**
-- Test classes: `*Test` suffix (e.g., `SingleDaySolvableTest`, `ResolvePreferencesPtoFilterTest`)
-- Test methods: descriptive snake-case describing scenario and expected outcome (e.g., `standingPreference_excludedOnPtoDay`, `singleDay_twoAgents_preAssigned_shouldScoreFeasible`)
+- `src/test/java/com/wfm/{module}/{TestName}Test.java` (mirrors production structure)
+- `src/test/resources/` — test data, markdown specifications, fixtures
+- Packages mirror `src/main/java`: `com.wfm.service`, `com.wfm.solver`, `com.wfm.integration`, etc.
 
-**Structure:**
-```
-src/test/java/
-  com/wfm/
-    WfmApplicationTests.java                  # Spring context smoke test
-    service/
-      ResolvePreferencesPtoFilterTest.java     # Unit test (no Spring context)
-    solver/
-      SingleDaySolvableTest.java               # Solver scoring test (no Spring context)
-      BreakAwareConstructionTest.java          # Solver CH + LS test (no Spring context)
-      MultiDayConstraintDiagnosticTest.java    # Multi-day solver test (no Spring context)
-      IncrementalScoringDiagnosticTest.java    # Incremental scoring diagnostic
-      TwelveHourUniformDemandTest.java         # Solver feasibility test
-      NinetyFiveAgentReproTest.java            # Reproduction test for 95-agent scenario
-      NinetyAgent12HourTest.java               # 90-agent 12-hour solver test
-      FullScale150AgentTest.java               # Full-scale 150-agent feasibility test
-src/test/resources/
-  application-test.yml                         # H2 datasource, Flyway disabled, mock BambooHR
-```
+**Naming Convention:**
+
+- **Unit/service tests:** `{ClassName}Test.java` (e.g., `DeskServiceTest.java`, `AgentNameSplitterTest.java`)
+- **Constraint tests:** `{Constraint}ConstraintTest.java` (e.g., `BandCapacityConstraintTest.java`, `ShiftWorkContiguityConstraintTest.java`)
+- **Guard tests:** `{SubjectClass}GuardTest.java` (e.g., `UsualShiftWritePathTest.java` as behavioral guard, `SolverUsualShiftWritePathGuardTest.java` as structural+behavioral)
+- **Integration tests:** `{Feature}Test.java` (e.g., `BambooRefreshServiceTest.java`, `WorkingDaysParserTest.java`)
+
+**Test Resources:**
+
+- Markdown specifications: `src/test/resources/ushf-05-write-paths.md` (parsed by `UsualShiftWritePathGuardTest` to enforce completeness)
+- Solver configuration: `src/main/resources/solverConfig.xml` (loaded at test time by `SolverConfig.createFromXmlResource`)
 
 ## Test Structure
 
-**Suite Organization:**
+**Standard Unit Test:**
 
-Unit and solver tests follow this pattern:
 ```java
-class ResolvePreferencesPtoFilterTest {
-
-    // Shared constants
-    private static final long TENANT = 1L;
-    private static final LocalDate MON = LocalDate.of(2026, 3, 9);
+@ExtendWith(MockitoExtension.class)
+class BambooRefreshServiceTest {
+    @Mock
+    private DeskRepository deskRepository;
+    
+    @InjectMocks
+    private BambooRefreshService service;
 
     @Test
-    void standingPreference_excludedOnPtoDay() throws Exception {
-        // Arrange: build domain objects via factory helpers
-        Agent agent = agent("A1", "Alice", deskId);
-        AgentPreference standing = standingPref(agent, deskId, DayOfWeek.TUESDAY, LocalTime.of(9, 0));
-
-        // Act: invoke method under test
-        List<AgentPreference> resolved = invokeResolvePreferences(...);
-
-        // Assert: AssertJ assertions
-        assertThat(resolved).isEmpty();
+    void methodUnderTest_condition_expectedResult() {
+        // Given: set up fixtures
+        Agent agent = new Agent();
+        
+        // When: execute
+        service.refreshDeskAgents(desk.getId());
+        
+        // Then: assert
+        assertThat(result).isEqualTo(expected);
     }
-
-    // --- Factory helpers ---
-    private Agent agent(String bambooId, String name, UUID deskId) { ... }
-    private AgentPreference standingPref(...) { ... }
 }
 ```
 
-**Solver test pattern:**
-```java
-class SingleDaySolvableTest {
+**Spring Integration Test (DataJpaTest):**
 
-    @Test
-    void singleDay_twoAgents_preAssigned_shouldScoreFeasible() {
-        Schedule solution = buildPreAssignedSolution();     // arrange
-        HardSoftScore score = solutionManager.update(solution);  // act (score only, no search)
-        assertThat(score.hardScore()).isZero();             // assert
+```java
+@DataJpaTest
+@Import({DeskService.class, InMemoryScheduleStore.class})
+@ActiveProfiles("test")
+class UsualShiftWritePathTest {
+    @Autowired
+    private DeskRepository deskRepository;
+    
+    @Autowired
+    private DeskService deskService;
+    
+    @MockitoBean
+    private ShiftLibraryValidationService shiftLibraryValidationService;
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.setTenantId(1L);
     }
 
-    // --- Schedule builder ---
-    private Schedule buildPreAssignedSolution() { ... }
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
 
-    // --- Factory helpers ---
-    private Agent agent(...) { ... }
-    private Timeslot timeslot(...) { ... }
+    @Test
+    void switchSchedulingMode_roundTrip_leavesStoredUsualShiftsFieldIdentical() {
+        // real JPA repositories, real H2 database in-memory
+    }
 }
 ```
 
-**Patterns:**
-- No `@BeforeEach` / `@AfterEach` — all setup is inline via factory helpers
-- No test lifecycle annotations except `@Test`
-- `@SpringBootTest` + `@ActiveProfiles("test")` only in `WfmApplicationTests` (context smoke test)
-- All solver tests avoid the Spring context entirely — they construct `SolverConfig` and `SolverFactory` programmatically
+**Constraint Verifier Test:**
+
+```java
+class BandCapacityConstraintTest {
+    private final ConstraintVerifier<ScheduleConstraintProvider, Schedule> verifier =
+            ConstraintVerifier.build(new ScheduleConstraintProvider(), Schedule.class,
+                    AgentAssignment.class, AgentShiftAssignment.class);
+
+    @Test
+    @DisplayName("capacity N with exactly N agent-days draws no penalty")
+    void capacityN_exactlyNAgentDays_noPenalty() {
+        ShiftTemplate t = template();
+        ShiftTemplateBreakBand capped = band(t, 240, 2);
+
+        List<Object> facts = new ArrayList<>();
+        facts.add(scheduleConfig(SchedulingMode.SHIFT));
+        facts.add(shiftRow(agent(), MONDAY, pair));
+
+        verifier.verifyThat(ScheduleConstraintProvider::bandCapacity)
+                .given(facts.toArray())
+                .penalizesBy(0);
+    }
+}
+```
+
+**Guard Test (Distinctive Pattern — Two Proofs):**
+
+```java
+/**
+
+ * Dual proof for invariant: BambooRefreshService never writes AgentUsualShift.
+ * (a) Behavioral: exercises actual method with mocked dependencies, asserts zero mutations
+ * (b) Structural: reflection on production source, asserts no code line references repository
+ */
+@DataJpaTest
+@Import({DeskService.class, InMemoryScheduleStore.class})
+class UsualShiftWritePathTest {
+    @Test
+    void refreshDeskAgents_leavesStoredUsualShiftsByteIdentical_behavioural() {
+        // Save initial state, run refresh, reload and assert byte-identical
+        AgentUsualShift before = saveUsualShift(...);
+        List<UsualShiftSnapshot> beforeSnapshot = List.of(UsualShiftSnapshot.of(before));
+        
+        bambooRefreshService.refreshDeskAgents(desk.getId());
+        
+        AgentUsualShift after = reload(before.getId());
+        assertThat(UsualShiftSnapshot.of(after)).isEqualTo(beforeSnapshot);
+    }
+
+    @Test
+    void refreshDeskAgents_declaresNoAgentUsualShiftRepositoryField_structural() {
+        // Reflection: BambooRefreshService must not have AgentUsualShiftRepository field
+        boolean hasField = Arrays.stream(BambooRefreshService.class.getDeclaredFields())
+                .anyMatch(f -> AgentUsualShiftRepository.class.isAssignableFrom(f.getType()));
+        assertThat(hasField).isFalse();
+    }
+}
+```
+
+**Structural Guard with Source Scanning:**
+
+```java
+@ExtendWith(MockitoExtension.class)
+class SolverUsualShiftWritePathGuardTest {
+    private static final List<String> MUTATING_CALL_PATTERNS = List.of(
+            "agentUsualShiftRepository.save(",
+            "agentUsualShiftRepository.delete(",
+            "agentUsualShiftRepository.deleteById(",
+            // ... 10 more patterns
+    );
+
+    @Test
+    void solverServiceSource_noCodeLineInvokesAMutatingMethodOnTheUsualShiftRepository() 
+            throws IOException, URISyntaxException {
+        Path moduleRoot = resolveModuleRoot();
+        Path solverServiceFile = moduleRoot.resolve("src/main/java/com/wfm/service/SolverService.java");
+        
+        List<String> allLines = Files.readAllLines(solverServiceFile, StandardCharsets.UTF_8);
+        List<String> codeLines = stripCommentsAndJavadoc(allLines);
+        
+        List<String> offendingLines = new ArrayList<>();
+        for (String line : codeLines) {
+            for (String pattern : MUTATING_CALL_PATTERNS) {
+                if (line.contains(pattern)) {
+                    offendingLines.add(line.strip());
+                    break;
+                }
+            }
+        }
+        
+        assertThat(offendingLines).isEmpty();
+    }
+}
+```
 
 ## Mocking
 
-**Framework:** None — no Mockito or similar mocking library is used
+**Framework:** Mockito (via Spring Test or standalone)
 
-**Approach:**
-- Solver tests build the full domain object graph by hand using factory helper methods
-- `ResolvePreferencesPtoFilterTest` accesses private methods via **reflection** rather than mocking:
+**Patterns:**
+
+**1. Standalone Mocking (No Spring):**
 
 ```java
-private SolverService createSolverServiceWithNullDeps() throws Exception {
-    var ctors = SolverService.class.getDeclaredConstructors();
-    var ctor = ctors[0];
-    ctor.setAccessible(true);
-    Object[] nullArgs = new Object[ctor.getParameterCount()];
-    return (SolverService) ctor.newInstance(nullArgs);
-}
+@ExtendWith(MockitoExtension.class)
+class BambooRefreshServiceTest {
+    @Mock
+    private BambooHRClient bambooHRClient;
+    
+    @InjectMocks
+    private BambooRefreshService service;
 
-Method method = SolverService.class.getDeclaredMethod(
-        "resolvePreferences", List.class, Schedule.class, Map.class);
-method.setAccessible(true);
-return (List<AgentPreference>) method.invoke(service, ...);
+    @Test
+    void method_condition_result() {
+        when(bambooHRClient.listEmployees(anyString(), any()))
+                .thenReturn(List.of(new BambooEmployee(...)));
+        
+        service.refreshDeskAgents(deskId);
+        
+        verify(bambooHRClient).listEmployees(eq("tenant123"), any());
+    }
+}
 ```
 
-**What to mock:** Nothing — the convention is to build real domain objects
-**What NOT to mock:** No Spring beans, no repositories, no solver infrastructure in tests
+**2. Spring Test Bean Replacement:**
+
+```java
+@DataJpaTest
+@Import(DeskService.class)
+class UsualShiftWritePathTest {
+    @MockitoBean
+    private ShiftLibraryValidationService shiftLibraryValidationService;
+
+    @Autowired
+    private DeskService deskService; // uses mocked validation service
+}
+```
+
+**3. Reflective Method Mocking (testing private behavior):**
+
+```java
+@Test
+void shouldDowngradeWorkingDaysKnown_spreadsheetSourced_neverDowngraded() throws Exception {
+    Method m = BambooRefreshService.class.getDeclaredMethod(
+            "shouldDowngradeWorkingDaysKnown", Agent.class);
+    m.setAccessible(true);
+    
+    boolean result = (boolean) m.invoke(null, agent);
+    
+    assertThat(result).isFalse();
+}
+```
+
+**What to Mock:**
+
+- External dependencies (HTTP clients, file systems)
+- Database repositories (when testing business logic in isolation)
+- Spring beans in @DataJpaTest slices
+- DO NOT mock the class under test
+
+**What NOT to Mock:**
+
+- The service/class being tested
+- JPA repositories in @DataJpaTest (use real H2 in-memory DB)
+- Core JDK classes (String, List, UUID)
+- Timefold solver pieces (use ConstraintVerifier instead)
 
 ## Fixtures and Factories
 
-**Test Data Pattern:**
-
-Each test class defines its own private factory helpers at the bottom, separated by section comments. There are no shared fixture files or factory utilities.
+**Test Data Builders (static helpers):**
 
 ```java
-// --- Factory helpers ---
-
-private Agent agent(String bambooId, String name) {
+private static Agent agent() {
     Agent a = new Agent();
     a.setId(UUID.randomUUID());
-    a.setTenantId(TENANT);
-    a.setBamboohrId(bambooId);
-    a.setName(name);
-    a.setActive(true);
+    a.setTenantId(1L);
+    a.setName("Agent Name");
     return a;
 }
 
-private Timeslot timeslot(UUID deskId, UUID scheduleId,
-                          LocalDate date, LocalTime start, LocalTime end) {
-    Timeslot ts = new Timeslot();
-    ts.setId(UUID.randomUUID());
-    ts.setTenantId(TENANT);
-    ts.setDeskId(deskId);
-    ts.setScheduleId(scheduleId);
-    ts.setDate(date);
-    ts.setStartTime(start);
-    ts.setEndTime(end);
-    return ts;
+private static ShiftTemplate template() {
+    ShiftTemplate t = new ShiftTemplate();
+    t.setId(UUID.randomUUID());
+    t.setName("Template-" + UUID.randomUUID());
+    t.setStartTime(LocalTime.of(8, 0));
+    t.setEndTime(LocalTime.of(17, 0));
+    return t;
 }
 ```
 
-**Location:** Factory helpers are private methods within each test class — no shared test support classes exist
+**Snapshot Records (field-by-field comparison):**
+
+```java
+private record UsualShiftSnapshot(UUID id, long tenantId, UUID agentId, DayOfWeek dayOfWeek, UUID shiftTemplateId) {
+    static UsualShiftSnapshot of(AgentUsualShift row) {
+        return new UsualShiftSnapshot(row.getId(), row.getTenantId(), row.getAgent().getId(),
+                row.getDayOfWeek(), row.getShiftTemplate().getId());
+    }
+}
+```
+
+**Location:**
+
+- Test helper methods: same test class or package-scoped helper class (e.g., `ShiftModeFixtures.java`)
+- Shared fixtures: `src/test/java/com/wfm/support/` (e.g., `PostgresBackedTest.java`)
+- Constants: package-private `static final` fields in test classes (e.g., `private static final long TENANT_ID = 1L;`)
 
 ## Coverage
 
-**Requirements:** None enforced — no JaCoCo or other coverage plugin in `build.gradle`
+**Requirements:** Not enforced by build (no Jacoco or similar observed)
 
-**View Coverage:** Not configured. To generate a basic report, add JaCoCo to `build.gradle` and run `./gradlew jacocoTestReport`.
+**View Coverage (manual):**
+
+```bash
+
+# No built-in task; use IDE or external tools
+
+# IntelliJ: Run → Run with Coverage
+
+# Gradle plugin could be added to build.gradle if needed
+
+```
+
+**Test Coverage Gaps:**
+
+- Frontend: no test framework detected (Vite build only)
+- Migration-specific testing: `MigrationEntityConsistencyTest` regex-based DDL validation
+- E2E testing: not observed in suite
 
 ## Test Types
 
-**Context smoke test (`WfmApplicationTests`):**
-- Verifies the Spring application context loads without errors
-- Uses `@SpringBootTest` + `@ActiveProfiles("test")` (H2, Flyway disabled, mock BambooHR)
-- Single test: `contextLoads()` with empty body
-- File: `src/test/java/com/wfm/WfmApplicationTests.java`
+### Unit Tests
 
-**Unit tests (service logic, `service/` package):**
-- No Spring context; no I/O; no solver
-- Test private business logic via reflection
-- File: `src/test/java/com/wfm/service/ResolvePreferencesPtoFilterTest.java`
+**Scope:** Single service method or utility function in isolation
+**Approach:** Mockito mocks, no Spring context, fast execution
+**Examples:**
 
-**Solver scoring tests (`solver/` package — score-only):**
-- Build a pre-assigned `Schedule` and call `SolutionManager.update()` to compute score
-- No solver search; verify hard/soft score is zero
-- Example: `src/test/java/com/wfm/solver/SingleDaySolvableTest.java`, `FullScale150AgentTest.java`
+- `BambooRefreshServiceTest#mapEmploymentType_*` — private method reflection tests
+- `AgentNameSplitterTest` — utility function tests
+- `WorkingDaysSourceGuardTest` — private static method tests
 
-**Solver integration tests (`solver/` package — CH + local search):**
-- Run full `SolverFactory.buildSolver().solve(schedule)` with a time-bounded termination
-- Verify the solver reaches a feasible (hard score = 0) or near-feasible result
-- Use `Duration.ofSeconds(10)` to `Duration.ofSeconds(120)` depending on problem size
-- Examples: `BreakAwareConstructionTest.java`, `MultiDayConstraintDiagnosticTest.java`
+### Service Tests (Spring Data JPA)
 
-**Scale/stress tests (`solver/` package):**
-- Test solver performance at realistic agent counts (90, 95, 150 agents)
-- Use looser assertions (`isGreaterThanOrEqualTo(-200)`) where full feasibility is not guaranteed within the time budget
-- Examples: `NinetyFiveAgentReproTest.java`, `NinetyAgent12HourTest.java`, `FullScale150AgentTest.java`
+**Scope:** Service layer with real JPA repositories on H2
+**Approach:** `@DataJpaTest` with in-memory H2, transactional, real entity relationships
+**Examples:**
 
-**E2E Tests:** None — no REST layer tests (no `MockMvc`, no `@WebMvcTest`, no `RestAssured`)
+- `UsualShiftWritePathTest` — write-path proofs (rows 5, 6, 7 of the ledger)
+- `DeskServiceSchedulingModeTest` — round-trip mode switching
+- `DeskAgentServiceUsualShiftTest` — agent removal side effects
+
+### Postgres-Backed Tests
+
+**Scope:** Real PostgreSQL with Flyway migrations
+**Approach:** Extends `PostgresBackedTest`, Testcontainers singleton, `spring.flyway.enabled=true`
+**Examples:**
+
+- `AgentRepositoryPostgresTest` — untyped null parameter handling (GET /agents bug)
+- `AgentUsualShiftPostgresTest` — FK cascade behavior on desk delete
+
+**Base Class Contract (`PostgresBackedTest`):**
+
+- Starts Postgres 16 container once per JVM (shared singleton, not per-class)
+- Skips gracefully if Docker unavailable (`disabledWithoutDocker = true`)
+- Runs real Flyway migrations (V1..Vn in order)
+- Sets `spring.jpa.hibernate.ddl-auto=validate` (schema must match entities post-migration)
+- All migrations must execute without error; schema drift fails fast
+
+### Constraint Verifier Tests (Timefold)
+
+**Scope:** Individual soft/hard constraint definitions
+**Approach:** `ConstraintVerifier.build()`, fluent API, assertions on penalty scores
+**Examples:**
+
+- `BandCapacityConstraintTest` — 5 capacity scenarios
+- `ShiftWorkContiguityConstraintTest` — contiguity invariants with break placement
+- `MinimumStaffingConstraintTest` — FTE fulfillment
+
+**Pattern:**
+
+```java
+verifier.verifyThat(ScheduleConstraintProvider::bandCapacity)
+        .given(facts.toArray())
+        .penalizesBy(expectedScore);
+```
+
+### Integration Tests
+
+**Scope:** Multi-layer integration without full Spring context
+**Approach:** Mock external clients, test parsing/merging logic
+**Examples:**
+
+- `BambooRefreshServiceTest` — employment type mapping, job title deduplication
+- `MergePrecedenceTest` — merge rule enforcement
+- `WorkingDaysParserTest` — spreadsheet parsing
+
+### Guard Tests (Distinctive Pattern)
+
+**Scope:** Architectural invariants and write-path completeness
+**Approach:** Dual proof (behavioral + structural) enforced by build
+**Examples:**
+
+**Behavioral Guards:**
+
+- `UsualShiftWritePathTest#refreshDeskAgents_leavesStoredUsualShiftsByteIdentical_behavioural()` — exercises code path with real/mocked deps, asserts side-effect-free
+- `SolverUsualShiftWritePathGuardTest#resolveUsualShiftTargets_zeroMutatingInteractionsOnTheRepository()` — mocked repo captures zero mutation calls
+
+**Structural Guards:**
+
+- `UsualShiftWritePathTest#solverPackage_declaresNoAgentUsualShiftReference_structural()` — reflection on class fields
+- `SolverUsualShiftWritePathGuardTest#solverServiceSource_noCodeLineInvokesAMutatingMethodOnTheUsualShiftRepository()` — source code scanning with comment stripping
+- `ScheduleConstraintClassificationTest` — reflective assertion on constraint weight annotations vs constraint builder methods
+
+**Why Two Proofs Are Required (from XCUT-05):**
+
+- Behavioral-only guard: comment-only fix could bypass it
+- Structural-only guard: cannot catch wrong behavior (e.g., wrong entity updated)
+- Together: code change AND behavior are verified
+
+**Write-Path Ledger (USHF-05):**
+
+- Canonical source: `src/test/resources/ushf-05-write-paths.md`
+- Parsed at test time by `UsualShiftWritePathGuardTest`
+- Enumerates every write path to `agent_usual_shift` table (9 rows as of Phase 17)
+- Guard allowlists enforce set equality: classes that reference `AgentUsualShift` or `AgentUsualShiftRepository` must exactly match the ledger's row list
+- Violations fail build (missing or stale allowlist entries)
+
+### Solver Quality Guard Tests
+
+**Scope:** Structural invariants on solved output (not score thresholds)
+**Approach:** Multiple random seeds, deterministic assertion, post-solve validation
+**Example:** `SolverQualityGuardTest`
+
+- Solves 5 seeds against corrupted base schedules
+- Asserts zero split shifts, zero edge breaks, all edge hours staffed
+- Reserves one score assertion for violation-count median (P-42)
+- Never hard-codes hard/soft score limits (variance defeats test reliability)
+
+### E2E/Benchmark Tests (Gated)
+
+**Scope:** Full solver end-to-end, performance measurement
+**Approach:** `@EnabledIfSystemProperty(named = "wfm.benchmark", matches = "true")`
+**Example:** `ShiftModelBenchmarkTest`
+
+- Runs only with `-Dwfm.benchmark=true`
+- Not executed by default or on CI deploy gate
+- Step-count terminated, seeded for determinism
+- Elapsed time printed for observability (not asserted)
 
 ## Common Patterns
 
-**Async / solver testing:**
-```java
-// Synchronous solve — blocks until termination condition is met
-Schedule solved = solverFactory.buildSolver().solve(schedule);
-assertThat(solved.getScore().hardScore()).isZero();
-```
+### Async Testing
 
-**Constraint explanation (diagnostic output):**
+**Pattern:** Not observed; solver runs synchronous in tests
+
+- Timefold solves are step-count or time-terminated (5 seconds typical)
+- Database operations use `@Transactional` test context (automatic rollback per test)
+
+### Error Testing
+
 ```java
-if (!score.equals(HardSoftScore.ZERO)) {
-    var explanation = solutionManager.explain(solution);
-    explanation.getConstraintMatchTotalMap().forEach((name, total) -> {
-        if (!total.getScore().equals(HardSoftScore.ZERO)) {
-            System.out.println("  " + name + " => " + total.getScore());
-        }
-    });
+@Test
+void createDesk_blankName_throwsIllegalArgumentException() {
+    assertThatThrownBy(() -> deskService.createDesk("", null, BigDecimal.ONE))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Desk name is required");
+}
+
+@Test
+void createDesk_duplicateName_throwsConflictException() {
+    deskService.createDesk("Marketing", null, BigDecimal.ONE);
+    
+    assertThatThrownBy(() -> deskService.createDesk("Marketing", null, BigDecimal.ONE))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("already exists");
 }
 ```
 
-**Score-only verification (no search):**
-```java
-SolverFactory<Schedule> solverFactory = SolverFactory.create(
-        new SolverConfig()
-                .withSolutionClass(Schedule.class)
-                .withEntityClasses(AgentAssignment.class)
-                .withScoreDirectorFactory(new ScoreDirectorFactoryConfig()
-                        .withConstraintProviderClass(ScheduleConstraintProvider.class)));
+### Reflection-Based Testing
 
-var solutionManager = SolutionManager.<Schedule, HardSoftScore>create(solverFactory);
-HardSoftScore score = solutionManager.update(solution);
-assertThat(score.hardScore()).isZero();
+**Use case:** Testing private methods or validating no reference to a class exists
+
+```java
+// Accessing private method
+Method m = BambooRefreshService.class.getDeclaredMethod("shouldDowngradeWorkingDaysKnown", Agent.class);
+m.setAccessible(true);
+boolean result = (boolean) m.invoke(null, agent);
+
+// Scanning source for forbidden patterns
+Path solverServiceFile = moduleRoot.resolve("src/main/java/com/wfm/service/SolverService.java");
+List<String> lines = Files.readAllLines(solverServiceFile, StandardCharsets.UTF_8);
+// ... filter and scan for patterns
 ```
 
-## CI Setup
+### Fixture Construction (Minimal Workable Example)
 
-**Pipeline:** GitHub Actions, defined in `.github/workflows/ci.yml`
+```java
+private static Schedule buildMinimalSlotSchedule() {
+    long tenant = 999L;
+    LocalDate day = LocalDate.of(2026, 3, 10);
+    
+    Specialization spec = new Specialization();
+    spec.setId(UUID.randomUUID());
+    spec.setTenantId(tenant);
+    
+    Agent agent = new Agent();
+    agent.setId(UUID.randomUUID());
+    agent.setTenantId(tenant);
+    agent.setContractedHoursPerDay(new BigDecimal("1.00"));
+    
+    // Build timeslots, staffing requirements, assignments
+    // Keep data set small for test speed (4 timeslots, 1 agent, 1 day)
+    
+    return schedule;
+}
+```
 
-**Triggers:** Pull requests and pushes to `main`
+### Termination Override (for Deterministic Solving)
 
-**Jobs:**
-- `test-backend`: Sets up Java 21 (Temurin), runs `./gradlew test --no-daemon`, then builds JAR. Test results uploaded as artifact from `build/reports/tests/`
-- `build-frontend`: Sets up Node 20, runs `npm ci` and `npm run build` in `frontend/`
-- `docker-build`: Builds Docker image (`docker build -t wfm-service:ci .`), depends on `test-backend` passing
+```java
+SolverConfig solverConfig = SolverConfig.createFromXmlResource("solverConfig.xml");
+List<PhaseConfig> phases = solverConfig.getPhaseConfigList();
+phases.get(phases.size() - 1).setTerminationConfig(
+        new TerminationConfig().withStepCountLimit(50));
+// Solver-level hard wall-clock cap for safety
+solverConfig.setTerminationConfig(new TerminationConfig().withSecondsSpentLimit(5L));
+SolverFactory<Schedule> solverFactory = SolverFactory.create(solverConfig);
+```
 
-**No coverage enforcement** in CI — test results artifact only.
+## Special Annotations & Configuration
 
-## Coverage Gaps
+### Test Slice Annotations
 
-**REST/Controller layer:**
-- No tests for any controller class (`src/main/java/com/wfm/controller/`)
-- No `MockMvc` or `@WebMvcTest` tests exist
-- HTTP request validation, pagination, and error response formatting are untested
+- `@DataJpaTest` — JPA/Spring Data tests with H2 (no web layer)
+- `@WebMvcTest` — Spring MVC controller tests (not observed in current suite)
+- `@ExtendWith(MockitoExtension.class)` — standalone Mockito without Spring
 
-**Service layer (most services):**
-- Only `SolverService.resolvePreferences` has a dedicated unit test
-- `AgentService`, `ScheduleService`, `DeskService`, `StaffingRequirementService`, etc. have no tests
-- Cursor pagination logic in `CursorPagination` (`src/main/java/com/wfm/util/CursorPagination.java`) is untested
+### Conditional Execution
 
-**Integration / repository layer:**
-- No repository tests or `@DataJpaTest` slices
-- Multi-tenant data isolation (the `X-Tenant-ID` filter in `TenantFilter`) is untested
+```java
+@EnabledIfSystemProperty(named = "wfm.benchmark", matches = "true")
+public void benchmarkTest() { ... }
+```
 
-**BambooHR integration:**
-- `HttpBambooHRClient` and `BambooRefreshService` have no tests
+### Active Profiles
 
-**Solver constraint coverage:**
-- Soft constraints (`honourPreferredStartTime`, `honourPreferredBreakTime`, `breakClustering`, etc.) are exercised only indirectly by the solver integration tests; no targeted constraint unit tests using `ConstraintVerifier` (from `timefold-solver-test`)
+```java
+@ActiveProfiles("test")  // Loads application-test.properties
+```
+
+## Test Data Files
+
+**Markdown Specifications:**
+
+- `src/test/resources/ushf-05-write-paths.md` — write-path table with 9 rows (paths 1-7 + planner additions 8-9), guard allowlists for Set A (repository references) and Set B (entity references)
+
+**Solver Configuration:**
+
+- `src/main/resources/solverConfig.xml` — loaded by `SolverConfig.createFromXmlResource("solverConfig.xml")`
+
+## Skipped Tests
+
+**Count:** 11 tests skipped (out of 780+)
+
+**Reason:** `@Testcontainers(disabledWithoutDocker = true)` on Postgres-backed test classes
+
+- Tests skip (not fail) if Docker unavailable
+- CI and deploy gate run on `ubuntu-latest` (Docker present), so full suite always runs there
 
 ---
 
-*Testing analysis: 2026-04-02*
+*Testing analysis: 2026-09-17*

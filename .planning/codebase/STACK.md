@@ -1,133 +1,137 @@
+---
+last_mapped_commit: 7e18ca2766e5fc34d93136d520c5a1529f8dc3b5
+last_mapped_at: 2026-09-17
+---
 # Technology Stack
 
-**Analysis Date:** 2026-04-02
+**Analysis Date:** 2026-09-17
 
 ## Languages
 
 **Primary:**
-- Java 21 (LTS) - backend application (`src/main/java/com/wfm/`)
-- TypeScript 5.7 - frontend SPA (`frontend/src/`)
+
+- Java 21 - Backend services, solver implementation, REST APIs
+- TypeScript 5.7 - Frontend UI components and routing logic
+- SQL - PostgreSQL database migrations (Flyway, currently at V48)
 
 **Secondary:**
-- SQL - Flyway database migrations (`src/main/resources/db/migration/`)
-- HCL (Terraform) - infrastructure-as-code (`infra/`)
-- XML - Timefold solver configuration (`src/main/resources/solverConfig.xml`)
+
+- XML - Timefold solver configuration
+- YAML - Spring Boot application configuration
 
 ## Runtime
 
-**Backend:**
-- JVM 21 (Eclipse Temurin distribution)
-- Build container: `eclipse-temurin:21-jdk`
-- Runtime container: `eclipse-temurin:21-jre`
+**Environment:**
 
-**Frontend:**
-- Node.js 20 (specified in `.github/workflows/ci.yml`)
+- Java Runtime Environment (JRE) 21 - Backend execution
+- Node.js (latest stable via Vite) - Frontend development and build
+- PostgreSQL 12+ - Primary production database
 
-## Package Managers
+**Package Manager:**
 
-**Backend:**
-- Gradle 8.12 (Gradle Wrapper) — `gradle/wrapper/gradle-wrapper.properties`
-- No lockfile (standard Gradle resolution)
-
-**Frontend:**
-- npm — lockfile present at `frontend/package-lock.json`; CI uses `npm ci`
+- Gradle 8.x (wrapper) - Java/backend dependency management
+- npm - JavaScript/TypeScript dependency management
+- Lockfile: `backend/gradle/wrapper/gradle-wrapper.jar` (present); `frontend/package-lock.json` (present)
 
 ## Frameworks
 
-**Backend Core:**
-- Spring Boot 3.4.2 (`build.gradle`)
-  - `spring-boot-starter-web` - REST API
-  - `spring-boot-starter-data-jpa` - ORM/persistence
-  - `spring-boot-starter-actuator` - health endpoint at `/actuator/health`
-  - `spring-boot-starter-validation` - bean validation (jakarta.validation)
-- Spring Dependency Management Plugin 1.1.7 (`build.gradle`)
+**Core:**
 
-**Constraint Solver:**
-- Timefold Solver 1.16.0 (BOM-managed) - constraint-based workforce scheduling
-  - `timefold-solver-spring-boot-starter` - Spring Boot auto-configuration
-  - `timefold-solver-jpa` - JPA integration for solver planning entities
+- Spring Boot 3.4.2 - REST API framework, dependency injection, actuator endpoints
+- React 19.0.0 - Frontend UI library
+- React Router 7.1.0 - Frontend client-side routing
+
+**Solver/Optimization:**
+
+- Timefold Solver 1.16.0 - Shift scheduling constraint satisfaction and optimization
+  - Integration: Spring Boot starter + JPA support
   - Config: `src/main/resources/solverConfig.xml`
-  - Algorithm: Construction Heuristic + Local Search (Entity Tabu size 7, Simulated Annealing)
-  - Solution class: `com.wfm.model.Schedule`; entity class: `com.wfm.model.AgentAssignment`
-
-**Frontend:**
-- React 19.0 (`frontend/package.json`)
-- React Router DOM 7.1 - client-side routing
-- Vite 6.1 - build tool and dev server (`frontend/vite.config.ts`)
+  - Constraint provider: `com.wfm.solver.ScheduleConstraintProvider`
 
 **Testing:**
-- JUnit 5 (via `spring-boot-starter-test`) - backend test runner
-- `timefold-solver-test` - constraint unit testing
+
+- JUnit 5 (Jupiter) - Java test runner
+- Spring Boot Test - Mocking and test context
+- Testcontainers 1.21.4 - PostgreSQL-backed integration tests (Docker 29 compatible)
+- H2 Database - In-memory test database for unit tests
+
+**Build/Dev:**
+
+- Gradle 8.x - Build automation, test execution, dependency resolution
+- Vite 6.1.0 - Frontend bundler and dev server
+- TypeScript Compiler (tsc) - Type checking before Vite build
 
 ## Key Dependencies
 
 **Critical:**
-- `ai.timefold.solver:timefold-solver-bom:1.16.0` - entire scheduling system depends on this
-- `org.springframework.boot:spring-boot-starter-data-jpa` - all database access
-- `org.postgresql:postgresql` - production database driver (runtime scope)
+
+- `org.springframework.boot:spring-boot-starter-web` 3.4.2 - HTTP request handling
+- `org.springframework.boot:spring-boot-starter-data-jpa` 3.4.2 - ORM and database access
+- `org.timefold.solver:timefold-solver-spring-boot-starter` 1.16.0 - Solver integration
+- `org.postgresql:postgresql` (latest managed) - PostgreSQL JDBC driver (runtime only)
+- `org.flywaydb:flyway-core` + `flyway-database-postgresql` - Database migration management
 
 **Infrastructure:**
-- `org.flywaydb:flyway-core` + `flyway-database-postgresql` - schema migration; 24 versioned scripts at `src/main/resources/db/migration/`
-- `org.apache.poi:poi-ooxml:5.3.0` - Excel `.xlsx` generation for schedule export and FTE uploads
-- `com.h2database:h2` - in-memory database for test execution (test runtime only)
-- Jackson (transitive via Spring Boot) - JSON; custom `HardSoftScore` serializers in `src/main/java/com/wfm/config/`
 
-## Database
+- `org.springframework.boot:spring-boot-starter-actuator` 3.4.2 - Health checks, metrics endpoints
+- `org.springframework.boot:spring-boot-starter-validation` 3.4.2 - Bean validation (JSR-380)
+- `org.apache.poi:poi-ooxml` 5.3.0 - Excel/spreadsheet export for schedules
 
-**Production:**
-- PostgreSQL
-  - Default connection (dev): `jdbc:postgresql://localhost:5432/wfm` (`application.yml`)
-  - ORM: Hibernate via Spring Data JPA; DDL strategy: `validate` (Flyway controls all schema)
-  - Dialect: `org.hibernate.dialect.PostgreSQLDialect`
-  - pgvector extension enabled via migration `V24__enable_pgvector_extension.sql`
+**Testing:**
 
-**Test:**
-- H2 in-memory — configured in `src/test/resources/application-test.yml`; Flyway disabled, `ddl-auto: create-drop`
+- `org.testcontainers:testcontainers-bom` 1.21.4 - Container orchestration for integration tests
+- `org.testcontainers:junit-jupiter` 1.21.4 - JUnit 5 integration
+- `org.testcontainers:postgresql` 1.21.4 - PostgreSQL test container
+- `com.h2database:h2` (latest managed) - In-memory database for fast unit tests
 
-**Migrations:**
-- Flyway; 24 scripts `V1__` through `V24__` in `src/main/resources/db/migration/`
+**Frontend:**
+
+- `@vitejs/plugin-react` 4.3.0 - JSX/TSX support in Vite
+- `@types/react` 19.0.0 - React type definitions
+- `@types/react-dom` 19.0.0 - React DOM type definitions
 
 ## Configuration
 
-**Application:**
-- `src/main/resources/application.yml` — single primary config file
-- Key sections: `spring.datasource.*`, `bamboohr.*`, `solver.*`, `timefold.solver.*`, `cors.*`, `management.*`
-- Test overrides: `src/test/resources/application-test.yml`
+**Environment:**
+
+- Property source: `src/main/resources/application.yml`
+- Profile-specific: `application-test.yml` (test profile, H2 in-memory, no Flyway)
+- Externalization: Spring Boot `@Value` annotations for runtime configuration
+  - CORS origins: `cors.allowed-origins`
+  - BambooHR: `bamboohr.api-key`, `bamboohr.subdomain`, `bamboohr.mock`, timeouts
+  - Solver: `solver.time-limit`, `solver.polling-interval-ms`
+  - Timefold: `timefold.solver.solver-config-xml`
 
 **Build:**
-- `build.gradle` - single-module Gradle build
-- `settings.gradle` - project name `wfm-service`
-- Custom Gradle task: `generateFteSpreadsheet` (runs `com.wfm.util.FteSpreadsheetGenerator`)
-- Frontend: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/tsconfig.json`
-  - TypeScript: strict mode, ES2020 target, `moduleResolution: bundler`
 
-**Runtime env vars (ECS production, defined in `infra/ecs.tf`):**
-- `SPRING_DATASOURCE_URL`
-- `SPRING_DATASOURCE_USERNAME`
-- `SPRING_DATASOURCE_PASSWORD` (from AWS Secrets Manager)
-- `CORS_ALLOWED_ORIGINS`
-- `SOLVER_TIME_LIMIT`
-- `SPRING_PROFILES_ACTIVE`
-- `JAVA_OPTS` (`-XX:MaxRAMPercentage=75.0`)
+- `build.gradle` - Dependency declarations and build plugins
+- Testcontainers version pinned at 1.21.4 in `ext['testcontainers.version']` for Docker 29 API compatibility
+- Benchmark harness: optional system property `-Dwfm.benchmark=true` passed to tests via `systemProperty`
 
 ## Platform Requirements
 
 **Development:**
-- JDK 21+
-- PostgreSQL running locally at `localhost:5432` (database `wfm`, user `wfm`)
-- Node.js 20
-- Frontend dev server (`vite`) proxies `/api` to `http://localhost:8080` (`frontend/vite.config.ts`)
+
+- Java 21 JDK
+- Docker (for Testcontainers PostgreSQL tests; Docker 29+)
+- PostgreSQL 12+ (local dev instance at `localhost:5432`)
+- Node.js LTS (for frontend development)
+- Gradle 8.x (wrapper included)
 
 **Production:**
-- Docker multi-stage build (`Dockerfile`)
-- AWS ECS Fargate (task definition in `infra/ecs.tf`)
-- AWS RDS PostgreSQL 16.4 (`infra/rds.tf`)
-- AWS CloudFront + S3 for frontend SPA (`infra/s3_cloudfront.tf`)
-- AWS ECR for container images (`infra/ecr.tf`)
-- AWS Secrets Manager for database password (`infra/rds.tf`)
-- Region: `eu-west-2`
-- Terraform >= 1.5 required to provision infrastructure (`infra/main.tf`)
+
+- Java 21 JRE
+- PostgreSQL 12+ (production database)
+- Port 8080 (Spring Boot default)
+- Environment variables for BambooHR integration: `BAMBOOHR_API_KEY`, `BAMBOOHR_SUBDOMAIN`
+- CORS allowed origins must be configured via environment or application.yml
+
+**Frontend Deployment:**
+
+- Node.js for build-time TypeScript compilation
+- Static host (Vite build output: `dist/` directory)
+- Must be able to reach backend API at `/api` endpoint (configurable proxy target)
 
 ---
 
-*Stack analysis: 2026-04-02*
+*Stack analysis: 2026-09-17*
