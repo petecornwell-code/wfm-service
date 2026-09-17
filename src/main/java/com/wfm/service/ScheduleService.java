@@ -154,7 +154,10 @@ public class ScheduleService {
         response.setStaffingSummary(scheduleOutputService.buildStaffingSummary(schedule));
         response.setAgentSchedule(scheduleOutputService.buildAgentSchedule(schedule));
         response.setPreferenceReport(scheduleOutputService.buildPreferenceReport(schedule));
-        response.setDriftReport(scheduleOutputService.buildDriftReport(schedule));
+        response.setDriftReport(
+                schedule.getSchedulingMode() == SchedulingMode.SHIFT
+                        ? scheduleOutputService.buildDriftReport(schedule)
+                        : null);
         response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule, fromDb));
 
         // Derive violatedHardConstraints from constraint violations (deduplicated). This

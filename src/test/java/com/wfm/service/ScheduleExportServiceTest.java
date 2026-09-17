@@ -156,9 +156,16 @@ class ScheduleExportServiceTest {
     }
 
     @Test
-    void exportToExcel_nullDriftReport_sheetHasOnlyTheMainHeaderRow() throws Exception {
+    void exportToExcel_nullDriftReport_writesOnlyTheMainHeaderRow() throws Exception {
+        // This exercises ScheduleExportService.writeDriftReport's own report == null branch in
+        // isolation (this file constructs ScheduleDetailResponse directly, with no
+        // ScheduleService/Spring context involved) -- it does NOT prove that a real SLOT-scheduled
+        // desk's ScheduleService.getScheduleDetail call actually produces that null. That
+        // end-to-end guarantee (CR-01) is covered separately by
+        // ScheduleServiceShiftSnapshotTest#getScheduleDetail_inMemorySlotModeSchedule_driftReportIsNullAndNeverBuilt.
         ScheduleDetailResponse detail = detailWith(List.of());
-        // detailWith never sets driftReport -- it stays null, exercising a SLOT-scheduled desk.
+        // detailWith never sets driftReport -- it stays null here by construction, not because a
+        // SLOT-scheduled desk was exercised.
         Sheet sheet = exportAndReadSheet(detail, "Drift Report");
 
         assertThat(sheet.getRow(0)).isNotNull();

@@ -50,6 +50,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -499,6 +502,39 @@ class ScheduleServiceShiftSnapshotTest {
         ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, scheduleId, null);
 
         assertThat(response.getSchedulingMode()).isEqualTo("SLOT");
+    }
+
+    // CR-01 regression: ScheduleDetailResponse.DriftReport's javadoc documents driftReport as
+    // null on a slot-scheduled desk. ScheduleService.getScheduleDetail must gate the
+    // buildDriftReport call on the schedule's own scheduling mode -- not merely happen to return
+    // null because the mocked ScheduleOutputService is unstubbed (every buildDriftReport call
+    // would return null from Mockito's default regardless of gating), which is why these
+    // assertions verify the call itself was (or wasn't) made, not just the response field.
+    @Test
+    void getScheduleDetail_inMemorySlotModeSchedule_driftReportIsNullAndNeverBuilt() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SLOT);
+        inMemoryStore.put(schedule);
+
+        ScheduleDetailResponse response = scheduleService.getScheduleDetail(deskId, scheduleId, null);
+
+        assertThat(response.getDriftReport()).isNull();
+        verify(scheduleOutputService, never()).buildDriftReport(any());
+    }
+
+    @Test
+    void getScheduleDetail_inMemoryShiftModeSchedule_driftReportIsBuilt() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        UUID scheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        inMemoryStore.put(schedule);
+
+        scheduleService.getScheduleDetail(deskId, scheduleId, null);
+
+        verify(scheduleOutputService, times(1)).buildDriftReport(schedule);
     }
 
     @Test
