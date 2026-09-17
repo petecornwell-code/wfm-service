@@ -19,6 +19,8 @@ import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.AgentUsualShiftRepository;
+import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.solver.ScheduleConstraintProvider;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * Phase 15 plan 10 (G-15-10 D4 gap closure) — inverts
@@ -46,7 +49,13 @@ class ScheduleOutputServiceShiftReportingTest {
     private static final SolverFactory<Schedule> SOLVER_FACTORY =
             SolverFactory.createFromXmlResource("solverConfig.xml");
 
-    private final ScheduleOutputService service = new ScheduleOutputService(SOLVER_FACTORY);
+    // Phase 17: ScheduleOutputService's constructor widened to take the drift-report
+    // dependencies. This test exercises only buildAgentSchedule/buildPreferenceReport
+    // (buildDriftReport is exercised separately in DriftReportTest), so plain mocks are
+    // sufficient here — mirrors ScheduleServiceShiftSnapshotTest's realOutputService() helper.
+    private final ScheduleOutputService service = new ScheduleOutputService(SOLVER_FACTORY,
+            new UsualShiftResolutionService(mock(ShiftTemplateRepository.class)),
+            mock(AgentUsualShiftRepository.class));
 
     private static final LocalDate DAY = LocalDate.of(2026, 9, 7);
     private static final int INCREMENT = 60;

@@ -17,6 +17,7 @@ import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentExceptionRepository;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.ConstraintWeightsRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
@@ -64,6 +65,8 @@ public class SolverService {
     private final ShiftTemplateRepository shiftTemplateRepository;
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final ShiftLibraryValidationService shiftLibraryValidationService;
+    private final AgentUsualShiftRepository agentUsualShiftRepository;
+    private final UsualShiftResolutionService usualShiftResolutionService;
 
     // D-09/D-10: same window BambooRefreshService uses to sync PTO from BambooHR. Field
     // injection (not a constructor parameter) so every existing SolverService test — which
@@ -91,7 +94,9 @@ public class SolverService {
                          AgentEligibilityService agentEligibilityService,
                          ShiftTemplateRepository shiftTemplateRepository,
                          ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository,
-                         ShiftLibraryValidationService shiftLibraryValidationService) {
+                         ShiftLibraryValidationService shiftLibraryValidationService,
+                         AgentUsualShiftRepository agentUsualShiftRepository,
+                         UsualShiftResolutionService usualShiftResolutionService) {
         this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
@@ -109,6 +114,8 @@ public class SolverService {
         this.shiftTemplateRepository = shiftTemplateRepository;
         this.shiftTemplateBreakBandRepository = shiftTemplateBreakBandRepository;
         this.shiftLibraryValidationService = shiftLibraryValidationService;
+        this.agentUsualShiftRepository = agentUsualShiftRepository;
+        this.usualShiftResolutionService = usualShiftResolutionService;
     }
 
     /**
@@ -228,6 +235,14 @@ public class SolverService {
         // Load preferences for this desk
         List<AgentPreference> allPreferences = agentPreferenceRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
+        // Phase 17 (D-11): load stored usual-shift rows for this desk. Resolution itself
+        // (resolveUsualShiftTargets) runs later, once agentDayConfigs exists (step 9 below) —
+        // the working-day gate it reuses is AgentDayConfig.effectiveHours(), which is not
+        // computed until then. Loaded here, alongside allPreferences, for the same reason
+        // allPreferences is loaded here: everything this pre-solve block reads from the
+        // database is fetched up front.
+        List<AgentUsualShift> allUsualShifts = agentUsualShiftRepository.findByTenantIdAndDeskId(tenantId, deskId);
+
         // Load constraint weights
         ConstraintWeights weights = constraintWeightsRepository.findByTenantIdAndDeskId(tenantId, deskId)
                 .orElseGet(() -> {
@@ -268,6 +283,13 @@ public class SolverService {
         // 9. Pre-compute AgentDayConfig problem facts (exception-aware effective hours)
         List<AgentDayConfig> agentDayConfigs = computeAgentDayConfigs(
                 eligibleAgents, schedule, agentDaysOffMap, agentExceptionMap, agentDayHoursMap);
+
+        // 9a. Phase 17 (D-11): pre-solve era resolution of each working agent-day's usual-shift
+        // target, now that agentDayConfigs (the same working-day gate buildShiftAssignments
+        // uses) exists. USHF-04's "no stored usual shift" penalty-free state falls out of
+        // resolveUsualShiftTargets emitting no row for that agent-day — no special-casing here.
+        List<ResolvedUsualShiftTarget> resolvedUsualShiftTargets =
+                resolveUsualShiftTargets(allUsualShifts, schedule, agentDayConfigs);
 
         // 9b. Compute capacity warnings (demand vs supply)
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
@@ -383,6 +405,7 @@ public class SolverService {
         schedule.setAgentDayConfigs(agentDayConfigs);
         schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
         schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
+        schedule.setResolvedUsualShiftTargets(new ArrayList<>(resolvedUsualShiftTargets));
         schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 
@@ -630,6 +653,60 @@ public class SolverService {
             }
         }
 
+        return resolved;
+    }
+
+    /**
+     * Pre-solve era resolution (Phase 17, D-11) — for each working agent-day in
+     * {@code agentDayConfigs}, resolves the agent's stored {@link AgentUsualShift} for that
+     * weekday through {@link UsualShiftResolutionService#resolve} and emits one
+     * {@link ResolvedUsualShiftTarget} per present result. Mirrors {@link #resolvePreferences}'s
+     * shape: index the stored rows first, then walk the working-day-gated list.
+     *
+     * <p>The working-day gate is the SAME {@code effectiveHours() > 0} predicate
+     * {@link #buildShiftAssignments} already applies (read that method before changing this one)
+     * — a non-working agent-day (0 contracted hours, MANDATORY, PTO) emits no target, so a usual
+     * shift stored on such a day (Phase 16 D-04: "stored and inert") never contributes a tuple.
+     *
+     * <p>An agent with no stored row for the date's weekday, or whose stored row resolves to no
+     * template effective on that date (Phase 16 D-01/D-02: "no era in effect" is identical to
+     * unset), simply contributes no {@link ResolvedUsualShiftTarget} — USHF-04's penalty-free
+     * state falls out of the caller's join finding no match, with zero special-casing here.
+     *
+     * <p>NEVER duplicates {@link UsualShiftResolutionService}'s era logic — calls it, does not
+     * reimplement it (its own javadoc: "Do not create a second copy of this method").
+     *
+     * <p>XCUT-02: this method is READ-ONLY against {@link AgentUsualShiftRepository} — it calls
+     * no mutating repository method on this path, ever. Enforced structurally by plan 17-03's
+     * {@code SolverUsualShiftWritePathGuardTest}.
+     *
+     * <p>Package-private (not private) so that guard test can call it directly.
+     */
+    List<ResolvedUsualShiftTarget> resolveUsualShiftTargets(List<AgentUsualShift> allUsualShifts,
+            Schedule schedule, List<AgentDayConfig> agentDayConfigs) {
+        Map<UUID, Map<DayOfWeek, AgentUsualShift>> byAgentAndWeekday = new HashMap<>();
+        for (AgentUsualShift u : allUsualShifts) {
+            byAgentAndWeekday.computeIfAbsent(u.getAgent().getId(), k -> new HashMap<>())
+                    .put(u.getDayOfWeek(), u);
+        }
+
+        List<ResolvedUsualShiftTarget> resolved = new ArrayList<>();
+        for (AgentDayConfig config : agentDayConfigs) {
+            if (config.effectiveHours() == null || config.effectiveHours().compareTo(BigDecimal.ZERO) <= 0) {
+                continue; // non-working day — mirrors buildShiftAssignments' identical gate (D-05)
+            }
+            Map<DayOfWeek, AgentUsualShift> byWeekday = byAgentAndWeekday.get(config.agentId());
+            if (byWeekday == null) {
+                continue; // USHF-04: no stored usual-shift row for this agent at all
+            }
+            AgentUsualShift stored = byWeekday.get(config.date().getDayOfWeek());
+            if (stored == null) {
+                continue; // USHF-04: no stored row for this specific weekday
+            }
+            usualShiftResolutionService.resolve(stored, config.date())
+                    .ifPresent(template -> resolved.add(new ResolvedUsualShiftTarget(
+                            config.agentId(), config.date(), template.getStartTime())));
+        }
         return resolved;
     }
 

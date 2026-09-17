@@ -35,6 +35,7 @@ public class ScheduleDetailResponse {
     private List<StaffingSummaryEntry> staffingSummary;
     private List<AgentScheduleEntry> agentSchedule;
     private PreferenceReport preferenceReport;
+    private DriftReport driftReport;
     private List<ConstraintViolationEntry> constraintViolations;
     private List<String> warnings;
     private int version;
@@ -137,6 +138,65 @@ public class ScheduleDetailResponse {
             BigDecimal overallHonouredPct
     ) {}
 
+    /**
+     * Phase 17 (D-12) — the drift status of one agent-day, an EXPLICIT field, never inferred from
+     * a null {@code usualStartTime}. {@code NO_USUAL_SHIFT} covers both "no stored usual-shift
+     * row for this weekday" and "stored row resolves to no template effective
+     * on this date" (Phase 16 D-01/D-02 makes these identical states); {@code HONOURED} covers a
+     * resolved target inside the tolerance band; {@code DRIFTED} covers a resolved target outside
+     * it.
+     */
+    public enum DriftStatus { NO_USUAL_SHIFT, HONOURED, DRIFTED }
+
+    /**
+     * One row per working agent-day (D-12), mirroring {@link PreferenceReportEntry}.
+     * {@code usualStartTime} is {@code null} iff {@code status == NO_USUAL_SHIFT};
+     * {@code actualStartTime} is always present for a working agent-day; {@code deltaMinutes} is
+     * populated ONLY when {@code status == DRIFTED}, and is SIGNED — positive when the assigned
+     * envelope start is later than the usual start, negative when earlier. Both
+     * {@code deltaMinutes}'s magnitude and the {@code usualShiftConsistency} constraint's penalty
+     * are computed from the same {@code ShiftBandPair.startDeviationMinutes} value (DRFT-03).
+     */
+    public record DriftReportEntry(
+            UUID agentId,
+            String agentName,
+            LocalDate date,
+            DriftStatus status,
+            LocalTime usualStartTime,
+            LocalTime actualStartTime,
+            Integer deltaMinutes
+    ) {}
+
+    /**
+     * Whole-report counts (D-12) — {@code workingAgentDays} equals the sum of the other three by
+     * construction (computed FROM the entry list, never as a parallel count).
+     */
+    public record DriftSummary(
+            int workingAgentDays,
+            int noUsualShiftCount,
+            int honouredCount,
+            int driftedCount
+    ) {}
+
+    /**
+     * DRFT-04's over-subscription view (D-13) — how many agents hold a given template as their
+     * usual shift, read from stored usual-shift rows directly, not from solve
+     * results. Populated by plan 17-03; this plan's {@code buildDriftReport} always returns
+     * {@code List.of()} here (see that method's javadoc).
+     */
+    public record ShiftPopularityEntry(String templateName, int agentCount) {}
+
+    /**
+     * Phase 17's drift report (DRFT-01…04) — derived on read, alongside {@link PreferenceReport},
+     * from {@code ScheduleOutputService.buildDriftReport(schedule)}. {@code null} on a
+     * slot-scheduled desk.
+     */
+    public record DriftReport(
+            List<DriftReportEntry> entries,
+            DriftSummary summary,
+            List<ShiftPopularityEntry> popularity
+    ) {}
+
     public record ConstraintViolationEntry(
             String constraintName,
             String level,
@@ -210,6 +270,8 @@ public class ScheduleDetailResponse {
     public void setAgentSchedule(List<AgentScheduleEntry> v) { this.agentSchedule = v; }
     public PreferenceReport getPreferenceReport() { return preferenceReport; }
     public void setPreferenceReport(PreferenceReport v) { this.preferenceReport = v; }
+    public DriftReport getDriftReport() { return driftReport; }
+    public void setDriftReport(DriftReport v) { this.driftReport = v; }
     public List<ConstraintViolationEntry> getConstraintViolations() { return constraintViolations; }
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
     public List<String> getWarnings() { return warnings; }

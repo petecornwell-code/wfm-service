@@ -805,7 +805,13 @@ class ScheduleServiceShiftSnapshotTest {
     }
 
     private ScheduleOutputService realOutputService() {
-        return new ScheduleOutputService(SOLVER_FACTORY);
+        // Phase 17: widened constructor takes the drift-report dependencies. Every call site of
+        // this helper exercises buildAgentSchedule only, never buildDriftReport, so plain mocks
+        // are sufficient (mirrors ScheduleOutputServiceShiftReportingTest's identical shape).
+        return new ScheduleOutputService(SOLVER_FACTORY,
+                new UsualShiftResolutionService(org.mockito.Mockito.mock(
+                        com.wfm.repository.ShiftTemplateRepository.class)),
+                org.mockito.Mockito.mock(com.wfm.repository.AgentUsualShiftRepository.class));
     }
 
     // ---------- helpers ----------

@@ -8,6 +8,7 @@ import ai.timefold.solver.core.api.score.constraint.ConstraintMatch;
 import com.wfm.dto.ScheduleDetailResponse.*;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.model.*;
+import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.solver.ScheduleConstraintProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
@@ -30,9 +32,15 @@ public class ScheduleOutputService {
     private static final Logger log = LoggerFactory.getLogger(ScheduleOutputService.class);
 
     private final SolutionManager<Schedule, HardSoftScore> solutionManager;
+    private final UsualShiftResolutionService usualShiftResolutionService;
+    private final AgentUsualShiftRepository agentUsualShiftRepository;
 
-    public ScheduleOutputService(SolverFactory<Schedule> solverFactory) {
+    public ScheduleOutputService(SolverFactory<Schedule> solverFactory,
+            UsualShiftResolutionService usualShiftResolutionService,
+            AgentUsualShiftRepository agentUsualShiftRepository) {
         this.solutionManager = SolutionManager.create(solverFactory);
+        this.usualShiftResolutionService = usualShiftResolutionService;
+        this.agentUsualShiftRepository = agentUsualShiftRepository;
     }
 
     /**
@@ -410,6 +418,119 @@ public class ScheduleOutputService {
                 totalPrefs, startHonoured, breakHonoured, overallPct);
 
         return new PreferenceReport(entries, summary);
+    }
+
+    /**
+     * Phase 17's drift report (DRFT-01…04, D-11) — derived on read, alongside
+     * {@link #buildPreferenceReport}: resolves each shift-scheduled agent-day's stored usual
+     * shift through {@link UsualShiftResolutionService#resolve} at READ time (never from a solve
+     * -time snapshot), so editing a stored usual shift after the fact moves a past schedule's
+     * drift report too — D-11's accepted, deliberate consequence, coherent with Phase 16 D-01's
+     * "Ana's usual shift is Early follows Early across eras".
+     *
+     * <p>Classification is the explicit {@link DriftStatus} field, never inferred from a null
+     * {@code usualStartTime} (D-12). {@code NO_USUAL_SHIFT} covers both "no stored row for this
+     * weekday" and "stored row resolves to no template for this date" — Phase 16 D-01/D-02 makes
+     * these identical states.
+     *
+     * <p>Task 2 (TDD) sorts entries DATE ascending, then agent name ascending — a DELIBERATE
+     * DIVERGENCE from {@link #buildPreferenceReport}'s agent-then-date order: {@code
+     * 17-UI-SPEC.md}'s Component Specifications §1 fixes date-major server order for the drift
+     * tab, and the table trusts server order rather than re-sorting.
+     *
+     * <p>{@code deltaMinutes} is populated only on {@code DRIFTED} rows and is SIGNED — positive
+     * when the assigned envelope start is later than the usual start, negative when earlier —
+     * with {@link ShiftBandPair#startDeviationMinutes} supplying the unsigned magnitude and this
+     * method supplying the sign. That shared magnitude is DRFT-03's whole point: this report and
+     * {@code ScheduleConstraintProvider.usualShiftConsistency} can never disagree about how far an
+     * agent-day drifted, because both call the one static method.
+     *
+     * <p>{@code popularity} is always {@code List.of()} on this task — plan 17-03 owns D-13's
+     * over-subscription ranking (a separate, independent read of stored {@code AgentUsualShift}
+     * rows, not of solve results). A deliberate, later-fillable gap, not a bug.
+     */
+    public DriftReport buildDriftReport(Schedule schedule) {
+        List<AgentUsualShift> allUsualShifts = agentUsualShiftRepository
+                .findByTenantIdAndDeskId(schedule.getTenantId(), schedule.getDeskId());
+        Map<UUID, Map<DayOfWeek, AgentUsualShift>> byAgentAndWeekday = new HashMap<>();
+        for (AgentUsualShift u : allUsualShifts) {
+            byAgentAndWeekday.computeIfAbsent(u.getAgent().getId(), k -> new HashMap<>())
+                    .put(u.getDayOfWeek(), u);
+        }
+
+        // Read the SAME value the solver read (Schedule.getScheduleConfig(), which falls back to
+        // ScheduleConfig.DEFAULT_CONSISTENCY_TOLERANCE_MINUTES when constraintWeights is absent)
+        // so the report's HONOURED/DRIFTED line can never disagree with what the constraint
+        // actually penalised on this schedule.
+        int toleranceMinutes = schedule.getScheduleConfig().consistencyToleranceMinutes();
+
+        List<DriftReportEntry> entries = new ArrayList<>();
+        int noUsualShiftCount = 0;
+        int honouredCount = 0;
+        int driftedCount = 0;
+
+        for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
+            if (sa.getAgent() == null) continue;
+            ShiftDescriptor descriptor = resolveShiftDescriptor(sa);
+            if (descriptor == null) {
+                // The shift envelope itself was left unassigned (allowsUnassigned) — there is no
+                // actual start time to report drift against, so this agent-day contributes no
+                // entry. Structurally rare: shiftEnvelopeCompliance's hard weight drives a
+                // feasible solve toward assigning every working agent-day a shift.
+                continue;
+            }
+            UUID agentId = sa.getAgent().getId();
+            LocalDate date = sa.getDate();
+            LocalTime actualStartTime = descriptor.startTime();
+
+            AgentUsualShift stored = byAgentAndWeekday
+                    .getOrDefault(agentId, Map.of()).get(date.getDayOfWeek());
+            Optional<ShiftTemplate> resolvedTemplate = stored == null
+                    ? Optional.empty()
+                    : usualShiftResolutionService.resolve(stored, date);
+
+            DriftStatus status;
+            LocalTime usualStartTime;
+            Integer deltaMinutes;
+            if (resolvedTemplate.isEmpty()) {
+                status = DriftStatus.NO_USUAL_SHIFT;
+                usualStartTime = null;
+                deltaMinutes = null;
+            } else {
+                usualStartTime = resolvedTemplate.get().getStartTime();
+                // The ONE distance calculation (DRFT-03) — never re-derived inline here. The sign
+                // is this method's own addition on top of the shared magnitude: positive when the
+                // assigned envelope start is later than the usual start, negative when earlier,
+                // zero (impossible once deviation > 0) otherwise.
+                int magnitude = ShiftBandPair.startDeviationMinutes(actualStartTime, usualStartTime);
+                if (magnitude > toleranceMinutes) {
+                    status = DriftStatus.DRIFTED;
+                    int sign = actualStartTime.isAfter(usualStartTime) ? 1
+                            : actualStartTime.isBefore(usualStartTime) ? -1 : 0;
+                    deltaMinutes = sign * magnitude;
+                } else {
+                    status = DriftStatus.HONOURED;
+                    deltaMinutes = null;
+                }
+            }
+
+            switch (status) {
+                case NO_USUAL_SHIFT -> noUsualShiftCount++;
+                case HONOURED -> honouredCount++;
+                case DRIFTED -> driftedCount++;
+            }
+
+            entries.add(new DriftReportEntry(agentId, sa.getAgent().getName(), date, status,
+                    usualStartTime, actualStartTime, deltaMinutes));
+        }
+
+        // Task 1 (tracer): entries are in schedule.getShiftAssignments() iteration order. Task 2
+        // (TDD) makes the date-ascending/agent-name-ascending server order (17-UI-SPEC.md
+        // Component Specifications §1) real.
+        int workingAgentDays = noUsualShiftCount + honouredCount + driftedCount;
+        DriftSummary summary = new DriftSummary(workingAgentDays, noUsualShiftCount, honouredCount, driftedCount);
+
+        return new DriftReport(entries, summary, List.of());
     }
 
     /**

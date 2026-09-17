@@ -307,16 +307,25 @@ class UsualShiftWritePathTest {
     }
 
     /**
-     * Structural half of row 7: no class anywhere under {@code src/main/java/com/wfm/solver} or
-     * {@link SolverService} itself references {@link AgentUsualShiftRepository} or the {@link
-     * AgentUsualShift} entity -- confirmed by the same textual scan {@link
-     * com.wfm.service.UsualShiftWritePathGuardTest} runs over the whole of {@code src/main/java}
-     * (that guard's Set A / Set B allowlists contain no {@code com.wfm.solver.*} class and no
-     * {@code SolverService}), re-asserted narrowly here against the solver package specifically so
-     * this row's proof does not depend on reading the guard's allowlist by inference.
+     * Structural half of row 7, UPDATED by Phase 17 plan 17-01 (T-17-01/XCUT-02): before this
+     * phase, NEITHER {@code com.wfm.solver} NOR {@link SolverService} referenced {@link
+     * AgentUsualShiftRepository} or the {@link AgentUsualShift} entity at all — Phase 17 makes
+     * {@code SolverService} the single, deliberate exception: it now injects {@link
+     * AgentUsualShiftRepository} to pre-solve-resolve each working agent-day's usual-shift target
+     * (17-CONTEXT.md D-11), the first and only entry point where the solver package's boundary
+     * reads that table. The Timefold constraint-stream package ({@code com.wfm.solver} itself)
+     * remains untouched — it reads the pre-resolved {@link com.wfm.model.ResolvedUsualShiftTarget}
+     * problem fact instead, never {@code AgentUsualShift} directly, so the first assertion below
+     * (no offenders under {@code com.wfm.solver}) is unchanged from Phase 16 and still holds.
+     *
+     * <p>This test proves the field now EXISTS on {@code SolverService}, by design; it does NOT
+     * prove read-only-ness (that {@code SolverService} calls no mutating
+     * {@link AgentUsualShiftRepository} method) — plan 17-03's
+     * {@code SolverUsualShiftWritePathGuardTest} is the named, structural enforcement of that
+     * property (T-17-01), not this test.
      */
     @Test
-    void solverPackageAndSolverService_declareNoAgentUsualShiftReference_structural() throws IOException, URISyntaxException {
+    void solverPackage_declaresNoAgentUsualShiftReference_structural() throws IOException, URISyntaxException {
         Path moduleRoot = resolveModuleRoot();
         Path solverPackage = moduleRoot.resolve("src/main/java/com/wfm/solver");
         assertThat(Files.isDirectory(solverPackage)).as("src/main/java/com/wfm/solver must exist").isTrue();
@@ -332,15 +341,22 @@ class UsualShiftWritePathTest {
         }
         assertThat(offenders)
                 .as("No class under com.wfm.solver may reference AgentUsualShift or "
-                        + "AgentUsualShiftRepository (row 7)")
+                        + "AgentUsualShiftRepository (row 7) -- the constraint-stream package reads "
+                        + "ResolvedUsualShiftTarget instead (Phase 17 D-11)")
                 .isEmpty();
 
+        // Phase 17 D-11: SolverService is now the DELIBERATE exception -- the one place the
+        // solver's pre-solve step reads AgentUsualShiftRepository, to build ResolvedUsualShiftTarget
+        // problem facts. Inverted from Phase 16's "must not depend" -- this dependency is the
+        // phase's own new plumbing, not a regression.
         boolean solverServiceHasField = Arrays.stream(SolverService.class.getDeclaredFields())
                 .anyMatch(f -> AgentUsualShiftRepository.class.isAssignableFrom(f.getType())
                         || AgentUsualShift.class.isAssignableFrom(f.getType()));
         assertThat(solverServiceHasField)
-                .as("SolverService must not depend on AgentUsualShiftRepository or AgentUsualShift")
-                .isFalse();
+                .as("Phase 17: SolverService must now depend on AgentUsualShiftRepository "
+                        + "(read-only pre-solve resolution, D-11) -- see "
+                        + "SolverService#resolveUsualShiftTargets")
+                .isTrue();
     }
 
     // --- solve harness (mirrors SolverQualityGuardTest#solve's termination-override technique) ---

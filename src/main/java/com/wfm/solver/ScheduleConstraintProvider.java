@@ -92,6 +92,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             bulkUnderallocationSoft(factory),
             bulkUnderallocationHard(factory),
             minimumStaffing(factory),
+            usualShiftConsistency(factory),
         };
     }
 
@@ -772,6 +773,65 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter((ts, totalAssigned) -> totalAssigned < MIN_AGENTS_PER_TIMESLOT)
                 .penalizeConfigurable((ts, totalAssigned) -> MIN_AGENTS_PER_TIMESLOT - totalAssigned)
                 .asConstraint("Minimum staffing");
+    }
+
+    /**
+     * (Phase 17, CONS-01/CONS-02/CONS-04) Usual shift consistency — a per-agent-day
+     * TARGET-DEVIATION penalty, not the reverted attempt's per-agent SPREAD (commits
+     * {@code 7861b83}/{@code 9207ceb}/{@code 9f4a96f}/{@code 6fb78c7}, whose own javadoc named
+     * the flaw: "the search sees a plateau, not a gradient"). Every worked agent-day is compared
+     * against its stored, era-resolved usual-shift start ({@link ResolvedUsualShiftTarget}) —
+     * there is always a gradient toward the target, never a plateau across equally-spread
+     * schedules.
+     *
+     * <p>The tolerance band ({@code cfg.consistencyToleranceMinutes()}) is a genuine dead zone —
+     * the filter below is a STRICT {@code >}, so a deviation exactly equal to the band is free
+     * (D-05's "genuine dead zone, never a taper"). Past the band, the penalty is the excess
+     * minutes divided by the increment, rounded with {@link java.math.RoundingMode#CEILING} — this
+     * codebase already carries two rounding modes ({@code HALF_UP} and {@code CEILING}) across its
+     * constraints, and CEILING is chosen here (not a third mode) because it leaves no excess
+     * deviation free: a 1-minute excess over a 30-minute increment still charges a full increment,
+     * matching CONS-02's "the first penalised state begins one minute beyond the band" — an
+     * excess that rounded down to zero increments would silently readmit the dead-zone taper this
+     * constraint exists to avoid.
+     *
+     * <p>CONS-04 (soft-only): enforced at {@code ConstraintWeightsService} save time (plan
+     * 17-02), not asserted here — see {@code ConstraintWeights.consistentStartWeight}'s javadoc.
+     *
+     * <p><b>Stream order is a performance contract, copied from {@link #shiftEnvelopeCompliance}
+     * and {@link #bandCapacity}.</b> Leads with the (empty-in-SLOT-mode)
+     * {@link AgentShiftAssignment} stream and gates {@code SchedulingMode.SHIFT} before touching
+     * {@link ResolvedUsualShiftTarget} — a SLOT-mode desk has zero shift rows, so this
+     * constraint's node network is dead there by construction. Leading with a per-slot stream
+     * instead measured roughly three times worse construction-heuristic throughput on this
+     * codebase's benchmark scenario (see {@code shiftEnvelopeCompliance}'s javadoc for the
+     * measured numbers) — do not reorder these joins.
+     *
+     * <p>{@code sa.getShiftBandPair() == null} (an unassigned shift row, which
+     * {@code forEachIncludingUnassigned} admits) charges nothing rather than throwing — mirroring
+     * {@link #bandCapacity}'s null-safety shape.
+     */
+    Constraint usualShiftConsistency(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(ResolvedUsualShiftTarget.class,
+                        equal((sa, cfg) -> sa.getAgent().getId(), ResolvedUsualShiftTarget::agentId),
+                        equal((sa, cfg) -> sa.getDate(), ResolvedUsualShiftTarget::date))
+                .filter((sa, cfg, target) -> sa.getShiftBandPair() != null
+                        && ShiftBandPair.startDeviationMinutes(
+                                sa.getShiftBandPair().template().getStartTime(), target.usualStartTime())
+                            > cfg.consistencyToleranceMinutes())
+                .penalizeConfigurable((sa, cfg, target) -> {
+                    int deviationMinutes = ShiftBandPair.startDeviationMinutes(
+                            sa.getShiftBandPair().template().getStartTime(), target.usualStartTime());
+                    int excessMinutes = deviationMinutes - cfg.consistencyToleranceMinutes();
+                    return BigDecimal.valueOf(excessMinutes)
+                            .divide(BigDecimal.valueOf(cfg.incrementMinutes()), 0,
+                                    java.math.RoundingMode.CEILING)
+                            .intValue();
+                })
+                .asConstraint("Usual shift consistency");
     }
 
     // ============================================================

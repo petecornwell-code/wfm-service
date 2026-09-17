@@ -72,6 +72,36 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
         return !overlapsBreak;
     }
 
+    /**
+     * The ONE distance calculation DRFT-03 requires — {@code ScheduleConstraintProvider
+     * .usualShiftConsistency} and {@code ScheduleOutputService.buildDriftReport} both call this,
+     * never re-implementing the delta inline (Phase 17, D-01/D-03).
+     *
+     * <p>D-03: compares the ASSIGNED ENVELOPE START ({@code this.template().getStartTime()}),
+     * never a seat-derived earliest {@link com.wfm.model.AgentAssignment} time — the shift IS the
+     * envelope in this model, and it never depends on how seats fell inside it. Accepted D-01
+     * blind spot, stated here rather than only in planning docs: a template with the same start
+     * and a different end reads zero deviation — duration is already policed by the
+     * contracted-hours constraints, and the column being adopted ({@code consistent_start_weight})
+     * is a start-time column by name.
+     *
+     * <p>Returns an absolute magnitude — this is what makes D-05's symmetric single-value
+     * tolerance band possible: one stored number applied to {@code abs(delta)}, not an early
+     * bound and a late bound. Asymmetry (early vs. late) is deferred under D-05, not rejected —
+     * addable later without changing what any stored value means.
+     *
+     * <p>Either argument {@code null} yields zero deviation — a missing envelope start (unassigned
+     * shift) or a missing usual-shift target (USHF-04's penalty-free state) both mean "nothing to
+     * compare", never a computed distance.
+     */
+    public static int startDeviationMinutes(LocalTime assignedEnvelopeStart, LocalTime usualStartTime) {
+        if (assignedEnvelopeStart == null || usualStartTime == null) {
+            return 0;
+        }
+        return (int) Math.abs(
+                java.time.temporal.ChronoUnit.MINUTES.between(usualStartTime, assignedEnvelopeStart));
+    }
+
     /** Net working duration for this specific pair — delegates to the band-parameterised helper. */
     public BigDecimal netHours() {
         return template.getNetHours(band == null ? 0 : band.getDurationMinutes());

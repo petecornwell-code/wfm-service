@@ -28,7 +28,7 @@ guard is true only on the day it ships; the guard below is what keeps it true af
 | Desk move / removal | `DeskAgentService#removeDeskAgent` | `com.wfm.service.DeskAgentService` | Deletes every stored usual shift for that agent, through the same `UsualShiftService#clearUsualShifts` implementation the clearDesk path uses (D-12) — `agent_day_hours` rows are deliberately NOT deleted here, unchanged from before this phase | DeskAgentServiceUsualShiftTest |
 | BambooHR refresh | `BambooRefreshService#refreshDeskAgents` | — | Leaves every stored usual shift byte-identical; `BambooRefreshService` holds no field assignable from `AgentUsualShiftRepository`, so this path structurally cannot write usual-shift data | UsualShiftWritePathTest |
 | Scheduling-mode switch | `DeskService#switchSchedulingMode` | — | Leaves every stored usual shift byte-identical in both directions; the switch remains the single-column write (`desk.scheduling_mode`) MODE-04 proved, and never becomes destructive at the moment an operator reaches for the SHIFT-to-SLOT escape hatch (D-13) | UsualShiftWritePathTest |
-| The solver | `SolverService#startSolve` | — | Leaves every stored usual shift byte-identical; only `AgentShiftAssignment` is solver output — target (`agent_usual_shift`) and result (`agent_shift_assignment`) stay distinct fields, as `AgentDayHours` and `AgentAssignment` already are | UsualShiftWritePathTest |
+| The solver | `SolverService#startSolve` | `com.wfm.service.SolverService` | Leaves every stored usual shift byte-identical; only `AgentShiftAssignment` is solver output — target (`agent_usual_shift`) and result (`agent_shift_assignment`) stay distinct fields, as `AgentDayHours` and `AgentAssignment` already are. **Updated by Phase 17 plan 17-01 (D-11):** the pre-solve step now READS `agent_usual_shift` via `SolverService#resolveUsualShiftTargets` to build `ResolvedUsualShiftTarget` problem facts for the new consistency constraint — the first and only place the solver touches this table at all (T-17-01) — but calls no method on `AgentUsualShiftRepository` other than the read finder that loads the rows | UsualShiftWritePathTest |
 | Template delete (PLANNER ADDITION, P-18) | `ShiftTemplateService#deleteShiftTemplate` | `com.wfm.service.ShiftTemplateService` | Refuses with a `ConflictException` naming the count when any `agent_usual_shift` row references the template being deleted, so the FK's `ON DELETE CASCADE` never fires through this path (T-16-09) | ShiftTemplateServiceTest |
 | Desk delete (PLANNER ADDITION, P-18) | `DeskService#deleteDesk` | — | Usual shifts cascade away with the desk's shift templates (the FK's `ON DELETE CASCADE`, V47, relied upon by `shift_template.desk_id`'s own cascade at V39); the delete succeeds rather than failing on a foreign-key violation | AgentUsualShiftPostgresTest |
 
@@ -41,13 +41,23 @@ source (`grep -rl` against `src/main/java`, read directly, not predicted) — a 
 appears here when it references the type at all (including the entity/repository's own
 declaration), not only when it writes.
 
+**Phase 17 plan 17-01 additions (both non-write, read-only references — no new table row, since
+the table above enumerates write paths only):**
+- `com.wfm.service.SolverService` — row 7's read path (D-11), see the table row above.
+- `com.wfm.service.ScheduleOutputService` — `buildDriftReport` (DRFT-01/DRFT-02) resolves each
+  shift-scheduled agent-day's stored usual shift through `UsualShiftResolutionService.resolve(...)`
+  at read time, alongside the existing `buildPreferenceReport`. Read-only: no `.save(...)` or
+  `.delete...(...)` call on `AgentUsualShiftRepository` anywhere in this class.
+
 ### AgentUsualShiftRepository references (Set A)
 
 ```
 com.wfm.repository.AgentUsualShiftRepository
 com.wfm.service.DeskAgentService
 com.wfm.service.DeskAssignmentUploadService
+com.wfm.service.ScheduleOutputService
 com.wfm.service.ShiftTemplateService
+com.wfm.service.SolverService
 com.wfm.service.UsualShiftService
 ```
 
@@ -58,6 +68,8 @@ com.wfm.model.AgentUsualShift
 com.wfm.repository.AgentUsualShiftRepository
 com.wfm.service.DeskAgentService
 com.wfm.service.DeskAssignmentUploadService
+com.wfm.service.ScheduleOutputService
+com.wfm.service.SolverService
 com.wfm.service.UsualShiftResolutionService
 com.wfm.service.UsualShiftService
 ```

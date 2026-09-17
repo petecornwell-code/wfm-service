@@ -1,0 +1,53 @@
+-- Phase 17: Consistency Constraint & Drift Reporting (plan 17-01, tracer slice).
+--
+-- Three things this migration does NOT do, stated up front because each is a trap this phase
+-- exists to avoid:
+--
+-- 1. It does NOT add `consistent_start_weight` -- V38 already created that column on
+--    `constraint_weights`. What IS new here is the Java entity field
+--    (`ConstraintWeights.consistentStartWeight`) that finally reads/writes it -- the column has
+--    existed with no Java field pointed at it since V38 shipped. Re-adding that column here
+--    (another `ADD COLUMN` naming it) would fail outright (column already present).
+--
+-- 2. It does NOT touch `consistent_start_weight`'s stored value. V38's migration comment sizes
+--    its `0hard/2soft` default with arithmetic written for a PER-AGENT penalty (28 CSRs x 4
+--    increments x 2 = 224 soft). This phase's `usualShiftConsistency` constraint charges
+--    PER-AGENT-DAY (D-02), so the same 2-soft weight over five working days reaches roughly
+--    28 x 2 x 5 = 280 soft *per increment of average deviation* -- comfortably past
+--    `minStaffingWeight`'s 1000 once agents drift by more than a couple of increments each,
+--    which is exactly the "consistency buys uncovered hours" outcome V38's comment says must
+--    never happen. That re-derivation is XCUT-04's benchmark job (plan 17-04's V49), not this
+--    migration's -- V38's shipped default is left untouched here on purpose, pending the
+--    seeded A/B this phase's D-06 requires before any number is trusted.
+--
+-- 3. It does NOT introduce a second `HardSoftScore` pair for the tolerance band. D-04 is a
+--    deliberate, commented convention break: `consistency_tolerance_minutes` is a plain
+--    NOT NULL integer, the one non-`HardSoftScore` column in this `@ConstraintConfiguration`
+--    table, kept alongside `consistent_start_weight` so the band and the weight acting on it
+--    stay one row, one screen, one API call.
+--
+-- What this migration DOES add:
+--
+--   consistency_tolerance_minutes INT NOT NULL DEFAULT 60
+--     The symmetric dead-zone band (D-05) applied to the absolute envelope-start-to-usual-start
+--     deviation (ShiftBandPair.startDeviationMinutes) before any penalty accrues. 60 minutes is
+--     chosen because this codebase's shift-library templates conventionally differ by an hour or
+--     more (see the "Early"/"Late" naming across desks) -- a symmetric one-hour band means a
+--     genuinely DIFFERENT template registers as drift, while a minor envelope nudge within the
+--     same rough shift does not. Not benchmark-derived (D-06 binds the weight, not the band --
+--     see 17-CONTEXT.md Claude's Discretion); this is a judgement default, correctable later
+--     without a migration since it lives on the same per-desk operator-editable row as the
+--     weight it pairs with.
+--
+--   preferred_start_shift_mode_weight VARCHAR(50) NOT NULL DEFAULT '0hard/1soft'
+--     Weight column for plan 17-02's new shift-granularity "Preferred start (shift mode)"
+--     constraint (D-08/D-09) -- declared here so the column and the ConstraintWeights entity
+--     field land together with V48, even though the constraint itself is 17-02's. Provisional
+--     default, strictly BELOW consistent_start_weight's current '0hard/2soft' soft score so
+--     D-08's precedence invariant (consistency must always outrank this preference) holds from
+--     the moment both columns exist, before 17-02's save-time enforcement is even written.
+ALTER TABLE constraint_weights
+    ADD COLUMN consistency_tolerance_minutes INT NOT NULL DEFAULT 60;
+
+ALTER TABLE constraint_weights
+    ADD COLUMN preferred_start_shift_mode_weight VARCHAR(50) NOT NULL DEFAULT '0hard/1soft';

@@ -285,6 +285,16 @@ public final class ScheduleConstraintClassification {
                         + "top-up unchanged.",
                 null));
 
+        map.put("Usual shift consistency", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 17 (CONS-01/CONS-02/CONS-04): joins AgentShiftAssignment to ScheduleConfig, "
+                        + "filters to SHIFT mode, then joins ResolvedUsualShiftTarget on (agent, date), "
+                        + "penalising per-agent-day target deviation past the desk's tolerance band. "
+                        + "Structurally inert on a SLOT desk -- no AgentShiftAssignment rows exist there "
+                        + "to join against, the same double-inertness shape as 'Shift envelope "
+                        + "compliance' and 'Band capacity'.",
+                null));
+
         return java.util.Collections.unmodifiableMap(map);
     }
 }

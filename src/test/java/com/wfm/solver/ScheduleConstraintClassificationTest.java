@@ -181,13 +181,14 @@ class ScheduleConstraintClassificationTest {
      * The six constraints plan 15-06 Task 1 actively mode-gates (added filter, unchanged body),
      * plus the pre-existing "Shift envelope compliance" (plan 15-03), plan 15-06 Task 2's
      * "Break clustering" (reclassified once it gained a real body, ENVL-09), plan 15-06 Task 3's
-     * "Band capacity" (ENVL-08/D-03), and plan 15-09's "Minimum staffing" (G-15-10 — seat supply
-     * is now mode-dependent) must all carry MODE_GATED, and the two preference rows must keep
-     * PHASE_15_OWNER verbatim (P-27) even though they are no longer OPEN — the Entry record
-     * permits an owner on any classification.
+     * "Band capacity" (ENVL-08/D-03), plan 15-09's "Minimum staffing" (G-15-10 — seat supply
+     * is now mode-dependent), and plan 17-01's "Usual shift consistency" (CONS-01/CONS-02/
+     * CONS-04) must all carry MODE_GATED, and the two preference rows must keep PHASE_15_OWNER
+     * verbatim (P-27) even though they are no longer OPEN — the Entry record permits an owner on
+     * any classification.
      */
     @Test
-    void thePhase15ModeGatedSetIsExactlyTheElevenExpectedRows() {
+    void thePhase15ModeGatedSetIsExactlyTheExpectedRows() {
         Set<String> expected = Set.of(
                 "Exactly one break", "Break duration", "Break blocked window", "Break start alignment",
                 "Honour preferred start time", "Honour preferred break time",
@@ -196,7 +197,10 @@ class ScheduleConstraintClassificationTest {
                 // G-15-27: restores for SHIFT mode the contiguity guarantee V44's bounded slack
                 // removed. MODE_GATED for the same reason as "Shift envelope compliance" -- it
                 // filters to SHIFT and a SLOT desk has no AgentShiftAssignment rows anyway.
-                "Shift work contiguity");
+                "Shift work contiguity",
+                // Phase 17 plan 17-01: joins AgentShiftAssignment to ScheduleConfig to
+                // ResolvedUsualShiftTarget, structurally inert on a SLOT desk the same way.
+                "Usual shift consistency");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -209,9 +213,9 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the eleven constraints whose behaviour depends "
-                        + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09) and its G-15-27 "
-                        + "follow-up")
+                .as("MODE_GATED must be exactly the twelve constraints whose behaviour depends "
+                        + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09), its G-15-27 "
+                        + "follow-up, and Phase 17 plan 17-01's 'Usual shift consistency'")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

@@ -177,6 +177,79 @@ public class ConstraintWeights {
     @Column(name = "shift_work_contiguity_weight")
     private HardSoftScore shiftWorkContiguityWeight = HardSoftScore.ofHard(10);
 
+    /**
+     * Weight for "Usual shift consistency" (Phase 17, CONS-01/CONS-02/CONS-04) — a per-agent-day
+     * target-deviation penalty comparing the assigned shift envelope start against the agent's
+     * era-resolved usual shift start ({@code ShiftBandPair.startDeviationMinutes}), past the
+     * {@link #consistencyToleranceMinutes} dead zone.
+     *
+     * <p>This ADOPTS the {@code consistent_start_weight} column V38 already created — that
+     * migration shipped the column with no Java field pointed at it (an orphan), sized for a
+     * PER-AGENT penalty this phase's PER-AGENT-DAY formulation replaces (D-02/D-06; see V48's
+     * migration comment). V38's own comment already states why this must stay soft: "A hard
+     * consistency rule does not force consistent starts; it forces shorter shifts."
+     *
+     * <p>D-07: the hard component MUST stay zero. This is ENFORCED, not merely documented — a
+     * non-zero hard component here is rejected at save time by {@code ConstraintWeightsService}
+     * (plan 17-02), not just discouraged in a comment. This deliberately diverges from Phase 15's
+     * precedent that hard-vs-soft is "a per-desk configuration row, not a code decision"
+     * ({@code shiftEnvelopeComplianceWeight}, {@code bandCapacityWeight}) — for those constraints
+     * hard is the correct setting; here hard is a documented failure mode, exactly as V38's
+     * comment already warned.
+     */
+    @ConstraintWeight("Usual shift consistency")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "consistent_start_weight")
+    private HardSoftScore consistentStartWeight = HardSoftScore.ofSoft(2);
+
+    /**
+     * Tolerance band, in minutes, for "Usual shift consistency" (Phase 17, D-04/D-05) — a
+     * deviation up to and including this many minutes is a genuine dead zone (zero penalty); the
+     * first penalised minute is one beyond it. Symmetric: applied to {@code abs(delta)}, never an
+     * early bound and a late bound separately (D-05; asymmetry deferred, not rejected).
+     *
+     * <p>DELIBERATE CONVENTION BREAK, stated here rather than left to be rediscovered: every
+     * other non-key column in this {@code @ConstraintConfiguration} is a {@link HardSoftScore}.
+     * This is a plain {@code int} — kept on {@code constraint_weights} (not {@code Desk}, not
+     * {@code Schedule}/{@code ScheduleConfig}) so the band and the weight acting on it are one
+     * row, one screen, one API call (CONS-02). See {@code 17-CONTEXT.md} D-04 for the full
+     * rationale, including the two rejected alternatives.
+     */
+    @Column(name = "consistency_tolerance_minutes")
+    private int consistencyToleranceMinutes = 60;
+
+    /**
+     * Weight for "Preferred start (shift mode)" (Phase 17, CONS-05/CONS-06/D-08) — a NEW
+     * shift-granularity preference constraint (added by plan 17-02) penalising the absolute
+     * deviation between the assigned envelope start and the agent's {@code preferredStartTime},
+     * anchor-style in both directions (never lateness-only). This field is declared here, with
+     * V48, so the column and the entity land together; the constraint body itself is 17-02's.
+     *
+     * <p><b>Deliberately carries NO {@code @ConstraintWeight} annotation yet</b> — a Rule-3
+     * fix discovered during 17-01's execution, not part of the plan's original interfaces text.
+     * {@code ScheduleConstraintClassificationTest} reflectively derives the registered-constraint
+     * set from every {@code @ConstraintWeight} field on this class AND from every
+     * {@code Constraint}-returning builder method on {@code ScheduleConstraintProvider}, then
+     * asserts the two sets agree (Phase 14 P-07, XCUT-05). Annotating this field now — before
+     * plan 17-02 adds the {@code preferredStartShiftMode} builder method that reads it — would
+     * create an orphan weight with no constraint, failing that completeness guard for the whole
+     * suite (a plan-internal contradiction: the interfaces text asks for the annotation here, but
+     * this task's own acceptance criteria require {@code ./gradlew test} green). This mirrors
+     * {@link #consistentStartWeight}'s own adopted-orphan-column precedent, just for the
+     * annotation instead of the column: the column and this field exist now; the
+     * {@code @ConstraintWeight} annotation and the constraint method that reads it land together
+     * in plan 17-02.
+     *
+     * <p>D-08: this weight's soft score MUST stay strictly below {@link #consistentStartWeight}'s
+     * soft score — consistency always outranks preference. Enforced at save time (plan 17-02's
+     * {@code ConstraintWeightsService}), not merely by convention, and covered by a named test
+     * (CONS-06's "documented and observable", not "implicit in relative constraint weights a
+     * reader would have to reverse-engineer").
+     */
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "preferred_start_shift_mode_weight")
+    private HardSoftScore preferredStartShiftModeWeight = HardSoftScore.ofSoft(1);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -253,4 +326,13 @@ public class ConstraintWeights {
 
     public HardSoftScore getShiftWorkContiguityWeight() { return shiftWorkContiguityWeight; }
     public void setShiftWorkContiguityWeight(HardSoftScore shiftWorkContiguityWeight) { this.shiftWorkContiguityWeight = shiftWorkContiguityWeight; }
+
+    public HardSoftScore getConsistentStartWeight() { return consistentStartWeight; }
+    public void setConsistentStartWeight(HardSoftScore consistentStartWeight) { this.consistentStartWeight = consistentStartWeight; }
+
+    public int getConsistencyToleranceMinutes() { return consistencyToleranceMinutes; }
+    public void setConsistencyToleranceMinutes(int consistencyToleranceMinutes) { this.consistencyToleranceMinutes = consistencyToleranceMinutes; }
+
+    public HardSoftScore getPreferredStartShiftModeWeight() { return preferredStartShiftModeWeight; }
+    public void setPreferredStartShiftModeWeight(HardSoftScore preferredStartShiftModeWeight) { this.preferredStartShiftModeWeight = preferredStartShiftModeWeight; }
 }

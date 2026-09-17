@@ -160,6 +160,14 @@ public class Schedule {
     @Transient
     private List<ShiftBandPair> shiftBandPairs = new ArrayList<>();
 
+    // Phase 17 (D-11): the pre-solve era-resolved usual-shift target per (agent, date), built by
+    // SolverService.resolveUsualShiftTargets. Empty on a SLOT-mode desk and on any working
+    // agent-day with no stored usual-shift row for that weekday (USHF-04's penalty-free state) —
+    // usualShiftConsistency's join against this list simply finds no match, zero special-casing.
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<ResolvedUsualShiftTarget> resolvedUsualShiftTargets = new ArrayList<>();
+
     // CR-02 gap closure (V43): persisted, not inferred. Records the mode THIS schedule was
     // actually solved under -- SolverService.buildSchedule sets it from Desk.schedulingMode
     // before any solve starts (see getScheduleConfig() below), so acceptSchedule's
@@ -286,6 +294,9 @@ public class Schedule {
     public List<ShiftBandPair> getShiftBandPairs() { return shiftBandPairs; }
     public void setShiftBandPairs(List<ShiftBandPair> shiftBandPairs) { this.shiftBandPairs = shiftBandPairs; }
 
+    public List<ResolvedUsualShiftTarget> getResolvedUsualShiftTargets() { return resolvedUsualShiftTargets; }
+    public void setResolvedUsualShiftTargets(List<ResolvedUsualShiftTarget> resolvedUsualShiftTargets) { this.resolvedUsualShiftTargets = resolvedUsualShiftTargets; }
+
     public SchedulingMode getSchedulingMode() { return schedulingMode; }
     public void setSchedulingMode(SchedulingMode schedulingMode) { this.schedulingMode = schedulingMode; }
 
@@ -298,12 +309,20 @@ public class Schedule {
     @ProblemFactProperty
     @Transient
     public ScheduleConfig getScheduleConfig() {
+        // Phase 17 (D-04): the tolerance band is STORED per desk on ConstraintWeights, but reaches
+        // the solver here as a ScheduleConfig scalar — see ScheduleConfig's class javadoc for why
+        // this is a transport decision, not a storage one. constraintWeights can be null before
+        // SolverService.startSolve populates it (schedule.setConstraintWeights runs later in the
+        // same pre-solve block), so this falls back to ScheduleConfig's own default rather than NPE.
+        int consistencyToleranceMinutes = constraintWeights == null
+                ? ScheduleConfig.DEFAULT_CONSISTENCY_TOLERANCE_MINUTES
+                : constraintWeights.getConsistencyToleranceMinutes();
         return new ScheduleConfig(
                 incrementMinutes, startTime, endTime,
                 breakDurationMinutes, breakMinShiftHours, breakBlockedHours,
                 breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay,
                 overallocationHardLimitPct, underallocationHardLimitPct,
-                schedulingMode);
+                schedulingMode, consistencyToleranceMinutes);
     }
 }
