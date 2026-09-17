@@ -383,3 +383,14 @@ constraint) can proceed: `consistentStartWeight`, `consistencyToleranceMinutes`,
 remaining wiring is the `@ConstraintWeight` annotation on `preferredStartShiftModeWeight` (deferred
 here, see Deviation 1) plus the `ConstraintWeightsDto`/`Service`/`Controller`/frontend chain.
 No blockers.
+
+## Self-Check: PASSED
+
+- All 4 newly created files verified present on disk (migration, `ResolvedUsualShiftTarget.java`,
+  `UsualShiftConsistencyConstraintTest.java`, `DriftReportTest.java`).
+- All 4 commit hashes (`b1a0233`, `6609a07`, `aecbe5e`, `e0cd1d8`) verified present via `git log`.
+- All task-level `<acceptance_criteria>` re-run and passing (migration column checks, shared-method
+  grep checks, classification row, boundary `ConstraintVerifier` cases, `DriftReportTest` field
+  assertions, `resolveUsualShiftTargets` read-only check).
+- Plan-level `<verification>` re-run: `./gradlew test` green (whole suite), `./gradlew assemble`
+  green, `driftReport` non-null on every schedule detail (both scheduling modes).
