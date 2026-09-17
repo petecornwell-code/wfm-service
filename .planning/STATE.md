@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 17
 current_phase_name: Consistency Constraint & Drift Reporting
 status: executing
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-09-17T16:31:53.073Z"
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-09-17T17:14:55.015Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 17 Plan 01 complete (usual-shift consistency constraint + drift report tracer)
-state_head: aecbe5ea30d4b1869bbdfadd2abfb0cca5781de7
+last_activity_desc: Phase 17 Plan 02 complete (preferred-start-shift-mode constraint + structural precedence enforcement)
+state_head: 856d4c53f807b1a739f8624c00b0ef9b85da57dc
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 36
-  completed_plans: 32
+  completed_plans: 33
   percent: 50
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 ## Current Position
 
 Phase: 17 (Consistency Constraint & Drift Reporting) — EXECUTING
-Plan: 2 of 5
-Status: Executing Phase 17
-Last activity: 2026-09-17 — Phase 17 Plan 01 complete (usual-shift consistency constraint + drift report tracer)
+Plan: 3 of 5
+Status: Ready to execute
+Last activity: 2026-09-17 — Phase 17 Plan 02 complete (preferred-start-shift-mode constraint + structural precedence enforcement)
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 32/36 plans, Phase 17 1/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 33/36 plans, Phase 17 2/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -248,6 +248,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 16]: 16-05: click-away cancel for the usual-shift picker wired via onBlur on the wrapping div, not the <select> itself, so blur bubbles without violating the plan's literal no-onBlur-on-select constraint
 - [Phase 17]: Phase 17 Plan 01: tolerance band travels on ScheduleConfig (13th component), never joined from ConstraintWeights, since ConstraintWeights is a @ConstraintConfigurationProvider no constraint joins — ScheduleConfig is already joined seventeen times and in scope for the SHIFT-mode gate; adds no new join
 - [Phase 17]: Phase 17 Plan 01: preferredStartShiftModeWeight field ships without its @ConstraintWeight annotation until plan 17-02 adds the matching constraint method (avoids orphaning ScheduleConstraintClassificationTest's reflective completeness guard) — Column and Java field land now; annotation and constraint method land together in 17-02
+- [Phase 17]: Phase 17 Plan 02: preferredStartShiftMode leads with plain forEach(AgentShiftAssignment.class) not forEachIncludingUnassigned -- an unassigned shift has no envelope start, and forEach's implicit null-filtering on the genuine shiftBandPair planning variable already produces the required behavior
+- [Phase 17]: Phase 17 Plan 02: ConstraintMatchTotal map keys carry a constraintPackage prefix derived from the @PlanningSolution class -- match on getConstraintName(), never assume the map key equals the bare asConstraint(...) string
 
 ### Blockers/Concerns
 
@@ -269,8 +271,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-17T16:31:52.607Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-09-17T17:14:54.755Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -317,3 +319,4 @@ Resume file: None
 | Phase 16 P04 | ~43min | 2 tasks | 3 files |
 | Phase 16 P05 | 13min | 2 tasks | 2 files |
 | Phase 17 P01 | 3h 10min | 2 tasks | 19 files |
+| Phase 17 P02 | 39min | 3 tasks | 10 files |
