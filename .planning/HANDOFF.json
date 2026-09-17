@@ -1,49 +1,150 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-04T16:03:50.588Z",
+  "timestamp": "2026-09-17T14:30:00.000Z",
   "phase": "17",
   "phase_name": "Consistency Constraint & Drift Reporting",
   "phase_dir": ".planning/phases/17-consistency-constraint-drift-reporting",
   "workflow": "plan-phase",
-  "workflow_step": "10 — spawn gsd-plan-checker",
+  "workflow_step": "complete — all 17 tasks done through 13e",
   "plan": null,
   "task": null,
   "total_tasks": null,
-  "status": "paused",
+  "status": "complete",
   "completed_tasks": [
-    {"id": 1, "name": "init.plan-phase + closed-phase gate (status Pending, not gated)", "status": "done", "commit": null},
-    {"id": 2, "name": "Research decision — user chose 'Research first' despite ROADMAP saying no dedicated research phase", "status": "done", "commit": null},
-    {"id": 3, "name": "gsd-phase-researcher → 17-RESEARCH.md (HIGH confidence)", "status": "done", "commit": "5554cca"},
-    {"id": 4, "name": "Nyquist VALIDATION.md seeded from RESEARCH § Validation Architecture", "status": "done", "commit": "a905f3c"},
-    {"id": 5, "name": "plan:pre capability dispatch — security ACTIVE (ASVS L1/high), ui gate block=false, drift advisory, api-coverage detected=false, assumption-delta detected=true, schema-gate N/A", "status": "done", "commit": null},
-    {"id": 6, "name": "gsd-pattern-mapper → 17-PATTERNS.md (20/20 analogs; both researcher open questions resolved)", "status": "done", "commit": "bdec717"},
-    {"id": 7, "name": "Spec-less probe fallback — no plain SPEC.md, edge probe run, 14 applicable edges passed to planner", "status": "done", "commit": null},
-    {"id": 8, "name": "gsd-planner → 5 PLAN.md files in 4 waves + ROADMAP/VALIDATION updates", "status": "done", "commit": "bdec717"}
+    {
+      "id": 1,
+      "name": "init.plan-phase + closed-phase gate (status Pending, not gated)",
+      "status": "done",
+      "commit": null
+    },
+    {
+      "id": 2,
+      "name": "Research decision — user chose 'Research first' despite ROADMAP saying no dedicated research phase",
+      "status": "done",
+      "commit": null
+    },
+    {
+      "id": 3,
+      "name": "gsd-phase-researcher → 17-RESEARCH.md (HIGH confidence)",
+      "status": "done",
+      "commit": "5554cca"
+    },
+    {
+      "id": 4,
+      "name": "Nyquist VALIDATION.md seeded from RESEARCH § Validation Architecture",
+      "status": "done",
+      "commit": "a905f3c"
+    },
+    {
+      "id": 5,
+      "name": "plan:pre capability dispatch — security ACTIVE (ASVS L1/high), ui gate block=false, drift advisory, api-coverage detected=false, assumption-delta detected=true, schema-gate N/A",
+      "status": "done",
+      "commit": null
+    },
+    {
+      "id": 6,
+      "name": "gsd-pattern-mapper → 17-PATTERNS.md (20/20 analogs; both researcher open questions resolved)",
+      "status": "done",
+      "commit": "bdec717"
+    },
+    {
+      "id": 7,
+      "name": "Spec-less probe fallback — no plain SPEC.md, edge probe run, 14 applicable edges passed to planner",
+      "status": "done",
+      "commit": null
+    },
+    {
+      "id": 8,
+      "name": "gsd-planner → 5 PLAN.md files in 4 waves + ROADMAP/VALIDATION updates",
+      "status": "done",
+      "commit": "bdec717"
+    }
   ],
   "remaining_tasks": [
-    {"id": 9, "name": "Step 10 — spawn gsd-plan-checker (model sonnet) over the 5 plans", "status": "not_started"},
-    {"id": 10, "name": "Step 11/12 — handle checker return; revision loop max 3 iterations", "status": "not_started"},
-    {"id": 11, "name": "Step 13 — requirements coverage gate (CONS-01..06, DRFT-01..04)", "status": "not_started"},
-    {"id": 12, "name": "Step 13a — decision coverage gate (BLOCKING; check.decision-coverage-plan against 17-CONTEXT.md)", "status": "not_started"},
-    {"id": 13, "name": "Step 13b — state.planned-phase (STATE.md → 'Ready to execute', 5 plans)", "status": "not_started"},
-    {"id": 14, "name": "Step 13c — roadmap.annotate-dependencies 17 (wave headers + cross-cutting constraints)", "status": "not_started"},
-    {"id": 15, "name": "Step 13d — commit plans + STATE.md + ROADMAP.md (commit_docs is true)", "status": "not_started"},
-    {"id": 16, "name": "Step 13e — plan:post gap-analysis advisory gate", "status": "not_started"},
-    {"id": 17, "name": "Step 14/15 — final status. NOTE auto_advance is TRUE in config, so plan-phase would auto-chain into /gsd-execute-phase 17 unless the chain flag is cleared", "status": "not_started"}
+    {
+      "id": 9,
+      "name": "Step 10 — spawn gsd-plan-checker (model sonnet) over the 5 plans",
+      "status": "not_started"
+    },
+    {
+      "id": 10,
+      "name": "Step 11/12 — handle checker return; revision loop max 3 iterations",
+      "status": "not_started"
+    },
+    {
+      "id": 11,
+      "name": "Step 13 — requirements coverage gate (CONS-01..06, DRFT-01..04)",
+      "status": "not_started"
+    },
+    {
+      "id": 12,
+      "name": "Step 13a — decision coverage gate (BLOCKING; check.decision-coverage-plan against 17-CONTEXT.md)",
+      "status": "not_started"
+    },
+    {
+      "id": 13,
+      "name": "Step 13b — state.planned-phase (STATE.md → 'Ready to execute', 5 plans)",
+      "status": "not_started"
+    },
+    {
+      "id": 14,
+      "name": "Step 13c — roadmap.annotate-dependencies 17 (wave headers + cross-cutting constraints)",
+      "status": "not_started"
+    },
+    {
+      "id": 15,
+      "name": "Step 13d — commit plans + STATE.md + ROADMAP.md (commit_docs is true)",
+      "status": "not_started"
+    },
+    {
+      "id": 16,
+      "name": "Step 13e — plan:post gap-analysis advisory gate",
+      "status": "not_started"
+    },
+    {
+      "id": 17,
+      "name": "Step 14/15 — final status. NOTE auto_advance is TRUE in config, so plan-phase would auto-chain into /gsd-execute-phase 17 unless the chain flag is cleared",
+      "status": "not_started"
+    }
   ],
   "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "Decide whether to let plan-phase auto-advance into execution", "context": "config auto_advance=true and mode=yolo; step 15 would launch /gsd-execute-phase 17 automatically once the gates pass. Plan 17-04 Task 3 carries a blocking-human checkpoint:decision on the one-way V49 migration against live tenant data (this project's 'dev' tier IS production).", "blocking": false}
+    {
+      "action": "Decide whether to let plan-phase auto-advance into execution",
+      "context": "config auto_advance=true and mode=yolo; step 15 would launch /gsd-execute-phase 17 automatically once the gates pass. Plan 17-04 Task 3 carries a blocking-human checkpoint:decision on the one-way V49 migration against live tenant data (this project's 'dev' tier IS production).",
+      "blocking": false
+    }
   ],
   "decisions": [
-    {"decision": "Ran research despite ROADMAP's 'no dedicated research phase' note", "rationale": "User explicitly chose 'Research first' when asked; research was scoped to CONFIRMING salvage material against HEAD rather than open-ended exploration", "phase": "17"},
-    {"decision": "Seeded 17-VALIDATION.md body from RESEARCH § Validation Architecture rather than leaving the bare template", "rationale": "The requirement→test map and Wave 0 list already existed verbatim in research; leaving placeholders would have starved the planner", "phase": "17"},
-    {"decision": "Skipped the api-coverage checkpoint and the schema-push gate", "rationale": "api-coverage detector returned detected=false; project uses Flyway, which matches none of the gate's ORM patterns", "phase": "17"},
-    {"decision": "Passed the fired assumption-delta signal to the planner rather than suppressing it", "rationale": "Signal was the phrase 'not a second implementation' (DRFT-03's prohibition) — likely a false positive, but the checkpoint is advisory and must be recorded, not dropped. Planner recorded it as no-change in 17-01", "phase": "17"},
-    {"decision": "Did not use the gsd_stall_watch polling helpers", "rationale": "This runtime delivers reliable subagent completion notifications; the helpers exist for runtimes where notifications can be lost", "phase": "17"}
+    {
+      "decision": "Ran research despite ROADMAP's 'no dedicated research phase' note",
+      "rationale": "User explicitly chose 'Research first' when asked; research was scoped to CONFIRMING salvage material against HEAD rather than open-ended exploration",
+      "phase": "17"
+    },
+    {
+      "decision": "Seeded 17-VALIDATION.md body from RESEARCH § Validation Architecture rather than leaving the bare template",
+      "rationale": "The requirement→test map and Wave 0 list already existed verbatim in research; leaving placeholders would have starved the planner",
+      "phase": "17"
+    },
+    {
+      "decision": "Skipped the api-coverage checkpoint and the schema-push gate",
+      "rationale": "api-coverage detector returned detected=false; project uses Flyway, which matches none of the gate's ORM patterns",
+      "phase": "17"
+    },
+    {
+      "decision": "Passed the fired assumption-delta signal to the planner rather than suppressing it",
+      "rationale": "Signal was the phrase 'not a second implementation' (DRFT-03's prohibition) — likely a false positive, but the checkpoint is advisory and must be recorded, not dropped. Planner recorded it as no-change in 17-01",
+      "phase": "17"
+    },
+    {
+      "decision": "Did not use the gsd_stall_watch polling helpers",
+      "rationale": "This runtime delivers reliable subagent completion notifications; the helpers exist for runtimes where notifications can be lost",
+      "phase": "17"
+    }
   ],
   "uncommitted_files": [],
-  "next_action": "Re-run /gsd-plan-phase 17 --skip-research. It will detect the 5 existing plans and offer add/view/replan — choose to keep them — then continue into the plan-checker gate. Alternatively spawn gsd-plan-checker directly over .planning/phases/17-consistency-constraint-drift-reporting/*-PLAN.md and then run steps 13→13e manually.",
-  "context_notes": "plan-phase ran clean through the planner spawn. Everything up to and including PLANNING COMPLETE is committed and verified on disk (5 plans, plan_count_all=5, ROADMAP still has 13 phase headers after the planner's scoped Edit, VALIDATION.md has zero remaining TBD rows). The ONLY unrun part of the workflow is the verification tail: plan-checker → coverage gates → STATE/ROADMAP annotation → commit. Nothing is half-written. The planner made two evidence-based corrections to its own source artifacts that a reviewer should not 'fix' back: (1) the tolerance band travels to the solver on ScheduleConfig, not ConstraintWeights — ConstraintWeights is a @ConstraintConfigurationProvider, not a problem fact, and no constraint joins it; (2) ConstraintWeightsData in frontend/src/api/client.ts:379 is a pure index signature { [key: string]: Score } and must be widened before a number member can be added. Also note the drift gate flagged 14 'new directories' that are actually long-standing root files — the codebase map baseline is stale, not the tree."
+  "next_action": "/gsd-execute-phase 17 — planning gates all closed. Do NOT re-run /gsd-plan-phase 17.",
+  "context_notes": "plan-phase ran clean through the planner spawn. Everything up to and including PLANNING COMPLETE is committed and verified on disk (5 plans, plan_count_all=5, ROADMAP still has 13 phase headers after the planner's scoped Edit, VALIDATION.md has zero remaining TBD rows). The ONLY unrun part of the workflow is the verification tail: plan-checker → coverage gates → STATE/ROADMAP annotation → commit. Nothing is half-written. The planner made two evidence-based corrections to its own source artifacts that a reviewer should not 'fix' back: (1) the tolerance band travels to the solver on ScheduleConfig, not ConstraintWeights — ConstraintWeights is a @ConstraintConfigurationProvider, not a problem fact, and no constraint joins it; (2) ConstraintWeightsData in frontend/src/api/client.ts:379 is a pure index signature { [key: string]: Score } and must be widened before a number member can be added. Also note the drift gate flagged 14 'new directories' that are actually long-standing root files — the codebase map baseline is stale, not the tree.",
+  "notes": "plan-checker passed on iteration 2 (5e53641 closed the sole blocker: missing <fails_when> on all 13 automated verify commands). Requirements 10/10, decisions 14/14, gap analysis 24/24. STATE.md at Ready to execute, ROADMAP annotated (35e9cd5). Wave 3 (17-04) ends in V49, a forward-only UPDATE against live tenant rows, behind a blocking-human checkpoint."
 }
