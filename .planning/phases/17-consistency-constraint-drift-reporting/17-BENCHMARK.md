@@ -137,6 +137,232 @@ desk is not), and Task 2 states plainly where the projection and this benchmark'
 
 ## Results
 
-**Status: EMPTY — placeholder committed ahead of any run, per the discipline stated at the top of
-this document.** Task 2 fills in the per-run table, the summary table, the explain() breakdown, the
-sizing arithmetic's numbers, and the two candidate default proposals.
+**Run date:** 2026-09-17
+**Command:** `./gradlew test --tests "com.wfm.solver.UsualShiftConsistencyBenchmarkTest" -Dwfm.benchmark=true`
+**Result:** BUILD SUCCESSFUL. Numbers below are transcribed verbatim from the harness's own stdout.
+No fixture, seed, or step-budget value was adjusted after this run — the one supplementary,
+explicitly-labelled ad-hoc check below (a bigger step budget, to rule out a budget artifact) is
+reported separately and did not change any number used against the pass rule.
+
+### Per-Run Results (5 seeds each, 4 arms)
+
+| arm | weight | seed | hardScore | softScore | earlyAgentDays | lateAgentDays | unassignedShiftCount | minStaffingViolationTimeslots | shortfallUnits | consistencyMatchCount | consistencySoftTotal | elapsedMillis |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| baseline-off-0 | 0 | 1 | 0 | -20450 | 0 | 50 | 0 | 20 | 100 | 0 | 0 | 7120 |
+| baseline-off-0 | 0 | 2 | 0 | -20450 | 0 | 50 | 0 | 20 | 100 | 0 | 0 | 6383 |
+| baseline-off-0 | 0 | 3 | 0 | -20450 | 0 | 50 | 0 | 20 | 100 | 0 | 0 | 6457 |
+| baseline-off-0 | 0 | 4 | 0 | -20450 | 0 | 50 | 0 | 20 | 100 | 0 | 0 | 6204 |
+| baseline-off-0 | 0 | 5 | 0 | -20450 | 0 | 50 | 0 | 20 | 100 | 0 | 0 | 6437 |
+| candidate-1 | 1 | 1 | 0 | -20650 | 0 | 50 | 0 | 20 | 100 | 50 | -200 | 6368 |
+| candidate-1 | 1 | 2 | 0 | -20650 | 0 | 50 | 0 | 20 | 100 | 50 | -200 | 7120 |
+| candidate-1 | 1 | 3 | 0 | -20650 | 0 | 50 | 0 | 20 | 100 | 50 | -200 | 7564 |
+| candidate-1 | 1 | 4 | 0 | -20650 | 0 | 50 | 0 | 20 | 100 | 50 | -200 | 7764 |
+| candidate-1 | 1 | 5 | 0 | -20650 | 0 | 50 | 0 | 20 | 100 | 50 | -200 | 8172 |
+| v38-current-2 | 2 | 1 | 0 | -20850 | 0 | 50 | 0 | 20 | 100 | 50 | -400 | 7399 |
+| v38-current-2 | 2 | 2 | 0 | -20850 | 0 | 50 | 0 | 20 | 100 | 50 | -400 | 7475 |
+| v38-current-2 | 2 | 3 | 0 | -20850 | 0 | 50 | 0 | 20 | 100 | 50 | -400 | 7835 |
+| v38-current-2 | 2 | 4 | 0 | -20850 | 0 | 50 | 0 | 20 | 100 | 50 | -400 | 7980 |
+| v38-current-2 | 2 | 5 | 0 | -20850 | 0 | 50 | 0 | 20 | 100 | 50 | -400 | 7609 |
+| stress-10 | 10 | 1 | 0 | -22450 | 0 | 50 | 0 | 20 | 100 | 50 | -2000 | 7903 |
+| stress-10 | 10 | 2 | 0 | -22450 | 0 | 50 | 0 | 20 | 100 | 50 | -2000 | 7630 |
+| stress-10 | 10 | 3 | 0 | -22450 | 0 | 50 | 0 | 20 | 100 | 50 | -2000 | 7586 |
+| stress-10 | 10 | 4 | 0 | -22450 | 0 | 50 | 0 | 20 | 100 | 50 | -2000 | 7753 |
+| stress-10 | 10 | 5 | 0 | -22450 | 0 | 50 | 0 | 20 | 100 | 50 | -2000 | 7717 |
+
+### Summary — Median and Full Min/Max Spread (never a mean)
+
+| arm | weight | hardScore median/min/max | lateAgentDays median/min/max | minStaffingViolationTimeslots median/min/max | shortfallUnits median/min/max | consistencySoftTotal median/min/max |
+|---|---|---|---|---|---|---|
+| baseline-off-0 | 0 | 0.0/0.0/0.0 | 50.0/50.0/50.0 | 20.0/20.0/20.0 | 100.0/100.0/100.0 | 0.0/0.0/0.0 |
+| candidate-1 | 1 | 0.0/0.0/0.0 | 50.0/50.0/50.0 | 20.0/20.0/20.0 | 100.0/100.0/100.0 | -200.0/-200.0/-200.0 |
+| v38-current-2 | 2 | 0.0/0.0/0.0 | 50.0/50.0/50.0 | 20.0/20.0/20.0 | 100.0/100.0/100.0 | -400.0/-400.0/-400.0 |
+| stress-10 | 10 | 0.0/0.0/0.0 | 50.0/50.0/50.0 | 20.0/20.0/20.0 | 100.0/100.0/100.0 | -2000.0/-2000.0/-2000.0 |
+
+**Every arm's own min/max spread is zero** — all 5 seeds land on byte-identical coverage metrics
+within each arm. This is itself the headline finding below, not noise: this fixture's construction
+heuristic is fully deterministic for this entity type, so seed variation shows up only in local
+search's exploration order, never in the final structural outcome.
+
+### explain() Breakdown — seed 1 of each arm (criterion 2's weight-validation input, same run)
+
+```
+--- arm=baseline-off-0 (consistentStartWeight=0 soft) ---
+  Break clustering => 0hard/-100soft (count: 5)
+  Bulk under-allocation soft => 0hard/-100soft (count: 20)
+  Minimum staffing => 0hard/-20000soft (count: 20)
+  Preferred start (shift mode) => 0hard/-250soft (count: 50)
+
+--- arm=candidate-1 (consistentStartWeight=1 soft) ---
+  Break clustering => 0hard/-100soft (count: 5)
+  Bulk under-allocation soft => 0hard/-100soft (count: 20)
+  Minimum staffing => 0hard/-20000soft (count: 20)
+  Preferred start (shift mode) => 0hard/-250soft (count: 50)
+  Usual shift consistency => 0hard/-200soft (count: 50)
+
+--- arm=v38-current-2 (consistentStartWeight=2 soft) ---
+  Break clustering => 0hard/-100soft (count: 5)
+  Bulk under-allocation soft => 0hard/-100soft (count: 20)
+  Minimum staffing => 0hard/-20000soft (count: 20)
+  Preferred start (shift mode) => 0hard/-250soft (count: 50)
+  Usual shift consistency => 0hard/-400soft (count: 50)
+
+--- arm=stress-10 (consistentStartWeight=10 soft) ---
+  Break clustering => 0hard/-100soft (count: 5)
+  Bulk under-allocation soft => 0hard/-100soft (count: 20)
+  Minimum staffing => 0hard/-20000soft (count: 20)
+  Preferred start (shift mode) => 0hard/-250soft (count: 50)
+  Usual shift consistency => 0hard/-2000soft (count: 50)
+```
+
+`Usual shift consistency`'s per-match magnitude is exactly `(deviation − tolerance) / increment`
+(CEILING) `× weight` = `(300 − 60) / 60 × weight = 4 × weight` per drifted agent-day, for every one
+of the 50 agent-days in this fixture — confirming the constraint's committed formula (17-01) reads
+correctly against a real, non-toy fixture: `-200` at weight 1, `-400` at weight 2, `-2000` at weight
+10, each exactly `50 × 4 × weight`.
+
+## Known Limitation Surfaced By This Run — a construction-heuristic plateau, not a weight question
+
+**Every arm, every seed, converged on the SAME structural outcome: all 50 agent-days assigned
+`Late` (0 `Early`), regardless of `consistentStartWeight` being 0, 1, 2, or 10.** This means the
+committed comparative pass rule's "no worse than baseline" check on `minStaffingViolationTimeslots`
+/ `shortfallUnits` is satisfied **trivially** — by identity, not by a weight small enough to avoid
+degrading coverage. The intended read (does raising the weight from 0 measurably worsen coverage?)
+could not be exercised at this fixture's scale, for a specific, verified reason:
+
+- **Construction heuristic phase 0** (the `AgentShiftAssignment` placement phase, before any seat
+  exists) ends at an **identical** `-40000hard/-60400soft` for every arm tested, including
+  `stress-10` — meaning the weight had zero measurable influence on the CH's own template choice,
+  even though `Early` (0 excess) is unambiguously cheaper than `Late` (`4 × weight` excess) for
+  every entity at every nonzero weight tested.
+- **Local search** (3000 committed steps) then never moves a single agent-day off whatever CH
+  committed to. This matches the shift+seat coupling plateau this project has already documented
+  independently (`SPIKE-COUPLING.md`; `15-BENCHMARK.md`'s own Plateau Finding section): changing
+  `AgentShiftAssignment.shiftBandPair` for one agent-day without ALSO relocating that agent-day's
+  seats immediately produces a `shiftEnvelopeCompliance` HARD violation for the now-mismatched
+  seats, which the `0hard`-temperature acceptor (`solverConfig.xml`, load-bearing per its own
+  comment) rejects outright — a coordinated multi-move sequence (unseat, re-template, reseat) would
+  be needed, and the change/swap neighbourhood only ever moves one variable per step.
+- **Supplementary ad-hoc check (not part of the committed test, reported per this project's
+  established runtime-budget-disclosure convention — `15-BENCHMARK.md`'s own precedent):** the
+  `v38-current-2` arm was re-run at 20,000 steps (6.7× the committed budget) and at a manually
+  reversed template-list order (to rule out a positional tie-break artifact). Neither changed the
+  outcome by a single agent-day. This rules out both "the step budget was too small" and "it's just
+  list-order" as explanations — the plateau is genuine and reproducible, not a configuration
+  accident of this fixture.
+
+**What this does and does not mean for D-06.** It means this benchmark's own SOLVE-DRIVEN coverage
+reading cannot, by itself, certify a candidate weight as safe or unsafe at this fixture's scale —
+the plateau freezes the outcome before the weight gets a chance to matter, in either direction. It
+does NOT invalidate the `explain()`-derived per-agent-day cost formula above, which is a direct,
+verified reading of what the constraint charges for a GIVEN configuration regardless of how the
+solver arrived there — that formula is exactly what the sizing arithmetic below projects onto the
+real desk. This plateau is a known class of limitation for this solver (already named, not
+remedied, out of scope for this milestone per the Phase 15 operator ruling on the soft-quality
+plateau) — it is recorded here as a NEW instance of it (in the shift-template-choice dimension,
+not only the shift+seat-presence dimension `15-BENCHMARK.md` already named), not attributed to this
+plan's own scope to fix.
+
+## Sizing Arithmetic — V38's per-agent formula redone for D-02's per-agent-day model
+
+**Factors, stated separately per the plan's requirement:**
+
+| Factor | Value | Source |
+|---|---|---|
+| Live desk agent count | 28 CSRs | V38's own migration comment (unchanged since Phase 15/16 research) |
+| Working days per schedule period | 5 | Standard Mon–Fri schedule period, matching this document's own fixture and 17-CONTEXT.md's D-06 worked example |
+| Typical excess increments past the 60-minute tolerance band | 4 | Adopted directly from V38's own comment ("a four-increment spread"), for direct comparability — this project's own D-06 worked example in `17-CONTEXT.md` already uses this same figure and arrives at the same `≈1,120` this section reproduces below |
+| Ceiling — one `minStaffingWeight` violation | 1000 soft | `ConstraintWeights.minStaffingWeight` default; the interfaces' own stated ceiling |
+
+**Worst case — every one of the 28 agents drifted on every one of the 5 days** (V38's own
+conservative framing, extended verbatim to the per-agent-day model):
+
+```
+total = agentCount × workingDays × excessIncrements × weight
+      = 28 × 5 × 4 × weight
+      = 560 × weight
+```
+
+| Weight | Worst-case total | vs. 1000 ceiling |
+|---|---|---|
+| 1 | 560 | **under** |
+| 2 (V38's inherited value) | **1,120** | **over — by 12%** (matches `17-CONTEXT.md`'s own `≈1,120` worked example exactly) |
+| 3 | 1,680 | over |
+
+**Typical case — an explicit, stated judgement, not a measurement.** No production telemetry exists
+yet for what fraction of agent-days actually drift past the tolerance band on a normally-loaded
+desk (this is itself worth flagging as a follow-up — see "What This Benchmark Does Not Close"
+below). Assuming a HEALTHY desk mostly honours its stored usual shifts and only a minority of
+agent-days genuinely drift on any given day (illustrative: ~20% of the roster, ≈6 agents/day — a
+judgement call, stated as one, not measured):
+
+```
+total ≈ 6 × 5 × 4 × weight = 120 × weight
+```
+
+| Weight | Typical-case total | vs. 1000 ceiling |
+|---|---|---|
+| 1 | 120 | under |
+| 2 | 240 | under |
+| 3 | 360 | under |
+
+**Agreement with this benchmark's own measurement.** This fixture's `explain()` breakdown above
+measured `-400` soft at weight 2 for its own 50 drifted agent-days — exactly `50 × 4 × 2 = 400`,
+i.e. **8 soft per drifted agent-day at weight 2**. The worst-case projection above assumes the
+identical per-agent-day rate (`4 excess increments × weight = 8` at weight 2) — **the two agree
+exactly on the per-agent-day formula**; they diverge only in TOTAL SCALE, because this fixture's
+own construction-heuristic plateau (see above) happened to reproduce the WORST-CASE 100%-drift
+assumption on its own 50-agent-day fixture, while the live desk's 140 agent-days (28 × 5) would
+not realistically all drift at once outside of a genuine data-quality breakdown (e.g. a mass
+template retirement invalidating most stored usual shifts at once). Stated plainly, as the plan
+requires: **the measurement and the projection disagree on how much of the roster is likely to
+drift at once, not on what a single drifted agent-day costs.**
+
+## Candidate Default Proposals
+
+Both candidates below satisfy the binding, non-negotiable constraint from `<interfaces>`:
+`ConstraintWeightsService` rejects a save where the preference weight's soft component is `>=` the
+consistency weight's. Given the sizing arithmetic above, `consistentStartWeight = 1` is the ONLY
+integer value with a worst-case total safely under the ceiling (560 < 1000) — but it leaves NO room
+for a strictly-lower, non-zero `preferredStartShiftModeWeight` (there is no positive integer below
+1). `consistentStartWeight = 2` is therefore the SMALLEST value that can satisfy D-08's ordering
+while keeping both weights non-zero — which is exactly what V38 already shipped.
+
+### Proposed: `consistentStartWeight = 2`, `preferredStartShiftModeWeight = 1`
+
+- Keeps V38's already-shipped consistency value unchanged — no behaviour change for any desk that
+  has not yet had its rows touched by V49's predicated `UPDATE` (T-17-06).
+- Typical-case projected total: 240 soft — comfortably under the 1000 ceiling.
+- Worst-case projected total: 1,120 soft — **12% over the ceiling**, reached only if the ENTIRE
+  roster drifts on EVERY working day of the period simultaneously, which reflects a data-quality
+  breakdown (stale usual-shift data across the whole desk) rather than normal operation. Named as a
+  residual, monitorable risk, not eliminated by this weight choice.
+- Satisfies D-08: `1 < 2`, both non-zero.
+
+### Runner-up: `consistentStartWeight = 3`, `preferredStartShiftModeWeight = 1`
+
+- Widens the margin between consistency and preference (`1` vs `3`, rather than `1` vs `2`),
+  giving CONS-06's precedence a larger buffer against any future preference-weight tuning that
+  might otherwise approach the boundary.
+- Typical-case projected total: 360 soft — still comfortably under the ceiling.
+- Worst-case projected total: 1,680 soft — **68% over the ceiling**, a larger overshoot than the
+  proposed pair's, for a benefit (precedence margin) that CONS-06's save-time enforcement
+  (`ConstraintWeightsService`) already guarantees structurally regardless of the numeric gap.
+- Costs strictly more than the proposed pair in both the typical and worst case, for a precedence
+  guarantee the enforcement layer already provides. Included because Task 2 must offer a real
+  second number, not because this document's own arithmetic favours it.
+
+## What This Benchmark Does Not Close
+
+- **No production telemetry on actual drift rates.** The "typical case" above is an explicit,
+  stated judgement (~20% of the roster drifting on a given day), not a measurement — there is no
+  existing dashboard or query that reports how often a live desk's assigned shifts actually diverge
+  from stored usual shifts. Follow-up: once V49 ships and a desk pilots the constraint, the drift
+  report (Phase 17, DRFT-01…04, already delivered) is itself positioned to supply this telemetry
+  retroactively.
+- **The construction-heuristic plateau** (see "Known Limitation" above) is named and reproduced
+  here, not remedied — matching this milestone's operator ruling on the soft-quality plateau
+  generally (`15-BENCHMARK.md`, Phase 15). A custom Timefold move remains out of scope for v1.3.
+- **Real-desk-scale verification.** This benchmark's fixture (10 agents, 5 days) is deliberately
+  small so it runs in seconds; whether the plateau, the per-agent-day cost formula, or the worst/
+  typical-case gap hold at the live desk's actual 28-agent, multi-template scale is not
+  independently re-verified here.
