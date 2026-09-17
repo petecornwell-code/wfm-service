@@ -252,6 +252,9 @@ public class ScheduleExportService {
             cell.setCellStyle(headerStyle);
         }
 
+        // Reachable for SLOT-scheduled desks: ScheduleService.getScheduleDetail (CR-01 fix) gates
+        // buildDriftReport on SchedulingMode.SHIFT and passes null through for SLOT-mode desks, so
+        // this is live production behaviour, not dead code -- do not remove as unreachable.
         if (report == null || report.entries() == null) {
             autoSizeColumns(sheet, cols.length);
             return;
