@@ -59,6 +59,16 @@ const DEFAULTS: Record<string, Score | number> = {
   minStaffingWeight: { hardScore: 0, softScore: 1000 },
 }
 
+// WR-01: every row except the dedicated consistencyToleranceMinutes one is rendered as a Score.
+// ConstraintWeightsData's index signature is `Score | number`, so a runtime guard is required
+// here instead of an unchecked `as Record<string, Score>` cast -- otherwise a future plain-number
+// field added without its own branch (mirroring the tolerance-band one above) would silently
+// reinterpret the number as `{ hardScore: undefined, softScore: undefined }` and misrender as
+// "Soft" with NaN/blank inputs rather than failing visibly.
+function isScore(value: Score | number | undefined): value is Score {
+  return typeof value === 'object' && value !== null && 'hardScore' in value && 'softScore' in value
+}
+
 export default function ConstraintWeightsPage() {
   const { deskId } = useParams<{ deskId: string }>()
   const [weights, setWeights] = useState<ConstraintWeightsData | null>(null)
@@ -122,7 +132,16 @@ export default function ConstraintWeightsPage() {
               )
             }
 
-            const score = (weights as Record<string, Score>)[key] || (DEFAULTS[key] as Score)
+            const rawValue = weights[key]
+            const fallback = DEFAULTS[key]
+            if (!isScore(rawValue) && !isScore(fallback)) {
+              // Neither the live value nor the default is a Score, and this key has no
+              // dedicated branch (like consistencyToleranceMinutes) to render it as a plain
+              // number either -- skip the row rather than silently misrendering it.
+              console.error(`ConstraintWeightsPage: "${key}" is not a Score and has no dedicated render branch — skipping row.`)
+              return null
+            }
+            const score = isScore(rawValue) ? rawValue : (fallback as Score)
             const level = score.hardScore > 0 ? 'Hard' : 'Soft'
             const row = (
               <tr key={key}>
