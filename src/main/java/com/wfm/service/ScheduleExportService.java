@@ -26,6 +26,7 @@ public class ScheduleExportService {
             writeStaffingSummary(workbook, headerStyle, detail.getStaffingSummary());
             writeAgentSchedule(workbook, headerStyle, detail.getAgentSchedule());
             writePreferenceReport(workbook, headerStyle, detail.getPreferenceReport());
+            writeDriftReport(workbook, headerStyle, detail.getDriftReport());
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -217,6 +218,89 @@ public class ScheduleExportService {
         }
 
         autoSizeColumns(sheet, cols.length);
+    }
+
+    // --- Tab 4: Drift Report ---
+
+    /**
+     * XCUT-01/D-14: the same drift data visible on the Drift Report tab, also in the export.
+     * Modelled line-for-line on {@link #writePreferenceReport} — the same guard-then-header-only
+     * early return on a null report/entry-list, the same status-label mapping precedent (that
+     * method's {@code startTimeHonoured ? "Yes" : "No"}), and the same trailing
+     * {@link #autoSizeColumns} call so template names size naturally with no truncation.
+     *
+     * <p>The six main-table header strings and the two popularity-table header strings are
+     * BYTE-IDENTICAL to {@code 17-UI-SPEC.md}'s Drift Report tab literals (XCUT-01) — a change to
+     * either side without the other is exactly the kind of drift a copy-pasted literal invites,
+     * so both surfaces must be edited together.
+     *
+     * <p>The popularity block is written whenever {@code report} itself is non-null, REGARDLESS
+     * of whether the main entry list is empty — it answers a different question (D-13: which
+     * templates are currently over-subscribed, read from stored usual shifts) that is independent
+     * of this schedule's drift entries, so an empty entry list must not suppress it. Only a
+     * {@code null} report (a SLOT-scheduled desk, where no drift report exists at all) produces
+     * the header-only sheet.
+     */
+    private void writeDriftReport(XSSFWorkbook workbook, CellStyle headerStyle, DriftReport report) {
+        Sheet sheet = workbook.createSheet("Drift Report");
+
+        Row header = sheet.createRow(0);
+        String[] cols = {"Agent", "Date", "Status", "Usual Start", "Actual Start", "Delta (min)"};
+        for (int i = 0; i < cols.length; i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(cols[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        if (report == null || report.entries() == null) {
+            autoSizeColumns(sheet, cols.length);
+            return;
+        }
+
+        int rowNum = 1;
+        for (DriftReportEntry e : report.entries()) {
+            Row row = sheet.createRow(rowNum++);
+            row.createCell(0).setCellValue(e.agentName());
+            row.createCell(1).setCellValue(e.date().toString());
+            row.createCell(2).setCellValue(driftStatusLabel(e.status()));
+            row.createCell(3).setCellValue(e.usualStartTime() != null ? e.usualStartTime().toString() : "");
+            row.createCell(4).setCellValue(e.actualStartTime() != null ? e.actualStartTime().toString() : "");
+            row.createCell(5).setCellValue(e.deltaMinutes() != null ? String.valueOf(e.deltaMinutes()) : "");
+        }
+
+        // Most-Subscribed Usual Shifts (DRFT-04, D-13) -- one blank spacer row, then the section
+        // heading, then its own two-column header row, then one row per popularity entry in the
+        // order buildDriftReport already sorted it. Never re-sorted here -- that would be a
+        // second implementation of the ordering rule the report itself owns.
+        rowNum++;
+        Row popularityHeading = sheet.createRow(rowNum++);
+        popularityHeading.createCell(0).setCellValue("Most-Subscribed Usual Shifts");
+
+        Row popularityHeader = sheet.createRow(rowNum++);
+        String[] popularityCols = {"Shift Template", "Agents (Usual Shift)"};
+        for (int i = 0; i < popularityCols.length; i++) {
+            Cell cell = popularityHeader.createCell(i);
+            cell.setCellValue(popularityCols[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        if (report.popularity() != null) {
+            for (ShiftPopularityEntry p : report.popularity()) {
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue(p.templateName());
+                row.createCell(1).setCellValue(String.valueOf(p.agentCount()));
+            }
+        }
+
+        autoSizeColumns(sheet, Math.max(cols.length, popularityCols.length));
+    }
+
+    private String driftStatusLabel(DriftStatus status) {
+        return switch (status) {
+            case NO_USUAL_SHIFT -> "No usual shift";
+            case HONOURED -> "Honoured";
+            case DRIFTED -> "Drifted";
+        };
     }
 
     // --- Helpers ---

@@ -179,10 +179,11 @@ public class ScheduleDetailResponse {
     ) {}
 
     /**
-     * DRFT-04's over-subscription view (D-13) — how many agents hold a given template as their
-     * usual shift, read from stored usual-shift rows directly, not from solve
-     * results. Populated by plan 17-03; this plan's {@code buildDriftReport} always returns
-     * {@code List.of()} here (see that method's javadoc).
+     * DRFT-04's over-subscription view (D-13) — how many DISTINCT agents currently hold a given
+     * shift template as their usual shift, read from stored usual-shift rows directly, resolved
+     * at "today" so an era-renamed template ranks under the name the operator currently sees
+     * (Phase 16 D-01) — never from this solve's results. Sorted descending by {@code agentCount}
+     * then ascending by {@code templateName}; a template no agent holds does not appear at all.
      */
     public record ShiftPopularityEntry(String templateName, int agentCount) {}
 
