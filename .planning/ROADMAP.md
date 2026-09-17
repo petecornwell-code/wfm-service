@@ -302,7 +302,7 @@ which agents drifted from their usual shift, on which dates, and by how much.
 
 **Research needed at plan time**: No dedicated research phase — the `groupBy(agent, date, ...)` pattern is confirmed to compile from the reverted commits, and weight validation via `SolutionManager.explain()` is an existing, already-used mechanism (`SolverService.runPreSolveScoreDiagnostic`). Confirm the salvage-material rework scope (Notes above) during planning.
 
-**Plans**: 2/5 plans executed (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
+**Plans**: 3/5 plans executed (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
 
 Plans:
 **Wave 1**
@@ -312,7 +312,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 17-02-PLAN.md — `Preferred start (shift mode)` constraint, per-desk config for both weights and the tolerance band, and the save-time rejections that make CONS-04's softness and CONS-06's precedence structural
-- [ ] 17-03-PLAN.md — Over-subscription ranking, drift date-filter with a truthful summary, the Excel `Drift Report` sheet, and the XCUT-02 solver write-path guard
+- [x] 17-03-PLAN.md — Over-subscription ranking, drift date-filter with a truthful summary, the Excel `Drift Report` sheet, and the XCUT-02 solver write-path guard
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
