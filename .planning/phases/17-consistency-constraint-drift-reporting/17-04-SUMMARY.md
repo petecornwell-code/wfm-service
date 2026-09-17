@@ -158,3 +158,10 @@ None - no external service configuration required.
 ---
 *Phase: 17-consistency-constraint-drift-reporting*
 *Completed: 2026-09-17*
+
+## Self-Check: PASSED
+
+- All 4 created files confirmed present on disk (17-BENCHMARK.md, UsualShiftConsistencyBenchmarkTest.java, V49__set_consistency_weight_defaults.sql, ConstraintWeightsMigrationTest.java).
+- All 5 commits confirmed in git history (f4c90e2, ae0653f, ea0b625, 31fc5e7, e2e3361).
+- Task 3's plan-level `<verify>` command re-run and green: 2/2 tests in ConstraintWeightsMigrationTest, plus AgentRepositoryPostgresTest, AgentUsualShiftPostgresTest, ConstraintWeightsServiceTest — none skipped.
+- Full `./gradlew test` re-confirmed green: 784 tests, 0 failures, 0 errors, 4 skipped (2 of which are the benchmark's own designed gate).

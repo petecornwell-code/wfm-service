@@ -302,7 +302,7 @@ which agents drifted from their usual shift, on which dates, and by how much.
 
 **Research needed at plan time**: No dedicated research phase — the `groupBy(agent, date, ...)` pattern is confirmed to compile from the reverted commits, and weight validation via `SolutionManager.explain()` is an existing, already-used mechanism (`SolverService.runPreSolveScoreDiagnostic`). Confirm the salvage-material rework scope (Notes above) during planning.
 
-**Plans**: 3/5 plans executed (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
+**Plans**: 4/5 plans executed (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
 
 Plans:
 **Wave 1**
@@ -316,7 +316,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 17-04-PLAN.md — Threshold-first seeded A/B benchmark, the redone per-agent-day arithmetic, a human gate on the shipped defaults, and V49
+- [x] 17-04-PLAN.md — Threshold-first seeded A/B benchmark, the redone per-agent-day arithmetic, a human gate on the shipped defaults, and V49
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
