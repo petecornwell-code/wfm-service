@@ -4,17 +4,17 @@ milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 17
 current_phase_name: Consistency Constraint & Drift Reporting
-status: executing
-stopped_at: Completed 17-04-PLAN.md
-last_updated: "2026-09-17T21:43:23.195Z"
+status: verifying
+stopped_at: Completed 17-05-PLAN.md
+last_updated: "2026-09-17T21:52:22.084Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 17 Plan 04 complete (consistency weight benchmark, V49 defaults migration)
-state_head: e2e33611a86041f58f8b366f252940633911506e
+last_activity_desc: Phase 17 Plan 05 complete (Drift Report tab and Constraint Weights configuration -- phase 17 complete, 5/5 plans)
+state_head: d0642ca8342d7a77746dfa20b4708bf4e9b8a128
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 36
-  completed_plans: 35
+  completed_plans: 36
   percent: 50
 ---
 
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 17 (Consistency Constraint & Drift Reporting) — EXECUTING
+Phase: 17 (Consistency Constraint & Drift Reporting) — VERIFYING
 Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-09-17 — Phase 17 Plan 04 complete (consistency weight benchmark, V49 defaults migration)
+Status: Phase complete — ready for verification
+Last activity: 2026-09-17 — Phase 17 Plan 05 complete (Drift Report tab and Constraint Weights configuration -- phase 17 complete, 5/5 plans)
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 35/36 plans, Phase 17 4/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 36/36 plans, Phase 17 5/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -254,6 +254,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 17]: 17-03: Excel Drift Report popularity block is written whenever DriftReport is non-null regardless of empty entries -- it answers an independent question (D-13) that must not be suppressed by an empty/date-filtered entry list
 - [Phase 17]: 17-03: SolverUsualShiftWritePathGuardTest proves XCUT-02 by behavioural mock-interaction proof plus a structural comment-stripped source scan -- ushf-05-write-paths.md now has 10 rows, UsualShiftWritePathGuardTest's hardcoded count updated to match
 - [Phase 17]: [Phase 17] Phase 17 Plan 04 checkpoint (proposed): consistentStartWeight=2 soft, preferredStartShiftModeWeight=1 soft shipped via V49 -- identical to V38/V48's incumbent values. D-08's ordering invariant (preference strictly below, both nonzero) makes 2 the smallest consistency weight that can satisfy it at all; the A/B benchmark itself was a null result (construction-heuristic plateau, ruled out as a step-budget/list-order artifact), so the shipped value rests on the redone per-agent-day sizing arithmetic and the explain() breakdown, not on the A/B. Worst-case projected total (~1,120 soft, 12% over minStaffingWeight's 1000 ceiling, entire roster drifting every day) is a documented, accepted residual risk -- no compliant weight pair avoids it under D-08.
+- [Phase 17]: Drift Report summary bar computed client-side from the date-filtered entry set, not report.summary, since schedules.get() never sends a date query param on initial fetch
 
 ### Blockers/Concerns
 
@@ -275,8 +276,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-17T21:43:22.938Z
-Stopped at: Completed 17-04-PLAN.md
+Last session: 2026-09-17T21:52:19.156Z
+Stopped at: Completed 17-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -326,3 +327,4 @@ Resume file: None
 | Phase 17 P02 | 39min | 3 tasks | 10 files |
 | Phase 17 P03 | 55min | 3 tasks | 9 files |
 | Phase 17 P04 | ~46min (two sessions) | 3 tasks | 4 files |
+| Phase 17 P05 | 21 min | 2 tasks | 3 files |
