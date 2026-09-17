@@ -67,7 +67,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 
 ### Consistency (CONS)
 
-- [ ] **CONS-01**: The solver is penalised for assigning an agent a shift that differs from their stored usual shift for that weekday
+- [x] **CONS-01**: The solver is penalised for assigning an agent a shift that differs from their stored usual shift for that weekday
 - [ ] **CONS-02**: Operator can configure a tolerance band per desk, within which deviation from the usual shift carries no penalty at all
 - [ ] **CONS-03**: Operator can configure the consistency penalty weight per desk
 - [ ] **CONS-04**: Consistency is a soft constraint — it never makes an otherwise-feasible schedule infeasible
@@ -78,7 +78,7 @@ load-bearing for ENVL-02 and ENVL-07, and is not to be revisited without new evi
 
 - [ ] **DRFT-01**: After a solve, the operator can see which agents were assigned a shift other than their usual one, on which dates, and by how much
 - [ ] **DRFT-02**: The drift report distinguishes an agent with no stored usual shift from an agent whose usual shift was honoured
-- [ ] **DRFT-03**: The drift report is derived from the same distance calculation the consistency constraint uses, not a second implementation
+- [x] **DRFT-03**: The drift report is derived from the same distance calculation the consistency constraint uses, not a second implementation
 - [ ] **DRFT-04**: Operator can see which shift templates are most over-subscribed as agents' usual shifts, making the consistency-versus-fairness tension visible
 
 ## Cross-Cutting Requirements

@@ -5,16 +5,16 @@ milestone_name: Shift-Based Scheduling & Consistency
 current_phase: 17
 current_phase_name: Consistency Constraint & Drift Reporting
 status: executing
-stopped_at: Phase 17 UI-SPEC approved
-last_updated: "2026-09-17T14:27:40.459Z"
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-09-17T16:31:53.073Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 17 plans verified (plan-checker PASSED; 10/10 requirements, 14/14 decisions covered)
-state_head: 5e53641cccd1395982d6c2d6838e91e59e3825dd
+last_activity_desc: Phase 17 Plan 01 complete (usual-shift consistency constraint + drift report tracer)
+state_head: aecbe5ea30d4b1869bbdfadd2abfb0cca5781de7
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 36
-  completed_plans: 31
+  completed_plans: 32
   percent: 50
 ---
 
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 17 (Consistency Constraint & Drift Reporting) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-09-17 — Phase 17 plans verified (plan-checker PASSED; 10/10 requirements, 14/14 decisions covered)
+Phase: 17 (Consistency Constraint & Drift Reporting) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 17
+Last activity: 2026-09-17 — Phase 17 Plan 01 complete (usual-shift consistency constraint + drift report tracer)
 
-Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 31/36 plans, Phase 17 0/5 plans done)
+Progress: [█████░░░░░] 50% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 32/36 plans, Phase 17 1/5 plans done)
 
 ## Milestone v1.3 Roadmap
 
@@ -246,6 +246,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 16]: 16-04: Row 7's LiveShapeShiftDeskFixture is package-private in com.wfm.solver, inaccessible from com.wfm.service — built a minimal SLOT-mode fixture instead and ran a real bounded Timefold solve via solverConfig.xml, documented as a P-19 finding
 - [Phase 16]: 16-05: deferred P-21 template fetch from Task 1 to Task 2 to keep Task 1's build green under noUnusedLocals
 - [Phase 16]: 16-05: click-away cancel for the usual-shift picker wired via onBlur on the wrapping div, not the <select> itself, so blur bubbles without violating the plan's literal no-onBlur-on-select constraint
+- [Phase 17]: Phase 17 Plan 01: tolerance band travels on ScheduleConfig (13th component), never joined from ConstraintWeights, since ConstraintWeights is a @ConstraintConfigurationProvider no constraint joins — ScheduleConfig is already joined seventeen times and in scope for the SHIFT-mode gate; adds no new join
+- [Phase 17]: Phase 17 Plan 01: preferredStartShiftModeWeight field ships without its @ConstraintWeight annotation until plan 17-02 adds the matching constraint method (avoids orphaning ScheduleConstraintClassificationTest's reflective completeness guard) — Column and Java field land now; annotation and constraint method land together in 17-02
 
 ### Blockers/Concerns
 
@@ -267,9 +269,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-04T14:24:39.224Z
-Stopped at: Phase 17 UI-SPEC approved
-Resume file: .planning/phases/17-consistency-constraint-drift-reporting/17-UI-SPEC.md
+Last session: 2026-09-17T16:31:52.607Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -314,3 +316,4 @@ Resume file: .planning/phases/17-consistency-constraint-drift-reporting/17-UI-SP
 | Phase 16 P03 | 35min | 2 tasks | 20 files |
 | Phase 16 P04 | ~43min | 2 tasks | 3 files |
 | Phase 16 P05 | 13min | 2 tasks | 2 files |
+| Phase 17 P01 | 3h 10min | 2 tasks | 19 files |

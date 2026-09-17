@@ -302,12 +302,12 @@ which agents drifted from their usual shift, on which dates, and by how much.
 
 **Research needed at plan time**: No dedicated research phase — the `groupBy(agent, date, ...)` pattern is confirmed to compile from the reverted commits, and weight validation via `SolutionManager.explain()` is an existing, already-used mechanism (`SolverService.runPreSolveScoreDiagnostic`). Confirm the salvage-material rework scope (Notes above) during planning.
 
-**Plans**: 5 plans (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
+**Plans**: 1/5 plans executed (4 waves; tracer-first, one `blocking-human` decision gate on the one-way V49 default-weight migration)
 
 Plans:
 **Wave 1**
 
-- [ ] 17-01-PLAN.md — Tracer: one drifted agent-day end to end — V48, the shared distance function, pre-solve era resolution as a problem fact, the `Usual shift consistency` constraint, and `buildDriftReport`
+- [x] 17-01-PLAN.md — Tracer: one drifted agent-day end to end — V48, the shared distance function, pre-solve era resolution as a problem fact, the `Usual shift consistency` constraint, and `buildDriftReport`
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
