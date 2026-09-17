@@ -109,6 +109,26 @@ class UsualShiftConsistencyConstraintTest {
     }
 
     // ------------------------------------------------------------------
+    //  Task 2 (TDD): one minute beyond the band is the first penalised state (CONS-02)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("deviation one minute beyond the band penalises by 1")
+    void deviationOneMinuteBeyondBand_penalisedByOne() {
+        Agent a = agent();
+        // Usual start 08:00, envelope start 09:01 -> 61 minutes deviation, band 60: 1 minute
+        // excess, ceiling-divided by a 30-minute increment -> 1.
+        ShiftTemplate t = template(LocalTime.of(9, 1), LocalTime.of(18, 1));
+        ShiftBandPair pair = new ShiftBandPair(t, null);
+        ResolvedUsualShiftTarget target = new ResolvedUsualShiftTarget(a.getId(), MONDAY, LocalTime.of(8, 0));
+
+        verifier.verifyThat(ScheduleConstraintProvider::usualShiftConsistency)
+                .given(scheduleConfig(SchedulingMode.SHIFT, 30, 60),
+                        shiftRow(a, MONDAY, pair), target)
+                .penalizesBy(1);
+    }
+
+    // ------------------------------------------------------------------
     //  SLOT-mode silence
     // ------------------------------------------------------------------
 

@@ -194,4 +194,197 @@ class DriftReportTest {
         assertThat(expectedPenalty).isEqualTo(6);
     }
 
+    // ==================================================================
+    //  Task 2 (TDD) — the full three-state matrix, band boundary, non-working-day exclusion,
+    //  summary invariant and sort order.
+    // ==================================================================
+
+    // ------------------------------------------------------------------
+    //  HONOURED — deviation within the band
+    // ------------------------------------------------------------------
+
+    @Test
+    void honouredEntry_deviationWithinBand() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftTemplate assignedTemplate = template("EarlyPlus", LocalTime.of(8, 30), LocalTime.of(17, 30));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(usualTemplate));
+
+        Schedule schedule = schedule(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)));
+        DriftReport report = service.buildDriftReport(schedule);
+
+        assertThat(report.entries()).hasSize(1);
+        DriftReportEntry entry = report.entries().get(0);
+        assertThat(entry.status()).isEqualTo(DriftStatus.HONOURED);
+        assertThat(entry.deltaMinutes()).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    //  Tolerance-band boundary — exactly at the band is HONOURED, one minute beyond is DRIFTED
+    // ------------------------------------------------------------------
+
+    @Test
+    void deviationExactlyAtBand_isHonoured() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        // Exactly 60 minutes deviation, band 60 -> genuine dead zone (D-05), HONOURED.
+        ShiftTemplate assignedTemplate = template("EarlyOneHourLater", LocalTime.of(9, 0), LocalTime.of(18, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(usualTemplate));
+
+        Schedule schedule = schedule(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)));
+        DriftReportEntry entry = service.buildDriftReport(schedule).entries().get(0);
+
+        assertThat(entry.status()).isEqualTo(DriftStatus.HONOURED);
+    }
+
+    @Test
+    void deviationOneMinuteBeyondBand_isDrifted() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        // 61 minutes deviation, band 60 -> the first penalised state (CONS-02).
+        ShiftTemplate assignedTemplate = template("EarlyJustPast", LocalTime.of(9, 1), LocalTime.of(18, 1));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(usualTemplate));
+
+        Schedule schedule = schedule(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)));
+        DriftReportEntry entry = service.buildDriftReport(schedule).entries().get(0);
+
+        assertThat(entry.status()).isEqualTo(DriftStatus.DRIFTED);
+    }
+
+    // ------------------------------------------------------------------
+    //  "Stored row resolves to no template for this date" is also NO_USUAL_SHIFT (Phase 16
+    //  D-01/D-02: no era in effect is identical to unset)
+    // ------------------------------------------------------------------
+
+    @Test
+    void storedRowWithNoEffectiveEraForThisDate_isNoUsualShift() {
+        Agent ana = agent("Ana");
+        // Stored row points at a template named "Early", but NO era of that name is returned by
+        // the repository lookup for this date -- "no era in effect" (Phase 16 D-01/D-02).
+        ShiftTemplate storedPointer = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftTemplate assignedTemplate = template("Late", LocalTime.of(12, 0), LocalTime.of(21, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), storedPointer)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of()); // no era effective on MONDAY
+
+        Schedule schedule = schedule(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)));
+        DriftReportEntry entry = service.buildDriftReport(schedule).entries().get(0);
+
+        assertThat(entry.status()).isEqualTo(DriftStatus.NO_USUAL_SHIFT);
+        assertThat(entry.usualStartTime()).isNull();
+        assertThat(entry.deltaMinutes()).isNull();
+    }
+
+    // ------------------------------------------------------------------
+    //  Non-working day: a stored usual shift with no AgentShiftAssignment produces no entry
+    // ------------------------------------------------------------------
+
+    @Test
+    void nonWorkingDay_producesNoEntryEvenWithAStoredUsualShift() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+
+        // Ana has a stored usual shift for Monday, but no AgentShiftAssignment row exists for
+        // her on this schedule at all -- SolverService never creates one for a non-working day
+        // (0 contracted hours / MANDATORY / PTO), and this report only ever walks
+        // schedule.getShiftAssignments(), never a separate "everyone with a usual shift" list.
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+
+        Schedule schedule = schedule(60, List.of());
+        DriftReport report = service.buildDriftReport(schedule);
+
+        assertThat(report.entries()).isEmpty();
+        assertThat(report.summary().workingAgentDays()).isZero();
+    }
+
+    // ------------------------------------------------------------------
+    //  Summary invariant: workingAgentDays == noUsualShiftCount + honouredCount + driftedCount
+    //  on a fixture containing all three states on the same date.
+    // ------------------------------------------------------------------
+
+    @Test
+    void summaryInvariant_holdsOnAMixedFixtureWithAllThreeStatesOnTheSameDate() {
+        Agent ana = agent("Ana");     // will be DRIFTED
+        Agent ben = agent("Ben");     // will be NO_USUAL_SHIFT
+        Agent cara = agent("Cara");   // will be HONOURED
+
+        ShiftTemplate anaUsual = template("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftTemplate anaAssigned = template("Late", LocalTime.of(12, 0), LocalTime.of(21, 0));
+        ShiftTemplate benAssigned = template("Mid", LocalTime.of(10, 0), LocalTime.of(19, 0));
+        ShiftTemplate caraUsual = template("Standard", LocalTime.of(9, 0), LocalTime.of(18, 0));
+        ShiftTemplate caraAssigned = template("StandardPlus15", LocalTime.of(9, 15), LocalTime.of(18, 15));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID)).thenReturn(List.of(
+                usualShift(ana, MONDAY.getDayOfWeek(), anaUsual),
+                usualShift(cara, MONDAY.getDayOfWeek(), caraUsual)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(anaUsual));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Standard"))
+                .thenReturn(List.of(caraUsual));
+
+        Schedule schedule = schedule(60, List.of(
+                shiftRow(ana, MONDAY, anaAssigned),
+                shiftRow(ben, MONDAY, benAssigned),
+                shiftRow(cara, MONDAY, caraAssigned)));
+
+        DriftReport report = service.buildDriftReport(schedule);
+
+        assertThat(report.entries()).hasSize(3);
+        assertThat(report.summary().workingAgentDays())
+                .isEqualTo(report.summary().noUsualShiftCount()
+                        + report.summary().honouredCount()
+                        + report.summary().driftedCount());
+        assertThat(report.summary().noUsualShiftCount()).isEqualTo(1);
+        assertThat(report.summary().honouredCount()).isEqualTo(1);
+        assertThat(report.summary().driftedCount()).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------
+    //  Sort order: date ascending, then agent name ascending (17-UI-SPEC.md Component
+    //  Specifications §1) -- a deliberate divergence from buildPreferenceReport's agent-then-date
+    //  order.
+    // ------------------------------------------------------------------
+
+    @Test
+    void entries_sortDateAscendingThenAgentNameAscending() {
+        Agent zoe = agent("Zoe");
+        Agent amir = agent("Amir");
+        LocalDate tuesday = MONDAY.plusDays(1);
+
+        ShiftTemplate assignedTemplate = template("Mid", LocalTime.of(10, 0), LocalTime.of(19, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of());
+
+        // Deliberately inserted out of the expected final order: Tuesday/Zoe first, then
+        // Monday/Zoe, then Monday/Amir -- correct output must be Monday/Amir, Monday/Zoe,
+        // Tuesday/Zoe.
+        Schedule schedule = schedule(60, List.of(
+                shiftRow(zoe, tuesday, assignedTemplate),
+                shiftRow(zoe, MONDAY, assignedTemplate),
+                shiftRow(amir, MONDAY, assignedTemplate)));
+
+        DriftReport report = service.buildDriftReport(schedule);
+
+        assertThat(report.entries()).extracting(DriftReportEntry::date, DriftReportEntry::agentName)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(MONDAY, "Amir"),
+                        org.assertj.core.groups.Tuple.tuple(MONDAY, "Zoe"),
+                        org.assertj.core.groups.Tuple.tuple(tuesday, "Zoe"));
+    }
 }
