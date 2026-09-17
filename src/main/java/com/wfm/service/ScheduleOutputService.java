@@ -524,9 +524,13 @@ public class ScheduleOutputService {
                     usualStartTime, actualStartTime, deltaMinutes));
         }
 
-        // Task 1 (tracer): entries are in schedule.getShiftAssignments() iteration order. Task 2
-        // (TDD) makes the date-ascending/agent-name-ascending server order (17-UI-SPEC.md
-        // Component Specifications §1) real.
+        // Task 2 (TDD): date ascending, then agent name ascending -- a DELIBERATE DIVERGENCE from
+        // buildPreferenceReport's agent-then-date order. 17-UI-SPEC.md's Component Specifications
+        // §1 fixes date-major server order for the drift tab, and the table trusts server order
+        // rather than re-sorting.
+        entries.sort(Comparator.comparing(DriftReportEntry::date)
+                .thenComparing(DriftReportEntry::agentName));
+
         int workingAgentDays = noUsualShiftCount + honouredCount + driftedCount;
         DriftSummary summary = new DriftSummary(workingAgentDays, noUsualShiftCount, honouredCount, driftedCount);
 
