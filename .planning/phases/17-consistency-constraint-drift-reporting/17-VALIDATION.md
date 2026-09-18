@@ -94,7 +94,7 @@ validated: 2026-09-18
 - [x] Benchmark threshold committed to `17-BENCHMARK.md` **before** the default weight ships (D-06/XCUT-04)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** verified 2026-09-18 (see Validation Audit 2026-09-18 below)
 
 
 ## Validation Audit 2026-09-18

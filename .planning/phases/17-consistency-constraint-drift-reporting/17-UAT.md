@@ -3,7 +3,7 @@ status: complete
 phase: 17-consistency-constraint-drift-reporting
 source: 17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md, 17-05-SUMMARY.md
 started: 2026-09-18T12:16:28Z
-updated: 2026-09-18T19:40:10Z
+updated: 2026-09-18T21:20:54Z
 ---
 
 ## Current Test
@@ -50,7 +50,7 @@ requirement: DRFT-01
 ### 6. Most-Subscribed Usual Shifts Section
 expected: Beneath the main table, a popularity section ranks shift templates by distinct-agent count, with its own empty message and subtext disclosing it reads stored usual shifts rather than this solve's results. On a desk with a large shift library the ranked list stays readable without a scroll or density problem, and a long operator-authored template name wraps rather than clips.
 result: pass
-evidence: "Most-Subscribed Usual Shifts renders beneath the main table with the disclosure subtext ('Reads each agent's current usual shift, not this solve's results'). Counts correct against seeded data: Early Shift 8, Late Shift 2. Long-template-name wrapping and large-library density were NOT exercised — the seeded library has 2 short names."
+evidence: "Most-Subscribed Usual Shifts renders beneath the main table with the disclosure subtext ('Reads each agent's current usual shift, not this solve's results'). Counts correct against seeded data. LARGE-LIBRARY / LONG-NAME CASE NOW EXERCISED (2026-09-18, closing the gap this entry previously recorded and the carried-forward human_verification item): the desk was reseeded to 6 shift templates with operator-plausible names up to 74 characters, and usual shifts spread unevenly across them. Popularity ranked 4 templates correctly by count descending (4 / 3 / 2 / 1). Measured in the browser at two widths — at 1440px the 74-char name renders on a single 29px line, no clipping (scrollWidth == clientWidth), no page horizontal scroll; at 375px it WRAPS to 4 lines (cell height 70px) and the 63-char name to 3 lines, with zero clipping on any row (white-space: normal). The spec's requirement (wraps rather than clips, stays readable) is met at both widths. SEPARATE PRE-EXISTING ISSUE, not this criterion's: at 375px the PAGE scrolls horizontally (scrollWidth 754 vs client 360) because the 6-column main drift table overflows — already recorded as 17-UI-REVIEW.md priority fix #2, and not caused by the popularity section."
 coverage_id: 17-05/D3
 requirement: DRFT-04
 
