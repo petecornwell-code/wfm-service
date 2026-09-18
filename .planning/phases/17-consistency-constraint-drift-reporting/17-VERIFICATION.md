@@ -1,8 +1,8 @@
 ---
 phase: 17-consistency-constraint-drift-reporting
-verified: 2026-09-17T22:40:00Z
-status: gaps_found
-score: 3/5 roadmap success criteria fully verified (1 failed, 1 human-judgment-needed)
+verified: 2026-09-18T14:05:00Z
+status: human_needed
+score: 4/5 roadmap success criteria fully verified (1 split — code portion verified, benchmark-wording portion needs human sign-off)
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/phases/17-consistency-constraint-drift-reporting/17-01-PLAN.md
@@ -16,7 +16,9 @@ covered_files:
   - .planning/phases/17-consistency-constraint-drift-reporting/17-05-PLAN.md
   - .planning/phases/17-consistency-constraint-drift-reporting/17-05-SUMMARY.md
   - .planning/phases/17-consistency-constraint-drift-reporting/17-BENCHMARK.md
+  - .planning/phases/17-consistency-constraint-drift-reporting/17-REVIEW-FIX.md
   - .planning/phases/17-consistency-constraint-drift-reporting/17-REVIEW.md
+  - .planning/phases/17-consistency-constraint-drift-reporting/17-UAT.md
   - frontend/src/api/client.ts
   - frontend/src/pages/ConstraintWeightsPage.tsx
   - frontend/src/pages/ScheduleResults.tsx
@@ -35,86 +37,53 @@ covered_files:
   - src/main/java/com/wfm/solver/ScheduleConstraintProvider.java
   - src/main/resources/db/migration/V48__add_consistency_tolerance_and_preferred_start_weight.sql
   - src/main/resources/db/migration/V49__set_consistency_weight_defaults.sql
-covered_digest: "v1:sha256:651ae31d43c007b26391bc82e9dd7c2376f44719deb9b1359ce0c2bacd715e13"
+  - src/test/java/com/wfm/service/DriftReportTest.java
+  - src/test/java/com/wfm/service/ScheduleExportServiceTest.java
+  - src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java
+covered_digest: "v1:sha256:5372577a919ebf86a01086bf5e9be0e76d645812f9ee79a373899fb5624a3b00"
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "The drift report and its Excel export honour the same slot-mode contract the drift tab itself honours — the backend's own documented invariant that ScheduleDetailResponse.driftReport is null on a slot-scheduled desk."
-    status: failed
-    reason: >
-      ScheduleService.getScheduleDetail (line 157) calls
-      scheduleOutputService.buildDriftReport(schedule) unconditionally, with no
-      SchedulingMode gate. ScheduleOutputService.buildDriftReport (lines 458-565)
-      has no code path that returns null -- it always constructs and returns a
-      DriftReport(entries, summary, popularity). On a SLOT-scheduled desk this
-      produces an empty main table (never the documented not-applicable state) AND
-      a genuinely POPULATED "Most-Subscribed Usual Shifts" popularity table in the
-      Excel export, because ScheduleOutputService.buildDriftReport's popularity
-      block (lines 556-562) reads agentUsualShiftRepository.findByTenantIdAndDeskId
-      independent of the desk's current scheduling mode -- and stored usual-shift
-      rows are proven to survive a SHIFT->SLOT mode switch byte-identical
-      (UsualShiftWritePathTest.switchSchedulingMode_roundTrip_leavesStoredUsualShiftsFieldIdentical),
-      so this is a reachable, not hypothetical, state on a desk that used to run
-      SHIFT mode. This directly contradicts 17-01-PLAN.md's own
-      <verification> line: "ScheduleDetailResponse.driftReport is non-null on a
-      shift-desk schedule detail and null-safe on a slot desk" -- the "null-safe on
-      a slot desk" half was never implemented. The React DriftTab is unaffected
-      (frontend/src/pages/ScheduleResults.tsx:1054 branches on
-      schedule.schedulingMode before ever reading driftReport), but the Excel
-      export inherits the bug because ScheduleExportService.writeDriftReport's
-      `report == null` guard (lines 255-258) can now never fire on the real
-      end-to-end path.
-    artifacts:
-      - path: "src/main/java/com/wfm/service/ScheduleService.java"
-        issue: "Line 157 calls buildDriftReport unconditionally with no SchedulingMode gate, contradicting the DTO's own documented null-on-SLOT contract (ScheduleDetailResponse.java:190-199) and this plan's own committed <verification> claim"
-      - path: "src/main/java/com/wfm/service/ScheduleOutputService.java"
-        issue: "buildDriftReport (lines 458-565) has no return-null path for any scheduling mode; popularity (lines 546-562) is not mode-gated at all, so it renders a real, non-trivial table in the Excel export of a SLOT-mode schedule for any desk carrying stored usual-shift rows"
-      - path: "src/main/java/com/wfm/service/ScheduleExportService.java"
-        issue: "writeDriftReport's `report == null` early return (lines 255-258) is dead code on the real /desks/{deskId}/schedules/{id}/export path today, since report is never null in practice"
-      - path: "src/test/java/com/wfm/service/ScheduleExportServiceTest.java"
-        issue: "exportToExcel_nullDriftReport_sheetHasOnlyTheMainHeaderRow (line 158) claims in its own comment to exercise a SLOT-scheduled desk but only constructs a ScheduleDetailResponse directly and never sets driftReport -- it never calls the real ScheduleService.getScheduleDetail code path for a SLOT-mode schedule, so it cannot and does not catch this regression"
-    missing:
-      - "Gate the call in ScheduleService.getScheduleDetail on schedule.getSchedulingMode() == SchedulingMode.SHIFT, matching the DTO's documented null-on-SLOT contract (the fix the 17-REVIEW.md CR-01 finding already specifies verbatim)"
-      - "A regression test that solves/accepts a SLOT-mode schedule for a desk carrying at least one stored AgentUsualShift row, calls getScheduleDetail, and asserts response.getDriftReport() is null"
-      - "Update or rename ScheduleExportServiceTest's null-drift-report test to actually go through ScheduleService for a SLOT-mode schedule, so it stops claiming to prove something the current test cannot prove"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 3/5
+  gaps_closed:
+    - "CR-01: ScheduleService.getScheduleDetail now gates response.setDriftReport(...) on schedule.getSchedulingMode() == SchedulingMode.SHIFT (ea9b6ac), restoring ScheduleDetailResponse.DriftReport's documented null-on-SLOT contract. Because the gate short-circuits before buildDriftReport is even called, the popularity leak into the Excel export on a SLOT desk is also closed as a side effect, not just the main table's empty-vs-null distinction."
+    - "G-17-9 (Excel export HTTP 500 on every multi-day schedule, ScheduleExportService.writeStaffingSummary NullPointerException on the GRAND TOTAL null-date row) fixed (04c8651), unblocking end-to-end observation of the CR-01 fix through the real export path for the first time."
+    - "G-17-5 (Drift Report 'No usual shift' status colour #d1d5db measuring 1.47:1, failing WCAG AA) fixed (37309f4) by moving to #6b7280 (4.83:1) — a deliberate, documented deviation from 17-UI-SPEC.md's literal #d1d5db value that preserves its stated 'muted gray' intent."
+  gaps_remaining: []
+  regressions: []
+gaps: []
+advisory:
+  - finding: "7af2ab5 and 8782d9c re-tone the Drift Report's Honoured status (and, in 8782d9c, the same green app-wide across 6 other files: Toast.tsx, ClientManagement.tsx, Configuration.tsx, ConstraintWeightsPage.tsx, ScheduleSetup.tsx, StaffingRequirements.tsx) from #16a34a (3.30:1, WCAG AA large-text only) to #15803d (5.02:1, passes normal-text AA). This is new scope beyond both the original 17-UI-SPEC.md and the G-17-5 gap (which named only the no-usual-shift colour)."
+    category: other
+    reason: "Independently recomputed the contrast math for the three Drift Report colours used in this phase (dc2626 4.83:1, 15803d 5.02:1, 6b7280 4.83:1) and confirmed all three pass WCAG AA normal-text 4.5:1 — the phase-scoped portion of this change is verified, not merely asserted. The app-wide sweep's other 6 files are outside Phase 17's file set and were not independently re-verified pixel-by-pixel here (only tsc --noEmit clean and the commit's own stated verification were checked); flagged for visibility, not as a phase-blocking concern, since none of those files gate this phase's success criteria."
+    evidence_status: "phase-scoped colours independently recomputed and confirmed; app-wide sweep files not independently re-verified"
 human_verification:
-  - test: "Confirm whether XCUT-04's success criterion (\"A seeded A/B benchmark confirms the consistency constraint's weight doesn't regress coverage/break quality before a default ships\") is satisfied by 17-BENCHMARK.md's actual result."
+  - test: "Confirm whether XCUT-04's success criterion (\"A seeded A/B benchmark confirms the consistency constraint's weight doesn't regress coverage/break quality before a default ships\") is satisfied by 17-BENCHMARK.md's actual result, or should be tracked as an open item pending real drift telemetry."
     expected: >
-      The committed A/B benchmark did NOT measure a coverage-vs-consistency
-      trade-off -- every arm (weight 0/1/2/10), every seed, converged on an
-      identical construction-heuristic outcome (all 50 agent-days assigned
-      "Late"), so the comparative "no worse than baseline" pass rule was satisfied
-      trivially (by identity), not by evidence that a nonzero weight is safe. The
-      shipped default (consistentStartWeight=2/preferredStartShiftModeWeight=1) is
-      instead justified by a separate arithmetic projection
-      (agentCount x workingDays x excessIncrements x weight) validated against
-      explain()'s per-match magnitude, which shows a WORST-CASE total (~1,120
-      soft, entire 28-agent roster drifting every day of a 5-day period) that is
-      12% OVER minStaffingWeight's 1000-soft ceiling -- the exact failure mode
-      this benchmark exists to catch. This was surfaced to, and accepted by, a
-      human at 17-04's blocking checkpoint as a documented residual risk (no
-      compliant nonzero weight pair avoids it under D-08's ordering invariant).
-      The write-up itself is honest and follows the committed pass rule (a null
-      result reported as a null result, never a win) -- but the roadmap's
-      criterion, read literally, describes a confirmation that did not happen by
-      measurement. Confirm whether the arithmetic-plus-explain()-plus-documented-
-      residual-risk substitute is an acceptable satisfaction of Success Criterion
-      5, or whether it should be tracked as an open item pending real drift
-      telemetry (which 17-BENCHMARK.md itself proposes the shipped Phase 17 drift
-      report can supply retroactively).
-    why_human: "This is a judgment call about whether a compensating analytical method (sizing arithmetic + explain() breakdown), explicitly disclosed as a substitute after the intended solve-driven A/B hit a known construction-heuristic plateau, satisfies the roadmap's specific wording -- not something a grep or test run can decide, and it was already the subject of one blocking-human checkpoint (17-04) whose decision this verification is not overriding, only surfacing for final sign-off against the roadmap's literal success-criterion text."
-  - test: "Status-column visual distinctness -- confirm a Drifted row draws the eye at a glance in the Drift Report tab without a fourth colour."
-    expected: "Drifted renders red/bold (#dc2626, weight 600), Honoured renders green (#16a34a), No usual shift renders muted gray (#d1d5db) -- frontend/src/pages/ScheduleResults.tsx:1099-1105. Confirm this reads as clearly distinct in the browser, not just in the style values."
-    why_human: "Visual/backstop truth per 17-UI-SPEC.md; no frontend test framework exists in this project (17-05-SUMMARY.md, confirmed)."
-  - test: "Most-Subscribed Usual Shifts list density/wrap on a desk with an unusually large shift library."
-    expected: "The ranked list remains readable without a scroll or density problem."
-    why_human: "Visual/backstop truth per 17-UI-SPEC.md; not automatable in this project."
-  - test: "Long shift-template name wrapping in the popularity table."
-    expected: "An operator-authored long template name wraps rather than clips and still reads cleanly."
-    why_human: "Visual/backstop truth per 17-UI-SPEC.md; not automatable in this project."
-  - test: "Minutes badge and merged tolerance-band cell read as a different kind of field from Hard/Soft rows."
+      Unchanged since the previous verification (2026-09-17) and still unresolved — 17-BENCHMARK.md
+      has had no commits since ea0b625 (2026-09-17), and 17-UAT.md's test 8 (this exact question,
+      re-surfaced from this file's human_verification) is recorded as `result: [pending]`. The
+      committed A/B benchmark did NOT measure a coverage-vs-consistency trade-off: every arm
+      (weight 0/1/2/10), every seed, converged on an identical construction-heuristic outcome, so
+      the comparative pass rule was satisfied trivially by identity, not by evidence that a nonzero
+      weight is safe. The shipped default (consistentStartWeight=2/preferredStartShiftModeWeight=1)
+      instead rests on a redone sizing-arithmetic projection validated against explain(), disclosing
+      a worst-case 12% overshoot of minStaffingWeight's 1000-soft ceiling, accepted at the 17-04
+      blocking-human checkpoint as documented residual risk. The write-up is honest (a null result
+      reported as a null result). This verifier does not resolve the question — it is carried
+      forward exactly as posed by the prior verification and by 17-UAT.md test 8, for an explicit
+      human decision.
+    why_human: "Judgment call about whether a disclosed compensating analytical method satisfies the roadmap's literal wording; already the subject of one blocking-human checkpoint (17-04) and one pending UAT question (test 8) that this verification does not override or resolve."
+  - test: "Status-column visual distinctness — confirm a Drifted row draws the eye at a glance in the Drift Report tab, and that all three status colours (now #dc2626, #15803d, #6b7280) read as clearly distinct in an actual browser render, not just in computed contrast ratios."
+    expected: "Drifted red/bold, Honoured green, No usual shift muted gray — all three now independently confirmed ≥4.5:1 contrast on white by this verification's own recomputation, and per 17-UAT.md test 5, already visually confirmed live in-browser this session with matching computed rgb() values."
+    why_human: "Visual/backstop truth per 17-UI-SPEC.md; already substantially covered by this session's live browser evidence (17-UAT.md test 5, result: issue → now addressed by the two subsequent contrast-fix commits), carried forward only because that live check predates the final 8782d9c sweep commit and was not re-run against it."
+  - test: "Most-Subscribed Usual Shifts list density/wrap on a desk with an unusually large shift library, and long shift-template-name wrapping."
+    expected: "The ranked list remains readable without a scroll or density problem; a long operator-authored template name wraps rather than clips."
+    why_human: "Visual/backstop truth per 17-UI-SPEC.md; not automatable in this project (no frontend test framework). 17-UAT.md test 6 explicitly notes this was NOT exercised — the seeded library only has 2 short template names."
+  - test: "Minutes badge and merged tolerance-band cell read as a different kind of field from Hard/Soft rows on the Constraint Weights page."
     expected: "The tolerance-band row (Minutes badge, single input, colSpan=2) reads as clearly distinct from a broken score row, not as a rendering bug."
-    why_human: "Visual/backstop truth per 17-UI-SPEC.md; not automatable in this project."
+    why_human: "Visual/backstop truth per 17-UI-SPEC.md; not automatable in this project. 17-UAT.md test 7 confirms the row renders with correct structure (27 rows, no console error) but this is a visual read, not a structural one."
 ---
 
 # Phase 17: Consistency Constraint & Drift Reporting Verification Report
@@ -123,9 +92,9 @@ human_verification:
 tolerance band, without ever making an otherwise-feasible schedule infeasible, and the operator can
 see exactly which agents drifted from their usual shift, on which dates, and by how much.
 
-**Verified:** 2026-09-17T22:40:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-18T14:05:00Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (previous: `gaps_found`, 2026-09-17T22:40:00Z, 3/5, committed 0a8608e)
 
 ## Goal Achievement
 
@@ -133,74 +102,93 @@ see exactly which agents drifted from their usual shift, on which dates, and by 
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Soft-only, target-deviation consistency penalty; a solve never overwrites the stored usual-shift target (CONS-01, CONS-04, XCUT-02) | ✓ VERIFIED | `ScheduleConstraintProvider.usualShiftConsistency` (lines 815-836) computes `ShiftBandPair.startDeviationMinutes(assignedStart, target.usualStartTime())` per agent-day, penalising only the excess past `cfg.consistencyToleranceMinutes()` — a target-deviation formula, not the reverted spread-based one. `ConstraintWeightsService.updateWeights` (lines 133-136) rejects any save with a nonzero hard component on `consistentStartWeight`. `SolverUsualShiftWritePathGuardTest#resolveUsualShiftTargets_zeroMutatingInteractionsOnTheRepository` and `#solverServiceSource_noCodeLineInvokesAMutatingMethodOnTheUsualShiftRepository` prove zero writes to `agent_usual_shift` from the solver path, both behaviourally and via structural source scan. |
-| 2 | Per-desk tolerance band (genuine dead zone) and weight, validated via `explain()` before a default ships (CONS-02, CONS-03) | ✓ VERIFIED | `usualShiftConsistency`'s `.filter(...)` (line 825) only fires when deviation `>` tolerance — `UsualShiftConsistencyConstraintTest#deviationEqualsBand_noPenalty` (60-min deviation, 60-min band → penalty 0) and `#deviationOneMinuteBeyondBand_penalisedByOne` (61-min deviation → penalty 1) prove a true dead zone, not a taper, at the exact boundary. `ConstraintWeightsService` (lines 133-150) enforces hard=0, D-08 precedence, and non-negative tolerance at save time, mapped to HTTP 400 `VALIDATION_FAILED` by `GlobalExceptionHandler.handleIllegalArgument`. `ConstraintPrecedenceObservabilityTest` and `17-BENCHMARK.md`'s `explain()` breakdown section both independently confirm the shipped weight's per-match magnitude against `SolutionManager.explain()` before V49 shipped the default. |
-| 3 | Equal-scoring ties decided by `AgentPreference.preferredStartTime`; precedence documented and observable (CONS-05, CONS-06) | ✓ VERIFIED | `ScheduleConstraintProvider.preferredStartShiftMode` (lines 877-894) penalises the absolute (both-direction) deviation from `preferredStartTime`, independent of whether a usual shift is stored (D-09). `ConstraintWeightsService` (lines 141-145) rejects any save where `preferredStartShiftModeWeight.softScore() >= consistentStartWeight.softScore()`, converting precedence into a checked invariant. `ConstraintPrecedenceObservabilityTest#bothConstraints_appearAsTwoDistinctEntriesEachWithAPositiveMatchCount` proves two separate `explain()` entries, never merged. `ConstraintWeightsPage.tsx` (lines 143-159) renders the precedence note in plain words directly beneath the third new row. |
-| 4 | Drift report distinguishes no-usual-shift / honoured / drifted, from the same distance calculation, rendered as a visible panel (DRFT-01, DRFT-02, DRFT-03, XCUT-01) | ✗ **FAILED** (see Gap below) | The on-screen `DriftTab` (`ScheduleResults.tsx:1050-1144`) itself is correct: it branches on `schedule.schedulingMode` first, and renders `DriftStatus`-keyed rows (`NO_USUAL_SHIFT`/`HONOURED`/`DRIFTED`) computed from `ShiftBandPair.startDeviationMinutes` in both the constraint and `ScheduleOutputService.buildDriftReport` (confirmed: single shared static method, both call sites verified). **However**, `ScheduleService.getScheduleDetail` (line 157) never gates `buildDriftReport` on scheduling mode, contradicting both the DTO's own documented `null`-on-SLOT contract and 17-01-PLAN.md's own committed `<verification>` line — see the Gap below. This leaks a populated "Most-Subscribed Usual Shifts" table into the Excel export of a SLOT-mode schedule for any desk with stored usual-shift rows, which is exactly the kind of report-vs-export mismatch XCUT-01 exists to catch (v1.2 audit finding I-1). |
-| 5 | Over-subscription popularity ranking, no mitigation; A/B benchmark confirms the weight doesn't regress coverage before a default ships (DRFT-04, XCUT-04) | ⚠️ Popularity: VERIFIED. Benchmark confirmation: **NEEDS HUMAN** (see Human Verification) | `ScheduleOutputService.buildDriftReport`'s popularity block (lines 546-562) ranks templates by distinct-agent count descending, alphabetical tie-break, with no rebalancing logic anywhere in the diff. `DriftTab`'s "Most-Subscribed Usual Shifts" section and its subtext ("Reads each agent's current usual shift... does not change when you re-solve") render this correctly. The A/B benchmark itself (`17-BENCHMARK.md`) is honestly reported but produced **no measurable difference** at any weight — a construction-heuristic plateau, verified as reproducible (20,000-step re-run, reversed list order) rather than a step-budget/list-order artifact — so it did not, by measurement, confirm the weight is safe. The shipped default instead rests on a redone sizing-arithmetic projection plus `explain()`, with a documented worst-case overshoot of the `minStaffingWeight` ceiling (12% over) accepted as residual risk at a blocking-human checkpoint. This is an honest null-result write-up per the phase's own Phase-12 rule, not a silent gap — but it does not literally satisfy "a seeded A/B benchmark confirms... doesn't regress." |
+| 1 | Soft-only, target-deviation consistency penalty; a solve never overwrites the stored usual-shift target (CONS-01, CONS-04, XCUT-02) | ✓ VERIFIED (regression check — unchanged since prior pass) | No commits since the prior `passed` verdict touch `ScheduleConstraintProvider`, `SolverService`, or the usual-shift write-path guard tests. `./gradlew test` re-run this session: 788 tests, 0 failures, 0 errors, 4 skipped (gated benchmark tests) — includes `UsualShiftConsistencyConstraintTest` and `SolverUsualShiftWritePathGuardTest`. Live evidence this session independently confirms: a real solve on a 12-agent SHIFT desk with 50 stored usual-shift rows left `agent_usual_shift` byte-identical (md5 unchanged) before/after. |
+| 2 | Per-desk tolerance band (genuine dead zone) and weight, validated via `explain()` before a default ships (CONS-02, CONS-03) | ✓ VERIFIED (regression check) | No functional change since the prior pass. WR-01 (7ac545e) replaced an unchecked `as Record<string, Score>` cast in `ConstraintWeightsPage.tsx` with a runtime `isScore` guard, purely a hardening fix for a hypothetical future field — the commit's own note and this session's re-check confirm behavior for all 24 existing rows (including the tolerance-band row) is unchanged: `npx tsc --noEmit` clean, and 17-UAT.md test 7 confirms the page still renders 27 rows including the three new Consistency rows with no console error. |
+| 3 | Equal-scoring ties decided by `AgentPreference.preferredStartTime`; precedence documented and observable (CONS-05, CONS-06) | ✓ VERIFIED (regression check) | No commits since the prior pass touch `preferredStartShiftMode`, `ConstraintWeightsService`'s D-08 precedence rejection, or the precedence-note render. `ConstraintPrecedenceObservabilityTest` still green in the full-suite re-run. |
+| 4 | Drift report distinguishes no-usual-shift / honoured / drifted, from the same distance calculation, rendered as a visible panel (DRFT-01, DRFT-02, DRFT-03, XCUT-01) | ✓ VERIFIED — previously FAILED, gap now closed | `ScheduleService.getScheduleDetail` (line 158-159, confirmed by direct read) now reads `schedule.getSchedulingMode() == SchedulingMode.SHIFT ? scheduleOutputService.buildDriftReport(schedule) : null` — the gate fires *before* `buildDriftReport` is ever invoked, so the popularity leak into the Excel export (the other half of the original CR-01 finding) is closed as a structural side effect, not merely filtered after construction. Two new behavioral tests in `ScheduleServiceShiftSnapshotTest` (`getScheduleDetail_inMemorySlotModeSchedule_driftReportIsNullAndNeverBuilt`, `getScheduleDetail_inMemoryShiftModeSchedule_driftReportIsBuilt`) assert via `Mockito.verify(..., never())`/`times(1)` that the call itself is/isn't made — both re-run green this session. `ScheduleExportServiceTest`'s null-drift-report test was renamed and re-commented to stop claiming end-to-end SLOT-mode coverage it never had. The pre-existing export-blocking NPE (G-17-9, `ScheduleExportService.writeStaffingSummary` dereferencing a null GRAND TOTAL date) is independently fixed (04c8651) with two new regression tests, both confirmed by the commit message to fail with the guard reverted. This unblocked the first-ever real end-to-end observation, confirmed live this session: a SLOT-solved desk with 50 stored usual-shift rows returned `driftReport: null` and its Excel export's Drift Report sheet had only the header row, zero popularity content. Export headers (`Agent, Date, Status, Usual Start, Actual Start, Delta (min)`) confirmed byte-identical between `ScheduleExportService.writeDriftReport` and the on-screen `DriftTab` table by direct source comparison. Full suite re-run: 788/788 non-skipped tests green (`DriftReportTest`'s in-memory fixture required its own follow-up fix, 49ab8bd, to set `SchedulingMode.SHIFT` explicitly once the CR-01 gate started enforcing it — a stale-fixture-meets-new-gate breakage, not a logic regression, and it is now green). See "Nuance on the closure method" below. |
+| 5 | Over-subscription popularity ranking, no mitigation; A/B benchmark confirms the weight doesn't regress coverage before a default ships (DRFT-04, XCUT-04) | ⚠️ Popularity: VERIFIED. Benchmark confirmation: **STILL NEEDS HUMAN** (unchanged) | `ScheduleOutputService.buildDriftReport`'s popularity block (unchanged since prior pass) ranks templates by distinct-agent count descending, alphabetical tie-break, with no rebalancing logic. 17-UAT.md test 6 independently confirms correct counts against seeded data (Early Shift 8, Late Shift 2) with the disclosure subtext present. `17-BENCHMARK.md` has had zero commits since the prior verification (last commit `ea0b625`, 2026-09-17) — the benchmark's null result and the honest write-up are unchanged, and the question of whether the arithmetic-plus-`explain()` substitute satisfies the roadmap's literal "a seeded A/B benchmark confirms..." wording remains genuinely open. 17-UAT.md's own test 8 records this exact question with `result: [pending]` as of this session. This verifier does not resolve it — see Human Verification. |
 
-**Score:** 3/5 roadmap success criteria fully verified; 1 failed (CR-01, unresolved code-review CRITICAL); 1 needs an explicit human decision on whether a disclosed compensating method satisfies the literal wording.
+**Score:** 4/5 truths fully verified by code+test evidence; 1 truth split (code-verified popularity half; benchmark-wording half explicitly deferred to human judgment, unresolved both in the prior verification and in this session's own UAT).
+
+### Nuance on the CR-01 Closure Method
+
+The prior gap's `missing:` list asked for "a regression test that solves/accepts a SLOT-mode
+schedule for a desk carrying at least one stored `AgentUsualShift` row, calls `getScheduleDetail`,
+and asserts `response.getDriftReport()` is null." What shipped instead
+(`ScheduleServiceShiftSnapshotTest`, mocked `ScheduleOutputService`) asserts `buildDriftReport` is
+**never invoked** in SLOT mode, using an in-memory schedule with no usual-shift repository data
+involved at all (the repository is mocked out).
+
+Judged as **at least equivalent, arguably stronger**, not weaker: the actual code fix is a pure
+`SchedulingMode` conditional with no data-dependent branch (confirmed by direct source read — there
+is no `if (usualShifts.isEmpty())`-style logic anywhere in the gate). A "never invoked" proof holds
+regardless of what stored usual-shift data exists, which is a strictly more general guarantee than
+one specific desk-with-data fixture would have been — a data-carrying fixture could only prove the
+same gate for the one dataset it constructs, while the mock-verify proof holds for all data shapes
+by construction. The narrower, data-specific case the original gap asked about is separately closed
+by this session's own live manual evidence (real Postgres desk with 50 stored usual-shift rows,
+solved under SLOT mode, confirmed `driftReport: null` and a header-only export sheet) — so both the
+structural (all data shapes) and the concrete (real data, real DB) forms of the guarantee are now
+independently established, just by two different pieces of evidence rather than one combined test.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/main/java/com/wfm/model/ResolvedUsualShiftTarget.java` | Pre-resolved problem fact | ✓ VERIFIED | `public record ResolvedUsualShiftTarget(UUID agentId, LocalDate date, LocalTime usualStartTime)` present, used by `SolverService.resolveUsualShiftTargets` and `usualShiftConsistency`'s join. |
-| `src/main/java/com/wfm/model/ShiftBandPair.java` | Shared distance calculation | ✓ VERIFIED | `startDeviationMinutes` (lines 97-103): `Math.abs(ChronoUnit.MINUTES.between(...))`, null-safe, called from both the constraint and `buildDriftReport`. |
-| `src/main/resources/db/migration/V48__...sql` | New columns | ✓ VERIFIED | `consistency_tolerance_minutes` present (confirmed via 17-01-SUMMARY and code reading `cfg.consistencyToleranceMinutes()`). |
-| `src/main/resources/db/migration/V49__set_consistency_weight_defaults.sql` | Benchmark-derived shipped defaults | ✓ VERIFIED | Predicated `UPDATE`, cites `17-BENCHMARK.md`; `ConstraintWeightsMigrationTest` proves both column defaults and untouched-row safety against a real Postgres/Flyway chain. |
-| `src/test/java/com/wfm/solver/UsualShiftConsistencyConstraintTest.java` | CONS-01/02/04 coverage | ✓ VERIFIED | Dead-zone boundary, SLOT-mode silence, null-band-pair no-penalty, penalised-magnitude tests all present. |
-| `src/test/java/com/wfm/service/DriftReportTest.java` | DRFT-01/02/03 coverage | ✓ VERIFIED (exists, referenced by 17-01/17-03 SUMMARYs; not independently re-read line-by-line beyond confirming the shared-calculation call sites it targets are real) | |
-| `src/test/java/com/wfm/solver/UsualShiftConsistencyBenchmarkTest.java` | Gated seeded A/B harness | ✓ VERIFIED (exists, gated, produced the transcribed results in `17-BENCHMARK.md`) | `@EnabledIfSystemProperty`-gated; confirmed skipped in the default 784-test suite per 17-04-SUMMARY's "4 skipped (2 benchmark)" count. |
-| `frontend/src/pages/ScheduleResults.tsx` (`DriftTab`) | Drift Report tab | ✓ VERIFIED | Lines 1050-1144: slot-mode not-applicable message, summary bar recomputed from the date-filtered set, status-coloured rows, popularity section with its own empty state. |
-| `frontend/src/pages/ConstraintWeightsPage.tsx` | Three new config rows + precedence note | ✓ VERIFIED | Lines 28-30 (CONSTRAINTS entries), 104-123 (tolerance-band own render branch), 143-159 (precedence note). |
+| `src/main/java/com/wfm/service/ScheduleService.java` | SchedulingMode gate on `buildDriftReport` | ✓ VERIFIED | Lines 157-160: ternary gate confirmed present, matches CR-01's prescribed fix exactly. |
+| `src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java` | CR-01 regression tests | ✓ VERIFIED | Both new tests read and confirmed present; re-run green this session. |
+| `src/main/java/com/wfm/service/ScheduleExportService.java` | Null-safe GRAND TOTAL date + reachable null-drift-report branch | ✓ VERIFIED | `e.date() != null ? e.date().toString() : ""` guard confirmed at `writeStaffingSummary`; `writeDriftReport`'s `report == null` branch confirmed reachable via the CR-01 gate, with an explanatory comment against future removal-as-dead-code. |
+| `src/test/java/com/wfm/service/ScheduleExportServiceTest.java` | NPE regression tests + re-commented null-drift test | ✓ VERIFIED | Two new tests (`exportToExcel_multiDayStaffingSummary_grandTotalNullDateWritesBlankAndDoesNotThrow`, `..._laterSheetsAreStillWritten`) read and confirmed present; renamed null-drift-report test's new comment confirmed accurate to what it actually tests. |
+| `frontend/src/pages/ScheduleResults.tsx` (`DriftTab`) | Slot-mode not-applicable message; three WCAG-AA-passing status colours | ✓ VERIFIED | `schedulingMode !== 'SHIFT'` branch confirmed at top of `DriftTab`. Colours confirmed at lines ~1111-1119: `#dc2626` (Drifted), `#15803d` (Honoured), `#6b7280` (No usual shift) — all three independently recomputed to ≥4.5:1 contrast on white by this verifier (4.83, 5.02, 4.83 respectively), matching the commits' own claimed figures. |
+| `frontend/src/pages/ConstraintWeightsPage.tsx` | `isScore` runtime guard (WR-01) | ✓ VERIFIED | Guard function and per-row narrowing confirmed present; `npx tsc --noEmit` clean. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `SolverService` | `Schedule` | `resolveUsualShiftTargets(...)` sets `resolvedUsualShiftTargets` problem facts | ✓ WIRED | Confirmed by `SolverUsualShiftWritePathGuardTest` and `usualShiftConsistency`'s join against `ResolvedUsualShiftTarget`. |
-| `ScheduleConstraintProvider` | `ShiftBandPair` | `startDeviationMinutes` shared static method | ✓ WIRED | Both `usualShiftConsistency` (line 823/827) and `preferredStartShiftMode` (line 886) call it. |
-| `ScheduleOutputService` | `ShiftBandPair` | `startDeviationMinutes` shared static method | ✓ WIRED | Called by `buildDriftReport`'s per-entry deviation computation (confirmed in the file read). |
-| `ScheduleOutputService` | `AgentUsualShiftRepository` | tenant-and-desk-scoped `findByTenantIdAndDeskId` | ✓ WIRED | Used for both the drift entries' stored-shift lookup and the popularity ranking (lines 459-460). |
-| `ScheduleService` | `ScheduleDetailResponse` | `setDriftReport` + date-filter recompute block | ✓ WIRED | Lines 157, 232-249: recomputes `DriftSummary` from the filtered entry set; popularity is deliberately carried through unfiltered. |
-| `ScheduleService` | `SchedulingMode` gate on `buildDriftReport` | Documented DTO contract: `driftReport` null on a SLOT-scheduled desk | ✗ **NOT WIRED** | See Gap. No gate exists; `buildDriftReport` is called unconditionally and never returns null. |
-| `ScheduleExportService` | `ScheduleDetailResponse` | `writeDriftReport` consumes `detail.getDriftReport()` | ⚠️ PARTIAL | The write path itself is correctly wired to the same payload the UI reads (byte-identical headers confirmed against `ScheduleExportServiceTest`'s header-literal tests), but its `null`-report branch is now dead code because of the gap above — the export can no longer distinguish a genuinely not-applicable (SLOT) desk from an empty-but-applicable (SHIFT, zero drift) one. |
-| `ConstraintWeightsService` | `GlobalExceptionHandler` | `IllegalArgumentException` → 400 `VALIDATION_FAILED` | ✓ WIRED | `GlobalExceptionHandler.handleIllegalArgument` (lines 32-35) confirmed. |
+| `ScheduleService` | `SchedulingMode` gate on `buildDriftReport` | Documented DTO contract: `driftReport` null on a SLOT-scheduled desk | ✓ WIRED (previously NOT WIRED) | Gate confirmed present and behaviorally proven by two new Mockito-verify tests plus this session's live-DB evidence. |
+| `ScheduleExportService.writeDriftReport` | `ScheduleDetailResponse.driftReport` | Null-report early-return branch | ✓ WIRED (previously PARTIAL/dead) | Branch is now reachable in production for real SLOT-mode desks; confirmed live this session (header-only sheet, no popularity leak). |
+| `ScheduleExportService.writeStaffingSummary` | `StaffingSummaryEntry.date()` | Null-safe dereference on the synthetic GRAND TOTAL row | ✓ WIRED (previously threw NPE, HTTP 500) | Guard confirmed present; live export confirmed 200/20,958 bytes with all five sheets, replacing the prior 500. |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| CONS-01 | 17-01 | Solver penalised for shift differing from stored usual shift | ✓ SATISFIED | `usualShiftConsistency` |
-| CONS-02 | 17-01, 17-02, 17-04, 17-05 | Configurable tolerance band, deviation within it carries no penalty | ✓ SATISFIED | Dead-zone tests + `ConstraintWeightsPage` tolerance row + `explain()` validation |
-| CONS-03 | 17-02, 17-04, 17-05 | Configurable consistency weight per desk | ✓ SATISFIED | `PUT /constraint-weights` round-trip + page row |
-| CONS-04 | 17-01, 17-02 | Consistency is soft-only, never makes feasible infeasible | ✓ SATISFIED | Hard=0 save-time rejection |
-| CONS-05 | 17-02, 17-05 | Ties decided by `AgentPreference` start time | ✓ SATISFIED | `preferredStartShiftMode` anchor, D-09 independence |
-| CONS-06 | 17-02, 17-05 | Precedence documented and observable, not implicit | ✓ SATISFIED | D-08 save-time rejection + two `explain()` entries + UI precedence note |
-| DRFT-01 | 17-01, 17-03, 17-05 | Operator sees which agents drifted, dates, magnitude | ✓ SATISFIED (UI panel) — see Gap for the export-surface caveat | `DriftTab`, date-filter recompute |
-| DRFT-02 | 17-01, 17-05 | Distinguishes no-usual-shift from honoured | ✓ SATISFIED | Explicit `DriftStatus` field, three-state tests |
-| DRFT-03 | 17-01 | Same distance calculation as the constraint | ✓ SATISFIED | Shared `ShiftBandPair.startDeviationMinutes` |
-| DRFT-04 | 17-03, 17-05 | Over-subscribed templates visible, no mitigation | ✓ SATISFIED | Popularity ranking, no rebalancing logic found |
-| XCUT-01 | 17-03, 17-05 | Written value visible in every display surface (roster, export, accepted view, drift report) | ✗ **BLOCKED** | UI leg correct; export leg leaks a populated popularity table on a SLOT-mode desk instead of the documented not-applicable state — see Gap (CR-01) |
-| XCUT-02 | 17-01, 17-03 | Every write path verified, not only the one its phase built | ✓ SATISFIED | `SolverUsualShiftWritePathGuardTest` (behavioural + structural proof) |
-| XCUT-04 | 17-04 | Seeded, step-count-terminated A/B, median + min/max, threshold pre-committed | ✓ SATISFIED (process) / ⚠️ outcome inconclusive by measurement | See Human Verification — process was followed correctly and honestly; the specific "confirms no regression" claim was not established by the A/B itself |
+| CONS-01 | 17-01 | Solver penalised for shift differing from stored usual shift | ✓ SATISFIED | Unchanged from prior pass; regression-checked green. |
+| CONS-02 | 17-01, 17-02, 17-04, 17-05 | Configurable tolerance band, no penalty within it | ✓ SATISFIED | Unchanged from prior pass; regression-checked green. |
+| CONS-03 | 17-02, 17-04, 17-05 | Configurable consistency weight per desk | ✓ SATISFIED | Unchanged from prior pass. |
+| CONS-04 | 17-01, 17-02 | Soft-only, never makes feasible infeasible | ✓ SATISFIED | Unchanged from prior pass. |
+| CONS-05 | 17-02, 17-05 | Ties decided by `AgentPreference` start time | ✓ SATISFIED | Unchanged from prior pass. |
+| CONS-06 | 17-02, 17-05 | Precedence documented and observable | ✓ SATISFIED | Unchanged from prior pass. |
+| DRFT-01 | 17-01, 17-03, 17-05 | Operator sees drift per agent/date/magnitude | ✓ SATISFIED — gap closed | Both UI and export legs now confirmed correct end to end. |
+| DRFT-02 | 17-01, 17-05 | Distinguishes no-usual-shift from honoured | ✓ SATISFIED | Unchanged from prior pass. |
+| DRFT-03 | 17-01 | Same distance calculation as the constraint | ✓ SATISFIED | Unchanged from prior pass. |
+| DRFT-04 | 17-03, 17-05 | Over-subscribed templates visible, no mitigation | ✓ SATISFIED | Unchanged from prior pass; independently re-confirmed by 17-UAT.md test 6 counts. |
+| XCUT-01 | 17-03, 17-05 | Written value visible on every display surface | ✓ SATISFIED — previously BLOCKED | Export leg no longer leaks; both surfaces now agree, including on a SLOT-mode desk. |
+| XCUT-02 | 17-01, 17-03 | Every write path verified | ✓ SATISFIED | Unchanged from prior pass. |
+| XCUT-04 | 17-04 | Seeded A/B, threshold pre-committed | ⚠️ Process satisfied; outcome-confirmation wording still open | Unchanged from prior pass — carried to human verification, not resolved by this session's other fixes (none touch the benchmark). |
 
-No orphaned requirements: every ID in `.planning/REQUIREMENTS.md`'s CONS/DRFT/XCUT rows for Phase 17 traces to a plan's `requirements:` frontmatter field.
+No orphaned requirements: every ID in `.planning/REQUIREMENTS.md`'s CONS/DRFT rows for Phase 17
+traces to a plan's `requirements:` frontmatter field (confirmed: `17-01` through `17-05` PLAN
+frontmatter collectively cover CONS-01…06 and DRFT-01…04).
 
 ### Anti-Patterns Found
 
-No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers found in the phase's modified backend or frontend files. No stub `return null`/`return {}`/empty-handler patterns found in the reviewed constraint, service, DTO, or React files. The one substantive defect found (CR-01) is a missing conditional branch, not a stub or placeholder — already fully documented above and in the Gaps section.
+No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers found in any file touched by the commits
+since the prior verification (`ScheduleService.java`, `ScheduleOutputService.java`,
+`ScheduleExportService.java`, `ScheduleResults.tsx`, `ConstraintWeightsPage.tsx`,
+`ScheduleServiceShiftSnapshotTest.java`, `ScheduleExportServiceTest.java`, `DriftReportTest.java`).
+No stub or empty-implementation patterns found. No blocker-level anti-patterns.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Dead-zone boundary (deviation == band ⇒ 0 penalty) | `./gradlew test --tests "com.wfm.solver.UsualShiftConsistencyConstraintTest"` (cached UP-TO-DATE from the prior full-suite green run) | `deviationEqualsBand_noPenalty` / `deviationOneMinuteBeyondBand_penalisedByOne` both pass | ✓ PASS |
-| Two distinct `explain()` entries for consistency + preference | `./gradlew test --tests "com.wfm.solver.ConstraintPrecedenceObservabilityTest"` (cached UP-TO-DATE) | `bothConstraints_appearAsTwoDistinctEntriesEachWithAPositiveMatchCount` passes | ✓ PASS |
-| Drift report / shared-calculation agreement | `./gradlew test --tests "com.wfm.service.DriftReportTest"` (cached UP-TO-DATE) | Passes as part of the confirmed 784-test green suite | ✓ PASS |
-| Full regression suite | Already run and reported by the executor/prior gate (`784 tests, 0 failures, 0 errors, 4 skipped`); re-confirmed here via targeted `--tests` runs returning `UP-TO-DATE`/`BUILD SUCCESSFUL`, not re-run in full per the single-full-run-per-verification constraint | 784/784 non-skipped green | ✓ PASS |
-| CR-01 reproduction (static-analysis form) | Read `ScheduleService.java:157`, `ScheduleOutputService.java:458-565`, `ScheduleExportService.java:244-258`, `ScheduleExportServiceTest.java:158-166` directly | No `SchedulingMode` gate found on the `getScheduleDetail`→`buildDriftReport` call; `buildDriftReport` has no `return null`; the "null drift report" test never calls the real `ScheduleService` path | ✗ FAIL — confirms 17-REVIEW.md's CR-01 exactly |
+| Full regression suite | `./gradlew test` (full run, once, this session) | 788 tests, 0 failures, 0 errors, 4 skipped (gated benchmark tests) | ✓ PASS |
+| CR-01 regression (SLOT mode never invokes buildDriftReport; SHIFT mode does) | `./gradlew test --tests com.wfm.service.ScheduleServiceShiftSnapshotTest --tests com.wfm.service.DriftReportTest --tests com.wfm.service.ScheduleExportServiceTest --rerun` | `BUILD SUCCESSFUL`, all green | ✓ PASS |
+| Frontend type-check (WR-01, contrast changes) | `npx tsc --noEmit -p frontend/tsconfig.json` | No output (clean) | ✓ PASS |
+| Contrast recomputation (Drifted/Honoured/No-usual-shift) | Independent WCAG relative-luminance calculation for `#dc2626`, `#15803d`, `#6b7280` on white | 4.83:1, 5.02:1, 4.83:1 — all ≥4.5:1 | ✓ PASS |
+| Export header parity | Direct source comparison of `ScheduleExportService.writeDriftReport`'s `cols` array against `DriftTab`'s `<th>` labels | Byte-identical: Agent, Date, Status, Usual Start, Actual Start, Delta (min) | ✓ PASS |
 
 ### Probe Execution
 
@@ -208,15 +196,29 @@ Not applicable — no `scripts/*/tests/probe-*.sh` files declared or found for t
 
 ### Human Verification Required
 
-See frontmatter `human_verification`. Five items: (1) an explicit decision on whether XCUT-04's Success Criterion 5 wording is satisfied by the disclosed arithmetic-plus-explain() substitute given the benchmark's honest null result, and (2)-(5) the four visual/backstop truths 17-05-SUMMARY.md itself already flagged as `human_judgment: true` (Status-column distinctness, popularity list density/wrap, long-name wrap, Minutes-badge/merged-cell read) — none automatable in this project, which has no frontend test framework.
+See frontmatter `human_verification`. Four items, of which one is a carried-forward, still-unresolved
+decision this verifier explicitly does not make: (1) whether XCUT-04's Success Criterion 5 wording is
+satisfied by the disclosed arithmetic-plus-`explain()` substitute given the benchmark's honest null
+result — unchanged and still pending in 17-UAT.md test 8; (2)-(4) visual/backstop truths (status-column
+distinctness, popularity list density/wrap on a large library, Minutes-badge/merged-cell read) that
+this project has no frontend test framework to automate, though (2) is already substantially covered
+by this session's own live-browser evidence and only needs a final confirmation pass against the last
+contrast-fix commit.
 
 ### Gaps Summary
 
-**One BLOCKER (CR-01, carried over unresolved from `17-REVIEW.md`):** `ScheduleService.getScheduleDetail` calls `ScheduleOutputService.buildDriftReport` unconditionally, and `buildDriftReport` has no code path that returns `null`. This contradicts (a) the `ScheduleDetailResponse.DriftReport` javadoc's own documented contract ("`null` on a slot-scheduled desk"), and (b) 17-01-PLAN.md's own committed `<verification>` line ("`ScheduleDetailResponse.driftReport` is... null-safe on a slot desk"). The practical consequence, verified directly against source: on a SLOT-scheduled desk that still carries stored `AgentUsualShift` rows (a proven-reachable, tested-as-persistent state per `UsualShiftWritePathTest`), the Excel export's "Drift Report" sheet gets an empty main table (not the required not-applicable state) plus a genuinely populated "Most-Subscribed Usual Shifts" section, because the popularity ranking is not mode-gated at all. The React `DriftTab` is unaffected because it branches on `schedule.schedulingMode` before ever reading `driftReport` — the leak is export-only, but the export is one of the four surfaces XCUT-01 explicitly requires ("roster, export, accepted-schedule view, drift report"). The one test whose name and comment claim to cover this (`ScheduleExportServiceTest.exportToExcel_nullDriftReport_sheetHasOnlyTheMainHeaderRow`) never calls the real `ScheduleService` code path, so the regression is genuinely untested, not merely undertested. This is squarely inside Phase 17's own scope (17-01/17-03), not a pre-existing or deferred issue, and it has a small, well-specified fix already written out in `17-REVIEW.md`'s CR-01 finding.
-
-**One item requiring an explicit human decision, not a code fix:** Success Criterion 5's clause "A seeded A/B benchmark confirms the consistency constraint's weight doesn't regress coverage/break quality before a default ships" was not established by measurement — the benchmark hit a known, independently-verified construction-heuristic plateau and produced a null result across every arm and seed. The team's response (redone sizing arithmetic, `explain()`-verified per-match cost, and an explicit blocking-human checkpoint accepting a documented 12%-over-ceiling worst-case residual risk) is honest, well-documented, and consistent with this project's Phase-12 lesson about not overclaiming noise as a win — but it is a different form of evidence than the roadmap's literal wording describes. This verifier is not able to determine on its own whether that substitution is an acceptable closure of Success Criterion 5 or should remain an open item pending real drift telemetry from Phase 17's own (now-shipped) drift report.
+No blocking gaps. The one previously FAILED success criterion (4: drift report's slot-mode contract)
+is now closed with both automated regression tests and live end-to-end evidence against a real
+database. The dependent export-blocking NPE (G-17-9) is independently fixed with its own regression
+tests. The G-17-5 WCAG contrast gap is closed, and two further contrast issues discovered along the
+way (Honoured green, and the same green's other 10 app-wide call sites) were also fixed, with the
+phase-scoped colours independently re-verified by this report. The one remaining open item —
+Success Criterion 5's literal "a seeded A/B benchmark confirms... doesn't regress" wording against an
+honest null result — was already surfaced for human judgment by the prior verification and remains
+open in this session's own UAT (test 8, pending); this report carries it forward unresolved rather
+than adopting either the prior verifier's framing or 17-UAT.md's framing as a de facto answer.
 
 ---
 
-_Verified: 2026-09-17T22:40:00Z_
+_Verified: 2026-09-18T14:05:00Z_
 _Verifier: Claude (gsd-verifier)_
