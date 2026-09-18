@@ -3,7 +3,7 @@ status: complete
 phase: 17-consistency-constraint-drift-reporting
 source: 17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md, 17-04-SUMMARY.md, 17-05-SUMMARY.md
 started: 2026-09-18T12:16:28Z
-updated: 2026-09-18T21:20:54Z
+updated: 2026-09-18T21:31:57Z
 ---
 
 ## Current Test
@@ -40,7 +40,9 @@ requirement: CONS-02
 
 ### 5. Drift Report Tab
 expected: On a shift-scheduled desk the Drift Report tab shows the per-agent-date table, a summary bar whose four counts track the current date filter, the D-11 live-recomputation note, and headers byte-identical to the Excel export sheet. A Drifted row draws the eye at a glance — red/bold (#dc2626, weight 600) against Honoured green (#16a34a) and No-usual-shift muted gray (#d1d5db). On a slot-scheduled desk it shows a single not-applicable message instead of an empty table.
-result: issue
+result: pass
+initial_result: issue
+retested: 2026-09-18 — both findings fixed and re-verified live against the running app; the test's subject (the Drift Report tab renders per DRFT-01) now passes in full. Contrast re-measured in the browser: Drifted 4.83:1, Honoured 5.02:1, No usual shift 4.83:1 — all pass WCAG AA. Export re-verified: HTTP 200, all five sheets, Drift Report sheet headers byte-identical to the on-screen tab. See gaps G-17-5 and G-17-9, both status: resolved.
 reported: "Automated verification: tab renders correctly. One finding remains — the 'No usual shift' status colour #d1d5db on white measures 1.47:1 contrast, failing WCAG AA for both normal (4.5:1) and large (3:1) text. The second finding (export HTTP 500 blocking header-parity verification) is now FIXED and verified — see gap G-17-9."
 severity: minor
 evidence: "Export header parity CONFIRMED after the G-17-9 fix: the Drift Report sheet's headers resolve to [Agent, Date, Status, Usual Start, Actual Start, Delta (min)] — byte-identical to the on-screen tab. On a SLOT-solved desk holding 50 usual-shift rows the exported Drift Report sheet contains the header row and ZERO data rows, with no Most-Subscribed/popularity content anywhere in the workbook — CR-01 and IN-02 both confirmed end to end for the first time. Also verified working: per-agent-date table; summary bar tracks the date filter (60/17/33/10 unfiltered -> 12/2/8/2 filtered to 2026-09-21); D-11 live-recomputation note present; Drifted rgb(220,38,38) weight 600, Honoured rgb(22,163,74), No usual shift rgb(209,213,219) — all exactly per 17-UI-SPEC; SLOT desk shows the single not-applicable message with zero tables."
@@ -76,9 +78,10 @@ requirement: XCUT-04
 ## Summary
 
 total: 8
-passed: 7
-issues: 1
+passed: 8
+issues: 0
 pending: 0
+issues_found_and_resolved: 1
 skipped: 0
 blocked: 0
 
