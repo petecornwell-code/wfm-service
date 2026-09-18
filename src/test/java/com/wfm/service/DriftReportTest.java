@@ -14,6 +14,7 @@ import com.wfm.model.AgentUsualShift;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
+import com.wfm.model.SchedulingMode;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.AcceptedScheduleDateRepository;
@@ -540,6 +541,11 @@ class DriftReportTest {
         schedule.setTenantId(TENANT_ID);
         schedule.setDeskId(DESK_ID);
         schedule.setStatus(ScheduleStatus.COMPLETED);
+        // Schedule.schedulingMode defaults to SLOT (field initializer, nullable=false), and
+        // ScheduleService.getScheduleDetail gates driftReport on SchedulingMode.SHIFT (CR-01).
+        // A drift-report date-filter test is by definition a SHIFT-mode scenario, so the fixture
+        // must say so — left at the SLOT default these tests get a null driftReport and NPE.
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
         return schedule;
     }
 
