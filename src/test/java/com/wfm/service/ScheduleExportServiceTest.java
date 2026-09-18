@@ -10,6 +10,7 @@ import com.wfm.dto.ScheduleDetailResponse.DriftStatus;
 import com.wfm.dto.ScheduleDetailResponse.DriftSummary;
 import com.wfm.dto.ScheduleDetailResponse.ShiftDescriptor;
 import com.wfm.dto.ScheduleDetailResponse.ShiftPopularityEntry;
+import com.wfm.dto.ScheduleDetailResponse.StaffingSummaryEntry;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -242,6 +243,81 @@ class ScheduleExportServiceTest {
         ScheduleDetailResponse detail = detailWith(List.of());
         detail.setDriftReport(report);
         return detail;
+    }
+
+    /**
+     * Regression for the multi-day export NPE: {@code ScheduleOutputService.buildStaffingSummary}
+     * appends a GRAND TOTAL entry with a {@code null} date whenever the schedule spans more than
+     * one date, and {@code writeStaffingSummary} used to call {@code e.date().toString()}
+     * unguarded — so EVERY multi-day schedule's export threw
+     * {@code NullPointerException} before any later sheet (Agent Schedule, Preference Report,
+     * Drift Report) was written. The pre-existing tests never caught it because they all pass
+     * {@code setStaffingSummary(List.of())} or a single-date fixture, neither of which ever
+     * produces the null-date row.
+     *
+     * <p>This fixture mirrors the real builder's output shape: per-day rows, a per-day TOTAL row
+     * carrying a real date, and the synthetic GRAND TOTAL row carrying a null one.
+     */
+    @Test
+    void exportToExcel_multiDayStaffingSummary_grandTotalNullDateWritesBlankAndDoesNotThrow() throws Exception {
+        LocalDate day2 = DAY.plusDays(1);
+        List<StaffingSummaryEntry> summary = List.of(
+                new StaffingSummaryEntry(DAY, "General", bd(96), bd(96), bd(0), bd(100)),
+                new StaffingSummaryEntry(DAY, "TOTAL", bd(96), bd(96), bd(0), bd(100)),
+                new StaffingSummaryEntry(day2, "General", bd(96), bd(96), bd(0), bd(100)),
+                new StaffingSummaryEntry(day2, "TOTAL", bd(96), bd(96), bd(0), bd(100)),
+                // The synthetic grand-total row: null date by construction.
+                new StaffingSummaryEntry(null, "GRAND TOTAL", bd(192), bd(192), bd(0), bd(100)));
+
+        ScheduleDetailResponse detail = detailWith(List.of());
+        detail.setStaffingSummary(summary);
+
+        Sheet sheet = exportAndReadSheet(detail, "Staffing Summary");
+
+        assertThat(sheet).isNotNull();
+        // Header + 5 data rows.
+        assertThat(sheet.getLastRowNum()).isEqualTo(5);
+
+        Row grandTotal = sheet.getRow(5);
+        assertThat(cellText(grandTotal, 1)).isEqualTo("GRAND TOTAL");
+        // The null date renders blank rather than throwing, matching how the on-screen
+        // Staffing Summary renders that row's Date cell.
+        assertThat(cellText(grandTotal, 0)).isEmpty();
+
+        // The per-day TOTAL row still carries its real date — the guard must not blank those.
+        assertThat(cellText(sheet.getRow(2), 0)).isEqualTo(DAY.toString());
+    }
+
+    /**
+     * The NPE aborted the whole workbook, so a later sheet is the real proof the export survives.
+     */
+    @Test
+    void exportToExcel_multiDayStaffingSummary_laterSheetsAreStillWritten() throws Exception {
+        List<StaffingSummaryEntry> summary = List.of(
+                new StaffingSummaryEntry(DAY, "General", bd(8), bd(8), bd(0), bd(100)),
+                new StaffingSummaryEntry(null, "GRAND TOTAL", bd(8), bd(8), bd(0), bd(100)));
+
+        DriftReport report = new DriftReport(
+                List.of(new DriftReportEntry(UUID.randomUUID(), "Aaron Adams", DAY,
+                        DriftStatus.DRIFTED, LocalTime.of(7, 0), LocalTime.of(11, 0), 240)),
+                new DriftSummary(1, 0, 0, 1),
+                List.of(new ShiftPopularityEntry("Early Shift", 1)));
+
+        ScheduleDetailResponse detail = detailWith(List.of());
+        detail.setStaffingSummary(summary);
+        detail.setDriftReport(report);
+
+        byte[] xlsx = service.exportToExcel(detail);
+        XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(xlsx));
+
+        assertThat(workbook.getSheet("Staffing Summary")).isNotNull();
+        Sheet drift = workbook.getSheet("Drift Report");
+        assertThat(drift).isNotNull();
+        assertThat(cellText(drift.getRow(1), 0)).isEqualTo("Aaron Adams");
+    }
+
+    private static BigDecimal bd(int v) {
+        return BigDecimal.valueOf(v);
     }
 
     private Sheet exportAndReadBack(ScheduleDetailResponse detail) throws Exception {

@@ -83,7 +83,13 @@ public class ScheduleExportService {
         int rowNum = 1;
         for (StaffingSummaryEntry e : entries) {
             Row row = sheet.createRow(rowNum++);
-            row.createCell(0).setCellValue(e.date().toString());
+            // The GRAND TOTAL entry carries a null date by construction
+            // (ScheduleOutputService.buildStaffingSummary, added whenever the schedule spans more
+            // than one date), so this dereference must be guarded or EVERY multi-day schedule's
+            // export throws before any later sheet is written. Blank matches how the on-screen
+            // Staffing Summary renders that row's Date cell. The per-day "TOTAL" row is not
+            // affected -- it carries a real date.
+            row.createCell(0).setCellValue(e.date() != null ? e.date().toString() : "");
             row.createCell(1).setCellValue(e.specializationName());
             row.createCell(2).setCellValue(e.predictedHours().doubleValue());
             row.createCell(3).setCellValue(e.actualHours().doubleValue());
