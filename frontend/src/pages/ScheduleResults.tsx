@@ -1103,7 +1103,13 @@ function DriftTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilt
                 // WCAG AA's 4.5:1 for normal text, which made the label effectively illegible.
                 // #6b7280 is this file's existing muted-text colour (4.83:1) and keeps the
                 // intended hierarchy while actually being readable.
-                color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#16a34a' : '#6b7280',
+                // Honoured uses #15803d rather than the app's usual #16a34a: that green measures
+                // 3.30:1 on white, which clears WCAG AA's 3:1 large-text bar but not the 4.5:1
+                // normal-text one this table needs. #15803d is 5.02:1 and still reads plainly as
+                // green. NOTE: #16a34a remains in use as text elsewhere in this file (Preference
+                // Report's Yes/No, Constraint Violations, the status/feasible badges) and fails
+                // the same way -- those are outside this phase's scope, not deliberately exempt.
+                color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#15803d' : '#6b7280',
                 fontWeight: e.status === 'DRIFTED' ? 600 : 400,
               }}>
                 {e.status === 'DRIFTED' ? 'Drifted' : e.status === 'HONOURED' ? 'Honoured' : 'No usual shift'}
