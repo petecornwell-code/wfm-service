@@ -1098,7 +1098,12 @@ function DriftTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilt
               <td style={{ padding: '4px 8px' }}>{e.date}</td>
               <td style={{
                 padding: '4px 8px',
-                color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#16a34a' : '#d1d5db',
+                // No-usual-shift stays the muted, de-emphasised status relative to Drifted (red,
+                // bold) and Honoured (green) -- but #d1d5db measured 1.47:1 on white, far under
+                // WCAG AA's 4.5:1 for normal text, which made the label effectively illegible.
+                // #6b7280 is this file's existing muted-text colour (4.83:1) and keeps the
+                // intended hierarchy while actually being readable.
+                color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#16a34a' : '#6b7280',
                 fontWeight: e.status === 'DRIFTED' ? 600 : 400,
               }}>
                 {e.status === 'DRIFTED' ? 'Drifted' : e.status === 'HONOURED' ? 'Honoured' : 'No usual shift'}
