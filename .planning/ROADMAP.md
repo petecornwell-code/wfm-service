@@ -84,7 +84,7 @@ reassembles from scratch every week.
 - [x] **Phase 14: Shift Library & Scheduling Mode** - Operators define per-desk shift templates and switch a desk into shift-scheduled mode, validated against demand and contracted hours (completed 2026-08-26)
 - [x] **Phase 15: Shift Envelope, Breaks & Library Generation** - The solver assigns one shift per agent-day via a hard-constraint coupling proven sound and benchmarked honestly, breaks are distributed rather than simultaneous, and a starting library can be suggested from demand (completed 2026-08-27)
 - [x] **Phase 16: Usual Shift Storage** - Each agent's usual shift per weekday is stored, settable by upload or inline edit, and visible everywhere agent data is displayed (completed 2026-09-04)
-- [ ] **Phase 17: Consistency Constraint & Drift Reporting** - The solver is nudged toward each agent's usual shift within a tunable tolerance, and drift is reported per agent/date
+- [x] **Phase 17: Consistency Constraint & Drift Reporting** - The solver is nudged toward each agent's usual shift within a tunable tolerance, and drift is reported per agent/date (completed 2026-09-18)
 
 ## Phase Details
 
