@@ -150,7 +150,7 @@ export default function ConstraintWeightsPage() {
                 <td>
                   <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
                     background: level === 'Hard' ? '#fef2f2' : '#f0fdf4',
-                    color: level === 'Hard' ? '#dc2626' : '#16a34a' }}>
+                    color: level === 'Hard' ? '#dc2626' : '#15803d' }}>
                     {level}
                   </span>
                 </td>

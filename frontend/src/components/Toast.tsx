@@ -38,7 +38,7 @@ export function ToastContainer() {
           padding: '0.75rem 1rem',
           borderRadius: '6px',
           color: '#fff',
-          background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#b45309' : '#16a34a',
+          background: t.type === 'error' ? '#dc2626' : t.type === 'warning' ? '#b45309' : '#15803d',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           maxWidth: '400px',
           fontSize: '0.9rem',

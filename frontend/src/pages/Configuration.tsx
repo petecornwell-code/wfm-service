@@ -210,7 +210,7 @@ export default function Configuration() {
                     {syncStatus?.startedAt == null
                       ? <span style={{ color: '#6b7280' }}>—</span>
                       : syncStatus.success
-                        ? <span style={{ color: '#16a34a' }}>Success</span>
+                        ? <span style={{ color: '#15803d' }}>Success</span>
                         : <span style={{ color: '#dc2626' }}>Failed</span>
                     }
                   </dd>

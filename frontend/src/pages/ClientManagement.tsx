@@ -490,7 +490,7 @@ export default function ClientManagement() {
           <div style={{ background: '#fff', borderRadius: '8px', padding: '1.5rem', width: '760px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <h3>Upload Results</h3>
             <div style={{ marginBottom: '0.5rem' }}>
-              <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '1.1rem' }}>
+              <span style={{ color: '#15803d', fontWeight: 600, fontSize: '1.1rem' }}>
                 {uploadResult.assignedCount} assigned
               </span>
               {uploadResult.skippedCount > 0 && (

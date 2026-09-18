@@ -168,7 +168,7 @@ export default function ScheduleResults() {
             <strong>Status:</strong>{' '}
             <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
               background: schedule.status === 'ACCEPTED' ? '#f0fdf4' : schedule.status === 'FAILED' ? '#fef2f2' : schedule.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
-              color: schedule.status === 'ACCEPTED' ? '#16a34a' : schedule.status === 'FAILED' ? '#dc2626' : schedule.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
+              color: schedule.status === 'ACCEPTED' ? '#15803d' : schedule.status === 'FAILED' ? '#dc2626' : schedule.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
               {schedule.status}
             </span>
           </span>
@@ -178,7 +178,7 @@ export default function ScheduleResults() {
             <span><strong>Score:</strong> Hard: {schedule.score.hardScore}, Soft: {schedule.score.softScore}</span>
           )}
           {schedule.feasible !== null && schedule.feasible !== undefined && (
-            <span style={{ color: schedule.feasible ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+            <span style={{ color: schedule.feasible ? '#15803d' : '#dc2626', fontWeight: 600 }}>
               {schedule.feasible ? 'Feasible' : 'NOT FEASIBLE'}
             </span>
           )}
@@ -855,14 +855,14 @@ function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
       <tbody>
         {data.map((e, i) => {
           const isTotal = e.specializationName === 'TOTAL' || e.specializationName === 'GRAND TOTAL'
-          const coverageColor = e.coveragePct >= 100 ? '#16a34a' : e.coveragePct >= 80 ? '#ca8a04' : '#dc2626'
+          const coverageColor = e.coveragePct >= 100 ? '#15803d' : e.coveragePct >= 80 ? '#ca8a04' : '#dc2626'
           return (
             <tr key={i} style={isTotal ? { fontWeight: 700, background: '#f9fafb' } : {}}>
               <td style={{ padding: '4px 8px' }}>{e.date || ''}</td>
               <td style={{ padding: '4px 8px' }}>{e.specializationName}</td>
               <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(e.predictedHours).toFixed(2)}</td>
               <td style={{ textAlign: 'right', padding: '4px 8px' }}>{Number(e.actualHours).toFixed(2)}</td>
-              <td style={{ textAlign: 'right', padding: '4px 8px', color: Number(e.deltaHours) >= 0 ? '#16a34a' : '#dc2626' }}>
+              <td style={{ textAlign: 'right', padding: '4px 8px', color: Number(e.deltaHours) >= 0 ? '#15803d' : '#dc2626' }}>
                 {Number(e.deltaHours) > 0 ? '+' : ''}{Number(e.deltaHours).toFixed(2)}
               </td>
               <td style={{ textAlign: 'right', padding: '4px 8px', color: coverageColor, fontWeight: 600 }}>
@@ -1028,12 +1028,12 @@ function PreferenceTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dat
               <td style={{ padding: '4px 8px' }}>{e.preferredStartTime || '—'}</td>
               <td style={{ padding: '4px 8px' }}>{e.actualStartTime || '—'}</td>
               <td style={{ textAlign: 'center', padding: '4px 8px' }}>
-                <span style={{ color: e.startTimeHonoured ? '#16a34a' : '#dc2626' }}>{e.startTimeHonoured ? 'Yes' : 'No'}</span>
+                <span style={{ color: e.startTimeHonoured ? '#15803d' : '#dc2626' }}>{e.startTimeHonoured ? 'Yes' : 'No'}</span>
               </td>
               <td style={{ padding: '4px 8px' }}>{e.preferredBreakTime || '—'}</td>
               <td style={{ padding: '4px 8px' }}>{e.actualBreakTime || '—'}</td>
               <td style={{ textAlign: 'center', padding: '4px 8px' }}>
-                <span style={{ color: e.breakTimeHonoured ? '#16a34a' : '#dc2626' }}>{e.breakTimeHonoured ? 'Yes' : 'No'}</span>
+                <span style={{ color: e.breakTimeHonoured ? '#15803d' : '#dc2626' }}>{e.breakTimeHonoured ? 'Yes' : 'No'}</span>
               </td>
             </tr>
           ))}
@@ -1103,12 +1103,11 @@ function DriftTab({ schedule, dateFilter }: { schedule: ScheduleDetail; dateFilt
                 // WCAG AA's 4.5:1 for normal text, which made the label effectively illegible.
                 // #6b7280 is this file's existing muted-text colour (4.83:1) and keeps the
                 // intended hierarchy while actually being readable.
-                // Honoured uses #15803d rather than the app's usual #16a34a: that green measures
-                // 3.30:1 on white, which clears WCAG AA's 3:1 large-text bar but not the 4.5:1
-                // normal-text one this table needs. #15803d is 5.02:1 and still reads plainly as
-                // green. NOTE: #16a34a remains in use as text elsewhere in this file (Preference
-                // Report's Yes/No, Constraint Violations, the status/feasible badges) and fails
-                // the same way -- those are outside this phase's scope, not deliberately exempt.
+                // Honoured is #15803d (5.02:1 on white, 4.79:1 on the #f0fdf4 badge background).
+                // The previous #16a34a measured 3.30:1 -- clearing WCAG AA's 3:1 large-text bar
+                // but not the 4.5:1 one that applies to normal-size text like this. #15803d has
+                // since replaced #16a34a as the app-wide semantic green, so this cell is no
+                // longer a local exception; see the sweep commit for the other call sites.
                 color: e.status === 'DRIFTED' ? '#dc2626' : e.status === 'HONOURED' ? '#15803d' : '#6b7280',
                 fontWeight: e.status === 'DRIFTED' ? 600 : 400,
               }}>
@@ -1285,7 +1284,7 @@ function ViolationsTab({
                 <td style={{ textAlign: 'center', padding: '4px 8px' }}>
                   <span style={{ padding: '0.1rem 0.4rem', borderRadius: '3px', fontSize: '0.75rem', fontWeight: 600,
                     background: e.level === 'HARD' ? '#fef2f2' : '#f0fdf4',
-                    color: e.level === 'HARD' ? '#dc2626' : '#16a34a' }}>
+                    color: e.level === 'HARD' ? '#dc2626' : '#15803d' }}>
                     {e.level}
                   </span>
                 </td>

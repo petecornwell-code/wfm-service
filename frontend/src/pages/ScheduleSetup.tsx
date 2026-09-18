@@ -281,7 +281,7 @@ export default function ScheduleSetup() {
                     <td>
                       <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
                         background: s.status === 'ACCEPTED' ? '#f0fdf4' : s.status === 'FAILED' ? '#fef2f2' : s.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
-                        color: s.status === 'ACCEPTED' ? '#16a34a' : s.status === 'FAILED' ? '#dc2626' : s.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
+                        color: s.status === 'ACCEPTED' ? '#15803d' : s.status === 'FAILED' ? '#dc2626' : s.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
                         {s.status}
                       </span>
                     </td>

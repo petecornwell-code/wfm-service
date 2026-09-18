@@ -327,7 +327,7 @@ export default function StaffingRequirements() {
             <button onClick={() => setMode('erlang')} style={{ background: mode === 'erlang' ? '#3b82f6' : '#e5e7eb', color: mode === 'erlang' ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>Erlang X</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {saveMsg && <span style={{ color: '#16a34a', fontSize: '0.85rem' }}>{saveMsg}</span>}
+            {saveMsg && <span style={{ color: '#15803d', fontSize: '0.85rem' }}>{saveMsg}</span>}
             <input type="file" accept=".xlsx" ref={fileInputRef} onChange={handleFteUpload} style={{ display: 'none' }} />
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
               style={{ padding: '0.4rem 1.2rem', background: '#059669', color: '#fff', border: 'none', borderRadius: '4px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
