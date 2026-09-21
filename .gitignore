@@ -49,6 +49,12 @@ infra/tfplan
 ~$*.xlsx
 ~$*.xls
 
+# Working spreadsheets at the repo root — these carry employee PII (names, work
+# emails, BambooHR IDs) and leave records, and this repo is public. Sample data
+# under src/main/resources/sample-data/ is deliberately still tracked.
+/*.xlsx
+/*.xls
+
 # Agent tooling runtime state (worktrees, local settings, dispatch sentinel, phase lock)
 .claude/
 .gsd/
