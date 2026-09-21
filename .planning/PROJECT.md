@@ -6,11 +6,47 @@ A workforce management scheduling service for Helpware — used to build and opt
 
 Operators configure desks (queues), upload staffing demand (FTE spreadsheets), sync agents from BambooHR, capture preferences and exceptions, then run the solver to produce an optimised weekly schedule.
 
+Since v1.3 a desk is scheduled in one of two modes. **Slot-scheduled** is the original behaviour: the solver composes each agent-day out of independent per-timeslot seat decisions. **Shift-scheduled** gives the desk a library of shift templates and has the solver assign each working agent exactly one shift per day from it, with seat and specialization assignment happening *inside* that envelope — so an agent works a recognisable, repeating shift, and can still change specialization mid-day. Every desk defaults to slot-scheduled; the mode is per-desk and reversible.
+
 ## Core Value
 
 Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
 
 ## Current State
+
+**Shipped:** v1.3 Shift-Based Scheduling & Consistency — closed 2026-09-21 with **43 of 43
+requirements** delivered across Phases 14–17. Archived to `.planning/milestones/v1.3-ROADMAP.md`.
+
+v1.3 replaced the slot pattern with a **recognisable, repeating shift**. A desk now defines a
+library of shift templates; the operator switches that desk into `SHIFT` mode — refused, with the
+uncovered demand windows named, if the library cannot cover the demand — and the solver assigns each
+working agent exactly one shift per day from it, never seating them outside that envelope. Breaks
+come from the template's bands rather than from four emergent constraints. Each agent has a stored
+usual shift per weekday, settable in bulk by upload or inline in the roster, visible in the roster
+and the Excel export; the solver is nudged toward it by a soft constraint with an operator-tunable
+tolerance band and weight, and the drift from it is reported per agent and date — from the same
+distance calculation the constraint uses, not a second implementation.
+
+**Closed under `override_closeout`** — not for unmet requirements (all 43 are satisfied and the
+milestone audit found zero integration gaps across six seams and four E2E flows), but because 10
+open artifacts were acknowledged as deferred rather than resolved: 3 diagnosed-but-unfixed debug
+sessions and 7 deferred items. See `.planning/milestones/v1.3-MILESTONE-AUDIT.md` and STATE.md's
+Deferred Items table.
+
+**What the audit found worth naming.** The milestone's real strength is **self-enforcing structural
+guards** — a reflection-derived constraint-classification test, a write-path allowlist proven able
+to fail twice, a migration-vs-entity reconciliation, and a Testcontainers Postgres base class — so
+four classes of regression now fail the suite instead of depending on review attention. Its real
+weakness is **stale planning records**: three documents (`14-VERIFICATION.md`, `REQUIREMENTS.md`,
+`STATE.md`) each asserted something a later event had already falsified, and none propagated.
+
+**Two functional gaps ship knowingly**, both deferred by operator ruling OR-2 rather than missed:
+blocked-break-hours has no enforcement point in SHIFT mode (a band at the envelope boundary is a
+late start, not a break, and scores `0hard`), and a template's envelope is never validated against
+the desk's operating window at save time.
+
+<details>
+<summary>Previous state: v1.2 Unified Agent Provisioning (closed 2026-08-25)</summary>
 
 **Shipped:** v1.2 Unified Agent Provisioning — closed 2026-08-25 with **19 of 19 requirements**
 delivered across Phases 9–13 (Phase 12 withdrawn). Archived to
@@ -36,6 +72,8 @@ survived two audits untouched. Carried to Backlog 999.9. See
 **Phase 12 (Atomic Shift Move) was withdrawn, not shipped** — the seeded benchmark put its effect
 inside the baseline's own noise, code reverted in `299c42c`, goal explicitly not claimed.
 
+</details>
+
 <details>
 <summary>Previous state: v1.1 Schedule Quality & Reporting (closed 2026-07-29)</summary>
 
@@ -49,7 +87,25 @@ or solver-tuning surfaces that were the milestone's other half.
 
 </details>
 
-## Current Milestone: v1.3 Shift-Based Scheduling & Consistency
+## Next Milestone
+
+Not yet scoped — run `/gsd-new-milestone`. The three candidates recorded at v1.3 scoping are
+unchanged, and the v1.3 audit adds a fourth:
+
+1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload
+   path but not on the Refresh button. High severity, now **three** audits old, and cheap in at
+   least one of its three options.
+2. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
+   utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
+3. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
+   DRFT-04 made the consistency-versus-fairness tension *visible* in v1.3 and deliberately built no
+   mitigation, so this is now a named, observable gap rather than a theoretical one.
+4. **Nyquist validation debt — now five phases across two milestones** (10, 13, 14, 15 at
+   `status: draft`, plus 16 validated-but-non-compliant). The v1.3 audit flagged this as having
+   drifted "from an oversight into a pattern".
+
+<details>
+<summary>v1.3 Shift-Based Scheduling & Consistency — original milestone scope (shipped 2026-09-21)</summary>
 
 **Goal:** An agent works a recognisable, repeating shift — not a slot pattern the optimiser
 reassembles from scratch every week.
@@ -99,6 +155,18 @@ deferred. The remaining candidates, for the milestone after:
 2. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
    utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
 3. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
+
+**Outcome:** all nine target features above shipped, and the central architectural question was
+answered empirically before any phase was planned — `SPIKE-COUPLING.md` settled the coupling as a
+hard `ConstraintStream` constraint between two independent `@PlanningEntity` classes (Option A),
+after the filtered-value-range alternative (Option C) compiled, passed `FULL_ASSERT` clean, and
+reported infeasible schedules as `0hard/0soft` optimal on 8/8 seeds. The one thing the original
+scope did not anticipate was how much of the phase-15 effort would go into *refusing* bad solves
+rather than producing good ones: the seat-supply gate, its calendar-awareness fix, its
+band-composition blindness and its day-wide-only comparison were four separate rounds of the same
+class of defect.
+
+</details>
 
 <details>
 <summary>v1.2 Unified Agent Provisioning — original milestone scope (shipped 2026-08-25)</summary>
@@ -209,6 +277,14 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ A starting shift library can be suggested from demand instead of composed by hand — the generator writes nothing, dedupes on full template identity, and places break bands away from demand peaks with a coverage re-check — v1.3 Phase 15 (ENVL-10, SHLB-07)
 - ✓ A shift-mode solve that cannot succeed is refused *before* it runs, naming the date, the per-hour seat shortfall and the levers the operator controls — including a per-agent-day forced-occupancy check, and refusal advice that withdraws the raise-the-ceiling suggestion when unassigned seats are hard-weighted — v1.3 Phase 15 (ENVL-07)
 - ✓ Shift-mode benchmarked honestly at realistic scale: threshold committed before results (`cd26db9`), and a result inside the comparison arm's own spread written up as "no measurable difference" rather than a win — v1.3 Phase 15 (XCUT-04)
+- ✓ Each agent stores a usual shift per weekday against a live template from their desk's library, with an absent value representable as genuinely absent — `Optional.empty()` / `NOT_SET`, never a substitute default that would drag the solver toward an arbitrary shift — v1.3 Phase 16 (USHF-01, USHF-04)
+- ✓ Usual shifts settable both ways, mirroring exactly what v1.2 built for contracted hours: seven `Usual Shift {Day}` columns in the per-desk upload template (pre-filled, with a working Excel dropdown) and an inline `<select>` in each roster day tile writing through one choke point — v1.3 Phase 16 (USHF-02, USHF-03)
+- ✓ Every reachable write path that can change usual-shift data enumerated in a nine-row table and verified one test per path, guarded by a static-source-scan set-equality test proven able to go red twice — the exact shape of v1.2 audit finding I-2, closed structurally rather than by discipline — v1.3 Phase 16 (USHF-05, XCUT-02)
+- ✓ A stored usual shift is visible everywhere agent data is displayed — roster tile (four states: live, never set, stored-but-retired, not worked) and Excel export — traced store → roster → export in one continuous test rather than three per-layer ones — v1.3 Phase 16 (USHF-06, XCUT-01)
+- ✓ The solver is penalised for assigning a shift that differs from an agent's stored usual shift, inside an operator-configurable per-desk tolerance band and weight, soft-only — the non-zero-hard-component guard is enforced at save time, so CONS-04 cannot be violated by configuration — v1.3 Phase 17 (CONS-01…04)
+- ✓ Where consistency scores two shifts equally, the agent's recorded `AgentPreference` start time decides, and that precedence is documented and observable rather than implicit in relative weights — v1.3 Phase 17 (CONS-05, CONS-06)
+- ✓ Post-solve drift reporting: which agents were assigned a shift other than their usual one, on which dates and by how much; an agent with no stored usual shift distinguished from one whose shift was honoured; and the most over-subscribed templates ranked, making the consistency-versus-fairness tension visible without building a mitigation for it — v1.3 Phase 17 (DRFT-01, DRFT-02, DRFT-04)
+- ✓ The drift report is derived from the same distance calculation the consistency constraint uses (`ShiftBandPair.startDeviationMinutes`), not a second implementation — and its Excel sheet headers are byte-identical to the frontend tab's — v1.3 Phase 17 (DRFT-03, XCUT-01)
 
 ### Active (carried to next milestone — see ROADMAP.md Backlog)
 
@@ -228,8 +304,11 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - **⚠ Merge precedence holds on the upload path only** (audit I-2) → 999.9. The manual "Refresh from BambooHR" button overwrites spreadsheet-sourced identity data with no precedence rule and no merge report. Open across two consecutive milestone audits; accepted as debt at v1.2 close.
 - **Bulk "Set all days to…" still destroys MANDATORY/PTO labels** (audit I-3, mitigated) → 999.9. A `confirm()` names the count at risk and a safe per-cell edit path now exists, but the destructive seven-row delete-and-recreate is unchanged.
 - **Legacy `contractedHoursPerDay` scalar still exported as its own column** (audit NEW-1) → 999.9. It can silently disagree with the per-day columns after any single-cell edit.
-- **⚠ No test executes the real Flyway migrations** — emerged at Phase 14 (UAT gap G-14-1). `src/test/resources/application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2, so the test schema is built from the entities and migration SQL is never run. V39 shipped with `valid_weekdays CHAR(7)` against an entity mapping of `varchar(7)`; the migration applied cleanly and the application then failed to boot under `ddl-auto=validate` — with a fully green 402-test suite. Fixed in place (`9a98029`), but the blind spot is unchanged: any future migration-vs-entity drift will surface at first startup, not in CI. Wants a Testcontainers-backed boot test that runs the real migrations.
-- **Nyquist validation debt** — Phases 10 and 13 have `VALIDATION.md` at `status: draft`; validate-phase never reconciled them → 999.9
+- ~~**⚠ No test executes the real Flyway migrations**~~ — **CLOSED in v1.3.** Emerged at Phase 14 (UAT gap G-14-1): V39 shipped with `valid_weekdays CHAR(7)` against an entity mapping of `varchar(7)`, the migration applied cleanly, the application then failed to boot under `ddl-auto=validate` — with a fully green 402-test suite, because `application-test.yml` sets `flyway.enabled: false` with `ddl-auto: create-drop` against H2. Fixed in place (`9a98029`), and the blind spot itself was then closed twice over, both in Phase 15: `MigrationEntityConsistencyTest` (`d909074`) reconciles migration DDL text against entity mappings statically, and `PostgresBackedTest` (`d5b4169`) is the Testcontainers-backed base class this entry asked for — real Postgres 16 matching dev RDS, `flyway.enabled=true`, `ddl-auto=validate`, every migration V1..Vn run in order. Three test classes use it. **Residual:** it carries `disabledWithoutDocker = true`, a deliberate trade so a Docker-less developer machine skips rather than fails — which means CI must actually have Docker for the guard to be live.
+- **⚠ Blocked-break-hours has no enforcement point in SHIFT mode** — emerged at Phase 15, deferred by operator ruling OR-2. `breakBlockedWindow` is mode-gated off for `SHIFT`, and `ShiftTemplateService.validateBands` never checks a band's offset against the desk's `breakBlockedHours`. A band at offset `0`, or at `envelopeMinutes - duration`, is legal at save time and scores `0hard` — operationally a late start or an early finish, not a break. Invisible in the hard score, so the seat-supply gate cannot catch it. One live agent-day already exhibits it (8 consecutive worked hours, zero breaks, live Stubhub desk). The fix location is settled as **save-time in `ShiftTemplateService`**, not a restored solver constraint — that alternative was considered and rejected for fighting the envelope model; do not relitigate it.
+- **⚠ A template's envelope is never validated against the desk's operating window at save time** — emerged at Phase 15, deferred by operator ruling OR-2. `validateGridAlignment` checks grid alignment but never that the envelope's end fits inside the operating window's close, so a template that cannot fit saves cleanly with an advisory literally reading "It will still save". The seat-supply gate catches the runtime symptom, but the operator is told at solve time about a desk they may not connect back to the template edit. `TimeslotBoundsResponse.endTime()` is read by no caller in `src/main` and is the natural starting point.
+- **Two wall-clock-bounded solver tests should terminate on step count** — `BreakAwareConstructionTest` and `MultiDayConstraintDiagnosticTest` time-box the local-search phase, so they measure hardware and suite contention alongside solver quality and flake under parallel load. `BreakAwareConstructionTest`'s margin against its `-500` assertion fell from 500 to 180 points after Phase 15's mode-gating. Widening that tolerance is explicitly **not** the fix — the threshold is what surfaced two real defects (a dropped `difficultyComparatorClass` and a constraint tax costing ~35–40% of local-search throughput).
+- **Nyquist validation debt — now five phases across two milestones** → 999.9. Phases 10, 13, **14 and 15** have `VALIDATION.md` at `status: draft` (seeded by plan-phase, never reconciled by validate-phase, so their `nyquist_compliant: false` is not authoritative). **Phase 16 is the one genuine PARTIAL** — `status: validated` *and* `nyquist_compliant: false`. Only Phase 17 is COMPLIANT. The v1.3 audit flagged the accumulation as having drifted "from an oversight into a pattern".
 - **Phase 9 never had a security review** — no `09-SECURITY.md` exists → 999.9
 
 ### Out of Scope
@@ -248,13 +327,13 @@ building the *view of the model* are separate jobs — hence Phase 13.
 **BambooHR:** Credentials stored in DB via Configuration UI (not env vars); `DelegatingBambooHRClient` falls back to mock when unconfigured
 **Solver:** Timefold OptaPlanner; constraints include staffing demand, specialization match, PTO/exceptions, contracted hours, bulk overallocation limits
 **Multi-tenant:** Tenant ID via JWT; all entities scoped by `tenant_id`
-**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ. Schema head is **V38**, not V36 — corrected 2026-08-25 during v1.3 research, which found `V38__add_consistent_start_weight.sql` on disk and applied on dev. Key migrations: V29 name-split + per-day fan-out, V30 `day_off_type`, V36 `working_days_source`, **V38 `consistent_start_weight` (orphaned and inert — see Known Issues)**. The next migration is **V39**.
-**Codebase after v1.2:** +10,233 / −857 across 105 files in `src/` and `frontend/` over 252 commits (2026-07-30 → 2026-08-25). Backend suite 315 tests green.
+**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ. Schema head is **V49** after v1.3 added eleven migrations. Key migrations: V29 name-split + per-day fan-out, V30 `day_off_type`, V36 `working_days_source`, V38 `consistent_start_weight` (**no longer orphaned — adopted by v1.3 rather than duplicated, exactly as planned**), V39 `shift_template` + `desk.scheduling_mode`, V40 break bands, V43 `schedule.scheduling_mode` (persisted at accept time), V44 bounded envelope slack, V47 `agent_usual_shift`, V48 consistency tolerance + preferred-start weight, V49 consistency weight defaults. The next migration is **V50**.
+**Codebase after v1.3:** +31,010 / −293 across 169 files in `src/` and `frontend/src/` over 370 commits (2026-08-25 → 2026-09-21). 114 backend test files; the suite grew 402 → 723 tests across the milestone.
 **Agent eligibility for solving:** four filters — active status, desk assignment, schedulable job title, and `workingDaysKnown` (parseable BambooHR field 4517)
 
 **Known issues after v1.2:**
 - **⚠ An undocumented third attempt at schedule consistency was built and reverted 2026-08-19/20** — discovered 2026-08-25 during v1.3 architecture research; recorded in no planning document until now. Four feature commits, all ancestors of HEAD, all reverted: `7861b83` (preferred start time as an **anchor, not a floor** — fixing the defect that `honourPreferredStartTime` only penalises slots *before* the preference), `9f4a96f` (consistent break offset across an agent's week), `9207ceb` (consistent daily start with a solver-chosen anchor), `6fb78c7` (per-agent start and break-offset spread reporting — effectively the drift report). Two supporting perf commits shared one agent-day grouping across nine constraints. Reverted by `2da56fd`, `3aba7c6`, `65ccb34`, `ac395f2`, `b6188c8`, `12315ed`. **Why it was unwound is not recorded in any commit body and remains an open question** — the revert message explains only why the migration was retained. This is the closest prior art to v1.3 and must be understood before re-implementing: it is either a recoverable asset or a warning, and which one is not yet known.
-- **⚠ `V38__add_consistent_start_weight.sql` is an orphaned live migration.** Deliberately retained during the revert above because it had already been applied to dev and recorded in `flyway_schema_history` — deleting or editing it would fail Flyway validation and block all dev deploys. It adds `consistent_start_weight VARCHAR(50) NOT NULL DEFAULT '0hard/2soft'` to the constraint-weights table. Nothing reads it: the only reference anywhere in `src/` is the migration file itself. v1.3 should adopt this column rather than add a duplicate.
+- ~~**⚠ `V38__add_consistent_start_weight.sql` is an orphaned live migration.**~~ — **RESOLVED in v1.3 Phase 17, as intended.** The column was adopted rather than duplicated: `ConstraintWeights.consistentStartWeight` maps it (`@Column(name = "consistent_start_weight")`, default `ofSoft(2)`), the solver reads it, `ConstraintWeightsDto` exposes it, and V49 set its shipped default after a threshold-first seeded A/B — which returned an honest null result (construction-heuristic plateau) and landed on values identical to the incumbents, now backed by redone per-agent-day arithmetic instead of V38's unexamined sizing.
 - **⚠ The "Refresh from BambooHR" button bypasses the merge engine** (audit I-2). It overwrites spreadsheet-sourced identity data with no precedence rule and emits no merge report. A normal operator action that silently discards the guarantees MRG-02/04/05 describe. Tracked as Backlog 999.9.
 - **⚠ BambooHR field-4517 alias is a silent single point of failure.** The request asks for field id `4517`; the parser reads the JSON key `customWorkingdays`. With no tenant Field Alias configured, the value is always null in production and MRG-03/MRG-06 never activate — while every unit test stays green, because the fixtures hand-construct `BambooEmployee`. Confirmed present by operator at Phase 11 UAT; re-check after any BambooHR account change.
 - **BambooHR field 4517 is sparsely populated** — ~45% company-wide, ~24% parseable. Mitigated but not eliminated by v1.2: a spreadsheet-supplied pattern now makes an agent solver-eligible (MRG-06). The exclusion proportion on live desks was never measured.
@@ -305,7 +384,15 @@ building the *view of the model* are separate jobs — hence Phase 13.
 | Mode switch during a RUNNING solve refuses rather than terminating the solve (Phase 14, T-14-22) | Discarding minutes of solver work on a click that doesn't look destructive is a self-inflicted availability loss — and `STOPPED` is a legitimate accept state, so the loss wouldn't even read as one | ✓ Good |
 | ~~Shift templates have no delete endpoint; retirement is an effective-date range edit (Phase 14, T-14-14)~~ — **superseded 2026-09-03** | True as shipped in Phase 14, but Phase 15's `81117e3` ("a delete control for the shift library") added `DELETE /desks/{deskId}/shift-templates/{id}` and this row was never updated. The *intent* survives as a guarded delete rather than an absent one: the endpoint refuses with a 409 when the template is referenced by any `agent_shift_assignment` (Phase 15) or any `agent_usual_shift` (Phase 16, plan 16-02), directing the operator to retire it instead. An unreferenced template is hard-deleted along with its break bands. Retirement itself is still never blocked | ⚠ Revisit — the stale wording survived two milestones and propagated into `16-CONTEXT.md`; Phase 16 only caught it because the FK cascade forced the question |
 | Contracted-hours mismatch is advisory on save, blocking only at the mode switch (Phase 14, D-06) | Operators build libraries incrementally; a hard block at save time would make the intermediate states unreachable. The fatal case is still caught before it can reach the solver | ✓ Good |
-| V39 edited in place to fix G-14-1 rather than superseded by a V40 (2026-08-26) | V39 was unreleased, so the forward-only rule was not yet engaged; a corrective V40 would have permanently encoded a type mismatch that no environment had consumed | ✓ Good — but see the migration-coverage gap it exposed |
+| V39 edited in place to fix G-14-1 rather than superseded by a V40 (2026-08-26) | V39 was unreleased, so the forward-only rule was not yet engaged; a corrective V40 would have permanently encoded a type mismatch that no environment had consumed | ✓ Good — and the migration-coverage gap it exposed is now closed by `MigrationEntityConsistencyTest` + `PostgresBackedTest` |
+| Coupling settled empirically by spike *before* any phase was planned (v1.3, `SPIKE-COUPLING.md`) | Option C (filtered value range) compiled, passed `FULL_ASSERT` clean, and reported infeasible schedules as `0hard/0soft` optimal on 8/8 seeds. A hard `ConstraintStream` coupling (Option A) was the only sound choice, and knowing that before planning is what kept Phase 15 from becoming a third abandoned attempt | ✓ Good — the single highest-leverage decision in the milestone |
+| Shift-mode solves that cannot succeed are REFUSED before running, not allowed to degrade (Phase 15) | An irreducible hard score mislabelled "Shift envelope compliance" is indistinguishable from a solver that needs more time. Refusing names the date, the per-hour shortfall and the operator's levers instead | ✓ Good — though it took four rounds (calendar-blind coverage, band-composition blindness, day-wide-only comparison, forced-occupancy) to get the gate's own logic right |
+| Refusal advice checks the live weights before recommending a lever (Phase 15, G-15-24) | The gate recommended raising the over-allocation ceiling — the single most destructive available action on a desk where unassigned seats are hard-weighted. It now reads `ConstraintWeights` first and withdraws the advice, naming the consequence | ✓ Good — a refusal that gives dangerous advice is worse than no refusal |
+| USHF-05's write-path table enforced by a static source scan, not by review (Phase 16, D-14) | v1.2's I-2 stayed open across two audits precisely because a second entry point bypassed a guarantee. A set-equality test over a source-derived class list, proven red twice, makes that failure mode structural rather than a matter of attention | ✓ Good — the most transferable pattern this milestone produced |
+| Consistency's hard-component guard enforced at save time, not asserted in the constraint (Phase 17) | CONS-04 ("soft only — never makes a feasible schedule infeasible") becomes impossible to violate by configuration, rather than being a property someone must remember to preserve | ✓ Good |
+| v1.3's XCUT-04 benchmark reported as a null result (Phase 17, `17-BENCHMARK.md`) | The consistency-weight A/B hit a construction-heuristic plateau — neither a win nor a loss against the pre-committed threshold. Reported as that, with median and full min/max spread, rather than reframed as a win | ✓ Good — the same discipline that correctly withdrew Phase 12 |
+| Template delete shipped as a *guarded* delete, superseding Phase 14's no-delete stance (Phase 15, `81117e3`) | Retire-only stranded typos, duplicates and probe rows in the library forever; the operator asked for the control during UAT. The guard refuses with 409 when any agent-day assignment *or* any stored usual shift references the template, so nothing that ever shaped a roster can be destroyed | ✓ Good — SHLB-04 is satisfied more strongly than before, but the stale "no delete endpoint" wording survived into `14-VERIFICATION.md` for 18 days after `PROJECT.md` had already corrected it |
+| v1.3 closed under `override_closeout` with 10 artifacts acknowledged (2026-09-21) | All 43 requirements satisfied and zero integration gaps, but 3 debug sessions remain `diagnosed` rather than fixed and 7 deferred items — including two known functional gaps — carry forward by operator ruling OR-2 | ⚠ Revisit — v1.2 closed the same way and its I-2 is now three audits old; two consecutive override closeouts is how debt becomes permanent |
 
 ## Evolution
 
@@ -325,4 +412,9 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-02 after Phase 15 (Shift Envelope, Breaks & Library Generation) — ENVL-01…10, SHLB-07 and XCUT-04/05 validated; UAT 20/20, security threats_open 0. Two UAT items closed by operator ruling rather than measurement (tests 10 and 18), and G-15-28 (weekend demand forecast) remains open and operator-owned. 999.4 / 999.7 / 999.9 remain deferred*
+*Last updated: 2026-09-21 at v1.3 milestone close (Shift-Based Scheduling & Consistency) — 43/43
+requirements validated across Phases 14–17; milestone audit `tech_debt` with zero integration gaps
+across six seams and four E2E flows; closed under `override_closeout` with 10 artifacts
+acknowledged. Three planning documents were corrected during the audit, each of which had asserted
+something a later event had already falsified. 999.4 / 999.5 / 999.6 / 999.9 remain deferred, and
+Nyquist validation debt now spans five phases across two milestones*
