@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -50,10 +51,15 @@ public class BambooRefreshService {
     @Value("${bamboohr.time-off.lookback-weeks:12}")
     private int lookbackWeeks;
 
-    private static final String DEFAULT_SPECIALIZATION_NAME = "Shipping and Delivery";
-    private static final String SECONDARY_SPECIALIZATION_NAME = "Payments and Safety";
-    private static final String TERTIARY_SPECIALIZATION_NAME = "Order Quality and Usability";
-    private static final String QUATERNARY_SPECIALIZATION_NAME = "Privacy and Legal & DSA";
+    /**
+     * Name used ONLY when a desk has no specialization at all and an agent needs a primary one
+     * to be schedulable ({@code SolverService.filterEligible} requires it). Deliberately generic:
+     * this service previously hardcoded four StubHub-specific names ("Shipping and Delivery",
+     * "Payments and Safety", "Order Quality and Usability", "Privacy and Legal & DSA") and created
+     * all four on EVERY desk it refreshed, polluting unrelated desks with another client's taxonomy
+     * and auto-assigning one of them as a secondary to every agent.
+     */
+    private static final String FALLBACK_SPECIALIZATION_NAME = "General";
 
     public BambooRefreshService(BambooHRClient bambooHRClient,
                                 AgentRepository agentRepository,
@@ -160,48 +166,34 @@ public class BambooRefreshService {
                                       List<BambooEmployee> employees,
                                       List<BambooTimeOff> timeOffs,
                                       LocalDate from, LocalDate to) {
-        // 1. Ensure a default specialization exists for this desk
-        Specialization defaultSpec = specializationRepository
-                .findByTenantIdAndDeskIdAndName(tenantId, deskId, DEFAULT_SPECIALIZATION_NAME)
-                .orElseGet(() -> {
-                    Specialization spec = new Specialization();
-                    spec.setTenantId(tenantId);
-                    spec.setDeskId(deskId);
-                    spec.setName(DEFAULT_SPECIALIZATION_NAME);
-                    return specializationRepository.save(spec);
-                });
+        // 1. Resolve the fallback primary specialization LAZILY (see FALLBACK_SPECIALIZATION_NAME).
+        // Nothing is created up front: a desk that already has specializations keeps exactly the
+        // ones its operator defined, and a desk that needs none never gains one. The supplier is
+        // invoked at most once, and only if some agent actually turns out to have no primary.
+        Supplier<Specialization> fallbackSpec = new Supplier<>() {
+            private Specialization resolved;
 
-        // 1b. Ensure a "second" specialization exists for this desk
-        Specialization secondSpec = specializationRepository
-                .findByTenantIdAndDeskIdAndName(tenantId, deskId, SECONDARY_SPECIALIZATION_NAME)
-                .orElseGet(() -> {
-                    Specialization spec = new Specialization();
-                    spec.setTenantId(tenantId);
-                    spec.setDeskId(deskId);
-                    spec.setName(SECONDARY_SPECIALIZATION_NAME);
-                    return specializationRepository.save(spec);
-                });
-
-        // 1c. Ensure third and fourth specializations exist for this desk
-        specializationRepository
-                .findByTenantIdAndDeskIdAndName(tenantId, deskId, TERTIARY_SPECIALIZATION_NAME)
-                .orElseGet(() -> {
-                    Specialization spec = new Specialization();
-                    spec.setTenantId(tenantId);
-                    spec.setDeskId(deskId);
-                    spec.setName(TERTIARY_SPECIALIZATION_NAME);
-                    return specializationRepository.save(spec);
-                });
-
-        specializationRepository
-                .findByTenantIdAndDeskIdAndName(tenantId, deskId, QUATERNARY_SPECIALIZATION_NAME)
-                .orElseGet(() -> {
-                    Specialization spec = new Specialization();
-                    spec.setTenantId(tenantId);
-                    spec.setDeskId(deskId);
-                    spec.setName(QUATERNARY_SPECIALIZATION_NAME);
-                    return specializationRepository.save(spec);
-                });
+            @Override
+            public Specialization get() {
+                if (resolved == null) {
+                    resolved = specializationRepository.findByTenantIdAndDeskId(tenantId, deskId)
+                            .stream()
+                            .min(Comparator.comparing(Specialization::getName,
+                                    String.CASE_INSENSITIVE_ORDER))
+                            .orElseGet(() -> {
+                                Specialization spec = new Specialization();
+                                spec.setTenantId(tenantId);
+                                spec.setDeskId(deskId);
+                                spec.setName(FALLBACK_SPECIALIZATION_NAME);
+                                log.info("Desk {} has no specialization — creating '{}' so refreshed "
+                                        + "agents have a schedulable primary", deskId,
+                                        FALLBACK_SPECIALIZATION_NAME);
+                                return specializationRepository.save(spec);
+                            });
+                }
+                return resolved;
+            }
+        };
 
         // 2. Collect bamboohrIds from the response for soft-delete detection
         Set<String> bamboohrIdsInResponse = employees.stream()
@@ -233,12 +225,13 @@ public class BambooRefreshService {
             // Map BambooHR employmentHistoryStatus → EmploymentType enum (D-03, D-04)
             agent.setEmploymentType(mapEmploymentType(emp.employmentHistoryStatus()));
 
-            // Preserve existing specializations and contracted hours — only set defaults if missing
+            // Preserve existing specializations and contracted hours — only set defaults if missing.
+            // An agent with no primary gets the desk's own fallback, because the solver refuses to
+            // schedule an agent without one. Secondaries are left ALONE: empty is a legitimate,
+            // operator-chosen state, not a gap to fill, and the previous auto-add silently gave
+            // every agent on every refreshed desk a specialization nobody asked for.
             if (agent.getPrimarySpecialization() == null) {
-                agent.setPrimarySpecialization(defaultSpec);
-            }
-            if (agent.getSecondarySpecializations().isEmpty()) {
-                agent.getSecondarySpecializations().add(secondSpec);
+                agent.setPrimarySpecialization(fallbackSpec.get());
             }
             if (agent.getContractedHoursPerDay() == null) {
                 agent.setContractedHoursPerDay(desk.getDefaultContractedHoursPerDay());
