@@ -33,7 +33,7 @@ Plan: Not started
 Status: All phases complete
 Last activity: 2026-09-18 — Phase 17 complete
 
-Progress: [████████░░] 75% (2/4 phases — Phases 15–16 complete; Phase 14 executed, verification human_needed; 36/36 plans, Phase 17 5/5 plans done)
+Progress: [██████████] 100% (4/4 phases — Phases 14–17 complete, all four verifications `passed`; 36/36 plans)
 
 ## Milestone v1.3 Roadmap
 
