@@ -1,0 +1,124 @@
+# Continue Here — paused 2026-09-21
+
+Paused mid-`/gsd-complete-milestone v1.3` at the user's request (context limit approaching).
+Nothing is half-written: the git tree is clean, and the only in-flight work is the milestone
+audit, which had not yet spawned its integration checker.
+
+---
+
+## Where things stand
+
+**Phase 17 is CLOSED and fully committed.** All gates passed:
+
+| Gate | Artifact | Result |
+|---|---|---|
+| Code review | `17-REVIEW.md` | clean (re-review after fixes) |
+| UAT | `17-UAT.md` | 8/8 passed, `issues_found_and_resolved: 1` |
+| Verification | `17-VERIFICATION.md` | **passed**, 5/5 criteria |
+| Nyquist | `17-VALIDATION.md` | `nyquist_compliant: true`, 13/13 automated |
+| Security | `17-SECURITY.md` | `threats_open: 0` |
+| UI review | `17-UI-REVIEW.md` | 22/24 |
+
+ROADMAP phases 14-17 are all `[x]`; STATE.md reads `status: completed`, 4/4 phases, 36/36 plans, 100%.
+
+**Milestone v1.3 close is BLOCKED on two pre-flight gates** (nothing archived, no tag created):
+
+1. **Phase 14 verification is stale** — `status: human_needed`, `phase_complete: false`,
+   dated 2026-08-25. Its three `behavior_unverified_items` (V39 migration against live Postgres;
+   seven ShiftLibrary/DeskManagement E2E flows; six visual backstop claims) map almost
+   one-to-one onto `14-UAT.md`'s 9 tests — and that UAT completed 2026-08-26 (commit `ca3121f`)
+   with **9/9 passed, 0 issues**. This is the same staleness pattern phase 17 had: the
+   verification predates the UAT that answers it, and nobody re-ran it. Phase 14 is very likely
+   closable on existing evidence rather than needing an override.
+2. **No `.planning/v1.3-MILESTONE-AUDIT.md`** exists. The user chose to run
+   `/gsd-audit-milestone 1.3` before closing, so the audit becomes part of the archived record.
+
+Phases 15, 16, 17 are all `phase_complete: true` + `verification_status: passed`.
+Requirements: **43/43 checked, 0 unchecked.**
+
+---
+
+## Resume from here
+
+`/gsd-audit-milestone 1.3` — restart it; steps 0-2 are cheap to redo. Data already gathered:
+
+- milestone `v1.3` "Shift-Based Scheduling & Consistency", 4 phases, `commit_docs: true`
+- per-phase VERIFICATION: 14 `human_needed` · 15 `passed` · 16 `passed` · 17 `passed`
+  (all four have a VERIFICATION.md — no missing-verification blockers)
+- `behavior_unverified: 0` on all four
+- integration-checker model: `sonnet`; phase dirs `.planning/phases/1[4-7]-*`
+- 43 milestone REQ-IDs: SHLB-01…07, MODE-01…05, ENVL-01…10, USHF-01…06, CONS-01…06,
+  DRFT-01…04, XCUT-01…05
+
+**Not yet done:** step 3 (spawn `gsd-integration-checker`), step 5 (3-source requirements
+cross-reference), step 5.5 (Nyquist compliance discovery), and writing the audit file.
+
+Then either close phase 14 properly or re-run `/gsd-complete-milestone` and choose the override.
+
+---
+
+## Open items the pre-close audit surfaced (not yet acknowledged)
+
+- **3 debug sessions**, all `[diagnosed]` but unresolved: `min-staffing-seats-zero-demand`,
+  `shift-envelope-unsatisfiable-hard`, `shift-mode-break-geometry-ungoverned`
+- **1 verification gap**: Phase 14 (above)
+- **12 deferred items**, mostly Phase 15 solver/test-flakiness notes
+
+A `verified_closeout` needs these resolved or explicitly acknowledged via
+`audit-open acknowledge`; acknowledging sets `closeout_type=override_closeout`.
+
+---
+
+## Carry forward — findings that outlive this session
+
+- **`threats_open: 0` means zero UNDISCLOSED risk, not zero residual risk.** T-17-07 (high, DoS)
+  is closed via accepted risk **R-17-01**, not a working mitigation: the shipped
+  `consistentStartWeight = 2` projects a worst case of 1,120 soft against minStaffingWeight's
+  1,000-soft ceiling — **12% over**. Accepted at the 17-04 checkpoint and again at
+  `/gsd-secure-phase`. Monitorable, not eliminated; `17-BENCHMARK.md` proposes phase 17's own
+  drift report as the eventual telemetry source.
+- **3 UI polish items open** from `17-UI-REVIEW.md` (none defects): no date-boundary cue across
+  60 drift rows; the table wraps instead of scrolling below ~900px because `overflowX: auto`
+  never engages without a `minWidth`; popularity total doesn't visibly reconcile with
+  "No usual shift".
+- **`DeskAgents.tsx:168` still uses `#d1d5db` as text (1.47:1)** — same WCAG defect fixed in the
+  drift report, left alone because it is Phase 16 territory and its comment says the lightness is
+  load-bearing (distinguishes "never set" from "stored but not in effect"). `17-UI-SPEC.md`
+  documents this as open work.
+- **Pre-existing traceability warning**: `phase.complete` reports 42 REQ-IDs "missing from the
+  Traceability table" because every phase's row uses `…` range notation (`USHF-01…06`) the parser
+  does not expand. Predates phase 17; affects phases 13-17.
+- **Excel export NPE was pre-existing since Phase 5** (`3ebf89f`) and made every multi-day
+  export 500. Fixed in `04c8651`. It meant CR-01/IN-02's reasoning about export behaviour had
+  never been observable end to end.
+
+## Process lessons worth keeping
+
+- **Commit planning docs BEFORE re-running verification.** `REQUIREMENTS.md` and `*-UAT.md` are
+  inside a verification's own `covered_files`, so fixing any advisory a verification raises stales
+  that verification. Three of phase 17's five verification passes existed only because of this.
+- **Always diff GSD tool writes.** `phase.complete` reported success but wrote
+  `completed_phases: 3` of 4 (75%) when all four phases were `[x]`; corrected to 4/4 in `33e0ce4`.
+  A `frontmatter.set`-style string replace also corrupted a `17-VALIDATION.md` comment that
+  happened to contain the literal target string while leaving the real field untouched.
+- **Run the FULL test suite before calling a fix verified.** The CR-01 gate broke three
+  `DriftReportTest` date-filter tests (fixture defaulted to `SchedulingMode.SLOT`); the fixer, the
+  re-reviewer and I all ran only targeted classes and missed it. Full suite: ~14 min, 0 failures.
+
+---
+
+## Local environment (still running — tear down or reuse)
+
+Backend `:8080` (`./gradlew bootRun`), frontend `:3000` (`npm run dev` in `frontend/`), local
+Postgres 18.4 with a `wfm` role/DB created this session (V1→V49 applied from empty).
+
+Seeded desk **"UAT Drift Desk"** `28a121f4-0b62-465b-be06-ac2ee39045ac` (tenant header
+`X-Tenant-ID: 1`): 12 agents, 6 shift templates (names to 74 chars, 1h break bands),
+50 `agent_usual_shift` rows. Solve from the UI at
+`/desks/28a121f4-0b62-465b-be06-ac2ee39045ac/schedule-setup`.
+
+Known: solves land at `hardScore: -1` on Shift envelope compliance — the documented seat/shift
+coupling plateau (`SPIKE-COUPLING.md`, `15-BENCHMARK.md`), not a phase 17 defect. Before breaks
+were added the same desk solved to 0.
+
+Kill with: `pkill -f bootRun; pkill -f "npm run dev"`. The `wfm` local DB can stay.
