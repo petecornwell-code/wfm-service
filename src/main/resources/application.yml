@@ -48,6 +48,18 @@ bamboohr:
     connect-timeout-seconds: 10
     read-timeout-seconds: 120
 
+# Shift library suggestion (SHLB-07)
+shift-library:
+  suggestion:
+    # Cap on enumerated shift candidates before the suggester refuses rather than
+    # silently returning a truncated (and therefore worse) library. Candidate count is
+    # the product of distinct contracted-hours values x break durations x span starts x
+    # break offsets, so a longer operating window or a finer timeslot grid multiplies it
+    # fast -- a 15h window at 30-minute granularity already exceeds 200. Raising this
+    # trades suggestion latency for reach: the greedy set cover behind it is
+    # O(selected x candidates x windows). Must be >= 1; anything lower falls back to 200.
+    max-candidates: 200
+
 # Solver
 solver:
   time-limit: PT5M

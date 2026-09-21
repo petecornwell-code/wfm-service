@@ -17,6 +17,9 @@ import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.util.BigDecimals;
 import org.springframework.data.domain.PageRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,8 +65,29 @@ import java.util.stream.Collectors;
 @Service
 public class ShiftLibraryGenerationService {
 
-    /** P-08: a hard cap on enumerated candidates -- exceeding it is a named refusal, never a silent truncation. */
-    static final int MAX_CANDIDATE_COUNT = 200;
+    private static final Logger log = LoggerFactory.getLogger(ShiftLibraryGenerationService.class);
+
+    /**
+     * P-08 default: the cap on enumerated candidates -- exceeding it is a named refusal, never a
+     * silent truncation. Sized for the "tens, not thousands" shape {@link #greedyCover} assumes:
+     * that loop is O(selected x candidates x windows) with a {@code covers()} call at the centre,
+     * so candidate count drives its cost superlinearly.
+     */
+    static final int DEFAULT_MAX_CANDIDATE_COUNT = 200;
+
+    /**
+     * Override via {@code shift-library.suggestion.max-candidates}. Raising it trades suggestion
+     * latency for the ability to enumerate a wider desk (a longer operating window, a finer grid,
+     * or more distinct contracted-hours values all multiply the candidate count). The refusal it
+     * guards is deliberate -- see {@link #DEFAULT_MAX_CANDIDATE_COUNT} -- so this is a knob for
+     * operators who accept a slower suggestion, not a reason to disable the check.
+     *
+     * <p>A value below 1 would refuse every desk including trivially small ones, which reads as a
+     * broken feature rather than a misconfiguration, so {@link #resolveMaxCandidates()} falls back
+     * to the default and says so in the log.
+     */
+    @Value("${shift-library.suggestion.max-candidates:" + DEFAULT_MAX_CANDIDATE_COUNT + "}")
+    private int maxCandidateCount = DEFAULT_MAX_CANDIDATE_COUNT;
 
     private static final BigDecimal FALLBACK_BREAK_MIN_SHIFT_HOURS = new BigDecimal("4.00");
     private static final int FALLBACK_BREAK_DURATION_MINUTES = 60;
@@ -128,6 +152,7 @@ public class ShiftLibraryGenerationService {
                         "Desk " + deskId + " has live demand but no live timeslot grid bounds"));
 
         BreakConfig breakConfig = resolveBreakConfig(tenantId, deskId);
+        int maxCandidates = resolveMaxCandidates();
 
         Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = agentDayHours.stream()
                 .collect(Collectors.groupingBy(AgentDayHours::getDayOfWeek,
@@ -161,9 +186,9 @@ public class ShiftLibraryGenerationService {
             // silently truncated -- a desk whose data shape breaks the "tens, not thousands"
             // sizing assumption says so out loud instead of quietly returning a worse answer.
             // Counted across ALL clusters so clustering cannot be used to slip past the cap.
-            if (totalCandidates > MAX_CANDIDATE_COUNT) {
+            if (totalCandidates > maxCandidates) {
                 String message = "Candidate enumeration produced " + totalCandidates
-                        + " candidates, exceeding the cap of " + MAX_CANDIDATE_COUNT
+                        + " candidates, exceeding the cap of " + maxCandidates
                         + ". Reduce the desk's demand time range or contracted-hours variety before "
                         + "requesting a suggested library.";
                 throw new PreSolveValidationException(message,
@@ -241,6 +266,7 @@ public class ShiftLibraryGenerationService {
                                                  Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
                                                  Set<DayOfWeek> demandedWeekdays) {
         int increment = bounds.incrementMinutes();
+        int maxCandidates = resolveMaxCandidates();
 
         Set<BigDecimal> distinctHours = new TreeSet<>();
         for (DayOfWeek weekday : demandedWeekdays) {
@@ -291,7 +317,7 @@ public class ShiftLibraryGenerationService {
                                     breakDuration, hours, demandedWeekdays, hoursByWeekday);
                         }
                     }
-                    if (candidates.size() > MAX_CANDIDATE_COUNT) {
+                    if (candidates.size() > maxCandidates) {
                         return candidates; // caller checks size against the declared cap
                     }
                 }
@@ -577,6 +603,20 @@ public class ShiftLibraryGenerationService {
     }
 
     // --- Greedy-then-verify cover (P-09) ---
+
+    /**
+     * The configured cap, or the default when it is nonsensical. Read per call rather than cached
+     * so the log line fires on every suggestion a misconfigured deployment serves, instead of once
+     * at startup where it can scroll away unseen.
+     */
+    private int resolveMaxCandidates() {
+        if (maxCandidateCount < 1) {
+            log.warn("shift-library.suggestion.max-candidates is {} (must be >= 1) -- falling back "
+                    + "to the default of {}", maxCandidateCount, DEFAULT_MAX_CANDIDATE_COUNT);
+            return DEFAULT_MAX_CANDIDATE_COUNT;
+        }
+        return maxCandidateCount;
+    }
 
     private List<Candidate> greedyCover(List<Candidate> candidates,
                                          List<ShiftLibraryValidationService.Window> windows) {
