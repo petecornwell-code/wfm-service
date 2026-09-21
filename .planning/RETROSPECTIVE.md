@@ -169,6 +169,121 @@ desk default unrelated to what had just been uploaded.
 
 ---
 
+## Milestone: v1.3 — Shift-Based Scheduling & Consistency
+
+**Shipped:** 2026-09-21
+**Phases:** 4 | **Plans:** 36 | **Tasks:** 91 | **Requirements:** 43/43
+
+### What Was Built
+
+The slot pattern gave way to a recognisable, repeating shift. A desk defines a library of shift
+templates; switching it to `SHIFT` mode is refused — with the uncovered demand windows named — if the
+library cannot cover demand; and the solver then assigns each working agent exactly one shift per
+day from it, never seating them outside that envelope. Breaks come from template bands rather than
+four emergent constraints. Each agent has a stored usual shift per weekday, set in bulk by upload or
+inline in the roster, visible in roster and Excel export; a soft constraint with an operator-tunable
+tolerance band nudges the solver toward it, and drift is reported per agent and date from the same
+distance calculation the constraint uses.
+
+Eleven migrations (V39–V49), 169 files, +31,010/−293, and a backend suite that grew 402 → 723 tests.
+
+### What Worked
+
+- **Settling the architecture by spike, before planning.** `SPIKE-COUPLING.md` ran both candidate
+  coupling mechanisms against real fixtures and found that the filtered-value-range option compiled,
+  passed `FULL_ASSERT` clean, and still reported infeasible schedules as `0hard/0soft` optimal on 8/8
+  seeds. Two prior attempts at shift semantics had been abandoned; knowing the answer before Phase 15
+  was planned is the single clearest reason this one was not a third.
+- **Self-enforcing structural guards instead of documented discipline.** Four shipped this milestone:
+  a reflection-derived constraint-classification completeness test, a write-path allowlist proven able
+  to go red twice, a migration-vs-entity DDL reconciliation, and a Testcontainers Postgres base class
+  running real Flyway under `ddl-auto=validate`. Each converts a class of regression from "someone
+  must notice" into "the suite fails".
+- **One computation, two callers.** The shift-library coverage report an operator reads and the
+  mode-switch refusal that blocks them are the same code. UAT confirmed it end-to-end: the report
+  named four uncovered windows and the refusal named the same four verbatim. The same shape recurs in
+  DRFT-03 (drift report and consistency constraint share `startDeviationMinutes`) and in
+  `EnrichedColumnLayout` (template, parser, export).
+- **Refusing rather than degrading.** A shift-mode solve that cannot succeed is now refused before it
+  runs, naming the date, the per-hour shortfall and the operator's levers — instead of producing an
+  irreducible hard score indistinguishable from "needs more time".
+- **Honest negative results, twice.** Phase 15's benchmark passed on a feasibility-convergence gap and
+  explicitly disqualified its own comparative medians as too small against the arm's spread. Phase
+  17's consistency-weight A/B hit a construction-heuristic plateau and was written up as a null
+  result. This is the discipline that correctly withdrew Phase 12 in v1.2, now applied twice more.
+
+### What Was Inefficient
+
+- **The seat-supply gate took four rounds to get right.** Calendar-blind coverage (G-15-21),
+  band-composition blindness (G-15-25), day-wide-only comparison (G-15-31), and a wrong-advice bug
+  that recommended the single most destructive available lever (G-15-24) were four separate discoveries
+  of the same class: a check that aggregates away the dimension it needs to see. Phase 15 ran to 20
+  plans, 5 of them gap closure.
+- **A performance regression was misdiagnosed as environmental noise and had to be retracted.** A
+  failing wall-clock-bounded canary was attributed to JVM state and declared "not a Phase 15
+  regression". It was one — a dropped `difficultyComparatorClass` plus a constraint leading with the
+  wrong `forEach` and gating after the join, together costing ~3x construction time and ~35–40% of
+  local-search throughput. Isolation runs gave the solver enough CPU to mask it.
+- **Stale planning records, at every level.** The milestone close had to correct three documents that
+  each asserted something a later event had already falsified: `14-VERIFICATION.md` sat at
+  `human_needed` for three weeks after UAT discharged all three of its items, `REQUIREMENTS.md` showed
+  Phase 16 as `human_needed` and counted 34 requirements against an actual 38, and `STATE.md` read 75%
+  / 2-of-4 against its own 100% frontmatter.
+- **A shipped decision changed and only half the records followed.** Phase 15 added a guarded delete
+  control, superseding Phase 14's deliberate no-delete stance. `PROJECT.md`'s Key Decisions table
+  caught it on 2026-09-03; `14-VERIFICATION.md` went on asserting "no delete endpoint exists" as a
+  verified truth for another 18 days.
+
+### Patterns Established
+
+- **Spike the one-way door before planning the phase.** Where a structural choice would be expensive
+  to reverse, run both options against a real fixture first and record the loser's specific failure
+  mode. Option C's `0hard/0soft`-on-infeasible is now the canonical example of why "it compiles and
+  the assertions pass" is not evidence.
+- **A guard must be proven red.** `UsualShiftWritePathGuardTest` ships with a code-level
+  test-of-the-test *and* a recorded real deliberate break, verbatim failure message included. A green
+  guard nobody has seen fail is an assumption.
+- **Never let a check's output be a number when it should be a structure.** Every seat-supply defect
+  this milestone came from comparing sums where per-agent-day or per-timeslot detail was needed.
+- **When a wall-clock-bounded solver test degrades, read throughput first.** Move evaluation speed is
+  the direct signal; score is its downstream shadow. Both of this milestone's misdiagnoses would have
+  been caught in one step by that ordering.
+- **Advice inside a refusal is part of the refusal.** Check the live configuration before recommending
+  a lever — a gate that confidently suggests the most destructive available action is worse than a
+  gate that says nothing.
+
+### Key Lessons
+
+- **The process is now reliably better at finding things than at propagating them.** Every finding
+  this milestone was recorded accurately somewhere; the failures were all in getting a correction from
+  the document that learned it to the document that still asserted the old thing. The audit's three
+  corrections were all of this shape, and so was the delete-control divergence.
+- **A human-verification item is worth keeping when it is load-bearing.** Phase 14's migration item
+  was flagged as "the phase's single most load-bearing unverified item" and it earned that: UAT test 1
+  found a `CHAR(7)`-vs-`varchar(7)` boot failure invisible to a fully green 402-test suite, because the
+  test profile disables Flyway. The right response was not just fixing V39 but closing the blind
+  spot — which Phase 15 did twice over.
+- **"Out of scope by ruling" is a different thing from "missed", and should read differently.** The
+  two functional gaps shipping with this milestone were each named, mechanism-explained, fix-location
+  settled, and explicitly marked not-rejected. That is a materially better artifact than a silence.
+- **Two consecutive override closeouts is a trend, not a coincidence.** v1.2 and v1.3 both closed with
+  acknowledged debt. I-2 is now three audits old. The acknowledgment mechanism is working exactly as
+  designed and that is precisely the risk — suppression is frictionless, and frictionless deferral is
+  how debt becomes permanent.
+
+### Cost Observations
+
+- Model profile: planner `opus`, checker/auditor/integration-checker `sonnet`
+- 36 plans across 4 phases, but distribution was extremely uneven: Phase 15 alone took 20 plans (56%
+  of the milestone), 5 of them gap closure on a single class of defect
+- 370 commits over 27 days — roughly 4x v1.2's commit rate over a comparable span
+- Notable: the milestone audit's integration check found zero gaps across six seams — the first clean
+  cross-phase result in this project's history — but the same audit found three stale planning
+  documents. The adversarial-verification lesson from v1.1 and v1.2 still holds; what changed is that
+  the code seams were genuinely clean and the *records* were not.
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Requirements shipped | Phases delivered | Closed |
@@ -176,6 +291,7 @@ desk default unrelated to what had just been uploaded.
 | v1.0 AWS Deployment | partial (IAM-blocked) | 1 of 4 complete, 2 partial | 2026-04-21 |
 | v1.1 Schedule Quality & Reporting | 4 of 16 (25%) | 2 of 4 | 2026-07-29 |
 | v1.2 Unified Agent Provisioning | 19 of 19 (100%) | 4 of 5 (1 withdrawn) | 2026-08-25 (override) |
+| v1.3 Shift-Based Scheduling & Consistency | 43 of 43 (100%) | 4 of 4 | 2026-09-21 (override) |
 
 **Recurring themes:**
 
@@ -184,10 +300,16 @@ desk default unrelated to what had just been uploaded.
   milestone closure phase to do it, and still closed under override. Tighter scope (19 requirements,
   26 days) produced a materially better outcome than v1.1's 16-requirement, 83-day sprawl.
 - **Blockers identified early are still accepted and carried rather than resolved.** The IAM blocker
-  has now persisted across three milestones (999.1–999.3). The BambooHR key exposure has been
-  accepted at two consecutive closes and is still live in a public repo. I-2 joins them this
-  milestone. **Every one of these was correctly identified, correctly documented, and not fixed** —
-  the process reliably produces accurate records of things that do not get done.
+  has now persisted across four milestones (999.1–999.3). I-2 has been recorded in three consecutive
+  audits (2026-08-21, 2026-08-25, 2026-09-21) and never scoped into a phase. Nyquist validation debt
+  grew from two phases to five across two milestones. **Every one of these was correctly identified,
+  correctly documented, and not fixed** — the process reliably produces accurate records of things
+  that do not get done, and v1.3's frictionless acknowledgment mechanism makes carrying them cheaper
+  than closing them.
+- **Two milestones running, the code was sound and the paperwork was stale.** v1.2's audit found a
+  real cross-phase seam four phase verifications had passed over. v1.3's found *zero* integration
+  gaps across six seams — and three planning documents asserting things later events had falsified.
+  The failure mode has moved from the code to the records about the code.
 - **Investigation consistently changes the requirement** — v1.0 and v1.1 through probing live
   systems, v1.2 through auditing its own claims. In every milestone so far, the work as specified
   differed materially from the work as built.

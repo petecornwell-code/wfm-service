@@ -21,10 +21,10 @@ current_phase: 17
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-02)
+See: .planning/PROJECT.md (updated 2026-09-21 at v1.3 close)
 
-**Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
-**Current focus:** Phase 17 — Consistency Constraint & Drift Reporting
+**Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.3 close — unchanged.)*
+**Current focus:** Planning the next milestone — run `/gsd-new-milestone`
 
 ## Current Position
 
@@ -33,34 +33,23 @@ Plan: —
 Status: Awaiting next milestone
 Last activity: 2026-09-21 — Milestone v1.3 completed and archived
 
-## Milestone v1.3 Roadmap
+## Milestone v1.3 Outcome
 
-4 phases derived from 34 requirements (6 SHLB, 5 MODE, 7 ENVL, 6 USHF, 6 CONS, 4 DRFT) plus 5
-cross-cutting verification requirements (XCUT-01…05) mapped onto the phases they apply to. Coarse
-granularity per config.json. Full detail: `.planning/ROADMAP.md` Phase Details.
+**Shipped 2026-09-21** — 43/43 requirements across Phases 14–17 (4 phases, 36 plans, 91 tasks).
+Closed under `override_closeout`: 10 artifacts acknowledged as deferred (3 debug sessions still
+`diagnosed`, 7 deferred items), plus 3 carried forward from the v1.2 close.
 
-| Phase | Name | Requirements | Depends on | Research at plan time |
-|-------|------|--------------|------------|------------------------|
-| 14 | Shift Library & Scheduling Mode | SHLB-01…06, MODE-01…05 | — | No — mirrors `Specialization`/`minimumStaffing` patterns |
-| 15 | Shift Envelope, Breaks & Library Generation | ENVL-01…10, SHLB-07 | Phase 14 | Yes — CH placer XML nesting is MEDIUM confidence |
-| 16 | Usual Shift Storage | USHF-01…06 | Phase 14 | No — mirrors `AgentDayHours`/`resolvePreferences` |
-| 17 | Consistency Constraint & Drift Reporting | CONS-01…06, DRFT-01…04 | Phase 15, 16 | No — but confirm salvage-material rework scope |
+Milestone audit returned `tech_debt` — **zero integration gaps** across six cross-phase seams and
+four E2E flows, the first clean cross-phase result in this project. It also found three planning
+documents asserting things a later event had already falsified, all corrected at close.
 
-**Two decisions this roadmap treats as settled, not re-opened as phases** (both resolved during
-v1.3 research, before roadmap creation):
+Two functional gaps ship knowingly, deferred by operator ruling OR-2: blocked-break-hours has no
+enforcement point in SHIFT mode, and a template's envelope is never validated against the desk's
+operating window at save time. Both are described in `.planning/ROADMAP.md`'s v1.3 section and in
+the Deferred Items table below.
 
-- **Coupling mechanism** — `SPIKE-COUPLING.md` empirically settled a hard-constraint coupling (Option
-  A) over a filtered value range (Option C): Option C compiled and passed `FULL_ASSERT` clean while
-  reporting infeasible schedules as `0hard/0soft` optimal on 8/8 seeds. Phase 15 builds Option A.
-
-- **Reverted third attempt** (`7861b83`/`9207ceb`/`9f4a96f`/`6fb78c7`, reverted 2026-08-20) — confirmed
-  by git archaeology as speculative off-roadmap work reverted as scope discipline, not a technical
-  failure. Treated as candidate salvage material inside Phase 17 (see ROADMAP.md Phase 17 Notes), not
-  a standalone investigation phase.
-
-- **Soft-quality plateau** — operator ruling: ship the sound (Option A) model, measure the real gap at
-  realistic scale in Phase 15's XCUT-04 benchmark, report as a finding. No custom-move remedy phase
-  scoped into v1.3.
+Archived: `.planning/milestones/v1.3-ROADMAP.md`, `v1.3-REQUIREMENTS.md`,
+`v1.3-MILESTONE-AUDIT.md`, `v1.3-phases/`.
 
 ## Milestone v1.2 Outcome
 
@@ -298,7 +287,9 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Start the next milestone with `/gsd-new-milestone`
+- **Consider closing Nyquist debt first** — `/gsd-validate-phase` for 10, 13, 14, 15 (all `status: draft`) and 16 (the one genuine PARTIAL). Five phases across two milestones; flagged at the v1.3 audit as having drifted from an oversight into a pattern
+- **999.9 is now three audits old** — the v1.2 I-2 merge-precedence gap has been recorded at every close since 2026-08-21 and never scoped into a phase
 
 ## Performance Metrics
 
