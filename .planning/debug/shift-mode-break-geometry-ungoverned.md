@@ -5,6 +5,10 @@ created: 2026-08-27T00:00:00Z
 updated: 2026-08-27T00:00:00Z
 goal: find_root_cause_only
 lane: "break geometry governance in SHIFT mode — what enforces break shape once slot-mode constraints are gated off"
+audit_acknowledged:
+  milestone: v1.3
+  at: 2026-09-21
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -415,5 +419,6 @@ verification: |
   (ShiftModeBreakGatingTest, ShiftEnvelopeComplianceConstraintTest, BreakClusteringConstraintTest)
   re-run green. `git status` confirms zero production files modified.
 files_changed:
+
   - src/test/java/com/wfm/solver/ShiftModeBreakGeometryCharacterisationTest.java (NEW, diagnostic only)
   - .planning/debug/shift-mode-break-geometry-ungoverned.md (NEW, this file)

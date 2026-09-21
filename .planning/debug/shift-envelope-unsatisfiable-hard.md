@@ -3,9 +3,14 @@ status: diagnosed
 trigger: "It seems to be stuck on shift envelope compliance. A big issue is covering 0 hour slots - It pulls to fill the 0 slot but then adds breaks to fill in the gaps!"
 created: 2026-08-27T00:00:00Z
 updated: 2026-08-27T00:00:00Z
+audit_acknowledged:
+  milestone: v1.3
+  at: 2026-09-21
+  status: diagnosed
 ---
 
 ## Current Focus
+
 <!-- OVERWRITE on each update - reflects NOW -->
 
 bug_class: Bohrbug — deterministic given the data shape; the automated suite's fixture is degenerate so it never triggers.
@@ -25,6 +30,7 @@ expecting: hard == -4 attributed entirely to Shift envelope compliance in the de
 next_action: write src/test/java/com/wfm/solver/ShiftEnvelopeUnsatisfiableHardTest.java and run it.
 
 ## Symptoms
+
 <!-- Written during gathering, then IMMUTABLE -->
 
 expected: A real desk in shift-scheduled mode solves to FEASIBLE (0 hard) in acceptable time. Every agent seated only within the envelope of the single shift assigned to them that day.
@@ -34,6 +40,7 @@ reproduction: UAT Test 10, live dev deploy https://d2bbtcc80peap7.cloudfront.net
 started: Discovered during UAT of Phase 15.
 
 ## Eliminated
+
 <!-- APPEND only - prevents re-investigating -->
 
 - hypothesis: "H1 literal form — an agent's contracted hours EXCEED the net hours of the band pair they hold, so they must overflow."
@@ -49,6 +56,7 @@ started: Discovered during UAT of Phase 15.
   timestamp: T5
 
 ## Evidence
+
 <!-- APPEND only - facts discovered -->
 
 - timestamp: T0
@@ -108,6 +116,7 @@ started: Discovered during UAT of Phase 15.
   implication: Explains BOTH live anomaly shapes (early 08:00/09:00 strays AND Mariami Katcheishvili 01-10 seated straight through her break with no hole), and explains why the UI cannot render an envelope violation as a violation.
 
 ## Resolution
+
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: |

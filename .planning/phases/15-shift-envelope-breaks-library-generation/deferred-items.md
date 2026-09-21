@@ -14,6 +14,7 @@ Out-of-scope discoveries logged during execution, not fixed (per executor scope-
   solver run whose score threshold is sensitive to machine load during parallel test execution.
   Not auto-fixed per the scope boundary (pre-existing, unrelated file). Worth a follow-up: either
   widen the tolerance or move this fixture off a wall-clock-sensitive step budget.
+  status: acknowledged
 
 ## SUPERSEDED: "BreakAwareConstructionTest is JVM-state sensitive, not a Phase 15 defect"
 
@@ -55,6 +56,7 @@ that threshold is what surfaced both defects above.
 **The interim gate carve-out recorded in `1971b3f` is WITHDRAWN.** It is no longer needed and
 must not be applied: the full suite passes outright (452 tests, 0 failures). Any future failure
 of this test should be treated as a real signal and investigated, not waived.
+  status: acknowledged
 
 ## Wave 4 throughput observation: mode-gating costs ~2x CH time, quality unchanged
 
@@ -62,13 +64,21 @@ Measured on `BreakAwareConstructionTest`'s 30-agent slot-mode scenario after wav
 (15-06's six `ifExists(Class, filtering(...))` mode gates plus break-clustering and
 band-capacity constraints):
 
-| | wave 3 | wave 4 |
-|---|---|---|
-| CH phase (1) time | 266ms (as reported by the wave-2 fix agent) | **532ms** (measured) |
-| LS throughput | 43.2k moves/sec (reported) | **40.6k moves/sec** (measured) |
-| CH quality, isolation | `480/480, 0hard/0soft` (measured) | `480/480, 0hard/0soft` (measured) |
-| Full-suite canary | `480/480, 0hard/0soft` | `479/480, -320hard/-1soft` |
-| Suite duration | 7m47s | 24m31s |
+```
+                       wave 3                                     wave 4
+CH phase (1) time      266ms (as reported by the wave-2 fix agent)  532ms (measured)
+LS throughput          43.2k moves/sec (reported)                   40.6k moves/sec (measured)
+CH quality, isolation  480/480, 0hard/0soft (measured)              480/480, 0hard/0soft (measured)
+Full-suite canary      480/480, 0hard/0soft                         479/480, -320hard/-1soft
+Suite duration         7m47s                                        24m31s
+```
+
+<!-- Presentation note (2026-09-21, v1.3 milestone close): this block was a GFM table until the
+     close. The audit scanner emitted each table row as its own phantom deferred item, and the
+     `audit-open acknowledge` writer then could not anchor a write to any of them (gsd-core #3781:
+     "this deferred item's span embeds a GFM table row ... edit the file directly"). Converted to a
+     fenced block so the entry is addressable. Every measured value is unchanged; only the bold and
+     backtick emphasis was dropped, which the fence makes redundant. -->
 
 **Not treated as blocking, and here is the reasoning.** Quality per step is IDENTICAL --
 both reach `0hard/0soft` in isolation. Only throughput moved. Plan 15-08's benchmark is
@@ -92,6 +102,7 @@ would have flattered the shift model.
 Caveat on provenance: the wave-3 CH/LS figures above are as reported by the wave-2 fix agent
 and were not independently re-measured. The QUALITY figures -- which are what the
 non-blocking conclusion rests on -- were measured directly at both commits.
+  status: acknowledged
 
 ## 15-13 (gap closure G-15-10 — final round; two latent defects deliberately not fixed this round)
 
@@ -125,6 +136,7 @@ change.
   Live agent-day it explains: Mariami Katcheishvili, 2026-01-10 — 8 consecutive worked hours, zero
   breaks, on the live Stubhub desk (`shift-envelope-unsatisfiable-hard.md` T7, T6).
   Scope: out of scope for this round by operator ruling OR-2, not rejected.
+  status: acknowledged
 
 - **A template's envelope is never validated against the desk's operating window at save time.**
   Mechanism: `ShiftTemplateService.validateGridAlignment` (`ShiftTemplateService.java:216-255`)
@@ -144,6 +156,7 @@ change.
   wiring a containment check into `validateGridAlignment` (or a sibling validator) is the natural
   next step for whoever picks this up.
   Scope: out of scope for this round by operator ruling OR-2, not rejected.
+  status: acknowledged
 
 ### Staleness check (plan 15-13, per its own Task 3 instruction)
 

@@ -5,6 +5,10 @@ created: 2026-08-27T00:00:00Z
 updated: 2026-08-27T00:00:00Z
 lane: "minimum-staffing seat expansion + per-timeslot demand configuration"
 goal: find_root_cause_only
+audit_acknowledged:
+  milestone: v1.3
+  at: 2026-09-21
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -20,6 +24,7 @@ test: |
   Two characterising test classes, both green (9/9):
   - src/test/java/com/wfm/service/ShiftModeMinimumStaffingSeatGapTest.java (3 tests)
   - src/test/java/com/wfm/solver/ZeroDemandTimeslotHasNoCeilingGapTest.java (6 tests)
+
 expecting: All three hypotheses CONFIRMED with executable evidence.
 next_action: |
   Return ROOT CAUSE FOUND to the orchestrator. Diagnose-only mode — no fix applied.
@@ -356,6 +361,7 @@ verification: |
      defect is the seat deficit and not the bait.
 
 files_changed:
+
   - src/test/java/com/wfm/service/ShiftEnvelopeSeatStarvationTest.java (new, root-cause reproduction)
   - src/test/java/com/wfm/service/ShiftModeMinimumStaffingSeatGapTest.java (new, characterising)
   - src/test/java/com/wfm/solver/ZeroDemandTimeslotHasNoCeilingGapTest.java (new, characterising)
