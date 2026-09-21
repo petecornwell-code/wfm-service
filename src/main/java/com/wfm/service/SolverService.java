@@ -51,6 +51,14 @@ public class SolverService {
     private final Duration defaultTimeLimit;
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
+    private final ScheduleConsistencyRepairService consistencyRepairService;
+
+    /**
+     * Built on first use and cached: constructing a SolverFactory is not free, and the repair's
+     * verification calls this twice per solve (three times when it reverts).
+     */
+    private volatile ai.timefold.solver.core.api.solver.SolutionManager<Schedule,
+            ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore> cachedSolutionManager;
     private final DeskRepository deskRepository;
     private final AgentRepository agentRepository;
     private final SpecializationRepository specializationRepository;
@@ -81,6 +89,7 @@ public class SolverService {
     public SolverService(@Value("${solver.time-limit:PT5M}") Duration defaultTimeLimit,
                          InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
+                         ScheduleConsistencyRepairService consistencyRepairService,
                          DeskRepository deskRepository,
                          AgentRepository agentRepository,
                          SpecializationRepository specializationRepository,
@@ -100,6 +109,7 @@ public class SolverService {
         this.defaultTimeLimit = defaultTimeLimit;
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
+        this.consistencyRepairService = consistencyRepairService;
         this.deskRepository = deskRepository;
         this.agentRepository = agentRepository;
         this.specializationRepository = specializationRepository;
@@ -458,6 +468,21 @@ public class SolverService {
                         log.info("Solver finished — schedule={}, score={}, status={}",
                                 finalBestSolution.getId(), finalBestSolution.getScore(),
                                 finalBestSolution.getStatus());
+                        // Post-solve usual-shift repair (see ScheduleConsistencyRepairService):
+                        // permutes WHICH agent holds each chosen shift without changing which
+                        // shifts are worked, recovering consistency the configured move set cannot
+                        // reach. Runs BEFORE the store, so the repaired envelopes are what the
+                        // operator reviews and what acceptance denormalises. Self-verifying — it
+                        // rolls itself back on any hard-score regression — and deliberately not
+                        // allowed to fail the solve: a schedule the solver already produced is
+                        // worth more than a consistency improvement.
+                        try {
+                            consistencyRepairService.repairVerified(
+                                    finalBestSolution, sol -> solutionManager().update(sol));
+                        } catch (RuntimeException e) {
+                            log.error("Usual-shift repair failed for schedule {} — keeping the "
+                                    + "solver's own result", finalBestSolution.getId(), e);
+                        }
                         // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
                         if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
                             finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
@@ -770,6 +795,33 @@ public class SolverService {
      * <p>Package-private static and pure, mirroring {@link #buildShiftBandPairs}'s precedent so
      * it is directly unit-testable without a repository or Spring context.
      */
+    /**
+     * Built on first use and cached: constructing a SolverFactory is not free, and the repair's
+     * verification calls this twice per solve (three times when it reverts).
+     */
+    private ai.timefold.solver.core.api.solver.SolutionManager<Schedule,
+            ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore> solutionManager() {
+        var local = cachedSolutionManager;
+        if (local == null) {
+            synchronized (this) {
+                local = cachedSolutionManager;
+                if (local == null) {
+                    var factory = ai.timefold.solver.core.api.solver.SolverFactory.<Schedule>create(
+                            new ai.timefold.solver.core.config.solver.SolverConfig()
+                                    .withSolutionClass(Schedule.class)
+                                    .withEntityClasses(AgentShiftAssignment.class, AgentAssignment.class)
+                                    .withScoreDirectorFactory(
+                                            new ai.timefold.solver.core.config.score.director.ScoreDirectorFactoryConfig()
+                                                    .withConstraintProviderClass(
+                                                            com.wfm.solver.ScheduleConstraintProvider.class)));
+                    local = ai.timefold.solver.core.api.solver.SolutionManager.create(factory);
+                    cachedSolutionManager = local;
+                }
+            }
+        }
+        return local;
+    }
+
     static List<ShiftTemplate> filterLiveShiftTemplates(SchedulingMode schedulingMode,
             List<ShiftTemplate> allTemplates, LocalDate periodStartDate, LocalDate periodEndDate) {
         if (schedulingMode != SchedulingMode.SHIFT) {
