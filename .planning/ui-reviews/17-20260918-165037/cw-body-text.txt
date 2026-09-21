@@ -1,0 +1,42 @@
+Tenant ID:
+UAT Drift Desk
+Switch Desk
+Desk Management
+Schedule Setup
+Desk Agents
+Specializations
+Shift Library
+Staffing Requirements
+Constraint Weights
+Constraint Weights
+CONSTRAINT	DESCRIPTION	LEVEL	HARD SCORE	SOFT SCORE
+Unassigned Assignment	Prefer filling every staffing slot with an agent	Soft		
+Agent Day Off	Agents must not be assigned on their days off	Hard		
+Specialization Match	Assignments must match agent specializations	Hard		
+One Assignment per Timeslot	Agent can only be assigned once per timeslot	Hard		
+Exactly One Break	Each agent must have exactly one break per day	Hard		
+Break Duration	Break must match the configured duration	Hard		
+Break Blocked Window	No breaks in the first/last hours of a shift	Hard		
+Break Start Alignment	Break must start on hour/half-hour/quarter	Hard		
+Shift Envelope Compliance	Shift mode: agents must only work hours inside their assigned shift, outside its break	Hard		
+Shift Work Contiguity	Shift mode: an agent’s hours must be contiguous apart from their break — no split shifts	Hard		
+Break Band Capacity	Shift mode: no more agents on a break band than its capacity allows	Hard		
+Contracted Hours (Over)	Prevent agents working more than contracted hours	Hard		
+Contracted Hours (Under)	Penalise agents working fewer than contracted hours	Hard		
+Contracted Hours (Under, Zero)	Penalise an agent-day left completely unassigned — distinct from working merely too few hours	Hard		
+Bulk Over-allocation Limit	Prevent excessive over-staffing	Hard		
+Bulk Under-allocation (Hard)	Hard limit on under-staffing	Hard		
+Prefer Primary Specialization	Prefer assigning agents to their primary specialization	Soft		
+Honour Preferred Start Time	Try to honour agent preferred start time	Soft		
+Honour Preferred Break Time	Try to honour agent preferred break time	Soft		
+Break Clustering	Avoid too many agents on break at the same time	Soft		
+Bulk Under-allocation (Soft)	Soft penalty for under-staffing	Soft		
+Usual Shift Consistency	Shift mode: nudge agents toward their stored usual shift start time, past the tolerance band below. Hard score must stay 0 — a hard score here would shorten shifts instead of keeping agents consistent, so it is rejected on save	Soft		
+Usual Shift Consistency Tolerance	Shift mode: deviation from the usual shift start within this many minutes carries zero penalty	Minutes	 min
+Preferred Start (Shift Mode)	Shift mode: tie-break only, used when Usual Shift Consistency scores two shifts equally. Weight must stay below Usual Shift Consistency’s — enforced on save	Soft		
+
+Usual Shift Consistency decides first. Preferred Start (Shift Mode) only breaks ties where Usual Shift Consistency scores two shifts equally — its weight must be lower than Usual Shift Consistency's, checked when you save.
+
+Minimum Staffing	Keep at least one agent on every hour, even where forecast demand is zero	Soft		
+Save
+Reset to Defaults

@@ -17,3 +17,4 @@ Out-of-scope discoveries logged during execution, per the executor's scope-bound
   `src/test/java/com/wfm/solver/MultiDayConstraintDiagnosticTest.java` is solver-package code this
   plan's phase-specific constraints explicitly forbid touching ("Do not touch solver code").
   Out of scope for plan 16-02; not fixed here.
+  status: acknowledged

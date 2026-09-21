@@ -9,8 +9,10 @@
 **Risk:** If this file is ever staged and committed, live AWS credentials would be pushed to the repository.
 
 **Recommended Action:**
+
 1. Delete the file from disk: `rm src/main/resources/sample-data/pete.cornwell@helpware.com_accessKeys.csv`
 2. Add a gitignore pattern to prevent accidental commit: `src/main/resources/sample-data/*accessKeys*.csv`
 3. Rotate/invalidate the access key in AWS IAM if it is still active.
 
 **Discovered during:** 02-01 post-task git status check (2026-04-03)
+  status: acknowledged

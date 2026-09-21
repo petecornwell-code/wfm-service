@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v1.3
 milestone_name: Shift-Based Scheduling & Consistency
-current_phase: 17
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 17 complete — all phases complete
-last_updated: "2026-09-18T21:37:31.627Z"
-last_activity: 2026-09-18
-last_activity_desc: Phase 17 complete
-state_head: c98b069fd3c10fac0a0e12549238339e6e742aa2
+last_updated: "2026-09-21T13:44:36.477Z"
+last_activity: 2026-09-21
+last_activity_desc: Milestone v1.3 completed and archived
+state_head: feaeee4bf1606df9a0b1fe4b4bc53b1ac3a25e3d
 progress:
   total_phases: 4
   completed_phases: 4
   total_plans: 36
   completed_plans: 36
   percent: 100
+current_phase: 17
 ---
 
 # Project State
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-02)
 
 ## Current Position
 
-Phase: 17
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-09-18 — Phase 17 complete
-
-Progress: [██████████] 100% (4/4 phases — Phases 14–17 complete, all four verifications `passed`; 36/36 plans)
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-21 — Milestone v1.3 completed and archived
 
 ## Milestone v1.3 Roadmap
 
@@ -300,8 +298,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 16 with `/gsd-plan-phase 16` — `16-CONTEXT.md` is written and committed (18 decisions)
-- Consider a Testcontainers-backed migration boot test — Phase 14's G-14-1 showed the suite cannot catch migration-vs-entity drift
+- Start the next milestone with /gsd-new-milestone
 
 ## Performance Metrics
 

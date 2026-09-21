@@ -1,0 +1,19 @@
+{
+  "minutesBadges": [
+    {
+      "bg": "rgb(229, 231, 235)",
+      "color": "rgb(55, 65, 81)",
+      "padding": "2.4px 8px",
+      "borderRadius": "4px",
+      "fontSize": "12px",
+      "fontWeight": "600"
+    }
+  ],
+  "precedenceNote": {
+    "bg": "rgba(0, 0, 0, 0)",
+    "padding": "0px",
+    "borderRadius": "0px",
+    "fontSize": "16px",
+    "text": "Tenant ID:UAT Drift DeskSwitch DeskDesk ManagementSchedule SetupDesk AgentsSpecializationsShift LibraryStaffing RequirementsConstraint WeightsConstraint WeightsConstraintDescriptionLevelHard ScoreSoft"
+  }
+}

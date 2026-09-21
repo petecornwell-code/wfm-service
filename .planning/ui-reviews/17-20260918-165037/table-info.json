@@ -1,0 +1,10 @@
+[
+  {
+    "rows": 61,
+    "outerHTMLSnippet": "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.85rem;\"><thead><tr><th style=\"text-align: left; padding: 6px 8px;\">Agent</th><th style=\"text-align: left; padding: 6px 8px;\">Date</th><th style=\"text-align: left; padding: 6px 8px;\">Status</th><th style=\"text-align: left; padding: 6px 8px;\">Usual Start</th><th style=\"text-align: left; padding: 6px 8px;\">Actual Start</th><th style=\"text-align: right; padding: 6px 8px;\">Delta (min)</th></tr></thead><tbody><tr><td style=\"padding: 4p"
+  },
+  {
+    "rows": 3,
+    "outerHTMLSnippet": "<table style=\"width: 100%; border-collapse: collapse; font-size: 0.85rem;\"><thead><tr><th style=\"text-align: left; padding: 6px 8px;\">Shift Template</th><th style=\"text-align: left; padding: 6px 8px;\">Agents (Usual Shift)</th></tr></thead><tbody><tr><td style=\"padding: 4px 8px;\">Early Shift</td><td style=\"padding: 4px 8px;\">8</td></tr><tr><td style=\"padding: 4px 8px;\">Late Shift</td><td style=\"padding: 4px 8px;\">2</td></tr></tbody></table>"
+  }
+]
