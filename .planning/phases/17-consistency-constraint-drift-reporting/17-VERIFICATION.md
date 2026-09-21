@@ -44,7 +44,32 @@ covered_files:
   - src/test/java/com/wfm/service/DriftReportTest.java
   - src/test/java/com/wfm/service/ScheduleExportServiceTest.java
   - src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java
-covered_digest: "v1:sha256:f8036f7f67e940a4259d9173aac00ad24db1b84428565b45e9f1202c23f7cac9"
+covered_digest: "v1:sha256:459d8ddb9e49d87a12aa8c9cf8fcba2a98695f5c3b94e3c5a25e3051ad59d9b8"
+digest_refresh:
+  refreshed: 2026-09-21
+  previous_digest: "v1:sha256:f8036f7f67e940a4259d9173aac00ad24db1b84428565b45e9f1202c23f7cac9"
+  reason: "Refreshed at the v1.3 milestone audit, NOT re-verified. Exactly one of the 40 covered
+    files changed since this report was written at c98b069: `.planning/REQUIREMENTS.md`, edited by
+    the audit (commit f129711) to correct two stale assertions — the USHF traceability row, which
+    still said Phase 16 was `human_needed` when it is `passed` with all three human-verification
+    items discharged, and the coverage summary, which said 34 requirements against an actual 38 (43
+    with XCUT). A SHLB-04 superseding-note row and two Phase 14 status notes were also added. The
+    other 39 covered files are byte-identical (verified by `git diff c98b069 HEAD` per file, and no
+    uncommitted changes to any of them)."
+  claim_recheck: "This report's only claim about `.planning/REQUIREMENTS.md` is the Requirements
+    Coverage section's closing paragraph: all ten CONS/DRFT checkboxes remain `[x]`, and the single
+    traceability row for `CONS-01…06, DRFT-01…04` remains internally consistent with no
+    contradicting duplicate row. That claim re-verifies UNCHANGED — zero changed lines in the
+    REQUIREMENTS.md diff mention `CONS-` or `DRFT-` (confirmed by grep over the diff hunks), and the
+    CONS/DRFT traceability row and checkbox list were not touched. The edits were confined to the
+    Phase 14, Phase 15 and Phase 16 rows and the coverage arithmetic, none of which this phase's
+    verification asserts anything about."
+  method: "New digest computed by `gsd_run query verification.fingerprint` over the same 40
+    covered_files. Validated by a control: restoring the pre-edit REQUIREMENTS.md and recomputing
+    reproduced the previous digest f8036f7f… exactly, proving the computation matches the original
+    verifier's and that this edit is the sole input difference."
+  scope: "A digest refresh is not a verification. The 5/5 roadmap success criteria and every
+    finding in this report stand on the 2026-09-18 pass; nothing here re-derives them."
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:

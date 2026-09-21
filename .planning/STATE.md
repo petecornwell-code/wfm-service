@@ -97,6 +97,25 @@ Archives: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQ
 
 Items acknowledged and deferred at milestone close, most recent first:
 
+Items acknowledged at v1.3 milestone close on 2026-09-21 (10 newly acknowledged, 3 carried forward
+from the v1.2 close — closeout type: `override_closeout`):
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| debug_sessions | min-staffing-seats-zero-demand | diagnosed | 2026-09-21 | v1.3 |
+| debug_sessions | shift-envelope-unsatisfiable-hard | diagnosed | 2026-09-21 | v1.3 |
+| debug_sessions | shift-mode-break-geometry-ungoverned | diagnosed | 2026-09-21 | v1.3 |
+| deferred_items | 15/deferred-items.md: Blocked-break-hours has no enforcement point in SHIFT mode — a band at offset 0 or at `envelopeMinutes - duration` is legal at save time and scores 0hard, so a "break" bolted onto the shift boundary is really a late start or early finish. Out of scope by operator ruling OR-2; fix location already settled as save-time in `ShiftTemplateService`, not a restored solver constraint | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 15/deferred-items.md: A template's envelope is never validated against the desk's operating window at save time — saves cleanly with an advisory reading "It will still save"; the seat-supply gate catches only the runtime symptom. `TimeslotBoundsResponse.endTime()` is dead code and is the natural starting point. Out of scope by operator ruling OR-2 | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 15/deferred-items.md: Wave 4 throughput observation — mode-gating six constraints with `ifExists` costs ~2x CH time in SLOT mode with quality unchanged; the canary's margin against its -500 assertion fell from 500 to 180 points under full-suite load | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 15/deferred-items.md: `BreakAwareConstructionTest` is wall-clock bounded, so it measures hardware as well as solver quality — recommendation to terminate on `stepCountLimit` rather than `spentLimit` stands. Widening the -500 tolerance is explicitly NOT recommended; that threshold is what surfaced two real defects | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 15/deferred-items.md: SUPERSEDED entry — the earlier "JVM-state sensitive, not a Phase 15 defect" conclusion was retracted; it was a real Phase 15 performance regression, since fixed by `2ee41e2` and `90bf3d2`. Retained as the record of the wrong call and its lesson | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 16/deferred-items.md: `MultiDayConstraintDiagnosticTest` is a wall-clock time-boxed solver test, flaky under suite contention; green in isolation. Solver-package code plan 16-02 was forbidden to touch | acknowledged | 2026-09-21 | v1.3 |
+| deferred_items | 02/deferred-items.md (archived v1.0): AWS IAM access key CSV in sample-data. **Materially resolved** — file absent from disk, never tracked, never committed, and `.gitignore:36` carries `*accessKeys*.csv`. Residual: whether that key was ever rotated in AWS IAM cannot be verified from this repo | acknowledged | 2026-09-21 | v1.3 |
+
+Items acknowledged at v1.2 milestone close on 2026-08-25 (the three `todos` rows below remain
+suppressed and were carried forward into the v1.3 close):
+
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
 | integration | I-2 — manual "Refresh from BambooHR" bypasses the Phase 11 merge engine; overwrites spreadsheet identity data with no precedence rule and no merge report | Accepted as debt (high severity, open across two audits) | 2026-08-25 | v1.2 |
