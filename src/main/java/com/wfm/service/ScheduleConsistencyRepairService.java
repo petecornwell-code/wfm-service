@@ -166,27 +166,25 @@ public class ScheduleConsistencyRepairService {
                 if (group.size() < 2) {
                     continue;
                 }
-                Map<AgentShiftAssignment, ShiftBandPair> target =
-                        assignWithinClass(group, usualByAgentDate, date);
+                int[] pi = assignWithinClass(group, usualByAgentDate, date);
 
-                for (AgentShiftAssignment sa : group) {
+                int movers = 0;
+                for (int i = 0; i < group.size(); i++) {
+                    AgentShiftAssignment sa = group.get(i);
                     LocalTime usual = usualFor(usualByAgentDate, sa.getAgent().getId(), date);
                     LocalTime was = sa.getShiftBandPair().template().getStartTime();
-                    LocalTime now = target.get(sa).template().getStartTime();
+                    LocalTime now = group.get(pi[i]).getShiftBandPair().template().getStartTime();
                     if (usual != null) {
                         if (usual.equals(was)) exactBefore++;
                         if (usual.equals(now)) exactAfter++;
                         devBefore += hoursBetween(usual, was);
                         devAfter += hoursBetween(usual, now);
                     }
+                    if (pi[i] != i) {
+                        movers++;
+                    }
                 }
-
-                // Counted BEFORE applying: applyPermutation writes the new envelope onto each
-                // row, after which "did this row move?" can no longer be asked of the row itself.
-                int movers = (int) group.stream()
-                        .filter(sa -> !Objects.equals(sa.getShiftBandPair(), target.get(sa)))
-                        .count();
-                if (applyPermutation(group, target, seatsByDateAgent.getOrDefault(date, Map.of()))) {
+                if (applyPermutation(group, pi, seatsByDateAgent.getOrDefault(date, Map.of()))) {
                     dateChanged = true;
                     moved += movers;
                 }
@@ -211,89 +209,97 @@ public class ScheduleConsistencyRepairService {
      * order. Agents with no usual-shift target are pinned to their current envelope so they never
      * displace an agent who has a preference.
      */
-    private Map<AgentShiftAssignment, ShiftBandPair> assignWithinClass(
-            List<AgentShiftAssignment> group,
-            Map<UUID, Map<LocalDate, LocalTime>> usualByAgentDate,
-            LocalDate date) {
-
-        // Envelope pool, keyed by start time — the multiset this date already works.
-        Map<LocalTime, List<ShiftBandPair>> pool = new HashMap<>();
-        for (AgentShiftAssignment sa : group) {
-            pool.computeIfAbsent(sa.getShiftBandPair().template().getStartTime(),
-                    k -> new ArrayList<>()).add(sa.getShiftBandPair());
+    /**
+     * Returns a permutation over POSITIONS in {@code group}: {@code pi[i] == j} means the agent at
+     * position i takes the envelope AND the seats currently at position j.
+     *
+     * <p>Deliberately indices, not {@link ShiftBandPair} references. Envelopes are shared value
+     * objects — every agent on the same template and break band holds the SAME instance — so any
+     * map keyed by envelope identity silently collapses those agent-days onto one entry. That bug
+     * shipped once: it re-pointed many agents' seats at a single agent and scored -3,327,984 hard.
+     * Positions are unique by construction and cannot collapse.
+     */
+    private int[] assignWithinClass(List<AgentShiftAssignment> group,
+                                    Map<UUID, Map<LocalDate, LocalTime>> usualByAgentDate,
+                                    LocalDate date) {
+        int n = group.size();
+        LocalTime[] starts = new LocalTime[n];
+        for (int i = 0; i < n; i++) {
+            starts[i] = group.get(i).getShiftBandPair().template().getStartTime();
         }
 
-        Map<AgentShiftAssignment, ShiftBandPair> out = new IdentityHashMap<>();
-        List<AgentShiftAssignment> unmatched = new ArrayList<>();
+        // Positions still available, bucketed by the start time they offer.
+        Map<LocalTime, List<Integer>> pool = new HashMap<>();
+        for (int j = 0; j < n; j++) {
+            pool.computeIfAbsent(starts[j], k -> new ArrayList<>()).add(j);
+        }
 
-        for (AgentShiftAssignment sa : group) {
-            LocalTime usual = usualFor(usualByAgentDate, sa.getAgent().getId(), date);
-            LocalTime want = usual != null ? usual : sa.getShiftBandPair().template().getStartTime();
-            List<ShiftBandPair> available = pool.get(want);
+        int[] pi = new int[n];
+        java.util.Arrays.fill(pi, -1);
+        List<Integer> unmatched = new ArrayList<>();
+
+        // Pass 1 — every available exact match. This attains the per-date ceiling on exact
+        // matches, because claiming one never deprives a different start time of one.
+        for (int i = 0; i < n; i++) {
+            LocalTime usual = usualFor(usualByAgentDate, group.get(i).getAgent().getId(), date);
+            LocalTime want = usual != null ? usual : starts[i];
+            List<Integer> available = pool.get(want);
             if (available != null && !available.isEmpty()) {
-                out.put(sa, available.remove(available.size() - 1));
+                pi[i] = available.remove(available.size() - 1);
             } else {
-                unmatched.add(sa);
+                unmatched.add(i);
             }
         }
 
-        // Residual: both sides sorted by start time. For a cost convex on a line this ordering
-        // minimises total deviation, so no pairwise exchange between two leftovers can improve it.
-        List<ShiftBandPair> leftovers = pool.values().stream()
-                .flatMap(List::stream)
-                .sorted(Comparator.comparing(p -> p.template().getStartTime()))
-                .toList();
-        unmatched.sort(Comparator.comparing(sa -> {
-            LocalTime u = usualFor(usualByAgentDate, sa.getAgent().getId(), date);
-            return u != null ? u : sa.getShiftBandPair().template().getStartTime();
+        // Pass 2 — residual, both sides sorted by start time. Optimal total deviation for a cost
+        // convex on a line: no exchange between two leftovers can improve it.
+        List<Integer> leftovers = pool.values().stream().flatMap(List::stream)
+                .sorted(Comparator.comparing(j -> starts[j])).collect(Collectors.toList());
+        unmatched.sort(Comparator.comparing(i -> {
+            LocalTime u = usualFor(usualByAgentDate, group.get(i).getAgent().getId(), date);
+            return u != null ? u : starts[i];
         }));
-        for (int i = 0; i < unmatched.size(); i++) {
-            out.put(unmatched.get(i), leftovers.get(i));
+        for (int k = 0; k < unmatched.size(); k++) {
+            pi[unmatched.get(k)] = leftovers.get(k);
         }
-        return out;
+        return pi;
     }
 
     /**
-     * Applies the permutation to both coupled entities at once — the envelope AND the seats that
-     * must sit inside it. Both sides are read into locals BEFORE any write, because the mapping is
-     * a permutation: writing in place would let an already-moved agent be read as if it were still
-     * in its original position.
+     * Applies the position permutation to both coupled entities at once — the envelope AND the
+     * seats that must sit inside it. Everything is read into locals BEFORE any write: the mapping
+     * is a permutation, so writing in place would let an already-moved row be read as if it were
+     * still in its original position.
      */
-    private boolean applyPermutation(List<AgentShiftAssignment> group,
-                                     Map<AgentShiftAssignment, ShiftBandPair> target,
+    private boolean applyPermutation(List<AgentShiftAssignment> group, int[] pi,
                                      Map<UUID, List<AgentAssignment>> seatsByAgent) {
-        Map<ShiftBandPair, Agent> incomingHolder = new IdentityHashMap<>();
-        Map<UUID, List<AgentAssignment>> seatsSnapshot = new HashMap<>();
+        int n = group.size();
         boolean changed = false;
-
-        for (AgentShiftAssignment sa : group) {
-            ShiftBandPair want = target.get(sa);
-            if (!Objects.equals(sa.getShiftBandPair(), want)) {
-                changed = true;
-            }
-            incomingHolder.put(want, sa.getAgent());
-            seatsSnapshot.put(sa.getAgent().getId(),
-                    List.copyOf(seatsByAgent.getOrDefault(sa.getAgent().getId(), List.of())));
+        for (int i = 0; i < n; i++) {
+            if (pi[i] != i) { changed = true; break; }
         }
         if (!changed) {
             return false;
         }
 
-        // Seats follow the envelope: whoever now holds an envelope inherits the seats of the agent
-        // who held it before, which is exactly the set of slots that envelope covers.
-        for (AgentShiftAssignment sa : group) {
-            Agent previousHolder = sa.getAgent();
-            ShiftBandPair previousEnvelope = sa.getShiftBandPair();
-            Agent newHolder = incomingHolder.get(previousEnvelope);
-            if (newHolder == null || newHolder.getId().equals(previousHolder.getId())) {
-                continue;
-            }
-            for (AgentAssignment seat : seatsSnapshot.getOrDefault(previousHolder.getId(), List.of())) {
-                seat.setAgent(newHolder);
+        ShiftBandPair[] envelopeAt = new ShiftBandPair[n];
+        List<List<AgentAssignment>> seatsAt = new ArrayList<>(n);
+        for (int j = 0; j < n; j++) {
+            envelopeAt[j] = group.get(j).getShiftBandPair();
+            seatsAt.add(List.copyOf(
+                    seatsByAgent.getOrDefault(group.get(j).getAgent().getId(), List.of())));
+        }
+
+        // Seats follow their position: position j's seats are exactly the hours envelope j covers,
+        // so whoever takes position j inherits precisely the slots they are now entitled to work.
+        for (int i = 0; i < n; i++) {
+            Agent taker = group.get(i).getAgent();
+            for (AgentAssignment seat : seatsAt.get(pi[i])) {
+                seat.setAgent(taker);
             }
         }
-        for (AgentShiftAssignment sa : group) {
-            sa.setShiftBandPair(target.get(sa));
+        for (int i = 0; i < n; i++) {
+            group.get(i).setShiftBandPair(envelopeAt[pi[i]]);
         }
         return true;
     }

@@ -65,6 +65,49 @@ class ScheduleConsistencyRepairServiceTest {
     }
 
     @Test
+    void envelopesSharedByManyAgents_keepEverySeatWithItsOwnHolder() {
+        // Regression: envelopes are shared VALUE objects — every agent on the same template and
+        // band holds the SAME ShiftBandPair instance. Keying the seat remap by envelope identity
+        // collapsed those agent-days onto one entry, handing one agent everyone's seats and
+        // leaving the rest with none. It scored -3,327,984 hard on the live desk.
+        Specialization spec = spec("General");
+        ShiftBandPair early = pair("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftBandPair late = pair("Late", LocalTime.of(9, 0), LocalTime.of(18, 0));
+
+        // Three on the SAME early instance, three on the SAME late instance.
+        Agent e1 = agent("E1", spec, "8.00"), e2 = agent("E2", spec, "8.00"), e3 = agent("E3", spec, "8.00");
+        Agent l1 = agent("L1", spec, "8.00"), l2 = agent("L2", spec, "8.00"), l3 = agent("L3", spec, "8.00");
+
+        Schedule schedule = schedule(
+                List.of(shift(e1, early), shift(e2, early), shift(e3, early),
+                        shift(l1, late), shift(l2, late), shift(l3, late)),
+                List.of(seat(e1, 8), seat(e2, 8), seat(e3, 8),
+                        seat(l1, 9), seat(l2, 9), seat(l3, 9)),
+                // Each early agent wants late and vice versa, forcing a full 3-for-3 exchange.
+                List.of(new ResolvedUsualShiftTarget(e1.getId(), DAY, LocalTime.of(9, 0)),
+                        new ResolvedUsualShiftTarget(e2.getId(), DAY, LocalTime.of(9, 0)),
+                        new ResolvedUsualShiftTarget(e3.getId(), DAY, LocalTime.of(9, 0)),
+                        new ResolvedUsualShiftTarget(l1.getId(), DAY, LocalTime.of(8, 0)),
+                        new ResolvedUsualShiftTarget(l2.getId(), DAY, LocalTime.of(8, 0)),
+                        new ResolvedUsualShiftTarget(l3.getId(), DAY, LocalTime.of(8, 0))));
+
+        List<LocalTime> coverageBefore = workedHours(schedule);
+        service.repair(schedule);
+
+        // Every agent keeps EXACTLY one seat — the invariant the identity bug destroyed.
+        for (Agent a : List.of(e1, e2, e3, l1, l2, l3)) {
+            assertThat(hoursOf(schedule, a)).as("seat count for %s", a.getName()).hasSize(1);
+        }
+        // Each agent's single seat lies inside the envelope they now hold.
+        for (Agent a : List.of(e1, e2, e3, l1, l2, l3)) {
+            assertThat(hoursOf(schedule, a).get(0)).isEqualTo(startOf(schedule, a).getHour());
+        }
+        assertThat(workedHours(schedule)).isEqualTo(coverageBefore);
+        assertThat(startOf(schedule, e1)).isEqualTo(LocalTime.of(9, 0));
+        assertThat(startOf(schedule, l1)).isEqualTo(LocalTime.of(8, 0));
+    }
+
+    @Test
     void agentsWithDifferentContractedHours_areNeverSwapped() {
         Specialization spec = spec("General");
         Agent full = agent("Full", spec, "8.00");
