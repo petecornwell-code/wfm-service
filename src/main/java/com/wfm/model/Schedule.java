@@ -168,6 +168,15 @@ public class Schedule {
     @Transient
     private List<ResolvedUsualShiftTarget> resolvedUsualShiftTargets = new ArrayList<>();
 
+    // Phase 18 (MIX-01): the pre-solve shift-start mix target per (date, template start time),
+    // built by ShiftStartMixTargetService. Empty on a SLOT-mode desk, on a desk whose working
+    // agents span more than one substitutability class, and on any date with no usual-shift
+    // targets -- shiftStartMix's join against this list then finds no match and the constraint is
+    // inert, no special-casing. See the service's javadoc for why the mix is an input at all.
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<ShiftStartMixTarget> shiftStartMixTargets = new ArrayList<>();
+
     // CR-02 gap closure (V43): persisted, not inferred. Records the mode THIS schedule was
     // actually solved under -- SolverService.buildSchedule sets it from Desk.schedulingMode
     // before any solve starts (see getScheduleConfig() below), so acceptSchedule's
@@ -296,6 +305,9 @@ public class Schedule {
 
     public List<ResolvedUsualShiftTarget> getResolvedUsualShiftTargets() { return resolvedUsualShiftTargets; }
     public void setResolvedUsualShiftTargets(List<ResolvedUsualShiftTarget> resolvedUsualShiftTargets) { this.resolvedUsualShiftTargets = resolvedUsualShiftTargets; }
+
+    public List<ShiftStartMixTarget> getShiftStartMixTargets() { return shiftStartMixTargets; }
+    public void setShiftStartMixTargets(List<ShiftStartMixTarget> shiftStartMixTargets) { this.shiftStartMixTargets = shiftStartMixTargets; }
 
     public SchedulingMode getSchedulingMode() { return schedulingMode; }
     public void setSchedulingMode(SchedulingMode schedulingMode) { this.schedulingMode = schedulingMode; }

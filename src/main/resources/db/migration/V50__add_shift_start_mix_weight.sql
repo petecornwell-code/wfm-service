@@ -1,0 +1,57 @@
+-- Phase 18: pre-solve shift-start mix targeting (MIX-01/MIX-02).
+--
+-- WHAT THIS IS FOR
+--
+-- The multiset of envelopes worked on a date -- how many agent-days start at 06:00, at 07:00, and
+-- so on -- fixes two things at once: how well the day is covered, and the maximum number of agents
+-- who can possibly be given their usual start. The solver cannot revise that multiset once its
+-- construction heuristic has chosen one. Moving a single agent-day to a different start means
+-- re-pointing its shift_band_pair AND every seat that fills it, and solverConfig.xml's 0hard
+-- annealing temperature refuses every intermediate state, so the CH's blind first guess stands for
+-- the whole solve. ShiftStartMixTargetService therefore computes the mix BEFORE the solve, and
+-- "Shift start mix" is how that decision reaches the solver.
+--
+-- Measured on the live Saferide desk (accepted schedule 97579464, 31 Aug - 4 Sep 2026, 61 agents
+-- in one substitutability class), the solver's own mix against the computed one:
+--
+--     usual-shift exact matches     236 / 271   ->   267 / 271
+--     uncovered agent-hours         106         ->    41
+--     peak over-allocation          156-183%    ->   130-150%
+--
+-- Both objectives at once -- the blind mix is not trading coverage for consistency, it is simply
+-- worse at both. It over-supplies 10:00-12:00 starts and under-supplies 06:00-09:00 while the
+-- requirement curve peaks at 09:00-10:00 and 14:00-15:00 and collapses in the evening.
+--
+-- WHAT THIS MIGRATION ADDS
+--
+--   shift_start_mix_weight VARCHAR(50) NOT NULL DEFAULT '0hard/0soft'
+--
+-- SHIPS AT ZERO -- THE CONSTRAINT IS INERT ON EVERY DESK UNTIL SOMEONE SETS THIS.
+--
+-- Not caution: the steer is measured not to work. On LiveShapeShiftDeskFixture a contrary target
+-- moves the solved start mix by exactly nothing at soft 25, 200, 2,000 and 100,000, and at
+-- ofHard(1), where the solver absorbs 16 extra hard points rather than move a single agent-day.
+-- The constraint scores correctly the whole time -- soft drops by exactly (over-count x weight) --
+-- but the search never revises the mix. That is the same rigidity already on record for
+-- consistent_start_weight, swept at 2, 5 and 60 on the live desk with no effect on the mix: the
+-- construction heuristic fixes the start mix and no weight on AgentShiftAssignment.shift_band_pair
+-- revises it afterwards, because revising it means re-pointing the seats too and solverConfig.xml's
+-- 0hard annealing temperature refuses every intermediate state.
+--
+-- So a non-zero value here is a score-REPORTING change today, not a scheduling one: it surfaces
+-- the mix deviation in explain() without altering the schedule. Useful for measuring the gap on a
+-- real desk; misleading if mistaken for a fix.
+--
+-- The fix is structural, not numeric -- the target must constrain what the CH may BUILD (the
+-- per-row value range, or a pre-assigned envelope) rather than price what it already built.
+-- ShiftStartMixTargetService, which computes the target, is finished and verified against an
+-- independent exact optimum; only the delivery mechanism is outstanding.
+--
+-- ENABLING (for measurement): set this column to a non-zero soft score. The feature is also
+-- inert by construction on any desk whose working agents span more than one substitutability class
+-- (identical contracted hours AND identical specialization profile), because a start-time head
+-- count is only meaningful where agents are interchangeable across envelopes -- the service emits
+-- no target rows at all there, and the constraint's join finds nothing to compare against.
+
+ALTER TABLE constraint_weights
+    ADD COLUMN shift_start_mix_weight VARCHAR(50) NOT NULL DEFAULT '0hard/0soft';

@@ -204,7 +204,11 @@ class ScheduleConstraintClassificationTest {
                 "Usual shift consistency",
                 // Phase 17 plan 17-02: joins AgentShiftAssignment to ScheduleConfig to
                 // AgentPreference, the same double-inertness shape on a SLOT desk.
-                "Preferred start (shift mode)");
+                "Preferred start (shift mode)",
+                // Phase 18 plan MIX-02: groups AgentShiftAssignment behind a SHIFT gate and joins
+                // ShiftStartMixTarget, a fact collection ShiftStartMixTargetService leaves empty in
+                // SLOT mode -- inert twice over on a SLOT desk, like the two rows above.
+                "Shift start mix");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -217,10 +221,11 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the thirteen constraints whose behaviour depends "
+                .as("MODE_GATED must be exactly the fourteen constraints whose behaviour depends "
                         + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09), its G-15-27 "
-                        + "follow-up, Phase 17 plan 17-01's 'Usual shift consistency', and plan "
-                        + "17-02's 'Preferred start (shift mode)'")
+                        + "follow-up, Phase 17 plan 17-01's 'Usual shift consistency', plan "
+                        + "17-02's 'Preferred start (shift mode)', and Phase 18 MIX-02's "
+                        + "'Shift start mix'")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

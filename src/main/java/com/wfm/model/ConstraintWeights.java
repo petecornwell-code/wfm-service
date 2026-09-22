@@ -242,6 +242,35 @@ public class ConstraintWeights {
     @Column(name = "preferred_start_shift_mode_weight")
     private HardSoftScore preferredStartShiftModeWeight = HardSoftScore.ofSoft(1);
 
+    /**
+     * Weight for "Shift start mix" (Phase 18, MIX-02) — how hard the solver is pushed toward the
+     * pre-solve start-time head counts in {@code ShiftStartMixTargetService}.
+     *
+     * <p><b>Ships at zero, i.e. the constraint is inert, because the steer is MEASURED NOT TO
+     * WORK.</b> On {@code LiveShapeShiftDeskFixture} a contrary target moves the solved start mix
+     * by exactly nothing at soft 25, 200, 2,000 and 100,000, and at {@code ofHard(1)} — the solver
+     * absorbs 16 extra hard points rather than move one agent-day. The constraint scores correctly
+     * throughout; the search simply never revises the mix. That is the same rigidity already on
+     * record for {@code consistentStartWeight}, swept at 2, 5 and 60 on the live desk with no
+     * effect on the mix either: the construction heuristic fixes the start mix, and no weight on
+     * {@code AgentShiftAssignment.shiftBandPair} revises it afterwards, because revising it means
+     * re-pointing the seats too and {@code solverConfig.xml}'s {@code 0hard} annealing temperature
+     * refuses every intermediate state.
+     *
+     * <p>A non-zero value here is therefore a pure score-reporting change today: it will show the
+     * mix deviation in {@code explain()} without altering the schedule. Useful for measurement,
+     * misleading if mistaken for a fix.
+     *
+     * <p><b>The fix this is waiting on is structural, not numeric.</b> The target has to constrain
+     * what the CH may build — the per-row value range, or a pre-assigned envelope — rather than
+     * price what it did build. See {@code ShiftStartMixSteerTest}'s disabled test, which is
+     * written to pass the moment that lands.
+     */
+    @ConstraintWeight("Shift start mix")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "shift_start_mix_weight")
+    private HardSoftScore shiftStartMixWeight = HardSoftScore.ZERO;
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -327,4 +356,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getPreferredStartShiftModeWeight() { return preferredStartShiftModeWeight; }
     public void setPreferredStartShiftModeWeight(HardSoftScore preferredStartShiftModeWeight) { this.preferredStartShiftModeWeight = preferredStartShiftModeWeight; }
+
+    public HardSoftScore getShiftStartMixWeight() { return shiftStartMixWeight; }
+    public void setShiftStartMixWeight(HardSoftScore shiftStartMixWeight) { this.shiftStartMixWeight = shiftStartMixWeight; }
 }

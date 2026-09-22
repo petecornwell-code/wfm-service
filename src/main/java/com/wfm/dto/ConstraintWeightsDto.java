@@ -45,6 +45,12 @@ public class ConstraintWeightsDto {
     private Integer consistencyToleranceMinutes;
     private ScoreDto preferredStartShiftModeWeight;
 
+    // Phase 18 (MIX-02): the pre-solve shift-start mix steer. Exposed here because this endpoint
+    // is how a desk's weights are actually tuned in production, and '0hard/0soft' on this one is
+    // the documented off switch for start-mix targeting -- an off switch reachable only by SQL is
+    // not an off switch.
+    private ScoreDto shiftStartMixWeight;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -96,4 +102,7 @@ public class ConstraintWeightsDto {
     public void setConsistencyToleranceMinutes(Integer v) { this.consistencyToleranceMinutes = v; }
     public ScoreDto getPreferredStartShiftModeWeight() { return preferredStartShiftModeWeight; }
     public void setPreferredStartShiftModeWeight(ScoreDto v) { this.preferredStartShiftModeWeight = v; }
+
+    public ScoreDto getShiftStartMixWeight() { return shiftStartMixWeight; }
+    public void setShiftStartMixWeight(ScoreDto v) { this.shiftStartMixWeight = v; }
 }

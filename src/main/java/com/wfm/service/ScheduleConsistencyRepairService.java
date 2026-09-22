@@ -308,8 +308,14 @@ public class ScheduleConsistencyRepairService {
      * Two agent-days may exchange envelopes only when nothing other than usual-shift consistency
      * can tell them apart. Contracted hours guard the contracted-hours constraints; the
      * specialization profile guards specialization matching.
+     *
+     * <p>Package-private static so {@link ShiftStartMixTargetService} can gate on the SAME
+     * definition rather than restating it. The two features rest on one idea — that agents within
+     * a class are interchangeable across envelopes — and a second copy of this key that drifted
+     * from this one would make the pre-solve target and the post-solve repair disagree about who
+     * may hold what, silently.
      */
-    private String substitutabilityKey(Agent agent) {
+    static String substitutabilityKey(Agent agent) {
         String secondaries = agent.getSecondarySpecializations() == null ? ""
                 : agent.getSecondarySpecializations().stream()
                         .map(Specialization::getId).filter(Objects::nonNull)

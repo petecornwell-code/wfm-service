@@ -52,6 +52,7 @@ public class SolverService {
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
     private final ScheduleConsistencyRepairService consistencyRepairService;
+    private final ShiftStartMixTargetService shiftStartMixTargetService;
 
     /**
      * Built on first use and cached: constructing a SolverFactory is not free, and the repair's
@@ -90,6 +91,7 @@ public class SolverService {
                          InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
                          ScheduleConsistencyRepairService consistencyRepairService,
+                         ShiftStartMixTargetService shiftStartMixTargetService,
                          DeskRepository deskRepository,
                          AgentRepository agentRepository,
                          SpecializationRepository specializationRepository,
@@ -110,6 +112,7 @@ public class SolverService {
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
         this.consistencyRepairService = consistencyRepairService;
+        this.shiftStartMixTargetService = shiftStartMixTargetService;
         this.deskRepository = deskRepository;
         this.agentRepository = agentRepository;
         this.specializationRepository = specializationRepository;
@@ -337,6 +340,19 @@ public class SolverService {
                 tenantId, deskId, schedule.getId(), eligibleAgentsById, agentDayConfigs, shiftBandPairs,
                 schedule.getShiftEnvelopeSlackSlots());
 
+        // 9d. Phase 18 (MIX-01): decide the shift-start mix BEFORE the solve. This must come after
+        // buildShiftAssignments because it reads each row's eligible value range and the working
+        // agent-day count per date, and it must come before the solve because the solver cannot
+        // revise the mix at all once its construction heuristic has chosen one -- envelope and
+        // seats are coupled entities and the 0hard annealing temperature refuses every
+        // intermediate state. Returns an empty list (leaving the solve byte-identical to before)
+        // on a SLOT-mode desk, on a desk spanning more than one substitutability class, and on any
+        // date with no usual-shift targets. See ShiftStartMixTargetService for the measurement
+        // that motivated this.
+        List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixTargetService.computeTargets(
+                desk.getSchedulingMode(), shiftAssignments, resolvedUsualShiftTargets,
+                staffingRequirements, timeslots);
+
         // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();
         for (Agent agent : eligibleAgents) {
@@ -416,6 +432,7 @@ public class SolverService {
         schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
         schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
         schedule.setResolvedUsualShiftTargets(new ArrayList<>(resolvedUsualShiftTargets));
+        schedule.setShiftStartMixTargets(new ArrayList<>(shiftStartMixTargets));
         schedule.setTimeslotDemandConfigs(timeslotDemandConfigs);
         schedule.setAssignments(assignments);
 

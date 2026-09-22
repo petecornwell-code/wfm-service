@@ -307,6 +307,21 @@ public final class ScheduleConstraintClassification {
                         + "double-inertness shape as 'Usual shift consistency'.",
                 null));
 
+        map.put("Shift start mix", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 18 (MIX-02): groups AgentShiftAssignment by (date, template start time) "
+                        + "behind a SHIFT-mode gate, joins ShiftStartMixTarget on that same key, and "
+                        + "penalises only the OVER-count against the pre-solve target head count -- "
+                        + "never the under-count, because total agent-days per date is fixed and "
+                        + "charging both would double-count the same imbalance. Doubly inert on a "
+                        + "SLOT desk: no AgentShiftAssignment rows exist to group, and "
+                        + "ShiftStartMixTargetService emits no target rows in SLOT mode -- the same "
+                        + "shape as 'Usual shift consistency'. Inert on a SHIFT desk too whenever "
+                        + "that service declines to emit targets, which it does for any desk whose "
+                        + "working agents span more than one substitutability class and for any "
+                        + "date with no usual-shift targets.",
+                null));
+
         return java.util.Collections.unmodifiableMap(map);
     }
 }

@@ -35,6 +35,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     public static final String SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME = "Shift envelope compliance";
 
+    /**
+     * The exact constraint name {@link #shiftStartMix} registers. Public so
+     * {@code ShiftStartMixTargetService}'s tests and any future read-path report key on this
+     * literal rather than retyping it, per {@link #SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME}'s
+     * precedent — a divergence between the registered name and a retyped copy is silent.
+     */
+    public static final String SHIFT_START_MIX_CONSTRAINT_NAME = "Shift start mix";
+
     // ------------------------------------------------------------------
     //  Shared grouping building blocks
     //
@@ -94,6 +102,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             minimumStaffing(factory),
             usualShiftConsistency(factory),
             preferredStartShiftMode(factory),
+            shiftStartMix(factory),
         };
     }
 
@@ -833,6 +842,56 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                             .intValue();
                 })
                 .asConstraint("Usual shift consistency");
+    }
+
+    /**
+     * (Phase 18, MIX-02) Shift start mix — penalises every agent-day that starts on a start time already at at a time already at
+     * its pre-solve target head count for that date.
+     *
+     * <p><b>Why a target exists at all.</b> The multiset of envelopes worked on a date fixes both
+     * the day's coverage and the number of agents who can possibly work their usual start, and the
+     * solver cannot revise it once the construction heuristic has chosen: envelope and seats are
+     * coupled entities and the {@code 0hard} annealing temperature refuses every intermediate
+     * state. {@link com.wfm.service.ShiftStartMixTargetService} therefore decides the mix before
+     * the solve, coverage-first, and this constraint is how that decision reaches the solver.
+     * Measured on the live Saferide desk, picking the mix blind cost 31 usual-start matches AND 65
+     * uncovered agent-hours simultaneously — see that service's javadoc for the table.
+     *
+     * <p><b>Over-count only, never under-count — and that is what makes it usable by the
+     * construction heuristic.</b> Total agent-days per date is fixed, so any start that is over
+     * target implies another that is under by the same amount; charging both would double-count.
+     * Charging only the overshoot also means a PARTIALLY built solution is never penalised for
+     * rows it has not reached yet, which matters because {@code solverConfig.xml} runs a
+     * shifts-first CH: every agent-day is given an envelope before any seat is placed, one row at
+     * a time. An under-count penalty would charge the CH for its own incompleteness on every step
+     * and drown the signal. With over-count only, placing a row on an unfilled start is free and
+     * placing it on a filled one costs exactly one — which is precisely the steer intended.
+     *
+     * <p>Soft and weight-driven, deliberately. The target model knows about coverage, band
+     * capacity and start-time preference and nothing else; a solve whose real constraint set
+     * disagrees must be able to overrule it. Setting {@code shift_start_mix_weight} to
+     * {@code 0hard/0soft} disables the feature outright without a code change.
+     *
+     * <p>{@code forEach} (not {@code forEachIncludingUnassigned}) is load-bearing: an unassigned
+     * shift row has no start time to count, and admitting it would require a null branch inside
+     * the group key. Leads with the (empty-in-SLOT-mode) {@link AgentShiftAssignment} stream and
+     * gates {@code SchedulingMode.SHIFT} before grouping, per {@link #shiftEnvelopeCompliance}'s
+     * measured stream-order contract — do not reorder these joins.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint shiftStartMix(ConstraintFactory factory) {
+        return factory.forEach(AgentShiftAssignment.class)
+                .join(ScheduleConfig.class)
+                .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .groupBy((sa, cfg) -> sa.getDate(),
+                        (sa, cfg) -> sa.getShiftBandPair().template().getStartTime(),
+                        countBi())
+                .join(ShiftStartMixTarget.class,
+                        equal((date, start, count) -> date, ShiftStartMixTarget::date),
+                        equal((date, start, count) -> start, ShiftStartMixTarget::startTime))
+                .filter((date, start, count, target) -> count > target.targetCount())
+                .penalizeConfigurable((date, start, count, target) -> count - target.targetCount())
+                .asConstraint(SHIFT_START_MIX_CONSTRAINT_NAME);
     }
 
     /**
