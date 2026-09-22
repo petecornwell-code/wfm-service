@@ -65,6 +65,68 @@ class ScheduleConsistencyRepairServiceTest {
     }
 
     @Test
+    void anAgentWithNoUsualShift_doesNotBlockAColleagueWhoHasOne() {
+        // The gap this closes. B genuinely wants 08:00 and is sitting on 12:00; A has no stored
+        // usual shift at all and happens to be holding 08:00. Until this fix A was handed its
+        // CURRENT start as its "want", which made it indistinguishable from an agent who had
+        // actually asked for 08:00 — so A claimed the slot in the exact-match pass and B was left
+        // drifted. On the live Saferide desk that accounted for most of the gap between 236
+        // agent-days honoured and the 240 the chosen shift mix allowed.
+        Specialization spec = spec("General");
+        Agent noPreference = agent("A", spec, "8.00");
+        Agent wantsEarly = agent("B", spec, "8.00");
+        ShiftBandPair early = pair("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftBandPair late = pair("Late", LocalTime.of(12, 0), LocalTime.of(21, 0));
+
+        Schedule schedule = schedule(
+                List.of(shift(noPreference, early), shift(wantsEarly, late)),
+                List.of(seat(noPreference, 8), seat(noPreference, 11),
+                        seat(wantsEarly, 12), seat(wantsEarly, 15)),
+                // Only B has a target. A is absent from the list entirely — that IS "no usual shift".
+                List.of(new ResolvedUsualShiftTarget(wantsEarly.getId(), DAY, LocalTime.of(8, 0))));
+
+        List<LocalTime> coverageBefore = workedHours(schedule);
+
+        var result = service.repair(schedule);
+
+        assertThat(result.exactBefore()).isZero();
+        assertThat(result.exactAfter()).isEqualTo(1);
+        assertThat(startOf(schedule, wantsEarly)).isEqualTo(LocalTime.of(8, 0));
+        assertThat(startOf(schedule, noPreference)).isEqualTo(LocalTime.of(12, 0));
+        // Unchanged, as for every repair: same hours worked, different people on them.
+        assertThat(workedHours(schedule)).isEqualTo(coverageBefore);
+        assertThat(hoursOf(schedule, wantsEarly)).containsExactlyInAnyOrder(8, 11);
+        assertThat(hoursOf(schedule, noPreference)).containsExactlyInAnyOrder(12, 15);
+    }
+
+    @Test
+    void aGroupWithNothingToGain_isLeftCompletelyAlone() {
+        // The other half of the fix. Letting no-preference agents float free in the residual pass
+        // means a permutation can now be non-identity while improving nothing at all — and moving
+        // a real person's roster for no benefit is a cost, not a neutral act. Neither agent here
+        // has a usual shift, so there is no gain available and nothing may move.
+        Specialization spec = spec("General");
+        Agent a = agent("A", spec, "8.00");
+        Agent b = agent("B", spec, "8.00");
+        ShiftBandPair early = pair("Early", LocalTime.of(8, 0), LocalTime.of(17, 0));
+        ShiftBandPair late = pair("Late", LocalTime.of(12, 0), LocalTime.of(21, 0));
+
+        Schedule schedule = schedule(
+                List.of(shift(a, early), shift(b, late)),
+                List.of(seat(a, 8), seat(b, 12)),
+                List.of());
+
+        var result = service.repair(schedule);
+
+        assertThat(result.changedAnything()).isFalse();
+        assertThat(result.agentDaysMoved()).isZero();
+        assertThat(startOf(schedule, a)).isEqualTo(LocalTime.of(8, 0));
+        assertThat(startOf(schedule, b)).isEqualTo(LocalTime.of(12, 0));
+        assertThat(hoursOf(schedule, a)).containsExactly(8);
+        assertThat(hoursOf(schedule, b)).containsExactly(12);
+    }
+
+    @Test
     void envelopesSharedByManyAgents_keepEverySeatWithItsOwnHolder() {
         // Regression: envelopes are shared VALUE objects — every agent on the same template and
         // band holds the SAME ShiftBandPair instance. Keying the seat remap by envelope identity

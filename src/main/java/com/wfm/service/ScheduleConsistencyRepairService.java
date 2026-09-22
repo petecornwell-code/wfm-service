@@ -168,22 +168,43 @@ public class ScheduleConsistencyRepairService {
                 }
                 int[] pi = assignWithinClass(group, usualByAgentDate, date);
 
-                int movers = 0;
+                // Scored per group BEFORE anything is written, because a permutation is only
+                // applied when it actually earns its churn. An agent-day with no stored usual
+                // shift now sits out the exact-match pass entirely (see assignWithinClass), which
+                // is what stops it blocking a colleague who does have a preference — but it also
+                // leaves it free to be shuffled for no gain at all. Moving a real person's roster
+                // with nothing to show for it is a cost, so a group that improves neither exact
+                // matches nor total deviation is left exactly as it was.
+                int movers = 0, gExactBefore = 0, gExactAfter = 0, gDevBefore = 0, gDevAfter = 0;
                 for (int i = 0; i < group.size(); i++) {
                     AgentShiftAssignment sa = group.get(i);
                     LocalTime usual = usualFor(usualByAgentDate, sa.getAgent().getId(), date);
                     LocalTime was = sa.getShiftBandPair().template().getStartTime();
                     LocalTime now = group.get(pi[i]).getShiftBandPair().template().getStartTime();
                     if (usual != null) {
-                        if (usual.equals(was)) exactBefore++;
-                        if (usual.equals(now)) exactAfter++;
-                        devBefore += hoursBetween(usual, was);
-                        devAfter += hoursBetween(usual, now);
+                        if (usual.equals(was)) gExactBefore++;
+                        if (usual.equals(now)) gExactAfter++;
+                        gDevBefore += hoursBetween(usual, was);
+                        gDevAfter += hoursBetween(usual, now);
                     }
                     if (pi[i] != i) {
                         movers++;
                     }
                 }
+
+                boolean improves = gExactAfter > gExactBefore
+                        || (gExactAfter == gExactBefore && gDevAfter < gDevBefore);
+                exactBefore += gExactBefore;
+                devBefore += gDevBefore;
+                if (!improves) {
+                    // Reported as unchanged rather than as its hypothetical permutation, so the
+                    // logged "matches X -> Y" describes the schedule that actually shipped.
+                    exactAfter += gExactBefore;
+                    devAfter += gDevBefore;
+                    continue;
+                }
+                exactAfter += gExactAfter;
+                devAfter += gDevAfter;
                 if (applyPermutation(group, pi, seatsByDateAgent.getOrDefault(date, Map.of()))) {
                     dateChanged = true;
                     moved += movers;
@@ -224,14 +245,13 @@ public class ScheduleConsistencyRepairService {
             offered[i] = group.get(i).getShiftBandPair().template().getStartTime();
         }
         for (int i = 0; i < n; i++) {
-            LocalTime usual = usualFor(usualByAgentDate, group.get(i).getAgent().getId(), date);
-            // An agent-day with no usual shift is given its CURRENT start as its want, not null.
-            // That keeps this call byte-identical to the behaviour shipped in 33b62ac. It is not
-            // costless — such an agent can claim a slot in pass 1 that a genuine preference-holder
-            // wanted, which is most of the gap between the live desk's 236 honoured and the 240 its
-            // mix allows — but narrowing that is a separate change with its own measurement, not a
-            // side effect of extracting this method.
-            wanted[i] = usual != null ? usual : offered[i];
+            // null, NOT the agent's current start. An agent-day with no stored usual shift has no
+            // preference to honour, so it must not claim a slot in pass 1 that a colleague with a
+            // real preference wanted. Passing its current start — as this did until now — made such
+            // an agent indistinguishable from someone who had genuinely asked for that time, and on
+            // the live Saferide desk that accounted for most of the gap between 236 agent-days
+            // honoured and the 240 the chosen shift mix actually allowed.
+            wanted[i] = usualFor(usualByAgentDate, group.get(i).getAgent().getId(), date);
         }
         return matchAgentsToStarts(wanted, offered);
     }
