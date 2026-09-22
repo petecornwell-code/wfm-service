@@ -120,6 +120,9 @@ public class ConstraintWeightsService {
         if (updates.getShiftStartMixWeight() != null) {
             weights.setShiftStartMixWeight(toScore(updates.getShiftStartMixWeight()));
         }
+        if (updates.getShiftStartMixMode() != null) {
+            weights.setShiftStartMixMode(parseShiftStartMixMode(updates.getShiftStartMixMode()));
+        }
 
         // Phase 17 (D-07/D-08/T-17-04): validated against the MERGED entity, after every
         // partial-update block above and before persist, inside this same @Transactional method.
@@ -185,7 +188,22 @@ public class ConstraintWeightsService {
         dto.setConsistencyToleranceMinutes(w.getConsistencyToleranceMinutes());
         dto.setPreferredStartShiftModeWeight(fromScore(w.getPreferredStartShiftModeWeight()));
         dto.setShiftStartMixWeight(fromScore(w.getShiftStartMixWeight()));
+        dto.setShiftStartMixMode(w.getShiftStartMixMode() == null ? null : w.getShiftStartMixMode().name());
         return dto;
+    }
+
+    /**
+     * Rejects an unknown mode by name rather than letting it through or failing at deserialisation.
+     * ENFORCE is the only value that changes a schedule, so a typo silently landing on it — or
+     * silently NOT landing on it — is worth a clear error either way.
+     */
+    private static com.wfm.model.ShiftStartMixMode parseShiftStartMixMode(String raw) {
+        try {
+            return com.wfm.model.ShiftStartMixMode.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("shiftStartMixMode must be one of OFF, REPORT, ENFORCE — got '"
+                    + raw + "'");
+        }
     }
 
     private static ScoreDto fromScore(HardSoftScore score) {

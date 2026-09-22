@@ -1,5 +1,6 @@
 package com.wfm.solver;
 
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.solver.Solver;
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import ai.timefold.solver.core.config.phase.PhaseConfig;
@@ -8,6 +9,7 @@ import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftStartMixTarget;
+import com.wfm.service.ShiftStartMixAllocator;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -21,15 +23,14 @@ import java.util.TreeMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end proof that {@code ShiftStartMixTarget} facts actually move a real solve.
+ * The end-to-end question neither unit suite answers: does a computed mix target actually reach
+ * the schedule?
  *
- * <p>The unit tests either side of this one verify the two halves separately —
- * {@code ShiftStartMixTargetServiceTest} that the computed mix is the right one,
- * {@code ShiftStartMixConstraintTest} that the constraint charges the right number. Neither
- * answers the question that decides whether the feature does anything at all: is a SOFT weight of
- * 25 enough to make the construction heuristic follow the target, against every other constraint
- * pulling the other way? A mechanism that computes a perfect target and is then ignored would pass
- * both unit suites.
+ * <p>{@code ShiftStartMixTargetServiceTest} proves the target is the right one and
+ * {@code ShiftStartMixConstraintTest} proves the constraint charges the right number. A mechanism
+ * that computed a perfect target and was then ignored would pass both — which is exactly what
+ * happened to the weighted steer, and is why {@link #reportModeAloneDoesNotMoveTheMix} is written
+ * as an assertion rather than left as a comment.
  */
 class ShiftStartMixSteerTest {
 
@@ -38,34 +39,57 @@ class ShiftStartMixSteerTest {
     private static final int AGENT_COUNT =
             LiveShapeShiftDeskFixture.TEMPLATE_SPECS.size() * LiveShapeShiftDeskFixture.IDEAL_HOLDERS_PER_TEMPLATE;
 
-    /**
-     * DISABLED — this is the gap, recorded as an executable statement of it rather than prose.
-     *
-     * <p><b>Measured 2026-09-22 on this fixture.</b> A contrary target moves the solved start mix
-     * by exactly nothing. The constraint scores perfectly — soft drops by {@code 16 x weight},
-     * the 16 over-target agent-days — and the mix is byte-identical to the untargeted arm at
-     * every weight tried: soft 25, 200, 2,000 and 100,000, AND {@code ofHard(1)}, which the solver
-     * simply absorbs as 16 extra hard points rather than move one agent-day. A one-agent-day
-     * perturbation target is refused just as flatly.
-     *
-     * <p><b>This is not a defect peculiar to this constraint.</b> It is the same rigidity already
-     * on record for {@code usualShiftConsistency}, whose weight was swept at 2, 5 and 60 on the
-     * live desk without shifting the mix either. The construction heuristic fixes the start mix
-     * and no weight on {@code AgentShiftAssignment.shiftBandPair} revises it afterwards, because
-     * revising it means re-pointing the seats too and the {@code 0hard} annealing temperature
-     * refuses every intermediate state.
-     *
-     * <p><b>What that means for the design.</b> A weighted steer is the wrong mechanism for this
-     * decision. The target has to become structural — the value range each row may draw from, or
-     * a pre-assigned envelope — so the CH cannot build the wrong mix in the first place. Until
-     * that lands, {@code shift_start_mix_weight} ships at {@code 0hard/0soft} and the feature is
-     * inert. Re-enable this test with the structural version; it should then pass unchanged.
-     */
-    @org.junit.jupiter.api.Disabled("Known gap: a weighted steer does not move the CH's start mix "
-            + "at any weight. See this method's javadoc for the measurements and the fix it implies.")
     @Test
-    void aContraryTargetVisiblyMovesTheSolvedStartMix() {
-        Schedule baseline = solve(fixture(List.of()));
+    void enforceMakesTheSolvedMixEqualTheTargetExactly() {
+        Schedule baseline = solve(build(List.of(), false, null));
+        Map<LocalDate, Map<LocalTime, Integer>> baselineMix = mixByDate(baseline);
+
+        // Deliberately a mix the desk should not want: everything on the latest start. If the
+        // solved mix comes back equal to THIS, the target is binding structurally rather than
+        // being weighed against the rest of the constraint set — which is the entire claim.
+        LocalTime latest = baselineMix.values().iterator().next().keySet().stream()
+                .max(LocalTime::compareTo).orElseThrow();
+        List<ShiftStartMixTarget> contrary = new ArrayList<>();
+        baselineMix.forEach((date, mix) -> mix.keySet().forEach(start ->
+                contrary.add(new ShiftStartMixTarget(date, start, start.equals(latest) ? AGENT_COUNT : 0))));
+
+        Schedule enforced = solve(build(contrary, true, null));
+        Map<LocalDate, Map<LocalTime, Integer>> enforcedMix = mixByDate(enforced);
+
+        assertThat(enforcedMix).isNotEqualTo(baselineMix);
+        assertThat(enforcedMix.keySet()).isEqualTo(baselineMix.keySet());
+        enforcedMix.forEach((date, mix) -> assertThat(mix)
+                .as("every agent-day on %s must sit on the targeted start", date)
+                .isEqualTo(Map.of(latest, AGENT_COUNT)));
+    }
+
+    @Test
+    void enforceHandsEveryAgentDayAnEnvelopeItIsStillEligibleFor() {
+        // Narrowing FILTERS the value range, never replaces it, so a narrowed row must never be
+        // handed an envelope the unnarrowed rules would have refused — and must never be left
+        // unassigned, which is how an over-narrowed range fails (shiftBandPair is
+        // allowsUnassigned = true, so an empty range is silent).
+        Schedule baseline = solve(build(List.of(), false, null));
+        List<ShiftStartMixTarget> asTargets = new ArrayList<>();
+        mixByDate(baseline).forEach((date, mix) -> mix.forEach((start, count) ->
+                asTargets.add(new ShiftStartMixTarget(date, start, count))));
+
+        Schedule enforced = solve(build(asTargets, true, null));
+        assertThat(enforced.getShiftAssignments())
+                .allSatisfy(sa -> assertThat(sa.getShiftBandPair()).isNotNull());
+        assertThat(enforced.getShiftAssignments())
+                .allSatisfy(sa -> assertThat(sa.getAllocatedShiftBandPairs()).contains(sa.getShiftBandPair()));
+    }
+
+    @Test
+    void reportModeAloneDoesNotMoveTheMix() {
+        // Locks in the measurement that made narrowing necessary. A contrary target priced at
+        // 5,000 soft per over-target agent-day leaves the solved mix untouched: the CH fixes the
+        // mix and nothing afterwards revises it, because revising it means re-pointing an envelope
+        // AND its seats while the 0hard annealing temperature refuses every intermediate state.
+        // If this ever starts failing, a weighted steer has become viable and ENFORCE's existence
+        // should be revisited.
+        Schedule baseline = solve(build(List.of(), false, null));
         Map<LocalDate, Map<LocalTime, Integer>> baselineMix = mixByDate(baseline);
 
         LocalTime latest = baselineMix.values().iterator().next().keySet().stream()
@@ -74,50 +98,30 @@ class ShiftStartMixSteerTest {
         baselineMix.forEach((date, mix) -> mix.keySet().forEach(start ->
                 contrary.add(new ShiftStartMixTarget(date, start, start.equals(latest) ? AGENT_COUNT : 0))));
 
-        Schedule steered = solve(fixture(contrary));
-        assertThat(countOn(mixByDate(steered), latest))
-                .as("the target must move the mix toward itself — if it does not, the weight is "
-                        + "inert and the feature is decoration")
-                .isGreaterThan(countOn(baselineMix, latest));
-    }
-
-    @Test
-    void aTargetTheSolverCanMeetIsMetExactly() {
-        // The baseline's own mix is by construction reachable at hard 0 — the solver just produced
-        // it. Handing it straight back must therefore cost nothing and change nothing.
-        Schedule baseline = solve(fixture(List.of()));
-        Map<LocalDate, Map<LocalTime, Integer>> baselineMix = mixByDate(baseline);
-
-        List<ShiftStartMixTarget> asTargets = new ArrayList<>();
-        baselineMix.forEach((date, mix) -> mix.forEach((start, count) ->
-                asTargets.add(new ShiftStartMixTarget(date, start, count))));
-
-        Schedule steered = solve(fixture(asTargets));
-        // Hard score is deliberately not asserted: SolverQualityGuardTest records that this
-        // fixture's hard score is context only, never a pass/fail signal.
-        assertThat(mixByDate(steered)).isEqualTo(baselineMix);
+        Schedule reported = solve(build(contrary, false, 5_000));
+        assertThat(mixByDate(reported)).isEqualTo(baselineMix);
     }
 
     // ---------- helpers ----------
 
-    private static Schedule fixture(List<ShiftStartMixTarget> targets) {
-        return fixture(targets, null);
-    }
-
-    private static Schedule fixture(List<ShiftStartMixTarget> targets, Integer weightOverride) {
+    private static Schedule build(List<ShiftStartMixTarget> targets, boolean enforce, Integer weightOverride) {
         LiveShapeShiftDeskFixture.Fixture f =
                 LiveShapeShiftDeskFixture.build(AGENT_COUNT, LiveShapeShiftDeskFixture.DAY_COUNT);
-        f.schedule().setShiftStartMixTargets(new ArrayList<>(targets));
+        Schedule schedule = f.schedule();
+        schedule.setShiftStartMixTargets(new ArrayList<>(targets));
         if (weightOverride != null) {
-            f.schedule().getConstraintWeights().setShiftStartMixWeight(
-                    ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore.ofSoft(weightOverride));
+            schedule.getConstraintWeights().setShiftStartMixWeight(HardSoftScore.ofSoft(weightOverride));
         }
-        return f.schedule();
+        if (enforce) {
+            ShiftStartMixAllocator.Allocation allocation = new ShiftStartMixAllocator().allocate(
+                    schedule.getShiftAssignments(), targets, schedule.getResolvedUsualShiftTargets());
+            assertThat(allocation.applied())
+                    .as("allocation must apply, else the test below would pass for the wrong reason: %s",
+                            allocation.skippedReason())
+                    .isTrue();
+        }
+        return schedule;
     }
-
-
-
-
 
     private static Schedule solve(Schedule unsolved) {
         SolverConfig config = SolverConfig.createFromXmlResource("solverConfig.xml").withRandomSeed(SEED);
@@ -129,7 +133,6 @@ class ShiftStartMixSteerTest {
         return solver.solve(unsolved);
     }
 
-    /** Solved head count per (date, template start time). */
     private static Map<LocalDate, Map<LocalTime, Integer>> mixByDate(Schedule solved) {
         Map<LocalDate, Map<LocalTime, Integer>> out = new TreeMap<>();
         for (AgentShiftAssignment sa : solved.getShiftAssignments()) {
@@ -140,9 +143,5 @@ class ShiftStartMixSteerTest {
                     .merge(sa.getShiftBandPair().template().getStartTime(), 1, Integer::sum);
         }
         return out;
-    }
-
-    private static int countOn(Map<LocalDate, Map<LocalTime, Integer>> mix, LocalTime start) {
-        return mix.values().stream().mapToInt(m -> m.getOrDefault(start, 0)).sum();
     }
 }

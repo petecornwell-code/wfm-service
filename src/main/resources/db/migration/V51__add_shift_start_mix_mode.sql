@@ -1,0 +1,38 @@
+-- Phase 18: the rung ladder for pre-solve shift-start mix targeting (MIX-03).
+--
+-- V50 added the constraint and its weight, and recorded why the weight alone does nothing: a
+-- contrary target moves the solved start mix by exactly zero at soft 25, 200, 2 000 and 100 000,
+-- and at ofHard(1). The construction heuristic fixes the mix and nothing afterwards revises it,
+-- because revising it means re-pointing the envelope AND its seats together while solverConfig.xml's
+-- 0hard annealing temperature refuses every intermediate state.
+--
+-- The fix is structural: narrow each working agent-day's VALUE RANGE to the envelopes starting at
+-- the time it was allocated, so the CH cannot build the wrong mix in the first place. This column
+-- is the switch, and it is three-valued on purpose:
+--
+--   OFF      no targets computed; the solve is byte-identical to pre-Phase-18 behaviour.
+--   REPORT   targets computed and scored, value ranges untouched. Observational only -- with a
+--            non-zero shift_start_mix_weight the deviation appears in explain() while the schedule
+--            stays exactly as it was. This is how a desk's own gap gets measured.
+--   ENFORCE  targets computed AND value ranges narrowed. The rung that changes schedules.
+--
+-- DEFAULT 'OFF'. ENFORCE removes the solver's escape hatch: the target model reasons about
+-- coverage, band capacity and start-time preference, while the solve reasons about all 25
+-- constraints -- among them the over-allocation hard limit and the minimum-staffing floor, which
+-- the target model does NOT know. On Saferide the computed mix lands at 130-150% peak
+-- over-allocation against a 200% limit, comfortably inside; that is a property of that demand
+-- curve, not of the model. A spikier curve could put a target past a hard limit with no soft way
+-- back. Hence: no desk goes to ENFORCE without a REPORT run on that desk first.
+--
+-- A plain enum column rather than a HardSoftScore pair, which is the second deliberate convention
+-- break on this table after consistency_tolerance_minutes (V48 D-04), and for the same reason --
+-- it is a mode, not a price, and it belongs beside the weight it governs.
+--
+-- Scope, unchanged by this migration and worth restating: targeting is inert on a SLOT desk, on a
+-- desk whose working agents span more than one substitutability class, on any date with no
+-- usual-shift targets, on any date with zero total staffing requirement, and on any date whose
+-- working agent-days do not all share one eligible-envelope set. Of the two live desks, Stubhub
+-- (EN) has zero usual shifts set at all, so every value of this column is equivalent there.
+
+ALTER TABLE constraint_weights
+    ADD COLUMN shift_start_mix_mode VARCHAR(16) NOT NULL DEFAULT 'OFF';

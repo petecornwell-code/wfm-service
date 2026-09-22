@@ -271,6 +271,19 @@ public class ConstraintWeights {
     @Column(name = "shift_start_mix_weight")
     private HardSoftScore shiftStartMixWeight = HardSoftScore.ZERO;
 
+    /**
+     * (Phase 18, MIX-03) How far the pre-solve start-mix target reaches on this desk — see
+     * {@link ShiftStartMixMode}. A plain enum column, not a {@code HardSoftScore}, and the second
+     * deliberate convention break on this table after {@code consistencyToleranceMinutes} (V48
+     * D-04): it is a mode, not a price, and it belongs on the same per-desk operator-editable row
+     * as the weight it governs so the two stay one row, one screen, one API call.
+     *
+     * <p>{@code OFF} by default. {@code ENFORCE} is the only value that changes a schedule.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shift_start_mix_mode", nullable = false, length = 16)
+    private ShiftStartMixMode shiftStartMixMode = ShiftStartMixMode.OFF;
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -359,4 +372,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getShiftStartMixWeight() { return shiftStartMixWeight; }
     public void setShiftStartMixWeight(HardSoftScore shiftStartMixWeight) { this.shiftStartMixWeight = shiftStartMixWeight; }
+
+    public ShiftStartMixMode getShiftStartMixMode() { return shiftStartMixMode; }
+    public void setShiftStartMixMode(ShiftStartMixMode shiftStartMixMode) { this.shiftStartMixMode = shiftStartMixMode; }
 }

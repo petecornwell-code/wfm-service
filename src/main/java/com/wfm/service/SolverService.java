@@ -53,6 +53,7 @@ public class SolverService {
     private final SolverManager<Schedule, UUID> solverManager;
     private final ScheduleConsistencyRepairService consistencyRepairService;
     private final ShiftStartMixTargetService shiftStartMixTargetService;
+    private final ShiftStartMixAllocator shiftStartMixAllocator;
 
     /**
      * Built on first use and cached: constructing a SolverFactory is not free, and the repair's
@@ -92,6 +93,7 @@ public class SolverService {
                          SolverManager<Schedule, UUID> solverManager,
                          ScheduleConsistencyRepairService consistencyRepairService,
                          ShiftStartMixTargetService shiftStartMixTargetService,
+                         ShiftStartMixAllocator shiftStartMixAllocator,
                          DeskRepository deskRepository,
                          AgentRepository agentRepository,
                          SpecializationRepository specializationRepository,
@@ -113,6 +115,7 @@ public class SolverService {
         this.solverManager = solverManager;
         this.consistencyRepairService = consistencyRepairService;
         this.shiftStartMixTargetService = shiftStartMixTargetService;
+        this.shiftStartMixAllocator = shiftStartMixAllocator;
         this.deskRepository = deskRepository;
         this.agentRepository = agentRepository;
         this.specializationRepository = specializationRepository;
@@ -349,9 +352,31 @@ public class SolverService {
         // on a SLOT-mode desk, on a desk spanning more than one substitutability class, and on any
         // date with no usual-shift targets. See ShiftStartMixTargetService for the measurement
         // that motivated this.
-        List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixTargetService.computeTargets(
-                desk.getSchedulingMode(), shiftAssignments, resolvedUsualShiftTargets,
-                staffingRequirements, timeslots);
+        ShiftStartMixMode shiftStartMixMode = weights.getShiftStartMixMode() == null
+                ? ShiftStartMixMode.OFF : weights.getShiftStartMixMode();
+        List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixMode == ShiftStartMixMode.OFF
+                ? List.of()
+                : shiftStartMixTargetService.computeTargets(desk.getSchedulingMode(), shiftAssignments,
+                        resolvedUsualShiftTargets, staffingRequirements, timeslots);
+
+        // ENFORCE is the rung that actually binds: narrowing each row's value range to its
+        // allocated start time, so the CH cannot build a different mix. Pricing the mix with a
+        // weight instead moves it by exactly zero (V50's comment has the sweep), which is why
+        // REPORT stops here with the targets scored but the value ranges untouched.
+        //
+        // Failure is total and silent-proof: the allocator stages every row and writes none of
+        // them if any would end up with an empty range, because shiftBandPair is
+        // allowsUnassigned = true and an empty range leaves the row quietly unassigned rather than
+        // throwing. A refusal logs why and the solve proceeds exactly as it would in REPORT.
+        if (shiftStartMixMode == ShiftStartMixMode.ENFORCE && !shiftStartMixTargets.isEmpty()) {
+            ShiftStartMixAllocator.Allocation allocation = shiftStartMixAllocator.allocate(
+                    shiftAssignments, shiftStartMixTargets, resolvedUsualShiftTargets);
+            if (!allocation.applied()) {
+                log.warn("Shift-start mix ENFORCE declined — {}. Targets are still scored; value "
+                        + "ranges are untouched and the solve proceeds as in REPORT mode.",
+                        allocation.skippedReason());
+            }
+        }
 
         // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();

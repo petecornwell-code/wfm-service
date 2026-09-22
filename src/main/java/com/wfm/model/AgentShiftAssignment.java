@@ -86,6 +86,16 @@ public class AgentShiftAssignment {
     private List<ShiftBandPair> deskShiftBandPairs;
 
     /**
+     * (Phase 18, MIX-03) The narrowed value range for this row under
+     * {@link com.wfm.model.ShiftStartMixMode#ENFORCE} — the subset of
+     * {@link #getEligibleShiftBandPairs()} whose template starts at the time this agent-day was
+     * allocated. {@code null} in every other mode, which is what makes the feature inert rather
+     * than merely quiet when it is off.
+     */
+    @Transient
+    private List<ShiftBandPair> allocatedShiftBandPairs;
+
+    /**
      * How many grid slots an eligible envelope may exceed this agent-day's contracted slots by
      * (D-01 bounded slack). Zero reproduces the original exact-equality rule byte for byte.
      */
@@ -139,6 +149,9 @@ public class AgentShiftAssignment {
 
     public List<ShiftBandPair> getDeskShiftBandPairs() { return deskShiftBandPairs; }
     public void setDeskShiftBandPairs(List<ShiftBandPair> deskShiftBandPairs) { this.deskShiftBandPairs = deskShiftBandPairs; }
+
+    public List<ShiftBandPair> getAllocatedShiftBandPairs() { return allocatedShiftBandPairs; }
+    public void setAllocatedShiftBandPairs(List<ShiftBandPair> allocatedShiftBandPairs) { this.allocatedShiftBandPairs = allocatedShiftBandPairs; }
 
     public int getEnvelopeSlackSlots() { return envelopeSlackSlots; }
     public void setEnvelopeSlackSlots(int envelopeSlackSlots) { this.envelopeSlackSlots = envelopeSlackSlots; }
@@ -194,6 +207,19 @@ public class AgentShiftAssignment {
      */
     @ValueRangeProvider(id = "shiftBandRange")
     public List<ShiftBandPair> getEligibleShiftBandPairs() {
+        // (Phase 18, MIX-03) ENFORCE mode: ShiftStartMixAllocator has already narrowed this row to
+        // the envelopes starting at the time it was allocated, and did so by FILTERING the list
+        // this method would otherwise compute -- never by replacing it. So every rule below still
+        // holds of what is returned here; the allocated list is a subset of it, not an alternative
+        // to it. Returning early keeps the value range a single object per (date, start time)
+        // rather than a list derived per entity, which is the same instance-sharing requirement
+        // buildShiftAssignments' javadoc states for deskShiftBandPairs.
+        //
+        // Never set in OFF or REPORT mode, so a desk that has not opted in reaches identical code
+        // to before Phase 18.
+        if (allocatedShiftBandPairs != null) {
+            return allocatedShiftBandPairs;
+        }
         if (deskShiftBandPairs == null || deskShiftBandPairs.isEmpty() || dayConfig == null) {
             return List.of();
         }

@@ -51,6 +51,11 @@ public class ConstraintWeightsDto {
     // not an off switch.
     private ScoreDto shiftStartMixWeight;
 
+    // Phase 18 (MIX-03): the rung this desk is on — OFF / REPORT / ENFORCE. A String, not the enum,
+    // so an unknown value from a client is rejected by the service with a clear message rather than
+    // by Jackson with a deserialisation error naming the enum's constants.
+    private String shiftStartMixMode;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -105,4 +110,7 @@ public class ConstraintWeightsDto {
 
     public ScoreDto getShiftStartMixWeight() { return shiftStartMixWeight; }
     public void setShiftStartMixWeight(ScoreDto v) { this.shiftStartMixWeight = v; }
+
+    public String getShiftStartMixMode() { return shiftStartMixMode; }
+    public void setShiftStartMixMode(String v) { this.shiftStartMixMode = v; }
 }
