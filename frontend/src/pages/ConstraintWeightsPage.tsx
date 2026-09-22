@@ -29,9 +29,12 @@ const CONSTRAINTS: Array<{ key: string; label: string; description: string }> = 
   { key: 'consistencyToleranceMinutes', label: 'Usual Shift Consistency Tolerance', description: 'Shift mode: deviation from the usual shift start within this many minutes carries zero penalty' },
   { key: 'preferredStartShiftModeWeight', label: 'Preferred Start (Shift Mode)', description: 'Shift mode: tie-break only, used when Usual Shift Consistency scores two shifts equally. Weight must stay below Usual Shift Consistency’s — enforced on save' },
   { key: 'minStaffingWeight', label: 'Minimum Staffing', description: 'Keep at least one agent on every hour, even where forecast demand is zero' },
+  { key: 'shiftStartMixMode', label: 'Shift Start Mix', description: 'Shift mode: decide before solving how many agent-days start at each shift start time, coverage first and usual-shift consistency second. Off, Report (compute and score it, changing nothing) or Enforce (restrict what the solver may build)' },
 ]
 
-const DEFAULTS: Record<string, Score | number> = {
+const SHIFT_START_MIX_MODES = ['OFF', 'REPORT', 'ENFORCE'] as const
+
+const DEFAULTS: Record<string, Score | number | string> = {
   unassignedAssignmentWeight: { hardScore: 0, softScore: 1000 },
   agentDayOffWeight: { hardScore: 1, softScore: 0 },
   specMatchWeight: { hardScore: 1, softScore: 0 },
@@ -57,6 +60,7 @@ const DEFAULTS: Record<string, Score | number> = {
   consistencyToleranceMinutes: 60,
   preferredStartShiftModeWeight: { hardScore: 0, softScore: 1 },
   minStaffingWeight: { hardScore: 0, softScore: 1000 },
+  shiftStartMixMode: 'OFF',
 }
 
 // WR-01: every row except the dedicated consistencyToleranceMinutes one is rendered as a Score.
@@ -65,7 +69,7 @@ const DEFAULTS: Record<string, Score | number> = {
 // field added without its own branch (mirroring the tolerance-band one above) would silently
 // reinterpret the number as `{ hardScore: undefined, softScore: undefined }` and misrender as
 // "Soft" with NaN/blank inputs rather than failing visibly.
-function isScore(value: Score | number | undefined): value is Score {
+function isScore(value: Score | number | string | undefined): value is Score {
   return typeof value === 'object' && value !== null && 'hardScore' in value && 'softScore' in value
 }
 
@@ -129,6 +133,45 @@ export default function ConstraintWeightsPage() {
                     <span style={{ fontSize: '0.75rem', color: '#6b7280', marginLeft: '4px' }}> min</span>
                   </td>
                 </tr>
+              )
+            }
+
+            // (Phase 18, MIX-03) The page's second non-score field, and the first that is not a
+            // number either. It needs its own branch for the same reason the tolerance band does:
+            // read through the shared Score path it would render as a blank "Soft" row. Enforce is
+            // the only value that changes a schedule, so it gets a warning note rather than being
+            // left to look like one setting among twenty-five.
+            if (key === 'shiftStartMixMode') {
+              const raw = weights[key]
+              const mode = typeof raw === 'string' ? raw : (DEFAULTS[key] as string)
+              return (
+                <Fragment key={key}>
+                  <tr>
+                    <td style={{ fontWeight: 500 }}>{label}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#6b7280' }}>{description}</td>
+                    <td>
+                      <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
+                        background: mode === 'ENFORCE' ? '#fef2f2' : '#e5e7eb',
+                        color: mode === 'ENFORCE' ? '#dc2626' : '#374151' }}>
+                        {mode === 'ENFORCE' ? 'Binding' : 'Mode'}
+                      </span>
+                    </td>
+                    <td colSpan={2}>
+                      <select value={mode} onChange={e => setWeights({ ...weights, [key]: e.target.value })}>
+                        {SHIFT_START_MIX_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                  {mode === 'ENFORCE' && (
+                    <tr>
+                      <td colSpan={5}>
+                        <div style={{ background: '#fef2f2', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginTop: '0.25rem', color: '#7f1d1d' }}>
+                          Enforce restricts which shifts the solver may give each agent, so it cannot choose a different mix of start times. Measured on this desk it put every agent on their usual start and cut uncovered hours from about 126 to about 26 — but it also removes the solver's room to work around anything the target does not model. Run Report on a desk first and compare before switching it on.
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             }
 

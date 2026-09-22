@@ -376,7 +376,12 @@ export interface DayOffWithAgent { id: string; date: string; type: string; statu
 export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
 export interface Score { hardScore: number; softScore: number }
-export interface ConstraintWeightsData { [key: string]: Score | number }
+// Phase 18 (MIX-03): widened to admit `string` for shiftStartMixMode (OFF | REPORT | ENFORCE).
+// ConstraintWeightsPage's isScore() guard already refuses to render a non-Score through the
+// score branch, and logs + skips any key with no dedicated branch, so widening this cannot
+// silently misrender an existing row -- a new non-score field either gets its own branch or is
+// visibly dropped.
+export interface ConstraintWeightsData { [key: string]: Score | number | string }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
 export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
 
