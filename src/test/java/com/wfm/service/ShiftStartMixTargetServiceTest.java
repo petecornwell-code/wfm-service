@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.model.Agent;
+import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentDayConfig;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.BreakAlignment;
@@ -64,7 +65,7 @@ class ShiftStartMixTargetServiceTest {
     void beatsTheSolversOwnMixOnCoverageAndConsistencyAtOnce() {
         Fixture f = saferide();
         List<ShiftStartMixTarget> targets = service.computeTargets(SchedulingMode.SHIFT,
-                f.rows, f.usualTargets, f.requirements, f.timeslots);
+                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats);
 
         assertThat(targets).hasSize(7);
         int[] mix = mix(targets);
@@ -102,7 +103,7 @@ class ShiftStartMixTargetServiceTest {
             allLate.add(new ResolvedUsualShiftTarget(row.getAgent().getId(), DAY, LocalTime.of(12, 0)));
         }
         int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, allLate,
-                f.requirements, f.timeslots));
+                f.requirements, f.timeslots, f.seats));
 
         assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
         // A consistency-first mix would put all 57 on 12:00 and uncover 182 agent-slots.
@@ -116,7 +117,7 @@ class ShiftStartMixTargetServiceTest {
         // to compare an over-count against.
         Fixture f = saferide();
         List<ShiftStartMixTarget> targets = service.computeTargets(SchedulingMode.SHIFT,
-                f.rows, f.usualTargets, f.requirements, f.timeslots);
+                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats);
         assertThat(targets).allSatisfy(t -> assertThat(t.targetCount()).isGreaterThanOrEqualTo(0));
         assertThat(targets).extracting(ShiftStartMixTarget::startTime)
                 .containsExactlyInAnyOrder(LocalTime.of(6, 0), LocalTime.of(7, 0), LocalTime.of(8, 0),
@@ -128,16 +129,16 @@ class ShiftStartMixTargetServiceTest {
         // Two solves of one problem must produce identical targets, or a solve is not debuggable.
         Fixture f = saferide();
         assertThat(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots)))
+                f.requirements, f.timeslots, f.seats)))
                 .isEqualTo(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                        f.requirements, f.timeslots)));
+                        f.requirements, f.timeslots, f.seats)));
     }
 
     @Test
     void emitsNothingForASlotModeDesk() {
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SLOT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots)).isEmpty();
+                f.requirements, f.timeslots, f.seats)).isEmpty();
     }
 
     @Test
@@ -147,14 +148,14 @@ class ShiftStartMixTargetServiceTest {
         Fixture f = saferide();
         f.rows.get(0).getAgent().setContractedHoursPerDay(new BigDecimal("6.0"));
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots)).isEmpty();
+                f.requirements, f.timeslots, f.seats)).isEmpty();
     }
 
     @Test
     void emitsNothingForADateWithNoUsualShiftTargets() {
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, List.of(),
-                f.requirements, f.timeslots)).isEmpty();
+                f.requirements, f.timeslots, f.seats)).isEmpty();
     }
 
     @Test
@@ -165,7 +166,7 @@ class ShiftStartMixTargetServiceTest {
         // timeslots are generated across the operating window independently of it.
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                List.of(), f.timeslots)).isEmpty();
+                List.of(), f.timeslots, f.seats)).isEmpty();
     }
 
     @Test
@@ -183,7 +184,7 @@ class ShiftStartMixTargetServiceTest {
                 .isNotEqualTo(f.rows.get(1).getEligibleShiftBandPairs());
 
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots)).isEmpty();
+                f.requirements, f.timeslots, f.seats)).isEmpty();
     }
 
     @Test
@@ -193,9 +194,9 @@ class ShiftStartMixTargetServiceTest {
         List<ResolvedUsualShiftTarget> withGhost = new ArrayList<>(f.usualTargets);
         withGhost.add(new ResolvedUsualShiftTarget(UUID.randomUUID(), DAY, LocalTime.of(12, 0)));
         assertThat(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, withGhost,
-                f.requirements, f.timeslots)))
+                f.requirements, f.timeslots, f.seats)))
                 .isEqualTo(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                        f.requirements, f.timeslots)));
+                        f.requirements, f.timeslots, f.seats)));
     }
 
     // ---------- scoring helpers, deliberately independent of the service's own arithmetic ----------
@@ -249,7 +250,8 @@ class ShiftStartMixTargetServiceTest {
     // ---------- fixture ----------
 
     private record Fixture(List<AgentShiftAssignment> rows, List<ResolvedUsualShiftTarget> usualTargets,
-                           List<StaffingRequirement> requirements, List<Timeslot> timeslots) {}
+                           List<StaffingRequirement> requirements, List<Timeslot> timeslots,
+                           List<AgentAssignment> seats) {}
 
     private Fixture saferide() {
         Specialization spec = new Specialization();
@@ -325,7 +327,63 @@ class ShiftStartMixTargetServiceTest {
                 usualTargets.add(new ResolvedUsualShiftTarget(a.getId(), DAY, wantQueue.get(i)));
             }
         }
-        return new Fixture(rows, usualTargets, requirements, timeslots);
+        // Seats: the live desk builds demand seats plus overflow up to overallocationHardLimitPct
+        // (200%) plus a minimum-staffing floor. Modelled here as 2x requirement, which is that
+        // ceiling — generous enough that these tests measure the coverage/consistency objective
+        // rather than the seat bound, which has its own test below.
+        List<AgentAssignment> seats = new ArrayList<>();
+        for (int i = 0; i < REQUIRED.length; i++) {
+            for (int k = 0; k < REQUIRED[i] * 2; k++) {
+                seats.add(seatAt(timeslots.get(i), spec));
+            }
+        }
+        return new Fixture(rows, usualTargets, requirements, timeslots, seats);
+    }
+
+    private static AgentAssignment seatAt(Timeslot ts, Specialization spec) {
+        AgentAssignment a = new AgentAssignment();
+        a.setId(UUID.randomUUID());
+        a.setTimeslot(ts);
+        a.setRequiredSpecialization(spec);
+        return a;
+    }
+
+    @Test
+    void neverTargetsMoreEnvelopesOverASlotThanThereAreSeatsToWorkIt() {
+        // The regression the first live ENFORCE run filed. An agent-day works EVERY non-break slot
+        // its envelope covers, so a mix that puts more envelopes over a slot than there are seats
+        // pushes the surplus OUTSIDE their envelope -- hard Shift envelope compliance, which no
+        // amount of coverage or consistency may buy. Live result without this bound: 271/271 usual
+        // starts and 20 uncovered hours at -5 hard.
+        Fixture f = saferide();
+        // Starve the 06:00 slot: 4 seats where the unconstrained optimum wants 4-6 envelopes on it.
+        List<AgentAssignment> scarce = new ArrayList<>();
+        for (AgentAssignment seat : f.seats) {
+            if (!seat.getTimeslot().getStartTime().equals(LocalTime.of(6, 0))) {
+                scarce.add(seat);
+            }
+        }
+        for (int k = 0; k < 2; k++) {
+            scarce.add(seatAt(f.timeslots.get(0), null));
+        }
+
+        int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                f.requirements, f.timeslots, scarce));
+
+        assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
+        assertThat(mix[0])
+                .as("only 06:00 envelopes cover the 06:00 slot, so at most 2 may be targeted there")
+                .isLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void seatOverflowOutranksBothCoverageAndConsistency() {
+        // No seats anywhere: every mix overflows, so the optimiser must still return a complete,
+        // well-formed target rather than diverging or emitting nothing.
+        Fixture f = saferide();
+        int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                f.requirements, f.timeslots, List.of()));
+        assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
     }
 
     /** Guards the fixture itself: a wrong value range would make every assertion meaningless. */

@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.model.Agent;
+import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.ResolvedUsualShiftTarget;
 import com.wfm.model.SchedulingMode;
@@ -54,7 +55,13 @@ import java.util.UUID;
  * 14:00-15:00 and collapses in the evening. Late starts over-cover cheap hours and starve the
  * morning.
  *
- * <p><b>Objective is lexicographic: coverage first, consistency second.</b> Minimise uncovered
+ * <p><b>Objective is lexicographic: seat supply first, then coverage, then consistency.</b>
+ * Seat overflow leads because it is the only one of the three that is HARD — an agent-day works
+ * every non-break slot its envelope covers, so a mix placing more envelopes over a slot than there
+ * are seats pushes the surplus outside their envelope. The first live ENFORCE run learned this the
+ * expensive way: 100% usual-start consistency and 20 uncovered hours, at -5 hard.
+ *
+ * <p><b>Then coverage, then consistency.</b> Minimise uncovered
  * agent-slots, then — among mixes tied on coverage — maximise the number of agent-days that CAN
  * be given their usual start. Consistency never buys an uncovered hour, which is the invariant
  * V48's migration comment insists on. The second term is a ceiling, not an assignment: it counts
@@ -107,7 +114,8 @@ public class ShiftStartMixTargetService {
                                                     List<AgentShiftAssignment> shiftAssignments,
                                                     List<ResolvedUsualShiftTarget> usualTargets,
                                                     List<StaffingRequirement> staffingRequirements,
-                                                    List<Timeslot> timeslots) {
+                                                    List<Timeslot> timeslots,
+                                                    List<AgentAssignment> seats) {
         if (schedulingMode != SchedulingMode.SHIFT || shiftAssignments == null || shiftAssignments.isEmpty()) {
             return List.of();
         }
@@ -132,6 +140,22 @@ public class ShiftStartMixTargetService {
             }
             reqByDate.computeIfAbsent(ts.getDate(), k -> new HashMap<>())
                     .merge(ts.getStartTime(), r.getRequiredFTEs(), Integer::sum);
+        }
+
+        // Seats per timeslot — the ceiling the first live ENFORCE run proved this model cannot do
+        // without. An agent-day works EVERY non-break slot its envelope covers (contracted hours
+        // are hard both ways), so a mix that puts more envelopes over a slot than there are seats
+        // there does not degrade gracefully: the surplus agents take a seat OUTSIDE their envelope,
+        // which is a hard Shift envelope compliance violation. Measured on the live Saferide desk
+        // 2026-09-22: a mix chosen without this ceiling scored 100% usual-start consistency and 20
+        // uncovered hours at -5 hard, and -5 hard is not a schedule.
+        Map<LocalDate, Map<LocalTime, Integer>> seatsByDate = new HashMap<>();
+        for (AgentAssignment seat : seats == null ? List.<AgentAssignment>of() : seats) {
+            Timeslot ts = seat.getTimeslot();
+            if (ts != null) {
+                seatsByDate.computeIfAbsent(ts.getDate(), k -> new HashMap<>())
+                        .merge(ts.getStartTime(), 1, Integer::sum);
+            }
         }
 
         Map<LocalDate, List<Timeslot>> slotsByDate = new HashMap<>();
@@ -167,7 +191,8 @@ public class ShiftStartMixTargetService {
             }
             out.addAll(solveDate(date, e.getValue(), want,
                     reqByDate.getOrDefault(date, Map.of()),
-                    slotsByDate.getOrDefault(date, List.of())));
+                    slotsByDate.getOrDefault(date, List.of()),
+                    seatsByDate.getOrDefault(date, Map.of())));
         }
         return out;
     }
@@ -209,7 +234,8 @@ public class ShiftStartMixTargetService {
     private List<ShiftStartMixTarget> solveDate(LocalDate date, List<AgentShiftAssignment> rows,
                                                 Map<LocalTime, Integer> want,
                                                 Map<LocalTime, Integer> reqByStart,
-                                                List<Timeslot> slots) {
+                                                List<Timeslot> slots,
+                                                Map<LocalTime, Integer> seatsByStart) {
         int W = rows.size();
 
         // GUARD 1 — a date with timeslots but no demand. Uncovered is then identically zero
@@ -260,8 +286,12 @@ public class ShiftStartMixTargetService {
         int P = pairs.size();
         int S = slots.size();
         int[] req = new int[S];
+        int[] seatCap = new int[S];
+        int totalRequired2 = 0;
         for (int s = 0; s < S; s++) {
             req[s] = reqByStart.getOrDefault(slots.get(s).getStartTime(), 0);
+            seatCap[s] = seatsByStart.getOrDefault(slots.get(s).getStartTime(), 0);
+            totalRequired2 += req[s];
         }
 
         // Coverage matrix, derived from ShiftBandPair.covers so this model and
@@ -319,8 +349,8 @@ public class ShiftStartMixTargetService {
             if (m == null) {
                 continue;
             }
-            m.evaluate(cov, req, S, wantByStart, pairStart, starts.size());
-            hillClimb(m, cov, req, S, cap, wantByStart, pairStart, starts.size());
+            m.evaluate(cov, req, seatCap, totalRequired2, S, wantByStart, pairStart, starts.size());
+            hillClimb(m, cov, req, seatCap, totalRequired2, S, cap, wantByStart, pairStart, starts.size());
             if (best == null || m.score > best.score) {
                 best = m;
             }
@@ -339,9 +369,19 @@ public class ShiftStartMixTargetService {
         for (int i = 0; i < starts.size(); i++) {
             ceiling += Math.min(wantByStart[i], countByStart[i]);
         }
-        log.info("Shift-start mix target {} — {} agent-days, uncovered {} slot(s), usual-start "
-                        + "ceiling {}/{}; want={} target={}",
-                date, W, best.uncovered, ceiling, sum(wantByStart),
+        if (best.overflow > 0) {
+            // Every unit here is an agent-day that will be pushed outside its own envelope. The
+            // mix is still the best reachable one, so it is emitted rather than withheld, but it
+            // is emitted loudly: this is the exact shape of the -5 hard the first live ENFORCE run
+            // produced, and it means the shift library cannot seat the roster on this date.
+            log.warn("Shift-start mix target {} exceeds seat supply by {} agent-slot(s) — no mix of "
+                    + "this library can seat {} agent-days on this date without pushing someone "
+                    + "outside their envelope. ENFORCE will produce hard violations here.",
+                    date, best.overflow, W);
+        }
+        log.info("Shift-start mix target {} — {} agent-days, uncovered {} slot(s), seat overflow {}, "
+                        + "usual-start ceiling {}/{}; want={} target={}",
+                date, W, best.uncovered, best.overflow, ceiling, sum(wantByStart),
                 render(starts, wantByStart), render(starts, countByStart));
 
         List<ShiftStartMixTarget> out = new ArrayList<>(starts.size());
@@ -402,8 +442,8 @@ public class ShiftStartMixTargetService {
     }
 
     /** Steepest descent over "move one agent-day from pair a to pair b". */
-    private void hillClimb(Mix m, int[][] cov, int[] req, int S, int[] cap,
-                           int[] wantByStart, int[] pairStart, int nStarts) {
+    private void hillClimb(Mix m, int[][] cov, int[] req, int[] seatCap, int totalRequired, int S,
+                           int[] cap, int[] wantByStart, int[] pairStart, int nStarts) {
         int P = m.n.length;
         int[] scratch = new int[S];
         int[] touched = new int[S];
@@ -418,7 +458,7 @@ public class ShiftStartMixTargetService {
                     if (a == b || m.n[b] >= cap[b]) {
                         continue;
                     }
-                    long s = m.score + delta(m, a, b, cov, req, scratch, touched,
+                    long s = m.score + delta(m, a, b, cov, req, seatCap, scratch, touched,
                             wantByStart, pairStart);
                     if (s > bestScore) {
                         bestScore = s;
@@ -432,13 +472,13 @@ public class ShiftStartMixTargetService {
             }
             m.n[bestA]--;
             m.n[bestB]++;
-            m.evaluate(cov, req, S, wantByStart, pairStart, nStarts);
+            m.evaluate(cov, req, seatCap, totalRequired, S, wantByStart, pairStart, nStarts);
         }
     }
 
     /** Score change of moving one agent-day from pair {@code a} to pair {@code b}. */
-    private long delta(Mix m, int a, int b, int[][] cov, int[] req, int[] scratch, int[] touched,
-                       int[] wantByStart, int[] pairStart) {
+    private long delta(Mix m, int a, int b, int[][] cov, int[] req, int[] seatCap, int[] scratch,
+                       int[] touched, int[] wantByStart, int[] pairStart) {
         int t = 0;
         for (int s : cov[a]) {
             if (scratch[s] == 0) {
@@ -453,11 +493,13 @@ public class ShiftStartMixTargetService {
             scratch[s]++;
         }
         int deltaUncovered = 0;
+        int deltaOverflow = 0;
         for (int i = 0; i < t; i++) {
             int s = touched[i];
-            int before = Math.max(0, req[s] - m.staffed[s]);
-            int after = Math.max(0, req[s] - (m.staffed[s] + scratch[s]));
-            deltaUncovered += after - before;
+            int now = m.staffed[s];
+            int then = now + scratch[s];
+            deltaUncovered += Math.max(0, req[s] - then) - Math.max(0, req[s] - now);
+            deltaOverflow += Math.max(0, then - seatCap[s]) - Math.max(0, now - seatCap[s]);
             scratch[s] = 0;
         }
         // A slot touched by both cov[a] and cov[b] nets to zero and is harmlessly re-zeroed above.
@@ -469,7 +511,9 @@ public class ShiftStartMixTargetService {
             deltaMatches = Math.min(wantByStart[sa], m.countByStart[sa] - 1) - Math.min(wantByStart[sa], m.countByStart[sa])
                     + Math.min(wantByStart[sb], m.countByStart[sb] + 1) - Math.min(wantByStart[sb], m.countByStart[sb]);
         }
-        return -(long) deltaUncovered * m.coverageWeight + deltaMatches;
+        return -(long) deltaOverflow * m.overflowWeight
+                - (long) deltaUncovered * m.coverageWeight
+                + deltaMatches;
     }
 
     private static int sum(int[] a) {
@@ -501,15 +545,18 @@ public class ShiftStartMixTargetService {
         int[] staffed;
         int[] countByStart;
         int uncovered;
+        int overflow;
         int matches;
         long score;
         long coverageWeight;
+        long overflowWeight;
 
         Mix(int[] n) {
             this.n = n;
         }
 
-        void evaluate(int[][] cov, int[] req, int S, int[] wantByStart, int[] pairStart, int nStarts) {
+        void evaluate(int[][] cov, int[] req, int[] seatCap, int totalRequired, int S,
+                      int[] wantByStart, int[] pairStart, int nStarts) {
             staffed = new int[S];
             for (int p = 0; p < n.length; p++) {
                 if (n[p] == 0) {
@@ -520,8 +567,10 @@ public class ShiftStartMixTargetService {
                 }
             }
             uncovered = 0;
+            overflow = 0;
             for (int s = 0; s < S; s++) {
                 uncovered += Math.max(0, req[s] - staffed[s]);
+                overflow += Math.max(0, staffed[s] - seatCap[s]);
             }
             countByStart = new int[nStarts];
             int total = 0;
@@ -533,8 +582,17 @@ public class ShiftStartMixTargetService {
             for (int i = 0; i < nStarts; i++) {
                 matches += Math.min(wantByStart[i], countByStart[i]);
             }
+            // Strict lexicographic ordering, widest term first: seat overflow, then uncovered
+            // slots, then usual-start matches. Overflow outranks coverage because overflow is HARD
+            // (an agent seated outside their envelope) while an uncovered slot is soft, and no
+            // quantity of the softer terms may ever pay for one unit of the harder one --
+            // coverageWeight exceeds the largest possible match count, and overflowWeight exceeds
+            // the largest possible uncovered total scaled by it.
             coverageWeight = total + 1L;
-            score = -(long) uncovered * coverageWeight + matches;
+            overflowWeight = coverageWeight * (totalRequired + 1L);
+            score = -(long) overflow * overflowWeight
+                    - (long) uncovered * coverageWeight
+                    + matches;
         }
     }
 }

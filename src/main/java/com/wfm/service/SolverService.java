@@ -343,41 +343,6 @@ public class SolverService {
                 tenantId, deskId, schedule.getId(), eligibleAgentsById, agentDayConfigs, shiftBandPairs,
                 schedule.getShiftEnvelopeSlackSlots());
 
-        // 9d. Phase 18 (MIX-01): decide the shift-start mix BEFORE the solve. This must come after
-        // buildShiftAssignments because it reads each row's eligible value range and the working
-        // agent-day count per date, and it must come before the solve because the solver cannot
-        // revise the mix at all once its construction heuristic has chosen one -- envelope and
-        // seats are coupled entities and the 0hard annealing temperature refuses every
-        // intermediate state. Returns an empty list (leaving the solve byte-identical to before)
-        // on a SLOT-mode desk, on a desk spanning more than one substitutability class, and on any
-        // date with no usual-shift targets. See ShiftStartMixTargetService for the measurement
-        // that motivated this.
-        ShiftStartMixMode shiftStartMixMode = weights.getShiftStartMixMode() == null
-                ? ShiftStartMixMode.OFF : weights.getShiftStartMixMode();
-        List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixMode == ShiftStartMixMode.OFF
-                ? List.of()
-                : shiftStartMixTargetService.computeTargets(desk.getSchedulingMode(), shiftAssignments,
-                        resolvedUsualShiftTargets, staffingRequirements, timeslots);
-
-        // ENFORCE is the rung that actually binds: narrowing each row's value range to its
-        // allocated start time, so the CH cannot build a different mix. Pricing the mix with a
-        // weight instead moves it by exactly zero (V50's comment has the sweep), which is why
-        // REPORT stops here with the targets scored but the value ranges untouched.
-        //
-        // Failure is total and silent-proof: the allocator stages every row and writes none of
-        // them if any would end up with an empty range, because shiftBandPair is
-        // allowsUnassigned = true and an empty range leaves the row quietly unassigned rather than
-        // throwing. A refusal logs why and the solve proceeds exactly as it would in REPORT.
-        if (shiftStartMixMode == ShiftStartMixMode.ENFORCE && !shiftStartMixTargets.isEmpty()) {
-            ShiftStartMixAllocator.Allocation allocation = shiftStartMixAllocator.allocate(
-                    shiftAssignments, shiftStartMixTargets, resolvedUsualShiftTargets);
-            if (!allocation.applied()) {
-                log.warn("Shift-start mix ENFORCE declined — {}. Targets are still scored; value "
-                        + "ranges are untouched and the solve proceeds as in REPORT mode.",
-                        allocation.skippedReason());
-            }
-        }
-
         // 10. Detach Hibernate proxy collections into plain ArrayList/HashSet
         List<Agent> detachedAgents = new ArrayList<>();
         for (Agent agent : eligibleAgents) {
@@ -431,6 +396,47 @@ public class SolverService {
         // HERE, after seat construction (step 10d) — not inside runPreSolveValidation (step 7),
         // which runs before any seat exists. See the method's own javadoc for why moving it back
         // there would silently defeat it.
+        // 10d-bis. Phase 18 (MIX-01/MIX-03): decide the shift-start mix BEFORE the solve, because
+        // the solver cannot revise it once its construction heuristic has chosen -- envelope and
+        // seats are coupled entities and the 0hard annealing temperature refuses every intermediate
+        // state.
+        //
+        // Placed HERE, after seat construction (10d) and before the seat-supply gate (10e), and
+        // that position is load-bearing in both directions. It must come AFTER 10d because the
+        // target model needs the finished per-timeslot seat counts: without them it chose a mix
+        // that seated 100% of agents on their usual start and covered all but 20 hours, at -5 hard,
+        // because more envelopes covered some slots than there were seats to work them. It must
+        // come BEFORE 10e so requireShiftEnvelopeSeatSupply validates the NARROWED value ranges an
+        // ENFORCE allocation produces rather than the unnarrowed ones -- narrowing is exactly what
+        // turns a roomy agent-day into a forced one, so checking before it would check the wrong
+        // problem.
+        ShiftStartMixMode shiftStartMixMode = weights.getShiftStartMixMode() == null
+                ? ShiftStartMixMode.OFF : weights.getShiftStartMixMode();
+        List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixMode == ShiftStartMixMode.OFF
+                ? List.of()
+                : shiftStartMixTargetService.computeTargets(desk.getSchedulingMode(), shiftAssignments,
+                        resolvedUsualShiftTargets, staffingRequirements, timeslots, assignments);
+
+        // ENFORCE is the rung that actually binds: narrowing each row's value range to its
+        // allocated start time, so the CH cannot build a different mix. Pricing the mix with a
+        // weight instead moves it by exactly zero (V50's comment has the sweep), which is why
+        // REPORT stops here with the targets scored but the value ranges untouched.
+        //
+        // Failure is total and silent-proof: the allocator stages every row and writes none of
+        // them if any would end up with an empty range, because shiftBandPair is
+        // allowsUnassigned = true and an empty range leaves the row quietly unassigned rather than
+        // throwing. A refusal logs why and the solve proceeds exactly as it would in REPORT.
+        if (shiftStartMixMode == ShiftStartMixMode.ENFORCE && !shiftStartMixTargets.isEmpty()) {
+            ShiftStartMixAllocator.Allocation allocation = shiftStartMixAllocator.allocate(
+                    shiftAssignments, shiftStartMixTargets, resolvedUsualShiftTargets);
+            if (!allocation.applied()) {
+                log.warn("Shift-start mix ENFORCE declined — {}. Targets are still scored; value "
+                        + "ranges are untouched and the solve proceeds as in REPORT mode.",
+                        allocation.skippedReason());
+            }
+        }
+
+
         requireShiftEnvelopeSeatSupply(desk.getSchedulingMode(), shiftAssignments, shiftBandPairs,
                 timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings(),
                 weights);
