@@ -75,7 +75,10 @@ variable "ecs_cpu" {
 variable "ecs_memory" {
   description = "ECS task memory in MiB"
   type        = number
-  default     = 4096
+  # 8 GiB. The JVM takes 75% of this as heap (see the Dockerfile entrypoint), so ~6 GiB.
+  # 4096 was not enough for a 287-agent, 24 604-entity solve. With cpu = 2048 Fargate permits
+  # 4096-16384 MiB in 1024 increments, so 16384 is the ceiling before CPU must also rise.
+  default     = 8192
 }
 
 variable "ecs_desired_count" {
