@@ -913,9 +913,10 @@ public class ShiftLibraryGenerationService {
         for (DayOfWeek weekday : validWeekdays) {
             Map<LocalTime, Integer> daySlots = demandByWeekdayAndStart.getOrDefault(weekday, Map.of());
             int sum = 0;
-            for (LocalTime slot = breakStart; DayWindow.startsBefore(slot, breakEnd);
-                    slot = DayWindow.plusWithinDay(slot, incrementMinutes)) {
-                sum += daySlots.getOrDefault(slot, 0);
+            // Minute-of-day cursor, so a band reaching midnight cannot wrap the scan.
+            for (int minute = DayWindow.startMinute(breakStart);
+                    minute < DayWindow.endMinute(breakEnd); minute += incrementMinutes) {
+                sum += daySlots.getOrDefault(DayWindow.toLocalTime(minute), 0);
             }
             maxAcrossWeekdays = Math.max(maxAcrossWeekdays, sum);
         }

@@ -43,9 +43,13 @@ public class FteSpreadsheetGenerator {
                 specHeader.setCellStyle(headerStyle);
 
                 int col = 1;
-                for (LocalTime t = startTime; DayWindow.startsBefore(t, endTime);
-                        t = DayWindow.plusWithinDay(t, incrementMinutes)) {
-                    LocalTime slotEnd = DayWindow.plusWithinDay(t, incrementMinutes);
+                // Minute-of-day cursor: stepping a LocalTime past 23:00 gives 00:00, which reads
+                // as minute 0 and makes the loop wrap around the clock instead of ending.
+                int firstMinute = DayWindow.startMinute(startTime);
+                int lastMinute = DayWindow.endMinute(endTime);
+                for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
+                    LocalTime t = DayWindow.toLocalTime(minute);
+                    LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
                     Cell cell = header.createCell(col++);
                     cell.setCellValue(t.format(TIME_FMT) + "-" + slotEnd.format(TIME_FMT));
                     cell.setCellStyle(headerStyle);
@@ -56,8 +60,8 @@ public class FteSpreadsheetGenerator {
                     Row row = sheet.createRow(r + 1);
                     row.createCell(0).setCellValue(specializations.get(r));
                     int slotCol = 1;
-                    for (LocalTime t = startTime; DayWindow.startsBefore(t, endTime);
-                            t = DayWindow.plusWithinDay(t, incrementMinutes)) {
+                    for (int minute = DayWindow.startMinute(startTime);
+                            minute < DayWindow.endMinute(endTime); minute += incrementMinutes) {
                         // Sample FTE value: varies by specialization and time
                         int fte = 2 + (r % 3) + (slotCol % 4);
                         row.createCell(slotCol++).setCellValue(fte);

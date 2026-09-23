@@ -1,5 +1,6 @@
 package com.wfm.service;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -94,6 +95,69 @@ class MidnightTimeArithmeticGuardTest {
                         STALE, allowlisted but no longer present -- remove the entry: %s""",
                         RESOURCE, notAllowlisted, staleEntries)
                 .containsExactlyInAnyOrderElementsOf(allowlist);
+    }
+
+    @Test
+    @DisplayName("no loop advances a LocalTime cursor with plusWithinDay")
+    void noLoopUsesALocalTimeCursor() throws IOException {
+        List<String> offenders = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(SOURCE_ROOT)) {
+            for (Path file : files.filter(f -> f.toString().endsWith(".java")).sorted().toList()) {
+                for (String header : forStatementHeaders(
+                        Files.readAllLines(file, StandardCharsets.UTF_8))) {
+                    if (header.contains("DayWindow.plusWithinDay(")) {
+                        offenders.add(toFullyQualifiedName(file) + " :: " + header);
+                    }
+                }
+            }
+        }
+
+        assertThat(offenders)
+                .as("A loop must advance an int minute-of-day cursor, never a LocalTime one. "
+                        + "DayWindow.plusWithinDay(23:00, 60) returns 00:00, whose START minute is "
+                        + "0, so a LocalTime cursor wraps around the clock instead of terminating "
+                        + "and the loop never ends -- it killed a live solve with "
+                        + "OutOfMemoryError on 2026-09-23 (see MidnightGapScanTest). Write "
+                        + "`for (int m = DayWindow.startMinute(a); m < DayWindow.endMinute(b); "
+                        + "m += inc)` and convert with DayWindow.toLocalTime(m) inside the body. "
+                        + "Offenders: %s", offenders)
+                .isEmpty();
+    }
+
+    /**
+     * Every {@code for (...)} header in the file, each collapsed onto one line. Headers are
+     * gathered by balancing parentheses from the opening {@code for (} rather than by reading a
+     * fixed number of lines, so a header wrapped across two, three or more lines is seen whole —
+     * the defect this guards against was written as a THREE-line header, which a
+     * previous-line-only check would have missed entirely.
+     */
+    private static List<String> forStatementHeaders(List<String> lines) {
+        List<String> headers = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String code = stripComment(lines.get(i));
+            if (!code.startsWith("for (")) {
+                continue;
+            }
+            StringBuilder header = new StringBuilder(code);
+            int depth = balance(code);
+            for (int j = i + 1; depth > 0 && j < lines.size(); j++) {
+                String next = stripComment(lines.get(j));
+                header.append(' ').append(next);
+                depth += balance(next);
+            }
+            headers.add(header.toString().replaceAll("\\s+", " ").trim());
+        }
+        return headers;
+    }
+
+    /** Net parenthesis depth contributed by one line. */
+    private static int balance(String code) {
+        int depth = 0;
+        for (char c : code.toCharArray()) {
+            if (c == '(') depth++;
+            if (c == ')') depth--;
+        }
+        return depth;
     }
 
     @Test

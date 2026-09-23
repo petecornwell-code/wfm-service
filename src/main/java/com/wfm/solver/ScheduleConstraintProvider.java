@@ -575,12 +575,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, pair.band().getDurationMinutes());
 
         int holes = 0;
-        for (LocalTime t = worked.first(); t.isBefore(worked.last());
-                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
+        int firstMinute = DayWindow.startMinute(worked.first());
+        int lastMinute = DayWindow.startMinute(worked.last());
+        for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
+            LocalTime t = DayWindow.toLocalTime(minute);
             if (worked.contains(t)) {
                 continue;
             }
-            LocalTime slotEnd = DayWindow.plusWithinDay(t, incrementMinutes);
+            LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
             boolean isBreak = DayWindow.overlaps(t, slotEnd, breakStart, breakEnd);
             if (!isBreak) {
                 holes++;
@@ -1183,16 +1185,16 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
     }
 
-    private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
+    static int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).size();
     }
 
-    private int totalGapSlots(List<AgentAssignment> assignments, int incrementMinutes) {
+    static int totalGapSlots(List<AgentAssignment> assignments, int incrementMinutes) {
         return getGapLengths(assignments, incrementMinutes).stream()
                 .mapToInt(Integer::intValue).sum();
     }
 
-    private List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes) {
+    static List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes) {
         if (assignments == null || assignments.isEmpty()) return List.of();
 
         TreeSet<LocalTime> assignedStarts = new TreeSet<>();
@@ -1201,16 +1203,17 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         }
         if (assignedStarts.isEmpty()) return List.of();
 
-        LocalTime shiftStart = assignedStarts.first();
-        // End boundary as a minute-of-day: a shift whose last seat starts at 23:00 ends at minute
-        // 1440, and a LocalTime of 00:00 would make every isBefore() in the scan below false --
-        // the loop simply would not run.
+        // Scan on minute-of-day, never on LocalTime. Stepping a LocalTime cursor past 23:00
+        // yields 00:00, whose START minute is 0 -- so a cursor-based loop wraps around the clock
+        // instead of terminating, and a shift reaching midnight spins forever. The int cursor has
+        // no such ambiguity: it simply passes shiftEndMinute (at most 1440) and stops.
+        int firstMinute = DayWindow.startMinute(assignedStarts.first());
         int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
 
         List<Integer> gapLengths = new ArrayList<>();
         int currentGap = 0;
-        for (LocalTime t = shiftStart; DayWindow.startMinute(t) < shiftEndMinute;
-                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
+        for (int minute = firstMinute; minute < shiftEndMinute; minute += incrementMinutes) {
+            LocalTime t = DayWindow.toLocalTime(minute);
             if (!assignedStarts.contains(t)) {
                 currentGap++;
             } else {
@@ -1226,7 +1229,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return gapLengths;
     }
 
-    private LocalTime findBreakStart(List<AgentAssignment> assignments, int incrementMinutes) {
+    static LocalTime findBreakStart(List<AgentAssignment> assignments, int incrementMinutes) {
         if (assignments == null || assignments.isEmpty()) return null;
 
         TreeSet<LocalTime> assignedStarts = new TreeSet<>();
@@ -1235,14 +1238,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         }
         if (assignedStarts.isEmpty()) return null;
 
-        LocalTime shiftStart = assignedStarts.first();
-        // End boundary as a minute-of-day: a shift whose last seat starts at 23:00 ends at minute
-        // 1440, and a LocalTime of 00:00 would make every isBefore() in the scan below false --
-        // the loop simply would not run.
+        // Minute-of-day cursor, for the same reason as getGapLengths above: a LocalTime cursor
+        // stepped past 23:00 becomes 00:00 and wraps instead of terminating.
+        int firstMinute = DayWindow.startMinute(assignedStarts.first());
         int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
 
-        for (LocalTime t = shiftStart; DayWindow.startMinute(t) < shiftEndMinute;
-                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
+        for (int minute = firstMinute; minute < shiftEndMinute; minute += incrementMinutes) {
+            LocalTime t = DayWindow.toLocalTime(minute);
             if (!assignedStarts.contains(t)) {
                 return t;
             }
