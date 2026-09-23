@@ -44,7 +44,12 @@ resource "aws_ecs_task_definition" "app" {
       { name = "CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins != "" ? var.cors_allowed_origins : "https://${aws_cloudfront_distribution.frontend.domain_name}" },
       { name = "SOLVER_TIME_LIMIT", value = var.solver_time_limit },
       { name = "SPRING_PROFILES_ACTIVE", value = var.environment },
-      { name = "JAVA_OPTS", value = "-XX:MaxRAMPercentage=75.0" },
+      # JAVA_TOOL_OPTIONS, not JAVA_OPTS: the JVM reads the former automatically, while the
+      # latter is only a convention of launcher SCRIPTS and is silently ignored by the
+      # `java -jar app.jar` entrypoint this image uses. The authoritative heap setting is on
+      # that entrypoint in the Dockerfile (a command-line flag also wins over this variable);
+      # this is kept so the declared intent here is honoured too rather than being dead config.
+      { name = "JAVA_TOOL_OPTIONS", value = "-XX:MaxRAMPercentage=75.0" },
     ]
 
     secrets = [

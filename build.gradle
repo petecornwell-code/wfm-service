@@ -75,6 +75,12 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 
+    // ContainerHeapConfigTest reads the Dockerfile off disk, and Gradle cannot infer that from
+    // the sources alone -- without this the task stays UP-TO-DATE when only the Dockerfile
+    // changes, so a broken entrypoint reports GREEN locally and is caught only by CI's clean
+    // checkout. Declaring the file as an input makes editing it invalidate the test task.
+    inputs.file('Dockerfile').withPropertyName('dockerfile').withPathSensitivity(PathSensitivity.RELATIVE)
+
     // 15-08: narrow, single-property passthrough so the seeded A/B benchmark harness
     // (ShiftModelBenchmarkTest, gated on @EnabledIfSystemProperty) can be opted into via
     // `-Dwfm.benchmark=true` on the Gradle command line. Forwards exactly this one named
