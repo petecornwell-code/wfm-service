@@ -91,6 +91,19 @@ export default function ScheduleSetup() {
     }
   }, [deskId, loadSchedules])
 
+  // Poll while any listed schedule is still RUNNING, so its status and score update in place.
+  // Without this the list was a snapshot taken on mount: a solve could run for an hour, finish,
+  // and the row would still read RUNNING with a stale score until someone reloaded the page.
+  // ScheduleResults already polls its own schedule this way (2s); this list refreshes more
+  // slowly because it is a whole-list fetch and nobody watches a summary row second by second.
+  // The interval is torn down as soon as nothing is RUNNING, so an idle desk makes no requests.
+  const hasRunningSchedule = pastSchedules.some(s => s.status === 'RUNNING')
+  useEffect(() => {
+    if (!hasRunningSchedule) return
+    const id = setInterval(loadSchedules, 5000)
+    return () => clearInterval(id)
+  }, [hasRunningSchedule, loadSchedules])
+
   const handleAcceptSchedule = async (id: string, version: number) => {
     if (!deskId || actionLoading) return
     setActionLoading(id)
