@@ -2,12 +2,17 @@ package com.wfm.controller;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.PaginatedResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.wfm.dto.AgentDayOffResponse;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.SolveRequest;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.repository.DeskRepository;
+import com.wfm.service.AgentDayOffService;
 import com.wfm.service.ScheduleExportService;
 import com.wfm.service.ScheduleService;
 import com.wfm.service.SolverService;
@@ -17,25 +22,31 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/desks/{deskId}/schedules")
 public class ScheduleController {
 
+    private static final Logger log = LoggerFactory.getLogger(ScheduleController.class);
+
     private final ScheduleService scheduleService;
     private final SolverService solverService;
     private final ScheduleExportService scheduleExportService;
     private final DeskRepository deskRepository;
+    private final AgentDayOffService agentDayOffService;
 
     public ScheduleController(ScheduleService scheduleService,
                               SolverService solverService,
                               ScheduleExportService scheduleExportService,
-                              DeskRepository deskRepository) {
+                              DeskRepository deskRepository,
+                              AgentDayOffService agentDayOffService) {
         this.scheduleService = scheduleService;
         this.solverService = solverService;
         this.scheduleExportService = scheduleExportService;
         this.deskRepository = deskRepository;
+        this.agentDayOffService = agentDayOffService;
     }
 
     @PostMapping("/solve")
@@ -89,7 +100,22 @@ public class ScheduleController {
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> exportToExcel(@PathVariable UUID deskId, @PathVariable UUID id) {
         ScheduleDetailResponse detail = scheduleService.getScheduleDetail(deskId, id, null);
-        byte[] xlsx = scheduleExportService.exportToExcel(detail);
+
+        // Day-off rows are fetched here rather than inside the export service: they are not part
+        // of ScheduleDetailResponse, and the UI's PTO tab issues its own request for the same
+        // reason. A failure to load them must not fail the whole export -- the other sheets are
+        // still worth having, so the PTO sheet is simply omitted.
+        List<AgentDayOffResponse> daysOff = List.of();
+        if (detail.getPeriodStartDate() != null && detail.getPeriodEndDate() != null) {
+            try {
+                daysOff = agentDayOffService.listDaysOffForDesk(deskId,
+                        detail.getPeriodStartDate().toString(), detail.getPeriodEndDate().toString());
+            } catch (RuntimeException e) {
+                log.warn("PTO sheet omitted from export for schedule {}: {}", id, e.getMessage());
+            }
+        }
+
+        byte[] xlsx = scheduleExportService.exportToExcel(detail, daysOff);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=schedule-" + id + ".xlsx")
                 .contentType(MediaType.parseMediaType(
