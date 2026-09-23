@@ -25,9 +25,22 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, UUID> {
     List<Timeslot> findByTenantIdAndDeskIdAndScheduleIdIsNullOrderByDateAscStartTimeAsc(
             long tenantId, UUID deskId);
 
+    /**
+     * Desk bounds as MINUTE-OF-DAY integers, not as TIME values, because a desk whose day runs to
+     * midnight stores its final slot as 23:00-00:00 and {@code 00:00} is the SMALLEST value a SQL
+     * TIME can hold. The previous form of this query returned two wrong answers on such a desk:
+     * {@code MAX(end_time)} reported 23:00 rather than midnight, and
+     * {@code MIN(end_time - start_time)} reported -1380 minutes for that slot, which became the
+     * desk's increment. The CASE maps a midnight end to 1440; callers convert back through
+     * {@code DayWindow.toLocalTime}.
+     */
     @Query(value = "SELECT MIN(t.date) as periodStart, MAX(t.date) as periodEnd, " +
-                   "MIN(t.start_time) as startTime, MAX(t.end_time) as endTime, " +
-                   "MIN(EXTRACT(EPOCH FROM (t.end_time - t.start_time)) / 60)::int as incrementMinutes " +
+                   "MIN((EXTRACT(EPOCH FROM t.start_time) / 60)::int) as startMinute, " +
+                   "MAX((CASE WHEN t.end_time = TIME '00:00:00' THEN 1440 " +
+                   "          ELSE EXTRACT(EPOCH FROM t.end_time) / 60 END)::int) as endMinute, " +
+                   "MIN((CASE WHEN t.end_time = TIME '00:00:00' THEN 1440 " +
+                   "          ELSE EXTRACT(EPOCH FROM t.end_time) / 60 END)::int " +
+                   "    - (EXTRACT(EPOCH FROM t.start_time) / 60)::int) as incrementMinutes " +
                    "FROM timeslot t WHERE t.tenant_id = :tenantId AND t.desk_id = :deskId AND t.schedule_id IS NULL",
            nativeQuery = true)
     Object[] findLiveBoundsByDeskRaw(long tenantId, UUID deskId);

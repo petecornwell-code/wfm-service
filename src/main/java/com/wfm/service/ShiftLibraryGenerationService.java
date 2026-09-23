@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.util.DayWindow;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftLibrarySuggestionResponse;
 import com.wfm.dto.ShiftLibrarySuggestionResponse.SuggestedBand;
@@ -291,12 +292,20 @@ public class ShiftLibraryGenerationService {
                     continue; // break-less-template prohibition -- never generated at full length
                 }
                 int spanLength = netMinutes + breakDuration;
-                for (LocalTime spanStart = earliestStart; !spanStart.isAfter(latestStart);
-                     spanStart = spanStart.plusMinutes(increment)) {
-                    LocalTime spanEnd = spanStart.plusMinutes(spanLength);
-                    if (!spanEnd.isAfter(spanStart)) {
-                        continue; // guards against midnight wraparound
+                for (int spanStartMinute = DayWindow.startMinute(earliestStart);
+                     spanStartMinute <= DayWindow.startMinute(latestStart);
+                     spanStartMinute += increment) {
+                    // Minute-of-day, not LocalTime.plusMinutes: a latestStart within one increment
+                    // of midnight made the old loop wrap to 00:00 and never terminate.
+                    LocalTime spanStart = DayWindow.toLocalTime(spanStartMinute);
+                    // A span finishing exactly at midnight is legal (end 00:00 == minute 1440);
+                    // one running PAST midnight is not modelled, so it is skipped here rather than
+                    // silently wrapping to an earlier time as LocalTime.plusMinutes would.
+                    int spanEndMinute = DayWindow.startMinute(spanStart) + spanLength;
+                    if (spanEndMinute > DayWindow.MINUTES_PER_DAY) {
+                        continue;
                     }
+                    LocalTime spanEnd = DayWindow.toLocalTime(spanEndMinute);
                     if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, spanStart)
                             || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd)) {
                         continue;
@@ -307,8 +316,8 @@ public class ShiftLibraryGenerationService {
                     } else {
                         for (int offset = increment; offset + breakDuration <= spanLength - increment;
                              offset += increment) {
-                            LocalTime breakStart = spanStart.plusMinutes(offset);
-                            LocalTime breakEnd = breakStart.plusMinutes(breakDuration);
+                            LocalTime breakStart = DayWindow.plusWithinDay(spanStart, offset);
+                            LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, breakDuration);
                             if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, breakStart)
                                     || !ShiftTemplateService.isAligned(bounds.startTime(), increment, breakEnd)) {
                                 continue;
@@ -541,8 +550,10 @@ public class ShiftLibraryGenerationService {
 
         LocalTime earliestStart = windows.stream().map(ShiftLibraryValidationService.Window::startTime)
                 .min(Comparator.naturalOrder()).orElseThrow();
+        // Ranked by END minute-of-day: natural order puts a midnight end (00:00) FIRST, so a
+        // desk running to midnight would report its second-latest window end as the latest.
         LocalTime latestEnd = windows.stream().map(ShiftLibraryValidationService.Window::endTime)
-                .max(Comparator.naturalOrder()).orElseThrow();
+                .max(Comparator.comparingInt(DayWindow::endMinute)).orElseThrow();
 
         List<Candidate> expanded = new ArrayList<>(selected);
         for (Candidate candidate : candidates) {
@@ -554,7 +565,7 @@ public class ShiftLibraryGenerationService {
             }
             LocalTime start = candidate.template().getStartTime();
             LocalTime end = candidate.template().getEndTime();
-            if (start.isBefore(earliestStart) || end.isAfter(latestEnd)) {
+            if (start.isBefore(earliestStart) || DayWindow.endMinute(end) > DayWindow.endMinute(latestEnd)) {
                 continue; // never propose an envelope reaching outside the demanded range
             }
             chosenSpans.add(spanKey(candidate));
@@ -571,7 +582,7 @@ public class ShiftLibraryGenerationService {
     private BigDecimal demandHours(List<StaffingRequirement> demand) {
         BigDecimal total = BigDecimal.ZERO;
         for (StaffingRequirement sr : demand) {
-            long minutes = ChronoUnit.MINUTES.between(sr.getTimeslot().getStartTime(),
+            long minutes = DayWindow.durationMinutes(sr.getTimeslot().getStartTime(),
                     sr.getTimeslot().getEndTime());
             total = total.add(BigDecimal.valueOf(minutes)
                     .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP)
@@ -896,13 +907,14 @@ public class ShiftLibraryGenerationService {
     private int scoreOffset(ShiftTemplate template, int offset, int duration, List<DayOfWeek> validWeekdays,
                              Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
                              int incrementMinutes) {
-        LocalTime breakStart = template.getStartTime().plusMinutes(offset);
-        LocalTime breakEnd = breakStart.plusMinutes(duration);
+        LocalTime breakStart = DayWindow.plusWithinDay(template.getStartTime(), offset);
+        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, duration);
         int maxAcrossWeekdays = 0;
         for (DayOfWeek weekday : validWeekdays) {
             Map<LocalTime, Integer> daySlots = demandByWeekdayAndStart.getOrDefault(weekday, Map.of());
             int sum = 0;
-            for (LocalTime slot = breakStart; slot.isBefore(breakEnd); slot = slot.plusMinutes(incrementMinutes)) {
+            for (LocalTime slot = breakStart; DayWindow.startsBefore(slot, breakEnd);
+                    slot = DayWindow.plusWithinDay(slot, incrementMinutes)) {
                 sum += daySlots.getOrDefault(slot, 0);
             }
             maxAcrossWeekdays = Math.max(maxAcrossWeekdays, sum);

@@ -1,5 +1,6 @@
 package com.wfm.model;
 
+import com.wfm.util.DayWindow;
 import jakarta.persistence.*;
 
 import java.time.LocalTime;
@@ -63,13 +64,15 @@ public class ShiftTemplateBreakBand {
     /** Break start = the template's shift start plus this band's offset (relocated from ShiftTemplate, P-02). */
     @Transient
     public LocalTime getBreakStartTime(ShiftTemplate template) {
-        return template.getStartTime() == null ? null : template.getStartTime().plusMinutes(offsetMinutes);
+        return template.getStartTime() == null
+                ? null
+                : DayWindow.plusWithinDay(template.getStartTime(), offsetMinutes);
     }
 
     /** Break end = this band's break start plus its own duration (relocated from ShiftTemplate, P-02). */
     @Transient
     public LocalTime getBreakEndTime(ShiftTemplate template) {
         LocalTime breakStart = getBreakStartTime(template);
-        return breakStart == null ? null : breakStart.plusMinutes(durationMinutes);
+        return breakStart == null ? null : DayWindow.plusWithinDay(breakStart, durationMinutes);
     }
 }

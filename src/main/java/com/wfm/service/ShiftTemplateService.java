@@ -8,6 +8,7 @@ import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
+import com.wfm.util.DayWindow;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.repository.AgentShiftAssignmentRepository;
@@ -220,12 +221,15 @@ public class ShiftTemplateService {
         if (request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("Shift template name is required");
         }
+        // An endTime of 00:00 means END OF DAY, so this is DayWindow's forward-within-a-day test
+        // rather than endTime.isAfter(startTime) -- the latter rejects every shift finishing at
+        // midnight, because LocalTime has no 24:00 and 00:00 is the smallest value in the type.
         if (request.startTime() == null || request.endTime() == null
-                || !request.endTime().isAfter(request.startTime())) {
+                || !DayWindow.isForwardWithinDay(request.startTime(), request.endTime())) {
             throw new IllegalArgumentException("Shift template end time must be after its start time");
         }
 
-        long envelopeMinutes = ChronoUnit.MINUTES.between(request.startTime(), request.endTime());
+        long envelopeMinutes = DayWindow.durationMinutes(request.startTime(), request.endTime());
         validateBands(request.bands(), envelopeMinutes);
 
         if (request.validWeekdays() == null || request.validWeekdays().isEmpty()) {
@@ -304,8 +308,8 @@ public class ShiftTemplateService {
                 if (durationMinutes <= 0) {
                     continue;
                 }
-                LocalTime breakStart = request.startTime().plusMinutes(offsetMinutes);
-                LocalTime breakEnd = breakStart.plusMinutes(durationMinutes);
+                LocalTime breakStart = DayWindow.plusWithinDay(request.startTime(), offsetMinutes);
+                LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, durationMinutes);
                 addIfMisaligned(details, "bands[" + i + "].breakStartTime", breakStart, bounds);
                 addIfMisaligned(details, "bands[" + i + "].breakEndTime", breakEnd, bounds);
             }
@@ -338,7 +342,12 @@ public class ShiftTemplateService {
             // "no live bounds" (skip the check) rather than dividing by zero/negative below.
             return true;
         }
-        long diffMinutes = ChronoUnit.MINUTES.between(gridStart, candidate);
+        // The candidate is read in an END position (00:00 -> 1440). That is safe for candidates
+        // in a START position too: the only start that could be 00:00 sits on a desk whose grid
+        // also starts at 00:00, and 1440 is divisible by every permitted increment (15/30/60), so
+        // the verdict is "aligned" either way. Reading it as a start instead would be unsafe --
+        // a genuine midnight END would come back as minute 0 and be rejected as misaligned.
+        long diffMinutes = DayWindow.endMinute(candidate) - DayWindow.startMinute(gridStart);
         return diffMinutes >= 0 && diffMinutes % incrementMinutes == 0;
     }
 

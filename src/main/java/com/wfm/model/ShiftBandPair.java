@@ -2,6 +2,7 @@ package com.wfm.model;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import com.wfm.util.DayWindow;
 
 /**
  * Immutable problem fact — a live {@code (template, band)} pair the solver may choose for one
@@ -60,16 +61,18 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
     public static boolean covers(LocalTime envelopeStart, LocalTime envelopeEnd,
             Integer bandOffsetMinutes, Integer bandDurationMinutes,
             LocalTime slotStart, LocalTime slotEnd) {
-        if (slotStart.isBefore(envelopeStart) || slotEnd.isAfter(envelopeEnd)) {
+        // DayWindow.contains, not slotEnd.isAfter(envelopeEnd): an envelope ending at midnight
+        // stores 00:00, so the raw comparison declared EVERY slot in it out of bounds except the
+        // final one -- silently making a midnight-ending shift unseatable.
+        if (!DayWindow.contains(envelopeStart, envelopeEnd, slotStart, slotEnd)) {
             return false;
         }
         if (bandOffsetMinutes == null || bandDurationMinutes == null || bandDurationMinutes <= 0) {
             return true;
         }
-        LocalTime breakStart = envelopeStart.plusMinutes(bandOffsetMinutes);
-        LocalTime breakEnd = breakStart.plusMinutes(bandDurationMinutes);
-        boolean overlapsBreak = slotStart.isBefore(breakEnd) && slotEnd.isAfter(breakStart);
-        return !overlapsBreak;
+        LocalTime breakStart = DayWindow.plusWithinDay(envelopeStart, bandOffsetMinutes);
+        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, bandDurationMinutes);
+        return !DayWindow.overlaps(slotStart, slotEnd, breakStart, breakEnd);
     }
 
     /**

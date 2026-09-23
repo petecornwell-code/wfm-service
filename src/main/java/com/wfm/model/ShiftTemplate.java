@@ -1,10 +1,10 @@
 package com.wfm.model;
 
+import com.wfm.util.DayWindow;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.EnumSet;
@@ -130,7 +130,9 @@ public class ShiftTemplate {
         if (startTime == null || endTime == null) {
             return null;
         }
-        long totalMinutes = Duration.between(startTime, endTime).toMinutes();
+        // DayWindow, not Duration.between: an endTime of 00:00 means END OF DAY here, and the
+        // raw call would return a negative span for any shift finishing at midnight.
+        long totalMinutes = DayWindow.durationMinutes(startTime, endTime);
         long netMinutes = totalMinutes - breakDurationMinutes;
         return BigDecimal.valueOf(netMinutes).divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
     }

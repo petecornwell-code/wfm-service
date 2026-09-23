@@ -10,6 +10,7 @@ import com.wfm.dto.ScheduleSummary;
 import com.wfm.model.*;
 import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.solver.ScheduleConstraintProvider;
+import com.wfm.util.DayWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -809,8 +810,8 @@ public class ScheduleOutputService {
         if (offset == null || duration == null || duration <= 0) {
             return List.of();
         }
-        LocalTime breakStart = descriptor.startTime().plusMinutes(offset);
-        LocalTime breakEnd = breakStart.plusMinutes(duration);
+        LocalTime breakStart = DayWindow.plusWithinDay(descriptor.startTime(), offset);
+        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, duration);
         return List.of(new BreakDetail(breakStart, breakEnd, duration));
     }
 
@@ -928,8 +929,9 @@ public class ScheduleOutputService {
         for (int i = 0; i < sortedAssignments.size() - 1; i++) {
             LocalTime currentEnd = sortedAssignments.get(i).getTimeslot().getEndTime();
             LocalTime nextStart = sortedAssignments.get(i + 1).getTimeslot().getStartTime();
-            if (currentEnd.isBefore(nextStart)) {
-                int durationMinutes = (int) ChronoUnit.MINUTES.between(currentEnd, nextStart);
+            if (DayWindow.endMinute(currentEnd) < DayWindow.startMinute(nextStart)) {
+                int durationMinutes =
+                        DayWindow.startMinute(nextStart) - DayWindow.endMinute(currentEnd);
                 breaks.add(new BreakDetail(currentEnd, nextStart, durationMinutes));
             }
         }
@@ -963,10 +965,10 @@ public class ScheduleOutputService {
      */
     private boolean breaksOverlapPreferred(List<BreakDetail> breaks, LocalTime prefBreak, int breakDurationMinutes) {
         if (breaks == null || breaks.isEmpty() || prefBreak == null) return false;
-        LocalTime prefEnd = prefBreak.plusMinutes(breakDurationMinutes);
+        LocalTime prefEnd = DayWindow.plusWithinDay(prefBreak, breakDurationMinutes);
         for (BreakDetail bd : breaks) {
             // Overlap: actual break start < preferred end AND actual break end > preferred start
-            if (bd.startTime().isBefore(prefEnd) && bd.endTime().isAfter(prefBreak)) {
+            if (DayWindow.overlaps(bd.startTime(), bd.endTime(), prefBreak, prefEnd)) {
                 return true;
             }
         }

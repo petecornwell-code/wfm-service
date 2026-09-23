@@ -14,6 +14,7 @@ import com.wfm.model.AgentDayHours;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
+import com.wfm.util.DayWindow;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
@@ -228,7 +229,11 @@ public class ShiftLibraryValidationService {
         if (!template.isEffectiveOn(window.date())) {
             return false;
         }
-        if (window.startTime().isBefore(template.getStartTime()) || window.endTime().isAfter(template.getEndTime())) {
+        // DayWindow.contains: a template ending at midnight stores 00:00, which
+        // window.endTime().isAfter(...) reads as the EARLIEST time of day, so such a template
+        // appeared to cover nothing and the desk could never be switched into SHIFT mode.
+        if (!DayWindow.contains(template.getStartTime(), template.getEndTime(),
+                window.startTime(), window.endTime())) {
             return false;
         }
         if (bands == null || bands.isEmpty()) {
@@ -240,8 +245,7 @@ public class ShiftLibraryValidationService {
             }
             LocalTime breakStart = band.getBreakStartTime(template);
             LocalTime breakEnd = band.getBreakEndTime(template);
-            boolean overlapsBreak = window.startTime().isBefore(breakEnd) && window.endTime().isAfter(breakStart);
-            return !overlapsBreak;
+            return !DayWindow.overlaps(window.startTime(), window.endTime(), breakStart, breakEnd);
         });
     }
 

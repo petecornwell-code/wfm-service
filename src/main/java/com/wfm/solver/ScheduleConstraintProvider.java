@@ -4,6 +4,7 @@ import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
 import ai.timefold.solver.core.api.score.stream.bi.BiConstraintStream;
 import com.wfm.model.*;
+import com.wfm.util.DayWindow;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
@@ -335,7 +336,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes());
                     if (breakStart == null) return false;
                     int breakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    LocalTime breakEnd = breakStart.plusMinutes((long) breakSlots * dayConfig.incrementMinutes());
+                    LocalTime breakEnd = DayWindow.plusWithinDay(
+                            breakStart, breakSlots * dayConfig.incrementMinutes());
 
                     LocalTime shiftStart = getShiftStart(assignments);
                     LocalTime shiftEnd = getShiftEnd(assignments);
@@ -343,10 +345,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
                     long blockedMinutes = dayConfig.breakBlockedHours()
                             .multiply(BigDecimal.valueOf(60)).longValue();
-                    LocalTime blockedStartEnd = shiftStart.plusMinutes(blockedMinutes);
-                    LocalTime blockedEndStart = shiftEnd.minusMinutes(blockedMinutes);
+                    // Minute-of-day arithmetic: shiftEnd is an END boundary, so on a shift
+                    // finishing at midnight it is 00:00 == minute 1440, and both the subtraction
+                    // and the breakEnd comparison would otherwise read it as the day's start.
+                    LocalTime blockedStartEnd = DayWindow.plusWithinDay(shiftStart, (int) blockedMinutes);
+                    int blockedEndStartMinute = DayWindow.endMinute(shiftEnd) - (int) blockedMinutes;
 
-                    return breakStart.isBefore(blockedStartEnd) || breakEnd.isAfter(blockedEndStart);
+                    return DayWindow.startMinute(breakStart) < DayWindow.startMinute(blockedStartEnd)
+                            || DayWindow.endMinute(breakEnd) > blockedEndStartMinute;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break blocked window");
@@ -564,17 +570,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             return 0;
         }
 
-        LocalTime breakStart = pair.template().getStartTime()
-                .plusMinutes(pair.band().getOffsetMinutes());
-        LocalTime breakEnd = breakStart.plusMinutes(pair.band().getDurationMinutes());
+        LocalTime breakStart = DayWindow.plusWithinDay(
+                pair.template().getStartTime(), pair.band().getOffsetMinutes());
+        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, pair.band().getDurationMinutes());
 
         int holes = 0;
-        for (LocalTime t = worked.first(); t.isBefore(worked.last()); t = t.plusMinutes(incrementMinutes)) {
+        for (LocalTime t = worked.first(); t.isBefore(worked.last());
+                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
             if (worked.contains(t)) {
                 continue;
             }
-            LocalTime slotEnd = t.plusMinutes(incrementMinutes);
-            boolean isBreak = t.isBefore(breakEnd) && slotEnd.isAfter(breakStart);
+            LocalTime slotEnd = DayWindow.plusWithinDay(t, incrementMinutes);
+            boolean isBreak = DayWindow.overlaps(t, slotEnd, breakStart, breakEnd);
             if (!isBreak) {
                 holes++;
             }
@@ -1173,7 +1180,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignments == null || assignments.isEmpty()) return 0;
         Timeslot ts = assignments.get(0).getTimeslot();
         if (ts == null || ts.getStartTime() == null || ts.getEndTime() == null) return 0;
-        return (int) java.time.Duration.between(ts.getStartTime(), ts.getEndTime()).toMinutes();
+        return DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
     }
 
     private int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
@@ -1195,11 +1202,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignedStarts.isEmpty()) return List.of();
 
         LocalTime shiftStart = assignedStarts.first();
-        LocalTime shiftEnd = assignedStarts.last().plusMinutes(incrementMinutes);
+        // End boundary as a minute-of-day: a shift whose last seat starts at 23:00 ends at minute
+        // 1440, and a LocalTime of 00:00 would make every isBefore() in the scan below false --
+        // the loop simply would not run.
+        int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
 
         List<Integer> gapLengths = new ArrayList<>();
         int currentGap = 0;
-        for (LocalTime t = shiftStart; t.isBefore(shiftEnd); t = t.plusMinutes(incrementMinutes)) {
+        for (LocalTime t = shiftStart; DayWindow.startMinute(t) < shiftEndMinute;
+                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
             if (!assignedStarts.contains(t)) {
                 currentGap++;
             } else {
@@ -1225,9 +1236,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignedStarts.isEmpty()) return null;
 
         LocalTime shiftStart = assignedStarts.first();
-        LocalTime shiftEnd = assignedStarts.last().plusMinutes(incrementMinutes);
+        // End boundary as a minute-of-day: a shift whose last seat starts at 23:00 ends at minute
+        // 1440, and a LocalTime of 00:00 would make every isBefore() in the scan below false --
+        // the loop simply would not run.
+        int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
 
-        for (LocalTime t = shiftStart; t.isBefore(shiftEnd); t = t.plusMinutes(incrementMinutes)) {
+        for (LocalTime t = shiftStart; DayWindow.startMinute(t) < shiftEndMinute;
+                t = DayWindow.plusWithinDay(t, incrementMinutes)) {
             if (!assignedStarts.contains(t)) {
                 return t;
             }
@@ -1246,7 +1261,10 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         if (assignments == null || assignments.isEmpty()) return null;
         return assignments.stream()
                 .map(a -> a.getTimeslot().getEndTime())
-                .max(LocalTime::compareTo).orElse(null);
+                // Compared by END minute-of-day: LocalTime::compareTo ranks a midnight end (00:00)
+                // as the EARLIEST value, so a shift finishing at midnight reported the end of its
+                // second-to-last slot as the shift end.
+                .max(Comparator.comparingInt(DayWindow::endMinute)).orElse(null);
     }
 
     private boolean isAligned(LocalTime time, BreakAlignment alignment) {
@@ -1261,7 +1279,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     private int deriveIncrement(List<AgentAssignment> assignments) {
         if (assignments == null || assignments.isEmpty()) return 15;
         Timeslot t = assignments.get(0).getTimeslot();
-        return (int) java.time.temporal.ChronoUnit.MINUTES.between(t.getStartTime(), t.getEndTime());
+        return DayWindow.durationMinutes(t.getStartTime(), t.getEndTime());
     }
 
     /**
@@ -1277,6 +1295,6 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         }
         LocalTime breakStart = pair.band().getBreakStartTime(pair.template());
         LocalTime breakEnd = pair.band().getBreakEndTime(pair.template());
-        return ts.getStartTime().isBefore(breakEnd) && ts.getEndTime().isAfter(breakStart);
+        return DayWindow.overlaps(ts.getStartTime(), ts.getEndTime(), breakStart, breakEnd);
     }
 }

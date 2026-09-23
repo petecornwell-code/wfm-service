@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.util.DayWindow;
 import com.wfm.dto.FteUploadResult;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
@@ -107,11 +108,17 @@ public class FteUploadService {
                     // Determine end of this slot
                     LocalTime slotEnd = (i + 1 < headerTimes.size() && headerTimes.get(i + 1) != null)
                             ? headerTimes.get(i + 1)
-                            : (incrementMinutes > 0 ? slotStart.plusMinutes(incrementMinutes) : null);
+                            : (incrementMinutes > 0
+                                    ? DayWindow.plusWithinDay(slotStart, incrementMinutes) : null);
                     if (slotEnd != null) {
-                        if (endTime == null || slotEnd.isAfter(endTime)) endTime = slotEnd;
+                        // Compared as END boundaries: a final slot ending at midnight stores 00:00,
+                        // which isAfter() reads as the earliest time of day, so the sheet's window
+                        // would have been recorded as ending an increment early.
+                        if (endTime == null || DayWindow.endMinute(slotEnd) > DayWindow.endMinute(endTime)) {
+                            endTime = slotEnd;
+                        }
                         if (incrementMinutes == 0) {
-                            incrementMinutes = (int) slotStart.until(slotEnd, ChronoUnit.MINUTES);
+                            incrementMinutes = DayWindow.durationMinutes(slotStart, slotEnd);
                         }
                     }
                 }

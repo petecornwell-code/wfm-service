@@ -43,8 +43,9 @@ public class FteSpreadsheetGenerator {
                 specHeader.setCellStyle(headerStyle);
 
                 int col = 1;
-                for (LocalTime t = startTime; t.isBefore(endTime); t = t.plusMinutes(incrementMinutes)) {
-                    LocalTime slotEnd = t.plusMinutes(incrementMinutes);
+                for (LocalTime t = startTime; DayWindow.startsBefore(t, endTime);
+                        t = DayWindow.plusWithinDay(t, incrementMinutes)) {
+                    LocalTime slotEnd = DayWindow.plusWithinDay(t, incrementMinutes);
                     Cell cell = header.createCell(col++);
                     cell.setCellValue(t.format(TIME_FMT) + "-" + slotEnd.format(TIME_FMT));
                     cell.setCellStyle(headerStyle);
@@ -55,7 +56,8 @@ public class FteSpreadsheetGenerator {
                     Row row = sheet.createRow(r + 1);
                     row.createCell(0).setCellValue(specializations.get(r));
                     int slotCol = 1;
-                    for (LocalTime t = startTime; t.isBefore(endTime); t = t.plusMinutes(incrementMinutes)) {
+                    for (LocalTime t = startTime; DayWindow.startsBefore(t, endTime);
+                            t = DayWindow.plusWithinDay(t, incrementMinutes)) {
                         // Sample FTE value: varies by specialization and time
                         int fte = 2 + (r % 3) + (slotCol % 4);
                         row.createCell(slotCol++).setCellValue(fte);

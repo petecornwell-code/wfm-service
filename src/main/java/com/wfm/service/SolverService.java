@@ -4,6 +4,7 @@ import ai.timefold.solver.core.api.solver.SolverConfigOverride;
 import ai.timefold.solver.core.api.solver.SolverManager;
 import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.wfm.config.TenantContext;
+import com.wfm.util.DayWindow;
 import com.wfm.dto.ErrorResponse.ErrorDetail;
 import com.wfm.dto.ShiftLibraryValidationResponse.CapacityAdvisory;
 import com.wfm.dto.SolveRequest;
@@ -1063,7 +1064,7 @@ public class SolverService {
                                 + " does not match timeslot end " + lastOnDay.getEndTime(),
                         schedule.getEndTime().toString()));
             }
-            long timeslotMinutes = ChronoUnit.MINUTES.between(first.getStartTime(), first.getEndTime());
+            long timeslotMinutes = DayWindow.durationMinutes(first.getStartTime(), first.getEndTime());
             if (timeslotMinutes != schedule.getIncrementMinutes()) {
                 errors.add(new ErrorDetail("incrementMinutes",
                         "Schedule incrementMinutes " + schedule.getIncrementMinutes()
@@ -1179,7 +1180,9 @@ public class SolverService {
         }
 
         // 10. Coverage window must be >= contracted hours + break for each agent-day
-        long coverageMinutes = ChronoUnit.MINUTES.between(schedule.getStartTime(), schedule.getEndTime());
+        // A schedule ending at midnight stores 00:00; the raw call would make its coverage
+        // window negative and fail every agent's contracted-hours feasibility check.
+        long coverageMinutes = DayWindow.durationMinutes(schedule.getStartTime(), schedule.getEndTime());
         BigDecimal coverageHours = BigDecimal.valueOf(coverageMinutes)
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
         BigDecimal breakHours = BigDecimal.valueOf(schedule.getBreakDurationMinutes())

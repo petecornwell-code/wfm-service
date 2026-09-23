@@ -186,6 +186,70 @@ class ShiftTemplateServiceTest {
                 .hasMessage("Shift template end time must be after its start time");
     }
 
+    // ---------- Midnight end (a desk whose day runs to 00:00) ----------
+
+    @Test
+    void create_endTimeMidnight_acceptedAsEndOfDay() {
+        UUID deskId = saveDesk(TENANT_A);
+        // The 15:00-00:00 evening shift: nine hours ending exactly at midnight. LocalTime has no
+        // 24:00, so this is stored as end 00:00 and read as minute 1440 in an end position.
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Evening", LocalTime.of(15, 0), LocalTime.MIDNIGHT,
+                List.of(new BreakBandRequest(240, 60, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplateResponse created = controller.createShiftTemplate(deskId, req).getBody();
+
+        assertThat(created.startTime()).isEqualTo(LocalTime.of(15, 0));
+        assertThat(created.endTime()).isEqualTo(LocalTime.MIDNIGHT);
+        assertThat(created.bands()).singleElement()
+                .satisfies(b -> {
+                    assertThat(b.breakStartTime()).isEqualTo(LocalTime.of(19, 0));
+                    assertThat(b.breakEndTime()).isEqualTo(LocalTime.of(20, 0));
+                    // 9h envelope - 1h break = 8h net, not a negative number
+                    assertThat(b.netHours()).isEqualByComparingTo(BigDecimal.valueOf(8.0));
+                });
+    }
+
+    @Test
+    void create_bandRunningPastAMidnightEnvelope_rejected() {
+        UUID deskId = saveDesk(TENANT_A);
+        // Envelope 15:00-00:00 is 540 minutes; a break at +500 lasting 60 would end past midnight.
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Evening", LocalTime.of(15, 0), LocalTime.MIDNIGHT,
+                List.of(new BreakBandRequest(500, 60, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Shift template break must finish before the shift ends");
+    }
+
+    @Test
+    void create_midnightEndOnAnHourlyGrid_isAligned() {
+        UUID deskId = saveDesk(TENANT_A);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31),
+                        LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60)));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Evening", LocalTime.of(15, 0), LocalTime.MIDNIGHT,
+                List.of(new BreakBandRequest(240, 60, null)),
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        // Reading the 00:00 end as minute 0 would make it 480 minutes BEFORE the grid start and
+        // fail the alignment check; as minute 1440 it is 16 whole hours after it.
+        assertThat(service.createShiftTemplate(deskId, req).getEndTime()).isEqualTo(LocalTime.MIDNIGHT);
+    }
+
+    @Test
+    void create_startTimeAfterAMidnightEnd_stillRejected() {
+        UUID deskId = saveDesk(TENANT_A);
+        // Midnight is legal as an END only. A template crossing into the next day stays rejected.
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Shift template end time must be after its start time");
+    }
+
     @Test
     void create_endTimeBeforeStartTime_rejected() {
         UUID deskId = saveDesk(TENANT_A);

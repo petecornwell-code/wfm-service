@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.util.DayWindow;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.model.ScheduleStatus;
@@ -54,11 +55,14 @@ public class TimeslotGeneratorService {
         // Native query returns a single row; columns may be null if no timeslots exist
         Object[] cols = (row[0] instanceof Object[]) ? (Object[]) row[0] : row;
         if (cols[0] == null) return Optional.empty();
+        // Columns 2 and 3 are minute-of-day integers, not TIME values -- see the query's javadoc.
+        // DayWindow.toLocalTime maps 1440 back to 00:00, so a desk ending at midnight reports its
+        // true end rather than the 23:00 that MAX(end_time) used to return.
         return Optional.of(new TimeslotBoundsResponse(
                 ((java.sql.Date) cols[0]).toLocalDate(),
                 ((java.sql.Date) cols[1]).toLocalDate(),
-                ((java.sql.Time) cols[2]).toLocalTime(),
-                ((java.sql.Time) cols[3]).toLocalTime(),
+                DayWindow.toLocalTime(((Number) cols[2]).intValue()),
+                DayWindow.toLocalTime(((Number) cols[3]).intValue()),
                 ((Number) cols[4]).intValue()
         ));
     }
@@ -69,7 +73,10 @@ public class TimeslotGeneratorService {
         if (incrementMinutes != 15 && incrementMinutes != 30 && incrementMinutes != 60) {
             throw new IllegalArgumentException("incrementMinutes must be 15, 30, or 60");
         }
-        long rangeMinutes = startTime.until(endTime, ChronoUnit.MINUTES);
+        // endTime 00:00 means END OF DAY (1440), so this is DayWindow arithmetic rather than
+        // startTime.until(endTime) -- the raw call returns a NEGATIVE range for any desk whose
+        // day runs to midnight and rejects it as "not positive".
+        long rangeMinutes = (long) DayWindow.endMinute(endTime) - DayWindow.startMinute(startTime);
         if (rangeMinutes <= 0 || rangeMinutes % incrementMinutes != 0) {
             throw new IllegalArgumentException("Time range must be positive and evenly divisible by incrementMinutes");
         }
@@ -116,16 +123,24 @@ public class TimeslotGeneratorService {
 
         // Create timeslots for slots that don't already exist
         List<Timeslot> toCreate = new ArrayList<>();
+        // Iterate on minute-of-day rather than on LocalTime: the previous
+        // `time.isBefore(endTime)` loop produced ZERO slots for a desk ending at midnight, and
+        // LocalTime.plusMinutes would have wrapped past midnight into the next morning rather
+        // than stopping. The final slot of a midnight-ending day is written with endTime 00:00.
+        int firstMinute = DayWindow.startMinute(startTime);
+        int lastMinute = DayWindow.endMinute(endTime);
         for (LocalDate date = periodStart; !date.isAfter(periodEnd); date = date.plusDays(1)) {
-            for (LocalTime time = startTime; time.isBefore(endTime); time = time.plusMinutes(incrementMinutes)) {
-                String key = slotKey(date, time, time.plusMinutes(incrementMinutes));
+            for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
+                LocalTime slotStart = DayWindow.toLocalTime(minute);
+                LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
+                String key = slotKey(date, slotStart, slotEnd);
                 if (!survivingByKey.containsKey(key)) {
                     Timeslot ts = new Timeslot();
                     ts.setTenantId(tenantId);
                     ts.setDeskId(deskId);
                     ts.setDate(date);
-                    ts.setStartTime(time);
-                    ts.setEndTime(time.plusMinutes(incrementMinutes));
+                    ts.setStartTime(slotStart);
+                    ts.setEndTime(slotEnd);
                     toCreate.add(ts);
                 }
             }
@@ -160,10 +175,12 @@ public class TimeslotGeneratorService {
                              LocalDate periodStart, LocalDate periodEnd,
                              LocalTime startTime, LocalTime endTime, int incrementMinutes) {
         if (date.isBefore(periodStart) || date.isAfter(periodEnd)) return false;
-        if (slotStart.isBefore(startTime) || !slotStart.isBefore(endTime)) return false;
-        long minutesFromStart = startTime.until(slotStart, ChronoUnit.MINUTES);
+        // DayWindow throughout: `!slotStart.isBefore(endTime)` is true for EVERY slot when
+        // endTime is 00:00, which marked every slot on a midnight-ending desk as obsolete.
+        if (slotStart.isBefore(startTime) || !DayWindow.startsBefore(slotStart, endTime)) return false;
+        long minutesFromStart = (long) DayWindow.startMinute(slotStart) - DayWindow.startMinute(startTime);
         if (minutesFromStart % incrementMinutes != 0) return false;
-        return slotEnd.equals(slotStart.plusMinutes(incrementMinutes));
+        return DayWindow.endMinute(slotEnd) == DayWindow.startMinute(slotStart) + incrementMinutes;
     }
 
     /**
@@ -181,7 +198,8 @@ public class TimeslotGeneratorService {
         if (existing.isEmpty()) return false;
 
         long days = ChronoUnit.DAYS.between(periodStart, periodEnd) + 1;
-        long slotsPerDay = startTime.until(endTime, ChronoUnit.MINUTES) / incrementMinutes;
+        long slotsPerDay =
+                ((long) DayWindow.endMinute(endTime) - DayWindow.startMinute(startTime)) / incrementMinutes;
         if (existing.size() != days * slotsPerDay) return false;
 
         for (Timeslot ts : existing) {
