@@ -162,10 +162,14 @@ public class ScheduleEnvelopeRepairService {
         // re-score. This is the case that normally holds, and it costs one recalculation.
         List<Move> batch = new ArrayList<>();
         for (AgentAssignment v : violations) {
-            List<AgentAssignment> candidates = candidatesFor(v, envelopes, freeByDate, occupied);
-            if (!candidates.isEmpty()) {
-                batch.add(planMove(v, candidates.get(0), freeByDate, occupied));
+            Candidates scan = candidatesFor(v, envelopes, freeByDate, occupied);
+            if (scan.seats().isEmpty()) {
+                // Logged HERE and only here: pass 1 sees every violation exactly once, so this
+                // reports each unfixable one without pass 2 repeating it.
+                logNoCandidate(v, scan);
+                continue;
             }
+            batch.add(planMove(v, scan.seats().get(0), freeByDate, occupied));
         }
         if (batch.isEmpty()) {
             log.info("Envelope repair — no legal free seat for any of the {} violation(s); "
@@ -201,7 +205,7 @@ public class ScheduleEnvelopeRepairService {
                 log.info("Envelope repair — stopping at the {}-rescore budget", MAX_RESCORES);
                 break;
             }
-            List<AgentAssignment> candidates = candidatesFor(v, envelopes, freeByDate, occupied);
+            List<AgentAssignment> candidates = candidatesFor(v, envelopes, freeByDate, occupied).seats();
             int tried = 0;
             for (AgentAssignment c : candidates) {
                 if (tried >= MAX_CANDIDATES_PER_VIOLATION || rescores >= MAX_RESCORES) {
@@ -240,12 +244,26 @@ public class ScheduleEnvelopeRepairService {
     }
 
     /**
+     * The outcome of scanning a date's free seats for one violation: the usable ones, best first,
+     * plus a tally of why each of the others was passed over. The tally exists so that a violation
+     * this repair CANNOT fix says so in the log with a reason — without it, an empty candidate list
+     * is indistinguishable from a filter that is simply too strict, which is exactly the ambiguity
+     * the first live run on Vinted left behind (2 of 12 violations had no candidate and no
+     * explanation).
+     */
+    private record Candidates(List<AgentAssignment> seats, int freeOnDate, int notCovered,
+                              int alreadySeated, int wrongSpecialization) {}
+
+    /**
      * Free seats on the violation's own date that the agent could legally take instead, best
      * first. "Best" is the slot with the most free seats left on it — the hungriest hour — which
      * both puts the seat where coverage wants it and keeps the move clear of the bulk
      * overallocation ceiling. Only the cheap conditions are checked here; the re-score decides.
+     *
+     * <p>Rejections are classified in priority order, one reason per seat, so the counts sum to
+     * the seats considered.
      */
-    private List<AgentAssignment> candidatesFor(AgentAssignment violation,
+    private Candidates candidatesFor(AgentAssignment violation,
             Map<AgentDay, ShiftBandPair> envelopes,
             Map<LocalDate, List<AgentAssignment>> freeByDate,
             Map<AgentDay, Set<UUID>> occupied) {
@@ -255,7 +273,7 @@ public class ScheduleEnvelopeRepairService {
         ShiftBandPair pair = envelopes.get(key);
         List<AgentAssignment> free = freeByDate.get(date);
         if (pair == null || free == null || free.isEmpty()) {
-            return List.of();
+            return new Candidates(List.of(), free == null ? 0 : free.size(), 0, 0, 0);
         }
         Set<UUID> taken = occupied.getOrDefault(key, Set.of());
 
@@ -265,19 +283,41 @@ public class ScheduleEnvelopeRepairService {
         }
 
         List<AgentAssignment> out = new ArrayList<>();
+        int notCovered = 0, alreadySeated = 0, wrongSpec = 0;
         for (AgentAssignment f : free) {
-            if (!pair.covers(f.getTimeslot())
-                    || taken.contains(f.getTimeslot().getId())
-                    || !qualifies(agent, f)) {
-                continue;
+            if (!pair.covers(f.getTimeslot())) {
+                notCovered++;
+            } else if (taken.contains(f.getTimeslot().getId())) {
+                alreadySeated++;
+            } else if (!qualifies(agent, f)) {
+                wrongSpec++;
+            } else {
+                out.add(f);
             }
-            out.add(f);
         }
         out.sort(Comparator
                 .comparingLong((AgentAssignment f) -> -freePerSlot.getOrDefault(f.getTimeslot().getId(), 0L))
                 .thenComparing(f -> f.getTimeslot().getStartTime())
                 .thenComparing(f -> f.getId().toString()));
-        return out;
+        return new Candidates(out, free.size(), notCovered, alreadySeated, wrongSpec);
+    }
+
+    /**
+     * Says, for one violation this repair cannot touch, exactly which filter emptied the list.
+     * "No free seat on the date at all" means the schedule is saturated and only a three-way swap
+     * could help; "every free seat is outside the envelope" or "the agent already works that hour"
+     * point at the shape of the day instead; a non-zero specialization count means the seat exists
+     * but the agent cannot fill it.
+     */
+    private void logNoCandidate(AgentAssignment violation, Candidates scan) {
+        log.info("Envelope repair — no legal free seat for agent {} on {} at {} (envelope seat at "
+                        + "{}): {} free seat(s) on the date, of which {} outside the envelope or in "
+                        + "the break band, {} at an hour the agent already works, {} requiring a "
+                        + "specialization the agent does not hold",
+                violation.getAgent().getId(), violation.getTimeslot().getDate(),
+                violation.getTimeslot().getStartTime(), violation.getTimeslot().getStartTime(),
+                scan.freeOnDate(), scan.notCovered(), scan.alreadySeated(),
+                scan.wrongSpecialization());
     }
 
     /** Mirrors {@code ScheduleConstraintProvider.specializationMatch}: primary or any secondary. */
