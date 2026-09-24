@@ -53,6 +53,7 @@ public class SolverService {
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
     private final ScheduleConsistencyRepairService consistencyRepairService;
+    private final ScheduleEnvelopeRepairService envelopeRepairService;
     private final ShiftStartMixTargetService shiftStartMixTargetService;
     private final ShiftStartMixAllocator shiftStartMixAllocator;
 
@@ -93,6 +94,7 @@ public class SolverService {
                          InMemoryScheduleStore inMemoryStore,
                          SolverManager<Schedule, UUID> solverManager,
                          ScheduleConsistencyRepairService consistencyRepairService,
+                         ScheduleEnvelopeRepairService envelopeRepairService,
                          ShiftStartMixTargetService shiftStartMixTargetService,
                          ShiftStartMixAllocator shiftStartMixAllocator,
                          DeskRepository deskRepository,
@@ -115,6 +117,7 @@ public class SolverService {
         this.inMemoryStore = inMemoryStore;
         this.solverManager = solverManager;
         this.consistencyRepairService = consistencyRepairService;
+        this.envelopeRepairService = envelopeRepairService;
         this.shiftStartMixTargetService = shiftStartMixTargetService;
         this.shiftStartMixAllocator = shiftStartMixAllocator;
         this.deskRepository = deskRepository;
@@ -530,6 +533,23 @@ public class SolverService {
                                     finalBestSolution, sol -> solutionManager().update(sol));
                         } catch (RuntimeException e) {
                             log.error("Usual-shift repair failed for schedule {} — keeping the "
+                                    + "solver's own result", finalBestSolution.getId(), e);
+                        }
+                        // Post-solve shift-envelope repair (see ScheduleEnvelopeRepairService):
+                        // moves a seat that landed outside its agent-day envelope — typically the
+                        // agent's own break hour — onto a free legal seat in the same envelope,
+                        // one for one. That exact swap IS in the solver's move set and IS accepted
+                        // when it improves, but at ~23 000 seat entities it is sampled with
+                        // probability ~1e-8 per draw, so live solves settle at a residual -1..-3
+                        // hard with the repair sitting right there unused. Runs AFTER the
+                        // consistency repair so it has the final say on hard violations, and like
+                        // it, is self-verifying (every move is kept only if the hard score strictly
+                        // improves) and never allowed to fail the solve.
+                        try {
+                            envelopeRepairService.repairVerified(
+                                    finalBestSolution, sol -> solutionManager().update(sol));
+                        } catch (RuntimeException e) {
+                            log.error("Envelope repair failed for schedule {} — keeping the "
                                     + "solver's own result", finalBestSolution.getId(), e);
                         }
                         // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
