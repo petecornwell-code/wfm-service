@@ -632,3 +632,57 @@ export const jobTitleIncludePattern = {
 export const bambooSyncStatus = {
   get: () => request<BambooSyncEventResponse>('/configuration/bamboohr/sync-status'),
 }
+
+// --- Erlang Calculator ---
+// Read-only staffing arithmetic: POST numbers, get numbers back. Nothing is stored, and no desk is
+// involved -- which is why these are not under /desks/{deskId} like staffingRequirements.
+// calculateErlangX above is the persisting path: it REPLACES the live staffing requirements for the
+// date range it is given. These two do not share an endpoint for that reason.
+export interface ErlangAdjustments {
+  shrinkage?: number | null
+  maxOccupancy?: number | null
+  concurrency?: number | null
+}
+
+export interface ErlangCCalculationRequest {
+  volume: number
+  intervalMinutes: number
+  ahtSeconds: number
+  serviceLevelTarget: number
+  serviceLevelThresholdSeconds: number
+  adjustments?: ErlangAdjustments | null
+}
+
+export interface ErlangXCalculationRequest extends ErlangCCalculationRequest {
+  patienceSeconds: number
+  retryFraction: number
+  countAbandonsAsAnswered?: boolean | null
+}
+
+// Nullable fields are absent by model, not by accident: Erlang C has no abandonment or retrials,
+// and Erlang X reports no mean answer speed because its waiting-time distribution has no closed
+// form. Render them as '--', never as 0.
+export interface ErlangCalculationResponse {
+  model: 'ERLANG_C' | 'ERLANG_X'
+  agentsRequired: number
+  handlingAgents: number
+  scheduledAgents: number
+  occupancyRelief: number
+  shrinkageUplift: number
+  offeredLoad: number
+  baseOfferedLoad: number
+  serviceLevel: number
+  probabilityOfWait: number
+  occupancy: number
+  occupancyAtHandlingAgents: number
+  probabilityOfAbandon: number | null
+  averageSpeedOfAnswerSeconds: number | null
+  retrialIterations: number | null
+}
+
+export const erlangCalculator = {
+  erlangC: (data: ErlangCCalculationRequest) =>
+    request<ErlangCalculationResponse>('/calc/erlang-c', { method: 'POST', body: JSON.stringify(data) }),
+  erlangX: (data: ErlangXCalculationRequest) =>
+    request<ErlangCalculationResponse>('/calc/erlang-x', { method: 'POST', body: JSON.stringify(data) }),
+}

@@ -10,6 +10,7 @@ import DeskAgents from './pages/DeskAgents'
 import AgentPreferences from './pages/AgentPreferences'
 import AgentExceptions from './pages/AgentExceptions'
 import StaffingRequirements from './pages/StaffingRequirements'
+import ErlangCalculator from './pages/ErlangCalculator'
 import ConstraintWeightsPage from './pages/ConstraintWeightsPage'
 import ScheduleSetup from './pages/ScheduleSetup'
 import ScheduleResults from './pages/ScheduleResults'
@@ -41,6 +42,10 @@ function DeskLayout() {
           <Link to={`/desks/${deskId}/specializations`} className={isActive('specializations') ? 'active' : ''}>Specializations</Link>
           <Link to={`/desks/${deskId}/shift-library`} className={isActive('shift-library') ? 'active' : ''}>Shift Library</Link>
           <Link to={`/desks/${deskId}/staffing`} className={isActive('staffing') ? 'active' : ''}>Staffing Requirements</Link>
+          {/* Desk-independent: the calculator writes nothing and reads no desk. It lives here
+              because this is where the navigation is, and the route carries deskId for that reason
+              alone. */}
+          <Link to={`/desks/${deskId}/erlang-calculator`} className={isActive('erlang-calculator') ? 'active' : ''}>Erlang Calculator</Link>
           <Link to={`/desks/${deskId}/constraint-weights`} className={isActive('constraint-weights') ? 'active' : ''}>Constraint Weights</Link>
         </nav>
       </aside>
@@ -54,6 +59,7 @@ function DeskLayout() {
           <Route path="specializations" element={<Specializations />} />
           <Route path="shift-library" element={<ShiftLibrary />} />
           <Route path="staffing" element={<StaffingRequirements />} />
+          <Route path="erlang-calculator" element={<ErlangCalculator />} />
           <Route path="constraint-weights" element={<ConstraintWeightsPage />} />
           <Route path="schedules/:scheduleId" element={<ScheduleResults />} />
         </Routes>
