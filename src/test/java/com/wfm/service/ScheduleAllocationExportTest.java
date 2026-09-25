@@ -109,19 +109,22 @@ class ScheduleAllocationExportTest {
         }
 
         @Test
-        @DisplayName("agent and hours columns plus the header row are frozen")
+        @DisplayName("agent, shift and hours columns plus the header row are frozen")
         void panesAreFrozen() {
             PaneInformation pane = dayOne().getPaneInformation();
             assertThat(pane).isNotNull();
-            assertThat(pane.getVerticalSplitLeftColumn()).isEqualTo((short) 2);
+            // Three pinned columns now: Agent, Shift, Hours.
+            assertThat(pane.getVerticalSplitLeftColumn()).isEqualTo((short) 3);
             assertThat(pane.getHorizontalSplitTopRow()).isEqualTo((short) 1);
         }
 
         @Test
         @DisplayName("columns have explicit widths — autoSizeColumn on a 16-column grid is slow")
         void columnsHaveExplicitWidths() {
-            assertThat(dayOne().getColumnWidth(0)).isEqualTo(30 * 256);
-            assertThat(dayOne().getColumnWidth(2)).isEqualTo(6 * 256);
+            assertThat(dayOne().getColumnWidth(0)).isEqualTo(30 * 256);   // Agent
+            assertThat(dayOne().getColumnWidth(1)).isEqualTo(14 * 256);   // Shift
+            assertThat(dayOne().getColumnWidth(2)).isEqualTo(8 * 256);    // Hours
+            assertThat(dayOne().getColumnWidth(3)).isEqualTo(6 * 256);    // first slot
         }
 
         @Test
@@ -129,19 +132,24 @@ class ScheduleAllocationExportTest {
         void slotColumnsCoverTheDay() {
             Row header = dayOne().getRow(0);
             assertThat(header.getCell(0).getStringCellValue()).isEqualTo("Agent");
-            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("Hours");
+            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("Shift");
+            assertThat(header.getCell(2).getStringCellValue()).isEqualTo("Hours");
             // 19:00 seat, 20:00 break, 21:00 unfilled, 22:00 and 23:00 seats.
             assertThat(List.of(
-                    header.getCell(2).getStringCellValue(), header.getCell(3).getStringCellValue(),
-                    header.getCell(4).getStringCellValue(), header.getCell(5).getStringCellValue(),
-                    header.getCell(6).getStringCellValue()))
+                    header.getCell(3).getStringCellValue(), header.getCell(4).getStringCellValue(),
+                    header.getCell(5).getStringCellValue(), header.getCell(6).getStringCellValue(),
+                    header.getCell(7).getStringCellValue()))
                     .containsExactly("19:00", "20:00", "21:00", "22:00", "23:00");
         }
 
         @Test
-        @DisplayName("agents are sorted by name, not left in solver order")
+        @DisplayName("with no envelopes, every agent falls in one group and sorts by name")
         void agentsAreSorted() {
+            // Neither fixture agent carries a ShiftDescriptor, so both land in the same
+            // "No shift assigned" group and the name tie-break decides. Shift ordering proper is
+            // asserted in ShiftGrouping below.
             assertThat(dayOne().getRow(1).getCell(0).getStringCellValue()).isEqualTo("Adam First");
+            assertThat(dayOne().getRow(1).getCell(1).getStringCellValue()).isEqualTo("No shift assigned");
             assertThat(dayOne().getRow(2).getCell(0).getStringCellValue()).isEqualTo("Zoe Last");
         }
     }
@@ -154,16 +162,16 @@ class ScheduleAllocationExportTest {
         @DisplayName("a worked slot carries its match-type colour")
         void workedSlots() {
             Row adam = dayOne().getRow(1);
-            assertThat(fill(adam.getCell(5))).isEqualTo("FFFEE2E2");   // 22:00 NONE
-            assertThat(fill(adam.getCell(6))).isEqualTo("FFDCFCE7");   // 23:00 PRIMARY
+            assertThat(fill(adam.getCell(6))).isEqualTo("FFFEE2E2");   // 22:00 NONE
+            assertThat(fill(adam.getCell(7))).isEqualTo("FFDCFCE7");   // 23:00 PRIMARY
             Row zoe = dayOne().getRow(2);
-            assertThat(fill(zoe.getCell(2))).isEqualTo("FFFEF9C3");    // 19:00 SECONDARY
+            assertThat(fill(zoe.getCell(3))).isEqualTo("FFFEF9C3");    // 19:00 SECONDARY
         }
 
         @Test
         @DisplayName("a break slot is grey and labelled B")
         void breakSlots() {
-            Cell breakCell = dayOne().getRow(2).getCell(3);            // Zoe, 20:00
+            Cell breakCell = dayOne().getRow(2).getCell(4);            // Zoe, 20:00
             assertThat(breakCell.getStringCellValue()).isEqualTo("B");
             assertThat(fill(breakCell)).isEqualTo("FFE5E7EB");
         }
@@ -171,8 +179,8 @@ class ScheduleAllocationExportTest {
         @Test
         @DisplayName("a slot header with unfilled seats is red")
         void shortfallHeaderIsRed() {
-            assertThat(fill(dayOne().getRow(0).getCell(4))).isEqualTo("FFFECACA");   // 21:00
-            assertThat(fill(dayOne().getRow(0).getCell(6))).isEqualTo("FFF3F4F6");   // 23:00 normal
+            assertThat(fill(dayOne().getRow(0).getCell(5))).isEqualTo("FFFECACA");   // 21:00
+            assertThat(fill(dayOne().getRow(0).getCell(7))).isEqualTo("FFF3F4F6");   // 23:00 normal
         }
     }
 
@@ -185,9 +193,9 @@ class ScheduleAllocationExportTest {
         void totalRow() {
             Row totals = dayOne().getRow(3);
             assertThat(totals.getCell(0).getStringCellValue()).isEqualTo("Total: 2 agents");
-            assertThat(totals.getCell(1).getNumericCellValue()).isEqualTo(5.0);
-            assertThat(totals.getCell(5).getNumericCellValue()).isEqualTo(2.0);  // 22:00, both agents
-            assertThat(totals.getCell(2).getNumericCellValue()).isEqualTo(1.0);  // 19:00, Zoe only
+            assertThat(totals.getCell(2).getNumericCellValue()).isEqualTo(5.0);
+            assertThat(totals.getCell(6).getNumericCellValue()).isEqualTo(2.0);  // 22:00, both agents
+            assertThat(totals.getCell(3).getNumericCellValue()).isEqualTo(1.0);  // 19:00, Zoe only
         }
 
         @Test
@@ -195,10 +203,10 @@ class ScheduleAllocationExportTest {
         void unfilledRow() {
             Row unfilled = dayOne().getRow(4);
             assertThat(unfilled.getCell(0).getStringCellValue()).isEqualTo("Unfilled");
-            assertThat(unfilled.getCell(4).getNumericCellValue()).isEqualTo(2.0);   // 21:00
-            assertThat(fill(unfilled.getCell(4))).isEqualTo("FFFECACA");
-            // A slot with no shortfall stays blank rather than showing a zero.
-            assertThat(unfilled.getCell(5).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(unfilled.getCell(5).getNumericCellValue()).isEqualTo(2.0);   // 21:00
+            assertThat(fill(unfilled.getCell(5))).isEqualTo("FFFECACA");
+            // A slot with no shortfall stays blank rather than showing a zero (22:00, now col 6).
+            assertThat(unfilled.getCell(6).getCellType()).isEqualTo(CellType.BLANK);
         }
 
         @Test
@@ -324,4 +332,80 @@ class ScheduleAllocationExportTest {
             }
         }
     }
+    @Nested
+    @DisplayName("shift grouping")
+    class ShiftGrouping {
+
+        /**
+         * A day built with real envelopes, so the ordering rule is actually exercised: the other
+         * fixture's agents all carry a null ShiftDescriptor and would sort identically either way.
+         */
+        private Sheet sheet() throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDeskName("Vinted");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_ONE);
+            d.setIncrementMinutes(60);
+            d.setAgentSchedule(List.of(
+                    // Deliberately out of both shift order AND name order on the way in.
+                    withShift("Zed Early", LocalTime.of(8, 0), LocalTime.of(17, 0)),
+                    withShift("Nora Late", LocalTime.of(15, 0), LocalTime.MIDNIGHT),
+                    offRoster("Bob NoShift"),
+                    withShift("Ann Early", LocalTime.of(8, 0), LocalTime.of(17, 0))));
+            byte[] xlsx = new ScheduleExportService().exportToExcel(d, List.of());
+            return new XSSFWorkbook(new ByteArrayInputStream(xlsx))
+                    .getSheet("Allocation " + DAY_ONE);
+        }
+
+        private AgentScheduleEntry withShift(String name, LocalTime start, LocalTime end) {
+            ShiftDescriptor sd = new ShiftDescriptor(UUID.randomUUID(), "T", start, end, 180, 60);
+            return new AgentScheduleEntry(UUID.randomUUID(), name, DAY_ONE, start, end,
+                    new BigDecimal("1.0"),
+                    List.of(new AssignmentDetail(UUID.randomUUID(), start, start.plusHours(1),
+                            "Security and Item Quality", "PRIMARY")),
+                    List.of(), sd, null);
+        }
+
+        private AgentScheduleEntry offRoster(String name) {
+            return new AgentScheduleEntry(UUID.randomUUID(), name, DAY_ONE, LocalTime.of(9, 0),
+                    LocalTime.of(10, 0), new BigDecimal("1.0"),
+                    List.of(new AssignmentDetail(UUID.randomUUID(), LocalTime.of(9, 0),
+                            LocalTime.of(10, 0), "Security and Item Quality", "PRIMARY")),
+                    List.of(), null, null);
+        }
+
+        @Test
+        @DisplayName("rows group by envelope in start order, names sorting within a shift")
+        void groupedByShiftThenName() throws IOException {
+            Sheet s = sheet();
+            assertThat(List.of(
+                    s.getRow(1).getCell(0).getStringCellValue(),
+                    s.getRow(2).getCell(0).getStringCellValue(),
+                    s.getRow(3).getCell(0).getStringCellValue(),
+                    s.getRow(4).getCell(0).getStringCellValue()))
+                    .containsExactly("Ann Early", "Zed Early", "Nora Late", "Bob NoShift");
+        }
+
+        @Test
+        @DisplayName("the Shift column names the envelope, and says so when there is none")
+        void shiftColumnCarriesTheEnvelope() throws IOException {
+            Sheet s = sheet();
+            assertThat(s.getRow(1).getCell(1).getStringCellValue()).isEqualTo("08:00-17:00");
+            assertThat(s.getRow(2).getCell(1).getStringCellValue()).isEqualTo("08:00-17:00");
+            // Midnight reads 00:00 in an end position, matching the template's own name.
+            assertThat(s.getRow(3).getCell(1).getStringCellValue()).isEqualTo("15:00-00:00");
+            // Never blank: an agent-day with no envelope is the opposite of "nothing to say".
+            assertThat(s.getRow(4).getCell(1).getStringCellValue()).isEqualTo("No shift assigned");
+        }
+
+        @Test
+        @DisplayName("agent-days with no envelope sort last, where they can be seen")
+        void offRosterSortsLast() throws IOException {
+            Sheet s = sheet();
+            assertThat(s.getRow(4).getCell(1).getStringCellValue()).isEqualTo("No shift assigned");
+            assertThat(s.getRow(5).getCell(0).getStringCellValue()).startsWith("Total:");
+        }
+    }
+
 }

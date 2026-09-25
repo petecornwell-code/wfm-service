@@ -638,13 +638,50 @@ public class ScheduleExportService {
             for (AgentScheduleEntry e : entries) {
                 if (date.equals(e.date())) dayEntries.add(e);
             }
-            dayEntries.sort(Comparator.comparing(
-                    AgentScheduleEntry::agentName, Comparator.nullsLast(String::compareToIgnoreCase)));
+            // Ordered by SHIFT, then by name within a shift — mirroring the UI's allocation tab,
+            // which groups the day the way an operator reads it: everyone on 08:00-17:00 together,
+            // then 09:00-18:00, and so on. Alphabetical order interleaves every envelope and makes
+            // the shape of a day impossible to see. Agent-days with no envelope sort LAST, as the
+            // UI's "No shift assigned" group does, and they are the ones worth looking at — see
+            // the off-roster seating defect that group made visible.
+            dayEntries.sort(Comparator
+                    .comparing(ScheduleExportService::shiftSortKey,
+                            Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(AgentScheduleEntry::agentName,
+                            Comparator.nullsLast(String::compareToIgnoreCase)));
 
             Map<LocalTime, Integer> dayUnfilled =
                     unfilled.getOrDefault(date.toString(), Map.of());
             writeAllocationSheet(workbook, styles, date, dayEntries, dayUnfilled);
         }
+    }
+
+    /**
+     * First slot column. Agent, Shift and Hours precede it, and the freeze pane matches — a day
+     * this wide is unreadable scrolled without all three pinned.
+     */
+    private static final int SLOT_COL = 3;
+
+    /**
+     * Sort key placing agent-days in envelope order: start time first, then end, so a template and
+     * its variants stay together. {@code null} for an agent-day with no assigned envelope, which
+     * {@code nullsLast} then sorts to the bottom of the day.
+     */
+    private static String shiftSortKey(AgentScheduleEntry entry) {
+        if (entry.shift() == null) {
+            return null;
+        }
+        return entry.shift().startTime() + "-" + entry.shift().endTime();
+    }
+
+    /**
+     * What the Shift column shows: the assigned envelope, or an explicit marker when there is
+     * none. The marker is deliberately not blank — a blank cell reads as "nothing to say here",
+     * and an agent-day with no envelope is the opposite of that.
+     */
+    private static String shiftLabel(AgentScheduleEntry entry) {
+        String key = shiftSortKey(entry);
+        return key == null ? "No shift assigned" : key;
     }
 
     private void writeAllocationSheet(XSSFWorkbook workbook, AllocationStyles styles, LocalDate date,
@@ -669,10 +706,11 @@ public class ScheduleExportService {
 
         Row header = sheet.createRow(0);
         cell(header, 0, "Agent", styles.header);
-        cell(header, 1, "Hours", styles.header);
+        cell(header, 1, "Shift", styles.header);
+        cell(header, 2, "Hours", styles.header);
         for (int i = 0; i < slots.size(); i++) {
             boolean shortfall = unfilledPerSlot.getOrDefault(slots.get(i), 0) > 0;
-            cell(header, 2 + i, hhmm(slots.get(i)),
+            cell(header, SLOT_COL + i, hhmm(slots.get(i)),
                     shortfall ? styles.headerShortfall : styles.headerSlot);
         }
 
@@ -683,10 +721,11 @@ public class ScheduleExportService {
         for (AgentScheduleEntry entry : dayEntries) {
             Row row = sheet.createRow(rowNum++);
             cell(row, 0, entry.agentName() == null ? "" : entry.agentName(), styles.agentName);
+            cell(row, 1, shiftLabel(entry), styles.agentName);
 
             BigDecimal hours = entry.totalHours() == null ? BigDecimal.ZERO : entry.totalHours();
             totalHours = totalHours.add(hours);
-            Cell hoursCell = row.createCell(1);
+            Cell hoursCell = row.createCell(2);
             hoursCell.setCellValue(hours.doubleValue());
             hoursCell.setCellStyle(styles.hours);
 
@@ -701,23 +740,24 @@ public class ScheduleExportService {
             for (int i = 0; i < slots.size(); i++) {
                 LocalTime slot = slots.get(i);
                 if (matchBySlot.containsKey(slot)) {
-                    cell(row, 2 + i, "", styles.forMatchType(matchBySlot.get(slot)));
+                    cell(row, SLOT_COL + i, "", styles.forMatchType(matchBySlot.get(slot)));
                 } else if (breakSlots.contains(slot)) {
-                    cell(row, 2 + i, "B", styles.breakCell);
+                    cell(row, SLOT_COL + i, "B", styles.breakCell);
                 } else {
-                    cell(row, 2 + i, "", styles.emptyCell);
+                    cell(row, SLOT_COL + i, "", styles.emptyCell);
                 }
             }
         }
 
         Row totals = sheet.createRow(rowNum++);
         cell(totals, 0, "Total: " + dayEntries.size() + " agents", styles.totalLabel);
-        Cell totalHoursCell = totals.createCell(1);
+        cell(totals, 1, "", styles.totalLabel);
+        Cell totalHoursCell = totals.createCell(2);
         totalHoursCell.setCellValue(totalHours.doubleValue());
         totalHoursCell.setCellStyle(styles.totalHours);
         for (int i = 0; i < slots.size(); i++) {
             int working = agentsPerSlot.getOrDefault(slots.get(i), 0);
-            Cell c = totals.createCell(2 + i);
+            Cell c = totals.createCell(SLOT_COL + i);
             if (working > 0) c.setCellValue(working);
             c.setCellStyle(styles.totalCell);
         }
@@ -727,9 +767,10 @@ public class ScheduleExportService {
             Row short_ = sheet.createRow(rowNum++);
             cell(short_, 0, "Unfilled", styles.shortfallLabel);
             cell(short_, 1, "", styles.shortfallLabel);
+            cell(short_, 2, "", styles.shortfallLabel);
             for (int i = 0; i < slots.size(); i++) {
                 int n = unfilledPerSlot.getOrDefault(slots.get(i), 0);
-                Cell c = short_.createCell(2 + i);
+                Cell c = short_.createCell(SLOT_COL + i);
                 if (n > 0) c.setCellValue(n);
                 c.setCellStyle(n > 0 ? styles.shortfallCell : styles.shortfallEmpty);
             }
@@ -752,11 +793,12 @@ public class ScheduleExportService {
 
         // Freeze the agent name, the hours total and the header row: a 16-column day is unreadable
         // scrolled without them, which is the whole reason this is one sheet per date.
-        sheet.createFreezePane(2, 1);
+        sheet.createFreezePane(SLOT_COL, 1);
         sheet.setColumnWidth(0, 30 * 256);
-        sheet.setColumnWidth(1, 8 * 256);
+        sheet.setColumnWidth(1, 14 * 256);
+        sheet.setColumnWidth(2, 8 * 256);
         for (int i = 0; i < slots.size(); i++) {
-            sheet.setColumnWidth(2 + i, 6 * 256);
+            sheet.setColumnWidth(SLOT_COL + i, 6 * 256);
         }
     }
 
