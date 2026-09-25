@@ -237,6 +237,10 @@ export const staffingRequirements = {
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements`, { method: 'POST', body: JSON.stringify({ requirements }) }),
   calculateErlangX: (deskId: string, data: ErlangXRequest) =>
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements/erlang-x`, { method: 'POST', body: JSON.stringify(data) }),
+  // Like calculateErlangX, this REPLACES the live requirements for the date range. The read-only
+  // calculator that writes nothing is erlangCalculator at the bottom of this file.
+  calculateErlangC: (deskId: string, data: ErlangCPersistRequest) =>
+    request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements/erlang-c`, { method: 'POST', body: JSON.stringify(data) }),
   uploadFtes: async (deskId: string, file: File): Promise<FteUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -375,6 +379,10 @@ export interface StaffingRequirement { id: string; timeslotId: string; specializ
 export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
 export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[] }
+// Percentages, not fractions: serviceLevelTarget is 80 for 80%, matching ErlangXParam. The backend
+// divides by 100. Sending 0.8 here asks for a 0.8% service level, which almost any headcount meets.
+export interface ErlangCParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; serviceLevelTarget: number; serviceLevelThreshold: number }
+export interface ErlangCPersistRequest { from: string; to: string; parameters: ErlangCParam[] }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
 export interface DayOff { id: string; date: string; type: string; status: string }
 export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }

@@ -38,6 +38,17 @@ public class StaffingRequirementController {
         return staffingRequirementService.saveRequirements(deskId, request);
     }
 
+    /**
+     * Erlang C, the conservative baseline. Like {@code /erlang-x} below it REPLACES the live
+     * requirements for the request's date range — it is not the read-only calculator, which lives
+     * at {@code /api/v1/calc/erlang-c} and writes nothing.
+     */
+    @PostMapping("/erlang-c")
+    public StaffingRequirementResponse calculateErlangC(@PathVariable UUID deskId,
+                                                        @RequestBody ErlangCRequest request) {
+        return staffingRequirementService.calculateErlangC(deskId, request);
+    }
+
     @PostMapping("/erlang-x")
     public StaffingRequirementResponse calculateErlangX(@PathVariable UUID deskId,
                                                          @RequestBody ErlangXRequest request) {

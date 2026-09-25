@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { timeslots as timeslotApi, specializations as specApi, staffingRequirements as srApi, getErrorMessage } from '../api/client'
-import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, FteUploadResult } from '../api/client'
+import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, ErlangCParam, FteUploadResult } from '../api/client'
 import { saveTimeslotParams, loadScheduleSetup, saveScheduleSetup } from '../timeslotParams'
 import type { ScheduleSetupParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
@@ -39,7 +39,30 @@ export default function StaffingRequirements() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
-  const [mode, setMode] = useState<'direct' | 'erlang'>('direct')
+  const [mode, setMode] = useState<'direct' | 'erlangC' | 'erlangX'>('direct')
+  // Visible and editable, deliberately. These were hardcoded fallbacks inside the calculate
+  // handler, where nobody could see that serviceLevelTarget was being sent as 0.8 to an API that
+  // reads it as a PERCENTAGE -- a 0.8% target, met by almost any headcount. Shown on screen in the
+  // units the API actually uses, the mistake is not expressible.
+  const [erlangSettings, setErlangSettings] = useState({
+    aht: 300,
+    serviceLevelTarget: 80,
+    serviceLevelThreshold: 20,
+    patience: 60,
+    retryRate: 10,
+  })
+  const isErlang = mode === 'erlangC' || mode === 'erlangX'
+  const modelLabel = mode === 'erlangC' ? 'Erlang C' : 'Erlang X'
+
+  const settingField = (label: string, key: keyof typeof erlangSettings, hint?: string) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', fontSize: '0.8rem' }}>
+      <span style={{ fontWeight: 500 }}>{label}</span>
+      <input type="number" min={0} value={erlangSettings[key]}
+        onChange={e => setErlangSettings(prev => ({ ...prev, [key]: Number(e.target.value) || 0 }))}
+        style={{ width: '90px', padding: '0.25rem 0.35rem', border: '1px solid #d1d5db', borderRadius: '4px' }} />
+      {hint && <span style={{ color: '#6b7280', fontSize: '0.7rem' }}>{hint}</span>}
+    </label>
+  )
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const [uploading, setUploading] = useState(false)
@@ -183,42 +206,65 @@ export default function StaffingRequirements() {
     }
   }
 
-  const handleErlangCalculate = async () => {
+  /** Every timeslot+specialization the operator entered a volume against. */
+  const enteredVolumes = () => {
+    const entries: Array<{ slotId: string; specId: string; callVolume: number }> = []
+    for (const slot of slots) {
+      for (const spec of specs) {
+        const p = erlangParams[demandKey(slot.id, spec.id)]
+        if (p?.callVolume && p.callVolume > 0) {
+          entries.push({ slotId: slot.id, specId: spec.id, callVolume: p.callVolume })
+        }
+      }
+    }
+    return entries
+  }
+
+  const handleErlangCalculate = async (model: 'erlangC' | 'erlangX') => {
     if (!deskId) return
+    const entries = enteredVolumes()
+    if (entries.length === 0) {
+      showToast('error', 'Enter call volume for at least one timeslot')
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      const parameters: ErlangXParam[] = []
-      for (const slot of slots) {
-        for (const spec of specs) {
-          const key = demandKey(slot.id, spec.id)
-          const p = erlangParams[key]
-          if (p?.callVolume && p.callVolume > 0) {
-            parameters.push({
-              timeslotId: slot.id,
-              specializationId: spec.id,
-              callVolume: p.callVolume || 0,
-              aht: p.aht || 300,
-              patience: p.patience || 60,
-              retryRate: p.retryRate || 0.1,
-              serviceLevelTarget: p.serviceLevelTarget || 0.8,
-              serviceLevelThreshold: p.serviceLevelThreshold || 20,
-            })
-          }
-        }
-      }
-      if (parameters.length === 0) {
-        showToast('error', 'Enter call volume for at least one timeslot')
-        setSaving(false)
-        return
-      }
-      const result = await srApi.calculateErlangX(deskId, { from: periodStart, to: periodEnd, parameters })
+      // Both endpoints REPLACE the live requirements for the whole period, so both take the same
+      // grid. The interval each volume is converted on comes from its own timeslot, server-side.
+      const result = model === 'erlangX'
+        ? await srApi.calculateErlangX(deskId, {
+            from: periodStart,
+            to: periodEnd,
+            parameters: entries.map<ErlangXParam>(e => ({
+              timeslotId: e.slotId,
+              specializationId: e.specId,
+              callVolume: e.callVolume,
+              aht: erlangSettings.aht,
+              patience: erlangSettings.patience,
+              retryRate: erlangSettings.retryRate,
+              serviceLevelTarget: erlangSettings.serviceLevelTarget,
+              serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
+            })),
+          })
+        : await srApi.calculateErlangC(deskId, {
+            from: periodStart,
+            to: periodEnd,
+            parameters: entries.map<ErlangCParam>(e => ({
+              timeslotId: e.slotId,
+              specializationId: e.specId,
+              callVolume: e.callVolume,
+              aht: erlangSettings.aht,
+              serviceLevelTarget: erlangSettings.serviceLevelTarget,
+              serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
+            })),
+          })
       const loaded: DemandMap = {}
       for (const item of result.requirements) {
         loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
       }
       setDemand(loaded)
-      showToast('success', 'Erlang X calculation complete')
+      showToast('success', model === 'erlangX' ? 'Erlang X calculation complete' : 'Erlang C calculation complete')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -323,8 +369,12 @@ export default function StaffingRequirements() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <h3>Demand Entry</h3>
-            <button onClick={() => setMode('direct')} style={{ background: mode === 'direct' ? '#3b82f6' : '#e5e7eb', color: mode === 'direct' ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>Direct</button>
-            <button onClick={() => setMode('erlang')} style={{ background: mode === 'erlang' ? '#3b82f6' : '#e5e7eb', color: mode === 'erlang' ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>Erlang X</button>
+            {(['direct', 'erlangC', 'erlangX'] as const).map(m => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{ background: mode === m ? '#3b82f6' : '#e5e7eb', color: mode === m ? '#fff' : '#374151', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.8rem' }}>
+                {m === 'direct' ? 'Direct' : m === 'erlangC' ? 'Erlang C' : 'Erlang X'}
+              </button>
+            ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             {saveMsg && <span style={{ color: '#15803d', fontSize: '0.85rem' }}>{saveMsg}</span>}
@@ -339,10 +389,10 @@ export default function StaffingRequirements() {
                 {saving ? 'Saving...' : 'Save'}
               </button>
             )}
-            {slots.length > 0 && mode === 'erlang' && (
-              <button onClick={handleErlangCalculate} disabled={saving}
+            {slots.length > 0 && isErlang && (
+              <button onClick={() => handleErlangCalculate(mode as 'erlangC' | 'erlangX')} disabled={saving}
                 style={{ padding: '0.4rem 1.2rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'Calculating...' : 'Calculate Erlang X'}
+                {saving ? 'Calculating...' : `Calculate ${modelLabel}`}
               </button>
             )}
           </div>
@@ -388,9 +438,27 @@ export default function StaffingRequirements() {
           </div>
         )}
 
-        {slots.length > 0 && mode === 'erlang' && (
+        {slots.length > 0 && isErlang && (
           <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
-            <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.5rem' }}>Enter call volume for each timeslot+specialization. Other fields use defaults.</p>
+            <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+              Enter call volume for each timeslot+specialization — contacts IN the slot, not a
+              per-hour rate. The parameters below apply to every row.{' '}
+              {mode === 'erlangC'
+                ? 'Erlang C is the conservative baseline: every caller waits, nobody abandons, so it asks for more agents than Erlang X on the same numbers.'
+                : 'Erlang X adds impatience and retrials, so it asks for fewer agents than Erlang C.'}
+            </p>
+            <p style={{ fontSize: '0.8rem', color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '4px', padding: '0.4rem 0.6rem', marginBottom: '0.75rem' }}>
+              Calculating REPLACES every staffing requirement from {periodStart || 'the period start'} to {periodEnd || 'the period end'},
+              including rows for timeslots not listed below. To try numbers without changing anything, use the{' '}
+              <Link to={`/desks/${deskId}/erlang-calculator`}>Erlang Calculator</Link>.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: '#f9fafb', borderRadius: '6px' }}>
+              {settingField('AHT (s)', 'aht', 'incl. wrap-up')}
+              {settingField('Target (%)', 'serviceLevelTarget', '80 = 80%')}
+              {settingField('Within (s)', 'serviceLevelThreshold')}
+              {mode === 'erlangX' && settingField('Patience (s)', 'patience', 'mean before hang-up')}
+              {mode === 'erlangX' && settingField('Retry (%)', 'retryRate', 'of abandoned callers')}
+            </div>
             {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
               <div key={date}>
                 <h4>{date} (parameters apply to all days)</h4>
@@ -427,26 +495,42 @@ export default function StaffingRequirements() {
             {/* Show calculated results */}
             {Object.keys(demand).length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <h4>Calculated Results (required FTEs)</h4>
                 {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
-                  <table key={date} style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', padding: '4px 8px' }}>Timeslot</th>
-                        {specs.map(s => <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>{s.name}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {daySlots.map(slot => (
-                        <tr key={slot.id}>
-                          <td style={{ padding: '4px 8px' }}>{slot.startTime}–{slot.endTime}</td>
-                          {specs.map(s => (
-                            <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>{demand[demandKey(slot.id, s.id)] ?? 0}</td>
-                          ))}
+                  <div key={date}>
+                    <h4 style={{ marginBottom: '0.15rem' }}>Required FTEs per timeslot — {date} ({modelLabel})</h4>
+                    <p style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 0, marginBottom: '0.4rem' }}>
+                      One row per {increment}-minute timeslot. The same parameters were applied to every
+                      day from {periodStart} to {periodEnd}; switch to <strong>Direct</strong> to see and edit
+                      the other days.
+                    </p>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
+                          {specs.map(s => <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name}</th>)}
+                          {specs.length > 1 && <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Total</th>}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {daySlots.map(slot => {
+                          const perSpec = specs.map(s => demand[demandKey(slot.id, s.id)] ?? 0)
+                          return (
+                            <tr key={slot.id}>
+                              <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
+                              {perSpec.map((v, i) => (
+                                <td key={specs[i].id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontVariantNumeric: 'tabular-nums' }}>{v}</td>
+                              ))}
+                              {specs.length > 1 && (
+                                <td style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                  {perSpec.reduce((a, b) => a + b, 0)}
+                                </td>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 ))}
               </div>
             )}

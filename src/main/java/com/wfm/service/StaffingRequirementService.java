@@ -1,5 +1,6 @@
 package com.wfm.service;
 
+import com.wfm.calc.ErlangC;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
 import com.wfm.exception.EntityNotFoundException;
@@ -161,6 +162,111 @@ public class StaffingRequirementService {
         return new StaffingRequirementResponse(saved.stream().map(this::toResponseItem).toList());
     }
 
+    /**
+     * Erlang C over the same grid as {@link #calculateErlangX}, and with the same consequence: the
+     * live requirements for {@code [from, to]} are REPLACED, including rows for timeslots this
+     * request never mentions.
+     *
+     * <p>Uses {@link ErlangC} — the tested maths in {@code com.wfm.calc} — rather than a second
+     * hand-rolled implementation. That makes the two modes on this screen deliberately asymmetric:
+     * Erlang X still calls {@link ErlangXService}, whose abandonment convention and missing
+     * shrinkage are separate open decisions, while Erlang C is the conservative baseline computed
+     * exactly. Erlang C will therefore usually ask for MORE agents than Erlang X on the same
+     * inputs, because it assumes nobody ever hangs up.
+     */
+    @Transactional
+    public StaffingRequirementResponse calculateErlangC(UUID deskId, ErlangCRequest request) {
+        long tenantId = TenantContext.getTenantId();
+
+        if (request.parameters() == null || request.parameters().isEmpty()) {
+            return new StaffingRequirementResponse(List.of());
+        }
+
+        LocalDate from = request.from();
+        LocalDate to = request.to();
+
+        Map<UUID, Timeslot> timeslotMap = new HashMap<>();
+        Map<UUID, Specialization> specMap = new HashMap<>();
+
+        for (ErlangCRequest.Item item : request.parameters()) {
+            requirePercentageTarget(item.serviceLevelTarget());
+            loadTimeslot(timeslotMap, item.timeslotId(), tenantId, deskId);
+            loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
+        }
+
+        staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, from, to);
+
+        // Same flush-before-insert reason as calculateErlangX: Hibernate's ActionQueue would
+        // otherwise run the inserts first and hit the unique constraint on the live index.
+        entityManager.flush();
+        entityManager.clear();
+
+        List<StaffingRequirement> saved = new ArrayList<>();
+        for (ErlangCRequest.Item item : request.parameters()) {
+            Timeslot ts = timeslotMap.get(item.timeslotId());
+            int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
+
+            // The DTO speaks percentages to match this screen's other mode; ErlangC.Input takes a
+            // fraction and rejects anything above 1, which is what makes the conversion safe to
+            // do here rather than trusting the caller.
+            ErlangC.Result result = ErlangC.requiredAgents(new ErlangC.Input(
+                    item.callVolume(), intervalMinutes, item.aht(),
+                    item.serviceLevelTarget() / 100.0, item.serviceLevelThreshold()));
+
+            StaffingRequirement sr = new StaffingRequirement();
+            sr.setTenantId(tenantId);
+            sr.setDeskId(deskId);
+            sr.setTimeslot(ts);
+            sr.setSpecialization(specMap.get(item.specializationId()));
+            sr.setRequiredFTEs(result.agents());
+            sr.setSource(StaffingSource.ERLANG_C);
+            saved.add(staffingRequirementRepository.save(sr));
+        }
+
+        return new StaffingRequirementResponse(saved.stream().map(this::toResponseItem).toList());
+    }
+
+    /**
+     * Rejects a service level target that was sent as a fraction where a percentage belongs.
+     *
+     * <p>Both endpoints on this screen read the target as 0-100, and both divide by 100. A value of
+     * {@code 0.8} therefore asks for a 0.8% service level, which almost any headcount meets — it
+     * does not fail, it silently understaffs. The frontend did exactly that for every Erlang X
+     * calculation until 2026-09-25, staffing to roughly the offered load instead of to the target.
+     *
+     * <p>Rejecting below 1 costs nothing real: no contact centre targets under 1% answered.
+     */
+    private static void requirePercentageTarget(double serviceLevelTarget) {
+        if (serviceLevelTarget < 1.0 || serviceLevelTarget > 100.0) {
+            throw new IllegalArgumentException(
+                    "serviceLevelTarget is a percentage between 1 and 100 (80 means 80%), not a "
+                            + "fraction: " + serviceLevelTarget);
+        }
+    }
+
+    /** Resolves a timeslot that belongs to this tenant and desk and is not tied to a schedule. */
+    private void loadTimeslot(Map<UUID, Timeslot> into, UUID timeslotId, long tenantId, UUID deskId) {
+        if (into.containsKey(timeslotId)) {
+            return;
+        }
+        Timeslot ts = timeslotRepository.findById(timeslotId)
+                .filter(t -> t.getTenantId() == tenantId && t.getDeskId().equals(deskId)
+                        && t.getScheduleId() == null)
+                .orElseThrow(() -> new EntityNotFoundException("Timeslot", timeslotId));
+        into.put(timeslotId, ts);
+    }
+
+    private void loadSpecialization(Map<UUID, Specialization> into, UUID specializationId,
+                                    long tenantId, UUID deskId) {
+        if (into.containsKey(specializationId)) {
+            return;
+        }
+        Specialization spec = specializationRepository
+                .findByIdAndTenantIdAndDeskId(specializationId, tenantId, deskId)
+                .orElseThrow(() -> new EntityNotFoundException("Specialization", specializationId));
+        into.put(specializationId, spec);
+    }
+
     @Transactional
     public StaffingRequirementResponse calculateErlangX(UUID deskId, ErlangXRequest request) {
         long tenantId = TenantContext.getTenantId();
@@ -177,19 +283,9 @@ public class StaffingRequirementService {
         Map<UUID, Specialization> specMap = new HashMap<>();
 
         for (ErlangXRequest.Item item : request.parameters()) {
-            if (!timeslotMap.containsKey(item.timeslotId())) {
-                Timeslot ts = timeslotRepository.findById(item.timeslotId())
-                        .filter(t -> t.getTenantId() == tenantId && t.getDeskId().equals(deskId)
-                                && t.getScheduleId() == null)
-                        .orElseThrow(() -> new EntityNotFoundException("Timeslot", item.timeslotId()));
-                timeslotMap.put(item.timeslotId(), ts);
-            }
-            if (!specMap.containsKey(item.specializationId())) {
-                Specialization spec = specializationRepository.findByIdAndTenantIdAndDeskId(
-                                item.specializationId(), tenantId, deskId)
-                        .orElseThrow(() -> new EntityNotFoundException("Specialization", item.specializationId()));
-                specMap.put(item.specializationId(), spec);
-            }
+            requirePercentageTarget(item.serviceLevelTarget());
+            loadTimeslot(timeslotMap, item.timeslotId(), tenantId, deskId);
+            loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
         }
 
         // Delete existing live requirements in the specified date range
