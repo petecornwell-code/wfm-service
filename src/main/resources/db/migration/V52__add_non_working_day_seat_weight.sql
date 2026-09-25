@@ -1,0 +1,27 @@
+-- A seat handed to an agent on a day they are not rostered to work was, until now, invisible to
+-- every hard constraint in the model.
+--
+-- SolverService.computeAgentDayConfigs skips an agent-day when a day-off row exists OR when
+-- resolveEffectiveHours returns zero, and buildShiftAssignments applies the identical gate. Every
+-- constraint that bounds an agent-day then inner-joins one of those two facts:
+--
+--   contractedHoursOver / Under / UnderZero  ->  join(AgentDayConfig)
+--   shiftEnvelopeCompliance, break rules     ->  join(AgentShiftAssignment)
+--
+-- No fact, no tuple, no penalty. But the agent stays in the AgentAssignment value range, so the
+-- solver may seat them — and on a desk whose demand exceeds supply it is actively rewarded for
+-- doing so, since those seats cost nothing and close coverage gaps.
+--
+-- Measured on the live Vinted desk, schedule 5c3d15c7 (week 39, ACCEPTED at "hard 0"): 116
+-- agent-days carried seats with no envelope, working 14, 15 and 16 hours, 23 of them with no break
+-- at all. On 2026-09-26 alone, 161 agent-days with an envelope worked exactly 8.0 hours each while
+-- 35 without one worked 14-16. The schedule was feasible on the score and illegal in fact.
+--
+-- "Agent day off" does not cover this. It joins AgentDayOff, so it fires only for the 97 agent-days
+-- that have a real day-off ROW — not for the 629 whose non-working status is expressed as zero
+-- hours in agent_day_hours, which is how this desk's MANDATORY and PTO days are actually stored.
+--
+-- Hard, and deliberately just below contracted_hours_over_weight (1001): both describe an agent
+-- working hours they are not contracted for, and neither should ever be traded away for coverage.
+ALTER TABLE constraint_weights
+    ADD COLUMN non_working_day_seat_weight VARCHAR(50) NOT NULL DEFAULT '1000hard/0soft';

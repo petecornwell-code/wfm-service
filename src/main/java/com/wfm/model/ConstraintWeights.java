@@ -132,6 +132,31 @@ public class ConstraintWeights {
      * other constraint in this file, per {@code minimumStaffing}'s precedent that hard-vs-soft is
      * a per-desk configuration row, not a code decision.
      */
+    /**
+     * Weight for "Agent not working that day" — a seat given to an agent on a date for which no
+     * {@link AgentDayConfig} exists, meaning they are not rostered to work at all.
+     *
+     * <p><b>This closes a hole, not a preference.</b> {@code computeAgentDayConfigs} omits an
+     * agent-day that has a day-off row or resolves to zero effective hours, and
+     * {@code buildShiftAssignments} omits the matching shift row. Every other agent-day constraint
+     * inner-joins one of those two facts, so an omitted agent-day produced no tuples anywhere and
+     * was invisible to the hard score — while the agent remained in the seat value range. On a desk
+     * with more demand than supply the solver is rewarded for using those seats: they are free.
+     * Live Vinted week 39 scored hard 0 while 116 agent-days worked 14-16 hours with no envelope
+     * and, for 23 of them, no break.
+     *
+     * <p>{@code agentDayOffWeight} does NOT cover this. That constraint joins {@link AgentDayOff},
+     * so it only sees a non-working day expressed as a ROW; this one sees a non-working day
+     * expressed as zero hours, which is how per-day rosters loaded from a spreadsheet store it.
+     *
+     * <p>Hard by default at 1000, just under {@code contractedHoursOverWeight}'s 1001: both say the
+     * agent is working hours they are not contracted for, and neither is tradeable for coverage.
+     */
+    @ConstraintWeight("Agent not working that day")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "non_working_day_seat_weight")
+    private HardSoftScore nonWorkingDaySeatWeight = HardSoftScore.ofHard(1000);
+
     @ConstraintWeight("Shift envelope compliance")
     @Convert(converter = HardSoftScoreConverter.class)
     @Column(name = "shift_envelope_compliance_weight")
@@ -351,6 +376,9 @@ public class ConstraintWeights {
 
     public HardSoftScore getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(HardSoftScore minStaffingWeight) { this.minStaffingWeight = minStaffingWeight; }
+
+    public HardSoftScore getNonWorkingDaySeatWeight() { return nonWorkingDaySeatWeight; }
+    public void setNonWorkingDaySeatWeight(HardSoftScore v) { this.nonWorkingDaySeatWeight = v; }
 
     public HardSoftScore getShiftEnvelopeComplianceWeight() { return shiftEnvelopeComplianceWeight; }
     public void setShiftEnvelopeComplianceWeight(HardSoftScore shiftEnvelopeComplianceWeight) { this.shiftEnvelopeComplianceWeight = shiftEnvelopeComplianceWeight; }

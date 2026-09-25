@@ -81,6 +81,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return new Constraint[] {
             unassignedAssignment(factory),
             agentDayOff(factory),
+            agentNotWorkingThatDay(factory),
             specializationMatch(factory),
             oneAssignmentPerTimeslot(factory),
             exactlyOneBreak(factory),
@@ -159,6 +160,49 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * 2. Specialization match — agent must have the required specialization
      * as primary or secondary.
      */
+    /**
+     * A seat given to an agent on a date they are not rostered to work at all.
+     *
+     * <p><b>Why this exists as its own constraint.</b> {@code SolverService.computeAgentDayConfigs}
+     * omits an agent-day when a day-off row exists or when {@code resolveEffectiveHours} returns
+     * zero, and {@code buildShiftAssignments} omits the corresponding {@link AgentShiftAssignment}.
+     * Every constraint that bounds an agent-day joins one of those two facts — contracted hours
+     * joins {@link AgentDayConfig}, envelope compliance and the break rules join
+     * {@link AgentShiftAssignment} — and a join produces no tuple when the fact is absent. So an
+     * omitted agent-day was penalised by NOTHING, while the agent stayed in the
+     * {@link AgentAssignment} value range and could be seated freely. On a desk where demand
+     * exceeds supply those seats are not merely allowed, they are attractive: they cost zero and
+     * they close coverage gaps.
+     *
+     * <p><b>Measured, not theorised.</b> Live Vinted week 39 (schedule {@code 5c3d15c7}) was
+     * ACCEPTED at hard 0 while 116 agent-days carried seats with no envelope at 14, 15 and 16 hours
+     * — 23 of them with no break. On 2026-09-26, 161 agent-days with an envelope worked exactly
+     * 8.0 hours each and 35 without one worked 14-16.
+     *
+     * <p><b>{@link #agentDayOff} does not subsume this.</b> That constraint joins
+     * {@link AgentDayOff}, so it fires only where a non-working day is stored as a ROW. It is blind
+     * to a non-working day stored as zero hours in {@code agent_day_hours}, which is precisely how
+     * a per-day roster loaded from a spreadsheet records MANDATORY and PTO — 629 agent-days on this
+     * desk against 97 with an actual row. The two constraints overlap on the rows and are
+     * complementary everywhere else; double-penalising an agent seated on a day that is BOTH is
+     * correct, since it is doubly wrong.
+     *
+     * <p>Uses {@code ifNotExists} rather than this file's more usual join-and-filter, because the
+     * condition IS absence: there is no fact to filter on. Leads with
+     * {@link AgentAssignment} because {@code forEach} already drops seats whose agent is null, so
+     * only real assignments reach the existence check.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation
+    // (mirrors shiftEnvelopeCompliance/minimumStaffing's precedent in this file).
+    Constraint agentNotWorkingThatDay(ConstraintFactory factory) {
+        return factory.forEach(AgentAssignment.class)
+                .ifNotExists(AgentDayConfig.class,
+                        equal(a -> a.getAgent().getId(), AgentDayConfig::agentId),
+                        equal(a -> a.getTimeslot().getDate(), AgentDayConfig::date))
+                .penalizeConfigurable()
+                .asConstraint("Agent not working that day");
+    }
+
     private Constraint specializationMatch(ConstraintFactory factory) {
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)

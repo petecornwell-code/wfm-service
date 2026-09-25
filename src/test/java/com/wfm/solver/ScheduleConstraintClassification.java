@@ -110,6 +110,20 @@ public final class ScheduleConstraintClassification {
                 "Pure agent x date join against AgentDayOff; unaffected by how a day's shift was chosen.",
                 null));
 
+        map.put("Agent not working that day", new Entry(
+                ModeClassification.MODE_AGNOSTIC,
+                "Pure agent x date EXISTENCE check against AgentDayConfig, so nothing about it "
+                        + "depends on how a day's shift was chosen. It exists because absence, not a "
+                        + "bad value, was the defect: computeAgentDayConfigs omits an agent-day that "
+                        + "has a day-off row or resolves to zero effective hours, and every other "
+                        + "agent-day constraint INNER-joins AgentDayConfig or AgentShiftAssignment -- "
+                        + "so an omitted agent-day produced no tuples anywhere while the agent stayed "
+                        + "in the seat value range. Live Vinted week 39 scored hard 0 with 116 "
+                        + "agent-days working 14-16 hours off-roster. Complements 'Agent day off', "
+                        + "which sees only non-working days stored as a ROW and is blind to the far "
+                        + "commoner case of one stored as zero hours in agent_day_hours.",
+                null));
+
         map.put("Specialization match", new Entry(
                 ModeClassification.MODE_AGNOSTIC,
                 "ENVL-03 (Phase 15) explicitly keeps specialization variable within the shift "
