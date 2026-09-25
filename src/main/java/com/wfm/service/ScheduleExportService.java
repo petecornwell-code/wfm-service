@@ -52,6 +52,7 @@ public class ScheduleExportService {
             writeOverview(workbook, headerStyle, detail);
             writeStaffingSummary(workbook, headerStyle, detail.getStaffingSummary());
             writeAgentSchedule(workbook, headerStyle, detail.getAgentSchedule());
+            writeRoster(workbook, detail, daysOff);
             writeAgentAllocation(workbook, detail);
             writePreferenceReport(workbook, headerStyle, detail.getPreferenceReport());
             writeDriftReport(workbook, headerStyle, detail.getDriftReport());
@@ -203,6 +204,195 @@ public class ScheduleExportService {
         }
 
         autoSizeColumns(sheet, cols.length);
+    }
+
+    // --- Roster: the source spreadsheet's own shape, agents down and days across ---
+
+    /**
+     * The roster in the format the customer's own planners write and read — one row per agent, one
+     * column per day, one shift code per cell — as opposed to every other sheet in this workbook,
+     * which mirrors a tab of our UI.
+     *
+     * <p><b>Why it earns a sheet of its own.</b> The rest of the export answers questions about a
+     * schedule we produced. This answers the question an operator actually arrives with: who is on
+     * which shift this week. It is also the shape that round-trips — the source sheet Vinted sent
+     * for week 39 is laid out exactly this way, so a planner can diff what they sent against what
+     * came back without transposing anything by hand.
+     *
+     * <p><b>The cell is the envelope, not the template name.</b> {@code Vinted 08:00-17:00} is the
+     * template's name on this desk, but a desk is free to name templates anything at all, and a
+     * name does not fit a day column. {@code 08:00-17:00} is derived from the assigned envelope, so
+     * it means the same thing on every desk and stays legible at column width. An envelope ending
+     * at midnight renders {@code 15:00-00:00}, which is both what the template is called here and
+     * what {@code DayWindow} means by that end time — see the end-of-day convention for 00:00.
+     *
+     * <p><b>A blank cell is not the same as leave.</b> Priority is deliberate: an assigned shift
+     * wins, then an approved or requested day off, then blank. Blank therefore means "we scheduled
+     * nothing and no leave explains it", which on a desk carrying a structural capacity deficit is
+     * a fact worth being able to see rather than one to paper over.
+     *
+     * <p>Falls back to the worked span (earliest start to latest end) on a desk with no shift
+     * envelopes, so a SLOT-mode export still produces a usable roster rather than an empty grid.
+     */
+    private void writeRoster(XSSFWorkbook workbook, ScheduleDetailResponse detail,
+                             List<AgentDayOffResponse> daysOff) {
+        List<AgentScheduleEntry> entries = detail.getAgentSchedule();
+        boolean noEntries = entries == null || entries.isEmpty();
+        boolean noLeave = daysOff == null || daysOff.isEmpty();
+        if (noEntries && noLeave) {
+            return;
+        }
+
+        // Agent -> date -> what that agent-day shows. TreeMap so the roster reads alphabetically,
+        // case-insensitively, exactly as the PTO sheet already orders its agents.
+        Map<String, Map<LocalDate, String>> shiftByAgent =
+                new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Set<LocalDate> dates = new TreeSet<>();
+
+        if (entries != null) {
+            for (AgentScheduleEntry e : entries) {
+                if (e.date() == null) continue;
+                String code = shiftCode(e);
+                if (code == null) continue;
+                dates.add(e.date());
+                shiftByAgent.computeIfAbsent(name(e.agentName()), n -> new HashMap<>())
+                        .put(e.date(), code);
+            }
+        }
+
+        Map<String, Map<LocalDate, AgentDayOffResponse>> offByAgent =
+                new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        if (daysOff != null) {
+            for (AgentDayOffResponse off : daysOff) {
+                if (off.date() == null) continue;
+                String agentName = off.agent() != null ? off.agent().name() : null;
+                dates.add(off.date());
+                offByAgent.computeIfAbsent(name(agentName), n -> new HashMap<>())
+                        .put(off.date(), off);
+            }
+        }
+
+        // The schedule's own period wins over the dates that happen to carry data, so a day nobody
+        // works still appears as a column instead of the week silently ending early (PTO precedent).
+        if (detail.getPeriodStartDate() != null && detail.getPeriodEndDate() != null) {
+            for (LocalDate d = detail.getPeriodStartDate();
+                 !d.isAfter(detail.getPeriodEndDate()); d = d.plusDays(1)) {
+                dates.add(d);
+            }
+        }
+
+        Set<String> agents = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        agents.addAll(shiftByAgent.keySet());
+        agents.addAll(offByAgent.keySet());
+        if (agents.isEmpty() || dates.isEmpty()) {
+            return;
+        }
+
+        Sheet sheet = workbook.createSheet("Roster");
+        RosterStyles styles = new RosterStyles(workbook);
+        List<LocalDate> dateList = new ArrayList<>(dates);
+
+        Row header = sheet.createRow(0);
+        cell(header, 0, "Agent", styles.header);
+        for (int i = 0; i < dateList.size(); i++) {
+            LocalDate d = dateList.get(i);
+            // Weekday above the date: a planner reads "Sun" far faster than 2026-09-27, and the
+            // weekend columns are where the shift mix deliberately differs on this desk.
+            cell(header, 1 + i, d.getDayOfWeek().getDisplayName(
+                    java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH) + " " + d,
+                    styles.header);
+        }
+
+        int rowNum = 1;
+        for (String agentName : agents) {
+            Row row = sheet.createRow(rowNum++);
+            cell(row, 0, agentName, styles.agentName);
+            Map<LocalDate, String> shifts = shiftByAgent.getOrDefault(agentName, Map.of());
+            Map<LocalDate, AgentDayOffResponse> offs = offByAgent.getOrDefault(agentName, Map.of());
+            for (int i = 0; i < dateList.size(); i++) {
+                LocalDate d = dateList.get(i);
+                String code = shifts.get(d);
+                if (code != null) {
+                    cell(row, 1 + i, code, styles.working);
+                    continue;
+                }
+                AgentDayOffResponse off = offs.get(d);
+                if (off == null) {
+                    cell(row, 1 + i, "", styles.empty);
+                } else {
+                    boolean requested = "REQUESTED".equalsIgnoreCase(off.status());
+                    cell(row, 1 + i, requested ? off.type() + " (req)" : off.type(),
+                            requested ? styles.requested
+                                    : "PTO".equalsIgnoreCase(off.type()) ? styles.pto
+                                    : styles.mandatory);
+                }
+            }
+        }
+
+        rowNum++;
+        Row legend = sheet.createRow(rowNum);
+        cell(legend, 0, "Legend", styles.header);
+        cell(legend, 1, "08:00-17:00", styles.working);
+        cell(legend, 2, "assigned shift envelope", null);
+        cell(legend, 3, "PTO", styles.pto);
+        cell(legend, 4, "approved leave", null);
+        cell(legend, 5, "MANDATORY", styles.mandatory);
+        cell(legend, 6, "rostered day off", null);
+        cell(legend, 7, "(blank)", styles.empty);
+        cell(legend, 8, "not scheduled, no leave recorded", null);
+
+        sheet.createFreezePane(1, 1);
+        sheet.setColumnWidth(0, 30 * 256);
+        for (int i = 0; i < dateList.size(); i++) {
+            sheet.setColumnWidth(1 + i, 16 * 256);
+        }
+    }
+
+    /**
+     * The code one roster cell carries: the assigned envelope where there is one, otherwise the
+     * span actually worked. Returns null for an agent-day with neither, which reads as blank.
+     */
+    private static String shiftCode(AgentScheduleEntry entry) {
+        if (entry.shift() != null) {
+            return entry.shift().startTime() + "-" + entry.shift().endTime();
+        }
+        if (entry.assignments() == null || entry.assignments().isEmpty()) {
+            return null;
+        }
+        LocalTime earliest = null;
+        LocalTime latest = null;
+        for (AssignmentDetail ad : entry.assignments()) {
+            if (earliest == null || ad.startTime().isBefore(earliest)) earliest = ad.startTime();
+            if (latest == null || ad.endTime().isAfter(latest)) latest = ad.endTime();
+        }
+        return earliest + "-" + latest;
+    }
+
+    private static String name(String raw) {
+        return raw == null || raw.isBlank() ? "(unknown)" : raw;
+    }
+
+    /** Roster colouring: a worked day reads as filled, leave keeps the PTO tab's own palette. */
+    private static final class RosterStyles {
+        final CellStyle header;
+        final CellStyle agentName;
+        final CellStyle working;
+        final CellStyle pto;
+        final CellStyle mandatory;
+        final CellStyle requested;
+        final CellStyle empty;
+
+        RosterStyles(XSSFWorkbook wb) {
+            XSSFFont bold = wb.createFont();
+            bold.setBold(true);
+            header = AllocationStyles.filled(wb, "f3f4f6", bold, HorizontalAlignment.CENTER);
+            agentName = AllocationStyles.filled(wb, null, null, HorizontalAlignment.LEFT);
+            working = AllocationStyles.filled(wb, "dcfce7", null, HorizontalAlignment.CENTER);
+            pto = AllocationStyles.filled(wb, "eff6ff", null, HorizontalAlignment.CENTER);
+            mandatory = AllocationStyles.filled(wb, "fef2f2", null, HorizontalAlignment.CENTER);
+            requested = AllocationStyles.filled(wb, "fefce8", null, HorizontalAlignment.CENTER);
+            empty = AllocationStyles.filled(wb, null, null, HorizontalAlignment.CENTER);
+        }
     }
 
     // --- Constraint Violations ---
