@@ -71,6 +71,17 @@ public class ScheduleController {
         return scheduleService.getScheduleDetail(deskId, id, date);
     }
 
+    /**
+     * The cheap sibling of {@link #getScheduleDetail}, for polling a running solve. See
+     * {@code ScheduleService.getScheduleSummary} for why a separate endpoint earns its place:
+     * the detail response is 4 MB on a large desk and building it competes with the solver for the
+     * two cores the task has.
+     */
+    @GetMapping("/{id}/summary")
+    public ScheduleSummary getScheduleSummary(@PathVariable UUID deskId, @PathVariable UUID id) {
+        return scheduleService.getScheduleSummary(deskId, id);
+    }
+
     @PutMapping("/{id}/stop")
     public ResponseEntity<ScheduleSummary> stopSolve(@PathVariable UUID deskId, @PathVariable UUID id) {
         Schedule schedule = solverService.stopSolve(deskId, id);

@@ -617,6 +617,38 @@ public class ScheduleService {
         return r;
     }
 
+    /**
+     * One schedule's summary — status, score, feasibility, nothing else.
+     *
+     * <p><b>Why this exists as a separate read.</b> {@link #getScheduleDetail} on a desk the size of
+     * Vinted returns **4.16 MB** and takes ~2.4 s to build: 2.62 MB of {@code agentSchedule} over
+     * 1 356 agent-days, plus ~0.97 MB of constraint violations and ~0.57 MB of preference and drift
+     * reports. The results page polls every 2 s while a solve runs, and it polls that whole payload
+     * for a score that is fourteen bytes of it.
+     *
+     * <p>That cost lands twice. The poll interval becomes 2 s plus build time plus transfer, so the
+     * score visibly lags; and the payload is assembled by walking ~23 000 assignments on the SAME
+     * two-vCPU task that is running the solve, where {@code parallelSolverCount} resolves to 1
+     * precisely because there are only two cores. Polling the detail steals throughput from the
+     * search it is reporting on.
+     *
+     * <p>Resolves from the in-memory store first, because a RUNNING schedule exists only there —
+     * the same precedence {@link #listSchedules} uses when it merges the live schedule ahead of the
+     * accepted ones.
+     */
+    public ScheduleSummary getScheduleSummary(UUID deskId, UUID scheduleId) {
+        long tenantId = TenantContext.getTenantId();
+
+        Schedule schedule = inMemoryStore.get(scheduleId)
+                .filter(s -> s.getTenantId() == tenantId && s.getDeskId().equals(deskId))
+                .or(() -> scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, tenantId, deskId))
+                .orElseThrow(() -> new EntityNotFoundException("Schedule", scheduleId));
+
+        String deskName = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .map(Desk::getName).orElse(null);
+        return toSummary(schedule, deskName);
+    }
+
     private ScheduleSummary toSummary(Schedule s, String deskName) {
         ScheduleSummary.ScoreDto scoreDto = null;
         Boolean feasible = null;

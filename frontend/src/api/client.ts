@@ -274,6 +274,11 @@ export const schedules = {
     const query = date ? `?date=${date}` : ''
     return request<ScheduleDetail>(`/desks/${deskId}/schedules/${id}${query}`)
   },
+  // Status, score and feasibility only. The full detail is ~4 MB on a large desk and takes
+  // seconds to build, which both lags the poll and steals CPU from the running solve — see
+  // ScheduleService.getScheduleSummary.
+  summary: (deskId: string, id: string) =>
+    request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/summary`),
   stop: (deskId: string, id: string) =>
     request<ScheduleSummary>(`/desks/${deskId}/schedules/${id}/stop`, { method: 'PUT' }),
   accept: (deskId: string, id: string, version: number) =>

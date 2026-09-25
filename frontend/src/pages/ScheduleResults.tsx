@@ -26,23 +26,69 @@ export default function ScheduleResults() {
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Two-speed polling while a solve runs.
+  //
+  // The score used to be refreshed by re-fetching the WHOLE detail response every 2 s. On the
+  // Vinted desk that is 4.16 MB and ~2.4 s to build, so the real interval became 2 s + build +
+  // transfer — the score visibly lagged — and each poll walked ~23 000 assignments on the same
+  // two-vCPU task that was running the solve, stealing throughput from the search it reported on.
+  //
+  // So: the summary endpoint (a few hundred bytes) every 2 s for status and score, and the full
+  // detail only every 30 s, plus once more the moment the solve stops. The grids stay reasonably
+  // fresh, the number people actually watch is live, and the solver keeps its cores.
   useEffect(() => {
     if (!deskId || !scheduleId) return
-    const poll = () => {
-      setLoading(true)
-      schedules.get(deskId, scheduleId).then(data => {
+    let cancelled = false
+
+    const loadDetail = (showSpinner: boolean) => {
+      if (showSpinner) setLoading(true)
+      return schedules.get(deskId, scheduleId).then(data => {
+        if (cancelled) return data
         setSchedule(data)
         setLoading(false)
-        if (data.status === 'RUNNING') {
-          pollRef.current = setTimeout(poll, 2000)
-        }
+        return data
       }).catch(err => {
+        if (cancelled) return null
         setError(getErrorMessage(err))
         setLoading(false)
+        return null
       })
     }
-    poll()
-    return () => { if (pollRef.current) clearTimeout(pollRef.current) }
+
+    let lastDetailAt = 0
+
+    const tickSummary = () => {
+      schedules.summary(deskId, scheduleId).then(s => {
+        if (cancelled) return
+        // Merge only the live fields — the heavy sections stay as the last detail left them.
+        setSchedule(prev => prev ? { ...prev, status: s.status, score: s.score,
+          feasible: s.feasible, feasibleAt: s.feasibleAt } : prev)
+
+        if (s.status !== 'RUNNING') {
+          loadDetail(false)   // final state: pick up the finished grids once
+          return
+        }
+        if (Date.now() - lastDetailAt >= 30000) {
+          lastDetailAt = Date.now()
+          loadDetail(false)
+        }
+        pollRef.current = setTimeout(tickSummary, 2000)
+      }).catch(() => {
+        // A failed summary poll is not worth surfacing mid-solve; try again.
+        if (!cancelled) pollRef.current = setTimeout(tickSummary, 2000)
+      })
+    }
+
+    loadDetail(true).then(data => {
+      if (cancelled || !data) return
+      lastDetailAt = Date.now()
+      if (data.status === 'RUNNING') tickSummary()
+    })
+
+    return () => {
+      cancelled = true
+      if (pollRef.current) clearTimeout(pollRef.current)
+    }
   }, [deskId, scheduleId])
 
   useEffect(() => {
@@ -195,9 +241,20 @@ export default function ScheduleResults() {
         </div>
 
         {isRunning && (
-          <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '16px', height: '16px', border: '3px solid #3b82f6', borderTop: '3px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-            <span style={{ color: '#3b82f6' }}>Solver is running...</span>
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '16px', height: '16px', border: '3px solid #3b82f6', borderTop: '3px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              <span style={{ color: '#3b82f6' }}>Solver is running...</span>
+            </div>
+            {/* Says plainly which parts of this page are live and which are not, so a grid that
+                looks stale is understood rather than mistaken for a stuck solve. The asymmetry is
+                deliberate: the score is a few hundred bytes, the tables below are ~4 MB and
+                rebuilding them competes with the solver for the two cores it has. */}
+            <p style={{ marginTop: '0.4rem', marginBottom: 0, fontSize: '0.85rem', color: '#6b7280' }}>
+              Score and status refresh every 2 seconds. The tables below refresh every 30 seconds
+              while solving — and once more when it finishes — to keep the solver's CPU on the
+              search rather than on rebuilding this page.
+            </p>
           </div>
         )}
 
