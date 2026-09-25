@@ -32,6 +32,12 @@ public class ConstraintWeightsDto {
     // intent their own migrations state ("hard-vs-soft is this column's value, never a code
     // decision"). Their omission is how a 100:1 ratio between shiftWorkContiguity and
     // shiftEnvelopeCompliance became untunable without a deploy.
+    // The off-roster seat weight (V52). Included here from the start, deliberately: the comment
+    // above records that omitting Phase 15's weights is how a 100:1 ratio became untunable without
+    // a deploy, and this constraint's own migration makes the same claim that hard-vs-soft is the
+    // column's value and not a code decision. That claim is only true while the column is reachable.
+    private ScoreDto nonWorkingDaySeatWeight;
+
     private ScoreDto shiftEnvelopeComplianceWeight;
     private ScoreDto bandCapacityWeight;
     private ScoreDto shiftWorkContiguityWeight;
@@ -95,6 +101,9 @@ public class ConstraintWeightsDto {
     public void setBulkUnderallocationHardWeight(ScoreDto v) { this.bulkUnderallocationHardWeight = v; }
     public ScoreDto getMinStaffingWeight() { return minStaffingWeight; }
     public void setMinStaffingWeight(ScoreDto v) { this.minStaffingWeight = v; }
+    public ScoreDto getNonWorkingDaySeatWeight() { return nonWorkingDaySeatWeight; }
+    public void setNonWorkingDaySeatWeight(ScoreDto v) { this.nonWorkingDaySeatWeight = v; }
+
     public ScoreDto getShiftEnvelopeComplianceWeight() { return shiftEnvelopeComplianceWeight; }
     public void setShiftEnvelopeComplianceWeight(ScoreDto v) { this.shiftEnvelopeComplianceWeight = v; }
     public ScoreDto getBandCapacityWeight() { return bandCapacityWeight; }
