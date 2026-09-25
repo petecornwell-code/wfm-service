@@ -7,6 +7,20 @@ import org.springframework.stereotype.Service;
  * Uses the Jagerman formula for Erlang C probability to avoid factorial overflow,
  * then extends with abandonment and retrial modelling.
  * See spec section 4.4 for algorithm details.
+ *
+ * <p><b>Interval length is an explicit input.</b> {@code callVolume} is the contacts arriving IN
+ * the interval, which is what {@code StaffingRequirements.tsx} asks the operator for and what
+ * {@code ErlangXRequest.Item} carries via its {@code timeslotId}. This class previously divided by
+ * a hardcoded 3600 in both places it converted volume to Erlangs, i.e. it read the same field as a
+ * calls-per-HOUR rate. The two readings agree only at 60-minute timeslots: at 30 minutes the
+ * offered load was half the truth and at 15 a quarter, and since required agents track offered
+ * load, the result silently understaffed by the interval ratio. Every live desk was hourly when
+ * this was fixed, so no schedule changed; the first sub-hourly desk would have inherited the fault
+ * with no warning.
+ *
+ * <p>The conversion now happens in exactly one place, {@link #offeredLoad}. That is deliberate:
+ * there were two divisors and fixing only one would leave the converged load on a different basis
+ * from the iteration that produced it — a subtler wrong answer than the original bug.
  */
 @Service
 public class ErlangXService {
@@ -17,7 +31,8 @@ public class ErlangXService {
     /**
      * Calculate the required number of agents for a single timeslot/specialization.
      *
-     * @param callVolume            forecasted calls for this timeslot
+     * @param callVolume            forecasted calls arriving IN this timeslot, not a per-hour rate
+     * @param intervalMinutes       length of that timeslot — 15, 30 and 60 are all normal
      * @param aht                   average handle time in seconds
      * @param patience              average caller patience in seconds
      * @param retryRate             percentage of abandoned callers who retry (0-100)
@@ -25,9 +40,12 @@ public class ErlangXService {
      * @param serviceLevelThreshold max acceptable wait time in seconds
      * @return the minimum number of agents needed
      */
-    public int calculateRequiredAgents(int callVolume, double aht, double patience,
-                                       double retryRate, double serviceLevelTarget,
-                                       int serviceLevelThreshold) {
+    public int calculateRequiredAgents(int callVolume, int intervalMinutes, double aht,
+                                       double patience, double retryRate,
+                                       double serviceLevelTarget, int serviceLevelThreshold) {
+        if (intervalMinutes <= 0) {
+            throw new IllegalArgumentException("intervalMinutes must be positive: " + intervalMinutes);
+        }
         if (callVolume <= 0 || aht <= 0) {
             return 0;
         }
@@ -40,7 +58,7 @@ public class ErlangXService {
         int previousAgents = -1;
 
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            double trafficIntensity = adjustedCallVolume * aht / 3600.0; // in Erlangs (per hour)
+            double trafficIntensity = offeredLoad(adjustedCallVolume, intervalMinutes, aht);
 
             int agents = findMinAgents(trafficIntensity, aht, patience, slTarget, serviceLevelThreshold);
 
@@ -67,8 +85,17 @@ public class ErlangXService {
         }
 
         // Final pass with converged load
-        double trafficIntensity = adjustedCallVolume * aht / 3600.0;
+        double trafficIntensity = offeredLoad(adjustedCallVolume, intervalMinutes, aht);
         return findMinAgents(trafficIntensity, aht, patience, slTarget, serviceLevelThreshold);
+    }
+
+    /**
+     * Offered load in Erlangs. THE volume-to-load conversion for this class — the iteration above
+     * and the final pass after it must use the same one, or the answer is computed on a different
+     * basis from the load that converged to it.
+     */
+    private static double offeredLoad(double volume, int intervalMinutes, double aht) {
+        return volume * aht / (intervalMinutes * 60.0);
     }
 
     /**

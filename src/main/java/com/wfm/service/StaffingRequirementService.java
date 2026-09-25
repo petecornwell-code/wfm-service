@@ -11,6 +11,7 @@ import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
 import com.wfm.util.CursorPagination;
+import com.wfm.util.DayWindow;
 import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -203,11 +204,17 @@ public class StaffingRequirementService {
         // Calculate and persist
         List<StaffingRequirement> saved = new ArrayList<>();
         for (ErlangXRequest.Item item : request.parameters()) {
-            int requiredAgents = erlangXService.calculateRequiredAgents(
-                    item.callVolume(), item.aht(), item.patience(),
-                    item.retryRate(), item.serviceLevelTarget(), item.serviceLevelThreshold());
-
             Timeslot ts = timeslotMap.get(item.timeslotId());
+
+            // The interval the volume belongs to comes from the timeslot itself rather than from
+            // the request, so the figure the operator typed against a row is converted on that
+            // row's own length. DayWindow because a slot ending at 00:00 ends the day -- a raw
+            // Duration.between would make the last slot of a midnight desk negative.
+            int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
+
+            int requiredAgents = erlangXService.calculateRequiredAgents(
+                    item.callVolume(), intervalMinutes, item.aht(), item.patience(),
+                    item.retryRate(), item.serviceLevelTarget(), item.serviceLevelThreshold());
 
             StaffingRequirement sr = new StaffingRequirement();
             sr.setTenantId(tenantId);
