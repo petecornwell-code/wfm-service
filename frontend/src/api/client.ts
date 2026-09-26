@@ -378,11 +378,11 @@ export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDa
 export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
 export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
-export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[] }
+export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[]; adjustments?: ErlangAdjustments | null }
 // Percentages, not fractions: serviceLevelTarget is 80 for 80%, matching ErlangXParam. The backend
 // divides by 100. Sending 0.8 here asks for a 0.8% service level, which almost any headcount meets.
 export interface ErlangCParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; serviceLevelTarget: number; serviceLevelThreshold: number }
-export interface ErlangCPersistRequest { from: string; to: string; parameters: ErlangCParam[] }
+export interface ErlangCPersistRequest { from: string; to: string; parameters: ErlangCParam[]; adjustments?: ErlangAdjustments | null }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
 export interface DayOff { id: string; date: string; type: string; status: string }
 export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }

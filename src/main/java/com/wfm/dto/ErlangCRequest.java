@@ -19,11 +19,13 @@ import java.util.UUID;
  * @param from       first date whose live requirements are replaced
  * @param to         last such date
  * @param parameters one entry per timeslot and specialization being calculated
+ * @param adjustments shrinkage, occupancy ceiling and concurrency; null means none of them
  */
 public record ErlangCRequest(
         LocalDate from,
         LocalDate to,
-        List<Item> parameters
+        List<Item> parameters,
+        StaffingAdjustmentOptionsDto adjustments
 ) {
     /**
      * @param callVolume            contacts arriving IN the timeslot

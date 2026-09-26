@@ -50,6 +50,13 @@ export default function StaffingRequirements() {
     serviceLevelThreshold: 20,
     patience: 60,
     retryRate: 10,
+    // The three rostering adjustments, all OFF. Erlang answers how many agents must be HANDLING
+    // contacts; these turn that into how many people to roster. They start at zero because this
+    // system has no agreed shrinkage or occupancy ceiling, and a plausible default here would
+    // quietly become one. Zero reproduces exactly what this screen wrote before they existed.
+    shrinkage: 0,
+    maxOccupancy: 0,
+    concurrency: 1,
   })
   const isErlang = mode === 'erlangC' || mode === 'erlangX'
   const modelLabel = mode === 'erlangC' ? 'Erlang C' : 'Erlang X'
@@ -232,10 +239,16 @@ export default function StaffingRequirements() {
     try {
       // Both endpoints REPLACE the live requirements for the whole period, so both take the same
       // grid. The interval each volume is converted on comes from its own timeslot, server-side.
+      const adjustments = {
+        shrinkage: erlangSettings.shrinkage > 0 ? erlangSettings.shrinkage / 100 : null,
+        maxOccupancy: erlangSettings.maxOccupancy > 0 ? erlangSettings.maxOccupancy / 100 : null,
+        concurrency: erlangSettings.concurrency > 1 ? erlangSettings.concurrency : null,
+      }
       const result = model === 'erlangX'
         ? await srApi.calculateErlangX(deskId, {
             from: periodStart,
             to: periodEnd,
+            adjustments,
             parameters: entries.map<ErlangXParam>(e => ({
               timeslotId: e.slotId,
               specializationId: e.specId,
@@ -250,6 +263,7 @@ export default function StaffingRequirements() {
         : await srApi.calculateErlangC(deskId, {
             from: periodStart,
             to: periodEnd,
+            adjustments,
             parameters: entries.map<ErlangCParam>(e => ({
               timeslotId: e.slotId,
               specializationId: e.specId,
@@ -458,6 +472,18 @@ export default function StaffingRequirements() {
               {settingField('Within (s)', 'serviceLevelThreshold')}
               {mode === 'erlangX' && settingField('Patience (s)', 'patience', 'mean before hang-up')}
               {mode === 'erlangX' && settingField('Retry (%)', 'retryRate', 'of abandoned callers')}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-start', marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: '#f9fafb', borderRadius: '6px' }}>
+              <div style={{ fontSize: '0.78rem', color: '#374151', maxWidth: '230px', paddingTop: '0.1rem' }}>
+                <strong>Rostering adjustments</strong>
+                <span style={{ display: 'block', color: '#6b7280' }}>
+                  Erlang answers how many agents must be handling contacts. These turn that into how
+                  many people to roster. 0 = off; none of them is a system default.
+                </span>
+              </div>
+              {settingField('Shrinkage (%)', 'shrinkage', 'absence, training')}
+              {settingField('Max occupancy (%)', 'maxOccupancy', '0 = no ceiling')}
+              {settingField('Concurrency', 'concurrency', '1 for voice')}
             </div>
             {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
               <div key={date}>

@@ -19,11 +19,14 @@ package com.wfm.calc;
  * asserted rather than assumed.
  *
  * <p><b>Abandoned callers are not counted as answered.</b> {@link Input#countAbandonsAsAnswered()}
- * can switch to the other industry convention, but it defaults false: counting a caller who hung up
- * as a success raises the reported service level and therefore LOWERS required headcount, and the
- * predecessor of this class did exactly that while also omitting shrinkage and any occupancy
- * ceiling — three independent simplifications all pushing headcount down, which compounds rather
- * than cancels.
+ * switches to the other industry convention, which EXCLUDES abandoned callers from the measurement
+ * — of the callers who stayed, what fraction was answered in time — rather than scoring a hang-up
+ * as a success. That distinction is not pedantry: scoring hang-ups as successes makes the reported
+ * service level RISE as headcount falls, and the agent search then settles on one agent at any
+ * load. It still defaults false, because excluding abandons raises the reported service level and
+ * therefore lowers required headcount, and the predecessor of this class did that while also
+ * omitting shrinkage and any occupancy ceiling — three independent simplifications all pushing
+ * headcount down, which compounds rather than cancels.
  *
  * <p>Pure and stateless, like {@link ErlangC}, whose primitives it reuses rather than re-deriving.
  */
@@ -164,13 +167,27 @@ public final class ErlangX {
                 ? chain.probabilityOfWait()
                 : chain.probabilityOfWait() * Math.exp(-drainRate * thresholdSeconds);
 
-        double answeredWithin = 1.0 - pWaitBeyond;
-        if (countAbandonsAsAnswered) {
-            // The other convention: a caller who hung up before the threshold is not counted
-            // against the target. Raises SL and lowers headcount — chosen, never defaulted.
-            return Math.min(1.0, answeredWithin + chain.probabilityOfAbandon());
+        // 1 - P(still waiting at t) counts everyone no longer in the queue, which includes the
+        // callers who hung up before t. Removing them leaves the fraction of ALL callers actually
+        // answered within the threshold.
+        double answeredWithinOfAll = Math.max(0.0, Math.min(1.0,
+                (1.0 - pWaitBeyond) - chain.probabilityOfAbandon()));
+        if (!countAbandonsAsAnswered) {
+            return answeredWithinOfAll;
         }
-        return Math.max(0.0, Math.min(1.0, answeredWithin - chain.probabilityOfAbandon()));
+        // The other convention EXCLUDES abandoned callers from the measurement rather than scoring
+        // them as successes: of the callers who stayed, what fraction was answered in time. A
+        // smaller denominator, never a larger numerator.
+        //
+        // Adding P(abandon) to the numerator instead — which this method did until 2026-09-25 —
+        // is degenerate: as headcount falls, abandonment rises faster than service degrades, so the
+        // reported service level RISES. One agent against 16.7 Erlangs scored 94% and the agent
+        // search stopped there. {@code ErlangXTest} pins that it cannot happen again.
+        double served = 1.0 - chain.probabilityOfAbandon();
+        if (served <= 0) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(1.0, answeredWithinOfAll / served));
     }
 
     /**

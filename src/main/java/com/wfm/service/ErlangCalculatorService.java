@@ -20,8 +20,10 @@ import java.util.List;
  * available proof of that claim. It exists so the corrected maths can be exercised against real
  * numbers without touching the {@code staffing_requirement} rows the solver consumes.
  * {@link StaffingRequirementService#calculateErlangX} is the opposite: it deletes every live
- * requirement in the date range before inserting its results, and still calls the older
- * {@link ErlangXService}. Nothing here changes that path.
+ * requirement in the date range before inserting its results. Since 2026-09-26 it delegates to THIS
+ * service for the arithmetic, so the preview and the button agree by construction rather than by
+ * coincidence. What differs is only the consequence — that one writes rows the solver reads, and
+ * this one writes nothing.
  *
  * <p><b>Why the input ceiling.</b> Both models search upwards for the smallest headcount meeting the
  * target, and {@link ErlangX} solves a queue chain at every candidate. On this service's two cores,

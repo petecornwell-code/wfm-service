@@ -1,6 +1,5 @@
 package com.wfm.service;
 
-import com.wfm.calc.ErlangC;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
 import com.wfm.exception.EntityNotFoundException;
@@ -29,18 +28,18 @@ public class StaffingRequirementService {
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final TimeslotRepository timeslotRepository;
     private final SpecializationRepository specializationRepository;
-    private final ErlangXService erlangXService;
+    private final ErlangCalculatorService erlangCalculatorService;
     private final EntityManager entityManager;
 
     public StaffingRequirementService(StaffingRequirementRepository staffingRequirementRepository,
                                       TimeslotRepository timeslotRepository,
                                       SpecializationRepository specializationRepository,
-                                      ErlangXService erlangXService,
+                                      ErlangCalculatorService erlangCalculatorService,
                                       EntityManager entityManager) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
-        this.erlangXService = erlangXService;
+        this.erlangCalculatorService = erlangCalculatorService;
         this.entityManager = entityManager;
     }
 
@@ -167,12 +166,10 @@ public class StaffingRequirementService {
      * live requirements for {@code [from, to]} are REPLACED, including rows for timeslots this
      * request never mentions.
      *
-     * <p>Uses {@link ErlangC} — the tested maths in {@code com.wfm.calc} — rather than a second
-     * hand-rolled implementation. That makes the two modes on this screen deliberately asymmetric:
-     * Erlang X still calls {@link ErlangXService}, whose abandonment convention and missing
-     * shrinkage are separate open decisions, while Erlang C is the conservative baseline computed
-     * exactly. Erlang C will therefore usually ask for MORE agents than Erlang X on the same
-     * inputs, because it assumes nobody ever hangs up.
+     * <p>Both modes delegate to {@link ErlangCalculatorService}, the same service behind the
+     * read-only calculator page, so what this button writes is exactly what that page previews.
+     * Erlang C is the conservative baseline and will usually ask for MORE agents than Erlang X on
+     * the same inputs, because it assumes nobody ever hangs up.
      */
     @Transactional
     public StaffingRequirementResponse calculateErlangC(UUID deskId, ErlangCRequest request) {
@@ -206,19 +203,23 @@ public class StaffingRequirementService {
             Timeslot ts = timeslotMap.get(item.timeslotId());
             int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
 
-            // The DTO speaks percentages to match this screen's other mode; ErlangC.Input takes a
-            // fraction and rejects anything above 1, which is what makes the conversion safe to
-            // do here rather than trusting the caller.
-            ErlangC.Result result = ErlangC.requiredAgents(new ErlangC.Input(
-                    item.callVolume(), intervalMinutes, item.aht(),
-                    item.serviceLevelTarget() / 100.0, item.serviceLevelThreshold()));
+            // Delegated to the same service the read-only calculator calls, so what this button
+            // writes is exactly what that page previews. The DTO speaks percentages to match this
+            // screen; the calculator takes fractions.
+            ErlangCalculationResponse result = erlangCalculatorService.calculateErlangC(
+                    new ErlangCCalculationRequest(
+                            item.callVolume(), intervalMinutes, item.aht(),
+                            item.serviceLevelTarget() / 100.0, item.serviceLevelThreshold(),
+                            request.adjustments()));
 
             StaffingRequirement sr = new StaffingRequirement();
             sr.setTenantId(tenantId);
             sr.setDeskId(deskId);
             sr.setTimeslot(ts);
             sr.setSpecialization(specMap.get(item.specializationId()));
-            sr.setRequiredFTEs(result.agents());
+            // scheduledAgents, not agentsRequired: the number to ROSTER, after any occupancy
+            // ceiling and shrinkage. With no adjustments the two are the same.
+            sr.setRequiredFTEs(result.scheduledAgents());
             sr.setSource(StaffingSource.ERLANG_C);
             saved.add(staffingRequirementRepository.save(sr));
         }
@@ -308,16 +309,18 @@ public class StaffingRequirementService {
             // Duration.between would make the last slot of a midnight desk negative.
             int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
 
-            int requiredAgents = erlangXService.calculateRequiredAgents(
-                    item.callVolume(), intervalMinutes, item.aht(), item.patience(),
-                    item.retryRate(), item.serviceLevelTarget(), item.serviceLevelThreshold());
+            ErlangCalculationResponse result = erlangCalculatorService.calculateErlangX(
+                    new ErlangXCalculationRequest(
+                            item.callVolume(), intervalMinutes, item.aht(), item.patience(),
+                            item.retryRate() / 100.0, item.serviceLevelTarget() / 100.0,
+                            item.serviceLevelThreshold(), false, request.adjustments()));
 
             StaffingRequirement sr = new StaffingRequirement();
             sr.setTenantId(tenantId);
             sr.setDeskId(deskId);
             sr.setTimeslot(ts);
             sr.setSpecialization(specMap.get(item.specializationId()));
-            sr.setRequiredFTEs(requiredAgents);
+            sr.setRequiredFTEs(result.scheduledAgents());
             sr.setSource(StaffingSource.ERLANG_X);
             saved.add(staffingRequirementRepository.save(sr));
         }

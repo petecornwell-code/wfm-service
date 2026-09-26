@@ -11,10 +11,10 @@ import { showToast } from '../components/Toast'
  * A scratchpad over the Erlang C and Erlang X maths. It calls /calc/erlang-c and /calc/erlang-x,
  * neither of which reads or writes anything: no desk, no timeslot, no staffing requirement row.
  *
- * Deliberately separate from the Erlang X mode on Staffing Requirements, which is the persisting
- * path -- that one replaces the live requirements for its whole date range, and it still calls the
- * older ErlangXService with the hardcoded hourly divisor. This page is where the corrected maths can
- * be compared against real numbers without moving anything the solver reads.
+ * Deliberately separate from the Erlang C and Erlang X modes on Staffing Requirements, which are
+ * the persisting paths: those replace the live requirements for their whole date range. They run
+ * the same arithmetic as this page, so this is a true preview of what those buttons would write --
+ * without moving anything the solver reads.
  */
 
 // Percentages on screen, fractions on the wire. The API rejects 80 where 0.8 belongs -- correctly,
