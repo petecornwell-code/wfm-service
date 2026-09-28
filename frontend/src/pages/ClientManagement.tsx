@@ -7,6 +7,8 @@ type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitl
 type AgentSortField = 'name' | 'email' | 'department' | 'jobTitle' | 'active'
 type SortDir = 'asc' | 'desc'
 
+const BASKET_KEY = 'wfm:templateBasket'
+
 export default function ClientManagement() {
   const [department, setDepartment] = useState('')
   const [employees, setEmployees] = useState<BambooEmployeeResponse[]>([])
@@ -16,6 +18,10 @@ export default function ClientManagement() {
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
+  // What the job-title allowlist removed from the last search. Shown rather than swallowed: a
+  // near-miss title is a configuration problem that otherwise reads as missing BambooHR data.
+  const [hiddenByJobTitle, setHiddenByJobTitle] = useState(0)
+  const [hiddenJobTitles, setHiddenJobTitles] = useState<string[]>([])
 
   // Desk assignment
   const [deskList, setDeskList] = useState<Desk[]>([])
@@ -44,6 +50,30 @@ export default function ClientManagement() {
   const [empSortDir, setEmpSortDir] = useState<SortDir>('asc')
   const [empSearch, setEmpSearch] = useState('')
 
+  // Template basket: people staged for a desk-assignment workbook, accumulated across several
+  // department searches. Held here rather than on the server because nothing is committed until
+  // the filled-in workbook is uploaded -- and kept in localStorage so a reload mid-search does not
+  // throw away twenty minutes of picking.
+  const [basket, setBasket] = useState<BambooEmployeeResponse[]>(() => {
+    try {
+      const raw = localStorage.getItem(BASKET_KEY)
+      return raw ? (JSON.parse(raw) as BambooEmployeeResponse[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [basketDeskId, setBasketDeskId] = useState('')
+  const [downloadingBasket, setDownloadingBasket] = useState(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BASKET_KEY, JSON.stringify(basket))
+    } catch {
+      // A full or blocked store is not worth failing the page over; the basket simply stops
+      // surviving reloads.
+    }
+  }, [basket])
+
   // Desk agents table sorting & search
   const [agentSortField, setAgentSortField] = useState<AgentSortField | null>(null)
   const [agentSortDir, setAgentSortDir] = useState<SortDir>('asc')
@@ -64,6 +94,8 @@ export default function ClientManagement() {
       setEmployees(res.data)
       setHasMore(res.hasMore)
       setTotalCount(res.totalCount)
+      setHiddenByJobTitle(res.hiddenByJobTitle)
+      setHiddenJobTitles(res.hiddenJobTitles ?? [])
       setCurrentPage(page)
       setSearched(true)
       setSelectedEmployeeIds(new Set())
@@ -97,6 +129,58 @@ export default function ClientManagement() {
       setSelectedEmployeeIds(new Set())
     } else {
       setSelectedEmployeeIds(new Set(employees.map(e => e.id)))
+    }
+  }
+
+  /** Adds the ticked rows to the basket, keeping the first occurrence of anyone already in it. */
+  const handleAddToTemplate = () => {
+    if (selectedEmployeeIds.size === 0) {
+      showToast('error', 'Tick at least one person to add')
+      return
+    }
+    const chosen = employees.filter(e => selectedEmployeeIds.has(e.id))
+    setBasket(prev => {
+      const byId = new Map(prev.map(e => [e.id, e]))
+      let added = 0
+      for (const emp of chosen) {
+        if (!byId.has(emp.id)) {
+          byId.set(emp.id, emp)
+          added++
+        }
+      }
+      const duplicates = chosen.length - added
+      showToast('success', `Added ${added} to the template`
+        + (duplicates > 0 ? ` (${duplicates} already there)` : ''))
+      return Array.from(byId.values())
+    })
+    setSelectedEmployeeIds(new Set())
+  }
+
+  const handleDownloadBasket = async () => {
+    if (!basketDeskId) {
+      showToast('error', 'Choose the desk this template is for')
+      return
+    }
+    setDownloadingBasket(true)
+    try {
+      const res = await clientManagement.downloadSelectionTemplate(basketDeskId, basket)
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        showToast('error', body?.error?.message ?? 'Template download failed')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const deskName = deskList.find(d => d.id === basketDeskId)?.name ?? 'desk'
+      a.download = `${deskName.replace(/[^a-zA-Z0-9_-]/g, '_')}-assignment-template.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setDownloadingBasket(false)
     }
   }
 
@@ -263,6 +347,11 @@ export default function ClientManagement() {
     return empSortDir === 'asc' ? ' ↑' : ' ↓'
   }
 
+  const basketDepartments = useMemo(
+    () => Array.from(new Set(basket.map(e => e.department).filter(Boolean))),
+    [basket],
+  )
+
   const filteredEmployees = useMemo(() => {
     if (!empSearch.trim()) return employees
     const q = empSearch.toLowerCase()
@@ -338,7 +427,9 @@ export default function ClientManagement() {
       <p style={{ marginBottom: '1rem' }}><Link to="/">Back to Desk Selector</Link></p>
       <h1>Client Management</h1>
       <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
-        Search BambooHR employees by department name, then assign them to a desk.
+        Search BambooHR employees by department name, then assign them to a desk. Only active
+        employees whose job title is on the allowlist are listed — the same rule the upload
+        enforces, so nobody shown here can be refused later for either reason.
       </p>
 
       {/* Upload Desk Assignments */}
@@ -379,6 +470,59 @@ export default function ClientManagement() {
         </button>
       </div>
 
+        {basket.length > 0 && (
+          <div style={{ border: '1px solid #99f6e4', background: '#f0fdfa', borderRadius: '6px', padding: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                Template: {basket.length} {basket.length === 1 ? 'person' : 'people'}
+                <span style={{ fontWeight: 400, color: '#6b7280' }}>
+                  {' '}from {basketDepartments.length} {basketDepartments.length === 1 ? 'department' : 'departments'}
+                </span>
+              </div>
+              <select
+                value={basketDeskId}
+                onChange={e => setBasketDeskId(e.target.value)}
+                style={{ padding: '0.35rem', border: '1px solid #d1d5db', borderRadius: '4px', minWidth: '180px', fontSize: '0.85rem' }}
+              >
+                <option value="">-- Desk for this template --</option>
+                {deskList.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <button
+                onClick={handleDownloadBasket}
+                disabled={downloadingBasket || !basketDeskId}
+                style={{ padding: '0.35rem 0.9rem', background: '#0f766e', color: '#fff', border: 'none', borderRadius: '4px', cursor: (downloadingBasket || !basketDeskId) ? 'not-allowed' : 'pointer', opacity: (downloadingBasket || !basketDeskId) ? 0.6 : 1, fontSize: '0.85rem' }}
+              >
+                {downloadingBasket ? 'Building...' : `Download template (${basket.length})`}
+              </button>
+              <button
+                onClick={() => { setBasket([]); setBasketDeskId('') }}
+                style={{ padding: '0.35rem 0.8rem', background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                Clear
+              </button>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0.5rem 0 0.4rem' }}>
+              One sheet named after the desk, with the day-hour columns blank for you to fill in.
+              Downloading assigns nobody — the upload does that, and it clears the desk first.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxHeight: '110px', overflowY: 'auto' }}>
+              {basket.map(e => (
+                <span key={e.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: '#fff', border: '1px solid #ccfbf1', borderRadius: '12px', padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}>
+                  {e.displayName}
+                  <span style={{ color: '#6b7280' }}>{e.department}</span>
+                  <button
+                    onClick={() => setBasket(prev => prev.filter(x => x.id !== e.id))}
+                    aria-label={`Remove ${e.displayName}`}
+                    style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', padding: 0, fontSize: '0.9rem', lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
       {searched && (
         <>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '0.75rem', flexWrap: 'wrap', padding: '0.75rem', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
@@ -402,7 +546,26 @@ export default function ClientManagement() {
             >
               {assigning ? 'Assigning...' : `Assign Selected (${selectedEmployeeIds.size})`}
             </button>
+            <button
+              onClick={handleAddToTemplate}
+              disabled={selectedEmployeeIds.size === 0}
+              style={{ padding: '0.4rem 1rem', background: '#0f766e', color: '#fff', border: 'none', borderRadius: '4px', cursor: selectedEmployeeIds.size === 0 ? 'not-allowed' : 'pointer', opacity: selectedEmployeeIds.size === 0 ? 0.6 : 1 }}
+              title="Stage these people for a desk-assignment workbook. Assigns nobody."
+            >
+              Add to template ({selectedEmployeeIds.size})
+            </button>
           </div>
+
+
+          {hiddenByJobTitle > 0 && (
+            <p style={{ fontSize: '0.8rem', color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '4px', padding: '0.4rem 0.6rem', marginBottom: '0.5rem' }}>
+              {hiddenByJobTitle} active {hiddenByJobTitle === 1 ? 'person is' : 'people are'} hidden
+              because their job title is not on the allowlist
+              {hiddenJobTitles.length > 0 && <>: {hiddenJobTitles.join(', ')}</>}.
+              {' '}Titles are matched as substrings, so a near miss counts as a miss — edit the list
+              in <Link to="/configuration">Configuration</Link> if someone is missing.
+            </p>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
             <div style={{ fontWeight: 600 }}>

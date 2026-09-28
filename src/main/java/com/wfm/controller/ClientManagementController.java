@@ -2,9 +2,11 @@ package com.wfm.controller;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.AgentResponse;
+import com.wfm.dto.DeskAssignmentSelectionRequest;
 import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.DepartmentTimeOffResponse;
+import com.wfm.dto.EmployeeSearchResponse;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.service.ClientManagementExportService;
 import com.wfm.service.ClientManagementService;
@@ -45,22 +47,30 @@ public class ClientManagementController {
         this.deskAssignmentTemplateService = deskAssignmentTemplateService;
     }
 
+    /**
+     * Active employees in a department whose job title passes the tenant's allowlist — the people
+     * this system can actually schedule, which is what every downstream step enforces anyway.
+     * Whatever the allowlist removed is reported alongside, never silently dropped.
+     */
     @GetMapping("/employees")
-    public PaginatedResponse<BambooEmployeeResponse> listEmployees(
+    public EmployeeSearchResponse listEmployees(
             @RequestParam String department,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "20") int pageSize,
             @RequestParam(required = false, defaultValue = "false") boolean refresh) {
 
         String tenantId = String.valueOf(TenantContext.getTenantId());
-        List<BambooEmployeeResponse> all = clientManagementService.listEmployeesByDepartment(tenantId, department, refresh);
+        ClientManagementService.EmployeeSearchResult result =
+                clientManagementService.listSchedulableEmployeesByDepartment(tenantId, department, refresh);
+        List<BambooEmployeeResponse> all = result.employees();
 
         int start = (page - 1) * pageSize;
         int end = Math.min(start + pageSize, all.size());
         List<BambooEmployeeResponse> pageData = start < all.size() ? all.subList(start, end) : List.of();
         boolean hasMore = end < all.size();
 
-        return new PaginatedResponse<>(pageData, hasMore ? String.valueOf(page + 1) : null, hasMore, all.size());
+        return new EmployeeSearchResponse(pageData, hasMore, all.size(),
+                result.hiddenByJobTitle(), result.hiddenJobTitles(), result.allowlistActive());
     }
 
     @PostMapping("/assign-to-desk")
@@ -108,6 +118,26 @@ public class ClientManagementController {
     public DeskAssignmentUploadService.DeskAssignmentUploadResult uploadDeskAssignments(
             @RequestParam("file") MultipartFile file) throws IOException {
         return deskAssignmentUploadService.uploadDeskAssignments(file);
+    }
+
+    /**
+     * A workbook for one desk, built from an explicitly chosen set of people — the staged selection
+     * on the Client Management page, which accumulates across several department searches.
+     *
+     * <p>POST rather than GET because the selection is a body, not a query string: a few hundred
+     * employees do not belong in a URL. It reads nothing and writes nothing; the people are not
+     * assigned to the desk by downloading this, only by uploading the filled-in file.
+     */
+    @PostMapping("/desk-assignments/template")
+    public ResponseEntity<byte[]> downloadSelectionTemplate(
+            @RequestBody DeskAssignmentSelectionRequest request) {
+        byte[] xlsx = deskAssignmentTemplateService.generateTemplateForSelection(request);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"desk-assignment-template.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
     }
 
     @GetMapping("/desk-assignments/template")

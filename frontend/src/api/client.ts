@@ -536,6 +536,15 @@ export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore:
 
 export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }
 
+export interface EmployeeSearchResponse {
+  data: BambooEmployeeResponse[]
+  hasMore: boolean
+  totalCount: number
+  hiddenByJobTitle: number
+  hiddenJobTitles: string[]
+  allowlistActive: boolean
+}
+
 // --- App Configuration ---
 export const appConfiguration = {
   get: () => request<Record<string, string>>('/configuration'),
@@ -545,8 +554,12 @@ export const appConfiguration = {
 
 // --- Client Management ---
 export const clientManagement = {
+  // Returns only people this system can schedule: active in BambooHR AND holding a job title on
+  // the tenant's allowlist. Whatever the allowlist removed is reported in hiddenByJobTitle /
+  // hiddenJobTitles rather than vanishing -- a near-miss title like "Customer Service
+  // Representative" against a "Customer Support Representative" pattern is the common case.
   listEmployees: (department: string, page = 1, pageSize = 20, refresh = false) =>
-    request<PaginatedResponse<BambooEmployeeResponse>>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}&refresh=${refresh}`),
+    request<EmployeeSearchResponse>(`/client-management/employees?department=${encodeURIComponent(department)}&page=${page}&pageSize=${pageSize}&refresh=${refresh}`),
   assignToDesk: (deskId: string, bambooEmployeeIds: string[]) =>
     request<Agent[]>(`/client-management/assign-to-desk`, { method: 'POST', body: JSON.stringify({ deskId, bambooEmployeeIds }) }),
   removeAgentFromDesk: (deskId: string, agentId: string) =>
@@ -558,6 +571,25 @@ export const clientManagement = {
   downloadDeskAssignmentTemplate: () =>
     fetch(`${API_BASE}/client-management/desk-assignments/template`, {
       headers: { 'X-Tenant-ID': currentTenantId },
+    }),
+  // One sheet, named after the chosen desk, holding exactly the people passed in -- they need not
+  // be on that desk, or on any desk. Downloading assigns nobody; only uploading the filled-in file
+  // does that, and that upload CLEARS the desk first.
+  downloadSelectionTemplate: (deskId: string, employees: BambooEmployeeResponse[]) =>
+    fetch(`${API_BASE}/client-management/desk-assignments/template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': currentTenantId },
+      body: JSON.stringify({
+        deskId,
+        employees: employees.map(e => ({
+          bamboohrId: e.id,
+          displayName: e.displayName,
+          workEmail: e.workEmail,
+          department: e.department,
+          jobTitle: e.jobTitle,
+          status: e.status,
+        })),
+      }),
     }),
   uploadDeskAssignments: async (file: File): Promise<DeskAssignmentUploadResult> => {
     const formData = new FormData()

@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.dto.AgentResponse;
+import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
 import com.wfm.dto.DepartmentTimeOffResponse;
 import com.wfm.integration.BambooTimeOff;
@@ -58,6 +59,61 @@ public class ClientManagementService {
         this.deskRepository = deskRepository;
         this.agentEligibilityService = agentEligibilityService;
     }
+
+    /** The distinct excluded job titles are for an operator to read, not to page through. */
+    private static final int MAX_REPORTED_HIDDEN_TITLES = 10;
+
+    /**
+     * A department search narrowed to people this system can actually schedule.
+     *
+     * <p>Two filters, and they are not the same kind of thing. Inactive employees are already gone
+     * before this method sees the list — {@link #listEmployeesByDepartment} keeps only BambooHR
+     * status "Active", and has since long before this method existed. The job-title allowlist is
+     * applied HERE, against the tenant's configured patterns, so the search agrees with the two
+     * places that already enforce it: the roster-seeded template and the upload parser. Without
+     * that agreement an operator could assign someone from this screen and then watch the upload
+     * silently refuse the same person.
+     *
+     * <p>What was removed is returned rather than discarded — see {@link EmployeeSearchResult}.
+     */
+    public EmployeeSearchResult listSchedulableEmployeesByDepartment(
+            String tenantId, String department, boolean refresh) {
+        long numericTenantId = TenantContext.getTenantId();
+        List<BambooEmployeeResponse> active = listEmployeesByDepartment(tenantId, department, refresh);
+
+        List<BambooEmployeeResponse> included = new ArrayList<>();
+        LinkedHashSet<String> hiddenTitles = new LinkedHashSet<>();
+        int hidden = 0;
+        boolean allowlistActive = false;
+
+        for (BambooEmployeeResponse employee : active) {
+            if (agentEligibilityService.isIncludedByTitleAllowlist(numericTenantId, employee.jobTitle())) {
+                included.add(employee);
+            } else {
+                // Reaching here at all means the allowlist has patterns: with none configured the
+                // check returns true for everyone, including a blank title.
+                allowlistActive = true;
+                hidden++;
+                hiddenTitles.add(employee.jobTitle() == null || employee.jobTitle().isBlank()
+                        ? "(no job title)" : employee.jobTitle());
+            }
+        }
+
+        return new EmployeeSearchResult(included, hidden,
+                hiddenTitles.stream().limit(MAX_REPORTED_HIDDEN_TITLES).toList(),
+                allowlistActive);
+    }
+
+    /**
+     * @param employees        the people who passed both filters
+     * @param hiddenByJobTitle how many active employees the allowlist removed
+     * @param hiddenJobTitles  the distinct titles removed, capped
+     * @param allowlistActive  whether the tenant has any patterns configured at all
+     */
+    public record EmployeeSearchResult(List<BambooEmployeeResponse> employees,
+                                       int hiddenByJobTitle,
+                                       List<String> hiddenJobTitles,
+                                       boolean allowlistActive) {}
 
     public List<BambooEmployeeResponse> listEmployeesByDepartment(String tenantId, String department, boolean refresh) {
         String cacheKey = tenantId + "::" + department.toLowerCase();

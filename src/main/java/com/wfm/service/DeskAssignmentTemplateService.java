@@ -2,11 +2,15 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
+import com.wfm.dto.DeskAssignmentSelectionRequest;
 import com.wfm.dto.DeskAgentResponse.UsualShiftEntry;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.DeskRepository;
+import com.wfm.exception.EntityNotFoundException;
+import com.wfm.exception.UnprocessableException;
 import com.wfm.repository.ShiftTemplateRepository;
+import com.wfm.util.AgentNameSplitter;
 import com.wfm.util.EnrichedColumnLayout;
 import com.wfm.util.FormulaInjectionSanitizer;
 import org.apache.poi.ss.usermodel.*;
@@ -22,7 +26,11 @@ import java.io.IOException;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Generates the pre-seeded per-desk blank template (D-13/D-14/UPL-09): one worksheet per desk,
@@ -116,6 +124,132 @@ public class DeskAssignmentTemplateService {
                 for (int i = 0; i < headers.size(); i++) {
                     sheet.autoSizeColumn(i);
                 }
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to generate desk assignment template", e);
+        }
+    }
+
+    /** Rows past this are a mistake, not a roster: the largest live desk holds under 300 people. */
+    static final int MAX_SELECTION_ROWS = 5_000;
+
+    /**
+     * A workbook for ONE desk, seeded with an explicitly chosen set of people rather than with the
+     * desk's current roster. This is what the Client Management page's staged selection downloads,
+     * and it is how a desk gets built from several department searches at once: the people need not
+     * be on the desk yet, or on any desk.
+     *
+     * <p>A single sheet, named after the desk, because the upload parser reads a sheet name as a
+     * desk name. Day-hour cells are left blank exactly as {@link #generateTemplate()} leaves them.
+     *
+     * <p><b>Ineligible people are refused, not written and not silently dropped.</b> Only active
+     * employees whose job title passes the tenant's allowlist may appear — the same rule the search
+     * that produced the selection applies, so in normal use this rejection never fires. It exists
+     * for a selection gone stale in the browser: someone who has since left, or a title that
+     * stopped matching after the allowlist changed. Writing those rows would produce a workbook the
+     * upload silently skips; dropping them quietly would lose an operator's pick without telling
+     * them. The exception names every offender and why.
+     *
+     * <p>Usual-shift cells are pre-filled only for people already on this desk, from the same
+     * stored value {@link #generateTemplate()} uses. For everyone else they are blank, which the
+     * parser reads as "no usual shift" — correct for someone who has never had one.
+     */
+    public byte[] generateTemplateForSelection(DeskAssignmentSelectionRequest request) {
+        long tenantId = TenantContext.getTenantId();
+
+        if (request.employees() == null || request.employees().isEmpty()) {
+            throw new IllegalArgumentException("Select at least one employee for the template");
+        }
+        if (request.employees().size() > MAX_SELECTION_ROWS) {
+            throw new IllegalArgumentException("A template cannot hold more than "
+                    + MAX_SELECTION_ROWS + " people, but " + request.employees().size()
+                    + " were selected");
+        }
+        if (request.deskId() == null) {
+            throw new IllegalArgumentException("Choose the desk this template is for");
+        }
+
+        Desk desk = deskRepository.findByIdAndTenantId(request.deskId(), tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", request.deskId()));
+
+        // Whoever is already on the desk, so their stored usual shifts survive a re-upload. Keyed
+        // by BambooHR id, the same field the selection carries and the parser matches on.
+        Map<String, DeskAgentResponse> existing = new HashMap<>();
+        for (DeskAgentResponse agent : deskAgentService.listDeskAgentResponses(
+                desk.getId(), null, null, Integer.MAX_VALUE)) {
+            if (agent.bamboohrId() != null) {
+                existing.putIfAbsent(agent.bamboohrId().trim(), agent);
+            }
+        }
+
+        // Checked before a single cell is written, and reported in one exception rather than one
+        // at a time: an operator fixing a stale selection wants the whole list, not a queue.
+        List<String> ineligible = new ArrayList<>();
+        for (DeskAssignmentSelectionRequest.Employee employee : request.employees()) {
+            String who = employee.displayName() == null || employee.displayName().isBlank()
+                    ? "id " + employee.bamboohrId() : employee.displayName();
+            if (!"Active".equalsIgnoreCase(employee.status())) {
+                ineligible.add(who + " is not active in BambooHR");
+            } else if (!agentEligibilityService.isIncludedByTitleAllowlist(
+                    tenantId, employee.jobTitle())) {
+                ineligible.add(who + " has job title \"" + employee.jobTitle()
+                        + "\", which is not on this tenant's allowlist");
+            }
+        }
+        if (!ineligible.isEmpty()) {
+            throw new UnprocessableException(
+                    ineligible.size() + " of " + request.employees().size()
+                            + " selected people cannot be scheduled, so no template was built",
+                    ineligible);
+        }
+
+        List<String> headers = buildHeaders();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            CellStyle headerStyle = createHeaderStyle(workbook);
+            Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(desk.getName()));
+
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.size(); i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers.get(i));
+                cell.setCellStyle(headerStyle);
+            }
+
+            // First occurrence wins: the same person reached through two department searches is one
+            // row, not two. Two rows with one id would have the parser apply the second over the
+            // first, which is a silent way to lose whatever the operator typed on the first.
+            Set<String> seenIds = new LinkedHashSet<>();
+            int rowNum = 1;
+            for (DeskAssignmentSelectionRequest.Employee employee : request.employees()) {
+                String id = employee.bamboohrId() == null ? null : employee.bamboohrId().trim();
+                if (id == null || id.isBlank() || !seenIds.add(id)) {
+                    continue;
+                }
+                AgentNameSplitter.Split name = AgentNameSplitter.split(employee.displayName());
+
+                Row row = sheet.createRow(rowNum++);
+                writeSanitized(row, 0, id);
+                writeSanitized(row, 1, name.firstName());
+                writeSanitized(row, 2, name.lastName());
+                writeSanitized(row, 3, employee.jobTitle());
+                writeSanitized(row, 4, employee.workEmail());
+                writeSanitized(row, 5, employee.department());
+                writeSanitized(row, 6, "Active".equalsIgnoreCase(employee.status()) ? "Yes" : "No");
+
+                DeskAgentResponse onDesk = existing.get(id);
+                if (onDesk != null) {
+                    writeUsualShiftCells(row, onDesk);
+                }
+            }
+
+            attachUsualShiftDropdown(sheet, tenantId, desk);
+            for (int i = 0; i < headers.size(); i++) {
+                sheet.autoSizeColumn(i);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
