@@ -5,6 +5,7 @@ import com.wfm.dto.AgentResponse;
 import com.wfm.dto.DeskAssignmentSelectionRequest;
 import com.wfm.dto.AssignEmployeesToDeskRequest;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.DepartmentSummary;
 import com.wfm.dto.DepartmentTimeOffResponse;
 import com.wfm.dto.EmployeeSearchResponse;
 import com.wfm.dto.PaginatedResponse;
@@ -45,6 +46,19 @@ public class ClientManagementController {
         this.deskAgentService = deskAgentService;
         this.deskAssignmentUploadService = deskAssignmentUploadService;
         this.deskAssignmentTemplateService = deskAssignmentTemplateService;
+    }
+
+    /**
+     * The departments worth searching: those holding at least one active, allowlisted person.
+     *
+     * <p>{@code refresh=true} forces a fresh whole-tenant read from BambooHR. It is not the
+     * default because that call is rate-limited and the answer changes rarely.
+     */
+    @GetMapping("/departments")
+    public List<DepartmentSummary> listDepartments(
+            @RequestParam(required = false, defaultValue = "false") boolean refresh) {
+        String tenantId = String.valueOf(TenantContext.getTenantId());
+        return clientManagementService.listDepartmentsWithSchedulableEmployees(tenantId, refresh);
     }
 
     /**

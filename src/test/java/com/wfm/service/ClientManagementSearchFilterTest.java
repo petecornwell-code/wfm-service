@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.DepartmentSummary;
 import com.wfm.integration.BambooEmployee;
 import com.wfm.integration.BambooHRClient;
 import com.wfm.repository.AgentRepository;
@@ -18,6 +19,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -57,6 +60,12 @@ class ClientManagementSearchFilterTest {
     private static BambooEmployee employee(String id, String name, String jobTitle, String status) {
         return new BambooEmployee(id, name, name.replace(' ', '.') + "@example.com",
                 "Vinted - UA", jobTitle, status, "Full-time", "Mon-Fri", TENANT_ID, "Vinted - UA");
+    }
+
+    private static BambooEmployee inDepartment(String id, String name, String jobTitle,
+                                               String status, String department) {
+        return new BambooEmployee(id, name, name.replace(' ', '.') + "@example.com",
+                department, jobTitle, status, "Full-time", "Mon-Fri", TENANT_ID, department);
     }
 
     private void givenBambooReturns(BambooEmployee... employees) {
@@ -138,5 +147,64 @@ class ClientManagementSearchFilterTest {
                 service.listSchedulableEmployeesByDepartment(TENANT_ID, "Vinted - UA", false);
 
         assertThat(result.hiddenJobTitles()).containsExactly("(no job title)");
+    }
+
+    @Test
+    @DisplayName("only departments holding a schedulable person are offered")
+    void departmentScanSkipsDepartmentsWithNoCsrs() {
+        givenBambooReturns(
+                inDepartment("1", "Mary Watson", "Customer Support Representative", "Active", "Vinted - UA"),
+                inDepartment("2", "Ann Reed", "Customer Support Representative", "Active", "Vinted - UA"),
+                inDepartment("3", "John Blake", "Team Lead", "Active", "Leadership"),
+                inDepartment("4", "Ana Silva", "Customer Service Representative", "Active", "SafeRide - PR"));
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any()))
+                .thenAnswer(inv -> {
+                    String title = inv.getArgument(1);
+                    return title != null && title.toLowerCase().contains("customer s");
+                });
+
+        List<DepartmentSummary> departments =
+                service.listDepartmentsWithSchedulableEmployees(TENANT_ID, true);
+
+        // "Leadership" holds only a Team Lead, so offering it would hand the operator a department
+        // whose search comes back empty.
+        assertThat(departments).extracting(DepartmentSummary::name)
+                .containsExactly("SafeRide - PR", "Vinted - UA");
+        assertThat(departments).extracting(DepartmentSummary::schedulableCount)
+                .containsExactly(1, 2);
+    }
+
+    @Test
+    @DisplayName("inactive people do not make a department appear, or inflate its count")
+    void departmentScanIgnoresInactives() {
+        givenBambooReturns(
+                inDepartment("1", "Mary Watson", "Customer Support Representative", "Active", "Vinted - UA"),
+                inDepartment("2", "Ann Reed", "Customer Support Representative", "Inactive", "Vinted - UA"),
+                inDepartment("3", "Gone Person", "Customer Support Representative", "Inactive", "Closed Desk"));
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
+
+        List<DepartmentSummary> departments =
+                service.listDepartmentsWithSchedulableEmployees(TENANT_ID, true);
+
+        assertThat(departments).extracting(DepartmentSummary::name).containsExactly("Vinted - UA");
+        assertThat(departments.get(0).schedulableCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the scan is cached, and refresh is what re-reads BambooHR")
+    void departmentScanIsCached() {
+        givenBambooReturns(inDepartment("1", "Mary Watson",
+                "Customer Support Representative", "Active", "Vinted - UA"));
+        when(agentEligibilityService.isIncludedByTitleAllowlist(anyLong(), any())).thenReturn(true);
+
+        service.listDepartmentsWithSchedulableEmployees(TENANT_ID, true);
+        service.listDepartmentsWithSchedulableEmployees(TENANT_ID, false);
+        service.listDepartmentsWithSchedulableEmployees(TENANT_ID, false);
+
+        // A whole-tenant read is rate-limited; three calls must not be three fetches.
+        verify(bambooHRClient, times(1)).listEmployees(eq(TENANT_ID), eq(null));
+
+        service.listDepartmentsWithSchedulableEmployees(TENANT_ID, true);
+        verify(bambooHRClient, times(2)).listEmployees(eq(TENANT_ID), eq(null));
     }
 }

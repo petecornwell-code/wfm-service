@@ -536,6 +536,8 @@ export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore:
 
 export interface BambooEmployeeResponse { id: string; displayName: string; workEmail: string; department: string; jobTitle: string; status: string }
 
+export interface DepartmentSummary { name: string; schedulableCount: number }
+
 export interface EmployeeSearchResponse {
   data: BambooEmployeeResponse[]
   hasMore: boolean
@@ -554,6 +556,10 @@ export const appConfiguration = {
 
 // --- Client Management ---
 export const clientManagement = {
+  // Departments holding at least one schedulable person. One whole-tenant BambooHR read behind a
+  // cache -- pass refresh only when an operator asks for it.
+  listDepartments: (refresh = false) =>
+    request<DepartmentSummary[]>(`/client-management/departments?refresh=${refresh}`),
   // Returns only people this system can schedule: active in BambooHR AND holding a job title on
   // the tenant's allowlist. Whatever the allowlist removed is reported in hiddenByJobTitle /
   // hiddenJobTitles rather than vanishing -- a near-miss title like "Customer Service

@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.dto.AgentResponse;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.BambooEmployeeResponse;
+import com.wfm.dto.DepartmentSummary;
 import com.wfm.dto.DepartmentTimeOffResponse;
 import com.wfm.integration.BambooTimeOff;
 import com.wfm.exception.ConflictException;
@@ -114,6 +115,60 @@ public class ClientManagementService {
                                        int hiddenByJobTitle,
                                        List<String> hiddenJobTitles,
                                        boolean allowlistActive) {}
+
+    /** Departments change rarely; a whole-tenant BambooHR read is expensive and rate-limited. */
+    private final Map<String, List<DepartmentSummary>> departmentCache = new ConcurrentHashMap<>();
+
+    /**
+     * Every department holding at least one schedulable person — active, and with a job title on
+     * the tenant's allowlist — so the search box can offer a list instead of asking an operator to
+     * remember exact BambooHR spelling ("SafeRide - PR", "StubHub (PT) - UA").
+     *
+     * <p><b>One whole-tenant read, then cached.</b> This asks BambooHR for every employee rather
+     * than per department, because the set of departments is not knowable in advance. That is the
+     * same shape of call the upload-triggered sync makes, and it is rate-limited, so the result is
+     * cached until an explicit refresh. A department with only Team Leads in it is deliberately
+     * absent: offering it would return an empty search.
+     */
+    public List<DepartmentSummary> listDepartmentsWithSchedulableEmployees(String tenantId, boolean refresh) {
+        long numericTenantId = TenantContext.getTenantId();
+        String cacheKey = tenantId + "::departments";
+
+        if (!refresh) {
+            List<DepartmentSummary> cached = departmentCache.get(cacheKey);
+            if (cached != null) {
+                log.info("Returning {} cached departments for tenant={}", cached.size(), tenantId);
+                return cached;
+            }
+        }
+
+        // project = null asks for the whole roster; the department filter is applied here instead.
+        List<BambooEmployee> employees = bambooHRClient.listEmployees(tenantId, null);
+
+        Map<String, Integer> counts = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (BambooEmployee employee : employees) {
+            if (!"Active".equalsIgnoreCase(employee.status())) {
+                continue;
+            }
+            String department = employee.department();
+            if (department == null || department.isBlank()) {
+                continue;
+            }
+            if (!agentEligibilityService.isIncludedByTitleAllowlist(numericTenantId, employee.jobTitle())) {
+                continue;
+            }
+            counts.merge(department.trim(), 1, Integer::sum);
+        }
+
+        List<DepartmentSummary> result = counts.entrySet().stream()
+                .map(e -> new DepartmentSummary(e.getKey(), e.getValue()))
+                .toList();
+
+        departmentCache.put(cacheKey, result);
+        log.info("Scanned {} employees into {} departments with schedulable people (tenant={})",
+                employees.size(), result.size(), tenantId);
+        return result;
+    }
 
     public List<BambooEmployeeResponse> listEmployeesByDepartment(String tenantId, String department, boolean refresh) {
         String cacheKey = tenantId + "::" + department.toLowerCase();

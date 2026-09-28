@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, type SheetSummary, type SkippedSheet, type MergeReportEntry, getErrorMessage } from '../api/client'
+import { clientManagement, desks as desksApi, deskAgents, type BambooEmployeeResponse, type DepartmentSummary, type Desk, type DeskAgent, type DeskAssignmentUploadResult, type SkippedRow, type SheetSummary, type SkippedSheet, type MergeReportEntry, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
 type EmpSortField = 'id' | 'displayName' | 'workEmail' | 'department' | 'jobTitle' | 'status'
@@ -18,6 +18,11 @@ export default function ClientManagement() {
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
+  // Departments that actually hold schedulable people, so nobody has to remember whether it is
+  // "SafeRide - PR" or "Saferide PR". Free text stays available for anything not listed.
+  const [departments, setDepartments] = useState<DepartmentSummary[]>([])
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
+  const [typedDepartment, setTypedDepartment] = useState(false)
   // What the job-title allowlist removed from the last search. Shown rather than swallowed: a
   // near-miss title is a configuration problem that otherwise reads as missing BambooHR data.
   const [hiddenByJobTitle, setHiddenByJobTitle] = useState(0)
@@ -81,6 +86,19 @@ export default function ClientManagement() {
 
   useEffect(() => {
     desksApi.list().then(setDeskList).catch(() => {})
+  }, [])
+
+  const loadDepartments = (refresh = false) => {
+    setLoadingDepartments(true)
+    clientManagement.listDepartments(refresh)
+      .then(setDepartments)
+      .catch(err => showToast('error', getErrorMessage(err)))
+      .finally(() => setLoadingDepartments(false))
+  }
+
+  useEffect(() => {
+    // Cached server-side, so this costs a BambooHR read only the first time after a restart.
+    loadDepartments(false)
   }, [])
 
   const fetchEmployees = async (page = 1, refresh = false) => {
@@ -457,13 +475,54 @@ export default function ClientManagement() {
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <div>
           <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem', fontSize: '0.85rem' }}>Department</label>
-          <input
-            value={department}
-            onChange={e => setDepartment(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="e.g. Support"
-            style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', width: '250px' }}
-          />
+          {typedDepartment ? (
+            <input
+              value={department}
+              onChange={e => setDepartment(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="e.g. Support"
+              style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', width: '250px' }}
+            />
+          ) : (
+            <select
+              value={department}
+              onChange={e => {
+                if (e.target.value === '__other__') {
+                  setTypedDepartment(true)
+                  setDepartment('')
+                } else {
+                  setDepartment(e.target.value)
+                }
+              }}
+              style={{ padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px', width: '250px' }}
+            >
+              <option value="">
+                {loadingDepartments ? 'Loading departments...' : '-- Select a department --'}
+              </option>
+              {departments.map(d => (
+                <option key={d.name} value={d.name}>{d.name} ({d.schedulableCount})</option>
+              ))}
+              <option value="__other__">Other — type a name...</option>
+            </select>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+            {typedDepartment && (
+              <button
+                onClick={() => { setTypedDepartment(false); setDepartment('') }}
+                style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: '0.75rem' }}
+              >
+                Back to the list
+              </button>
+            )}
+            <button
+              onClick={() => loadDepartments(true)}
+              disabled={loadingDepartments}
+              title="Re-read the department list from BambooHR"
+              style={{ background: 'none', border: 'none', color: '#6b7280', cursor: loadingDepartments ? 'not-allowed' : 'pointer', padding: 0, fontSize: '0.75rem' }}
+            >
+              {loadingDepartments ? 'Refreshing...' : 'Refresh list'}
+            </button>
+          </div>
         </div>
         <button className="primary" onClick={handleSearch} disabled={loading}>
           {loading ? 'Loading...' : 'Fetch Employees'}
