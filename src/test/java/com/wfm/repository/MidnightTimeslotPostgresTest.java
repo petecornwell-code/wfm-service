@@ -88,6 +88,16 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
                 .singleElement()
                 .extracting(Timeslot::getEndTime)
                 .isEqualTo(LocalTime.MIDNIGHT);
+
+        // BDAY-02: a persisted timeslot's business_date must survive the round trip through
+        // Postgres, not merely exist in the in-memory object generateTimeslots returned -- clear
+        // the entity manager and re-find one of the created rows through a fresh read.
+        entityManager.clear();
+        Timeslot reloaded = entityManager.find(Timeslot.class, created.get(0).getId());
+        assertThat(reloaded.getBusinessDate()).isNotNull().isEqualTo(reloaded.getDate());
+        // Every row generated for this requested day must carry that day as its business date,
+        // not merely the one row re-read above.
+        assertThat(created).allSatisfy(ts -> assertThat(ts.getBusinessDate()).isEqualTo(DAY));
     }
 
     @Test
@@ -156,5 +166,22 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
                 deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(22, 0), LocalTime.of(6, 0), 60))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Time range must be positive");
+    }
+
+    @Test
+    @DisplayName("a desk saved without a day start reads back 00:00 from real Postgres")
+    void deskSavedWithoutDayStart_readsBackMidnight() {
+        Desk desk = new Desk();
+        desk.setTenantId(TENANT_ID);
+        desk.setName("Vinted " + UUID.randomUUID());
+        Desk saved = deskRepository.save(desk);
+        entityManager.flush();
+        entityManager.clear();
+
+        // BDAY-01: the column default (V53's '00:00') and Desk.dayStart's Java-side default
+        // (LocalTime.MIDNIGHT) must agree on a real Postgres round trip -- every pre-existing
+        // desk's behaviour depends on the two staying identical.
+        Desk reloaded = entityManager.find(Desk.class, saved.getId());
+        assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.MIDNIGHT);
     }
 }
