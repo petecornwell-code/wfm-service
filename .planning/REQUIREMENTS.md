@@ -94,7 +94,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 
 ### Business Day Model (BDAY)
 
-- [ ] **BDAY-01**: Operator can set the time a desk's day begins, and a desk that has never set one behaves exactly as it does today
+- [x] **BDAY-01**: Operator can set the time a desk's day begins, and a desk that has never set one behaves exactly as it does today
 - [ ] **BDAY-02**: A timeslot records the business day it belongs to, distinct from its calendar date
 - [ ] **BDAY-03**: Timeslot generation for a desk whose day starts at 21:00 produces a contiguous 24-hour business day spanning two calendar dates
 - [ ] **BDAY-04**: Interval arithmetic is anchored on the desk's day start rather than midnight, and the `00:00`-means-end-of-day convention is retired
@@ -193,7 +193,7 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BDAY-01 | Phase 18 | Pending |
+| BDAY-01 | Phase 18 | Complete |
 | BDAY-02 | Phase 18 | Pending |
 | BDAY-03 | Phase 18 | Pending |
 | BDAY-04 | Phase 19 | Pending |
