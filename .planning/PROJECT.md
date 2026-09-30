@@ -87,22 +87,77 @@ or solver-tuning surfaces that were the milestone's other half.
 
 </details>
 
-## Next Milestone
+## Current Milestone: v1.5 Overnight Shifts & Business Dates
 
-Not yet scoped — run `/gsd-new-milestone`. The three candidates recorded at v1.3 scoping are
-unchanged, and the v1.3 audit adds a fourth:
+**Goal:** A shift can span midnight and belongs to the business day it starts on — for any desk,
+any day start, any future data set.
+
+**Target features:**
+
+- **Desk-level day start** — one uniform anchor per desk. A desk that has never set one defaults to
+  `00:00` and behaves exactly as it does today; only night desks opt in.
+- **Business date on every timeslot** — distinct from its calendar date, populated at generation.
+- **`DayWindow` re-anchored** on the desk's day start instead of midnight, retiring the
+  `00:00`-means-end-of-day convention. 112 references across 16 main-source files, all routed
+  through one utility by design (P-19/D-02) — one coordinated change, and the riskiest edit in the
+  milestone.
+- **Overnight shift templates** — an end clock earlier than the start clock, with correct net
+  hours; a day-off or PTO marking on the *starting* business day blocks the shift; contracted hours
+  consume the starting weekday's row rather than splitting across two; the envelope is validated
+  against the desk's business day; export and UI render one continuous block, not two fragments.
+- **Solver business-date correctness** — all 12 `timeslot.getDate()` joins in
+  `ScheduleConstraintProvider` move to business date, plus a test that fails if any constraint joins
+  calendar date where business date is meant. The failure mode here is a *silent non-join*, not an
+  error, which is why the guard is a requirement rather than a review item.
+- **SLOT-mode correctness** — an overnight stretch counts against one business day instead of
+  under-allocating both calendar days. Already wrong today, independent of the new capability.
+- **Minimum rest, hard constraint** — per desk, refused pre-solve where structurally unavoidable,
+  naming the agent and the two shifts. A desk that sets none solves exactly as it does today.
+- **Regression safety** — constructed midnight-spanning scenarios, chosen by the property under
+  test, carry the midnight coverage; **Phil-US (48 agents)** is a single small drift guard.
+
+**Why this shape.** v1.4 attempted the same capability and was cancelled on 2026-09-30 before
+shipping, with all 32 commits unwound (state preserved at tag
+`rescue/phase-18-unwind-20260930`). It did not fail on execution: it failed because BDAY-06's
+regression fixture sourced its inputs from four captured live desks, which are simultaneously
+over-sensitive (Vinted's 287 agents mean any scoring change anywhere shifts the golden bytes with
+no diagnostic signal) and under-powered on midnight — three of the four live desks never cross it,
+no desk has a 23:00–00:00 slot, and no break band touches an envelope edge. A baseline built to
+catch a midnight regression rested on data that barely contains midnight, because *this* milestone
+is what introduces overnight shifts. v1.5 inverts that: correctness is proven on constructed cases
+chosen by the property under test, and live data is demoted to a drift guard.
+
+**Settled at v1.4 scoping, carried forward — do not relitigate without new evidence:**
+
+- **Desk-level day start**, not a per-template `ends_next_day` flag. One uniform anchor; the flag
+  was considered and rejected for leaving `DayWindow`'s midnight convention in place alongside a
+  second mechanism.
+- **Minimum rest is HARD.** Enabling overnight shifts without it would *create* a way to produce
+  illegal back-to-back rosters scoring `0hard` — a gap this milestone would introduce, not inherit.
+- **Guard tests land before the re-anchoring.** `DayWindow` is the only thing standing between this
+  change and a silently wrong schedule.
+- **`agent_day_hours` needs no schema change** — it is keyed by `DayOfWeek`, and a Sunday-night
+  shift correctly consumes Sunday's row.
+
+**Deliberately deferred:**
+
+- **Phil-US migration.** v1.4 made the live desk its proof; v1.5 does not. The desk keeps its +3h
+  offset hack — every roster time stored offset purely so the base shift reads `00:00-09:00` — and
+  moving it onto the client's real `2100-0600` / `2200-0700` / `2300-0800` / `0000-0900` shifts,
+  with a tested reversal, becomes the natural next milestone. Deferring it is what keeps the
+  capability desk-agnostic.
+- **Timezones** (the Phil-US roster is PHT, its forecast US Pacific, 15h apart) stay the operator's
+  job, done before load. Keeps the re-anchoring self-contained.
+
+**Not in this milestone**, and unchanged as candidates for later:
 
 1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload
-   path but not on the Refresh button. High severity, now **three** audits old, and cheap in at
-   least one of its three options.
+   path but not on the Refresh button. High severity, three audits old.
 2. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
    utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
 3. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
-   DRFT-04 made the consistency-versus-fairness tension *visible* in v1.3 and deliberately built no
-   mitigation, so this is now a named, observable gap rather than a theoretical one.
-4. **Nyquist validation debt — now five phases across two milestones** (10, 13, 14, 15 at
-   `status: draft`, plus 16 validated-but-non-compliant). The v1.3 audit flagged this as having
-   drifted "from an oversight into a pattern".
+4. **Nyquist validation debt — five phases across two milestones** (10, 13, 14, 15 at
+   `status: draft`, plus 16 validated-but-non-compliant).
 
 <details>
 <summary>v1.3 Shift-Based Scheduling & Consistency — original milestone scope (shipped 2026-09-21)</summary>
@@ -286,7 +341,13 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ Post-solve drift reporting: which agents were assigned a shift other than their usual one, on which dates and by how much; an agent with no stored usual shift distinguished from one whose shift was honoured; and the most over-subscribed templates ranked, making the consistency-versus-fairness tension visible without building a mitigation for it — v1.3 Phase 17 (DRFT-01, DRFT-02, DRFT-04)
 - ✓ The drift report is derived from the same distance calculation the consistency constraint uses (`ShiftBandPair.startDeviationMinutes`), not a second implementation — and its Excel sheet headers are byte-identical to the frontend tab's — v1.3 Phase 17 (DRFT-03, XCUT-01)
 
-### Active (carried to next milestone — see ROADMAP.md Backlog)
+### Active
+
+**v1.5 Overnight Shifts & Business Dates** — scoped in `.planning/REQUIREMENTS.md`, phased in
+`.planning/ROADMAP.md`. Four requirement groups: business-day model (BDAY), overnight shift
+templates (OVNT), solver business-date correctness (SOLV), minimum rest (REST).
+
+#### Carried forward, not in v1.5 — see ROADMAP.md Backlog
 
 - Weekend-position fairness across agents (QUAL-02) → 999.4
 - Day-to-day hours consistency (QUAL-03) → 999.4
@@ -412,9 +473,14 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-21 at v1.3 milestone close (Shift-Based Scheduling & Consistency) — 43/43
-requirements validated across Phases 14–17; milestone audit `tech_debt` with zero integration gaps
-across six seams and four E2E flows; closed under `override_closeout` with 10 artifacts
-acknowledged. Three planning documents were corrected during the audit, each of which had asserted
-something a later event had already falsified. 999.4 / 999.5 / 999.6 / 999.9 remain deferred, and
-Nyquist validation debt now spans five phases across two milestones*
+*Last updated: 2026-09-30 at v1.5 milestone start (Overnight Shifts & Business Dates). v1.4, which
+attempted the same capability, was cancelled the same day before shipping — all 32 commits unwound,
+one salvaged (the `ScheduleExportService` roster-cell end-tracking fix), state preserved at tag
+`rescue/phase-18-unwind-20260930`. v1.5 keeps v1.4's settled decisions (desk-level day start,
+minimum rest hard, guard tests before re-anchoring) and changes two things: the regression proof
+moves from four captured live desks to constructed midnight-spanning scenarios plus one small live
+drift guard, and the Phil-US migration is deferred so the capability stays desk-agnostic. Previous
+update: 2026-09-21 at v1.3 milestone close — 43/43 requirements validated across Phases 14–17;
+milestone audit `tech_debt` with zero integration gaps across six seams and four E2E flows; closed
+under `override_closeout` with 10 artifacts acknowledged. 999.4 / 999.5 / 999.6 / 999.9 remain
+deferred, and Nyquist validation debt now spans five phases across two milestones*
