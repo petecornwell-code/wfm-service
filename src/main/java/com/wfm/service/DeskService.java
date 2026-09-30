@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -199,6 +200,39 @@ public class DeskService {
         }
 
         desk.setSchedulingMode(target);
+        return deskRepository.save(desk);
+    }
+
+    /**
+     * Sets a desk's business-day start time (BDAY-01), mirroring {@link #switchSchedulingMode}'s
+     * shape: null check, gate, tenant-scoped lookup, equal-value no-op, then write.
+     *
+     * <p>Today only {@code 00:00} is accepted; BDAY-04 widens the accepted range to 15-minute
+     * boundaries, and nothing in this codebase honours a non-default day start until BDAY-04
+     * re-anchors {@link com.wfm.util.DayWindow}. This is the one validation line BDAY-04
+     * deletes -- kept as one visible, reviewable condition rather than folded into a range check.
+     *
+     * <p>The equal-value early return precedes every business-rule refusal: re-asserting the
+     * value a desk already holds is not a transition.
+     */
+    @Transactional
+    public Desk setDayStart(UUID deskId, LocalTime dayStart) {
+        if (dayStart == null) {
+            throw new IllegalArgumentException("Day start is required");
+        }
+        if (!dayStart.equals(LocalTime.MIDNIGHT)) {
+            throw new IllegalArgumentException("Day start other than 00:00 is not yet supported");
+        }
+
+        long tenantId = TenantContext.getTenantId();
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+
+        if (dayStart.equals(desk.getDayStart())) {
+            return desk;
+        }
+
+        desk.setDayStart(dayStart);
         return deskRepository.save(desk);
     }
 }

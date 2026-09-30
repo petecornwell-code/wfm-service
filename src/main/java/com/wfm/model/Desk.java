@@ -2,6 +2,7 @@ package com.wfm.model;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
@@ -29,6 +30,12 @@ public class Desk {
     @Column(name = "scheduling_mode", nullable = false, length = 10)
     private SchedulingMode schedulingMode = SchedulingMode.SLOT;
 
+    // The desk's business day begins at this time (BDAY-01). Every existing desk defaults to
+    // 00:00 -- today's behaviour, unchanged. Only 00:00 is accepted until BDAY-04 re-anchors
+    // DayWindow onto 15-minute boundaries; DeskService.setDayStart refuses anything else.
+    @Column(name = "day_start", nullable = false)
+    private LocalTime dayStart = LocalTime.MIDNIGHT;
+
     public Desk() {}
 
     public UUID getId() { return id; }
@@ -50,4 +57,7 @@ public class Desk {
 
     public SchedulingMode getSchedulingMode() { return schedulingMode; }
     public void setSchedulingMode(SchedulingMode schedulingMode) { this.schedulingMode = schedulingMode; }
+
+    public LocalTime getDayStart() { return dayStart; }
+    public void setDayStart(LocalTime dayStart) { this.dayStart = dayStart; }
 }

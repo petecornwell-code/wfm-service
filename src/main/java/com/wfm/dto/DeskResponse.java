@@ -3,6 +3,7 @@ package com.wfm.dto;
 import com.wfm.model.SchedulingMode;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.UUID;
 
 public record DeskResponse(
@@ -10,5 +11,6 @@ public record DeskResponse(
         String name,
         String description,
         BigDecimal defaultContractedHoursPerDay,
-        SchedulingMode schedulingMode
+        SchedulingMode schedulingMode,
+        LocalTime dayStart
 ) {}

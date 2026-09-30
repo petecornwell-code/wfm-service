@@ -1,5 +1,6 @@
 package com.wfm.controller;
 
+import com.wfm.dto.DayStartRequest;
 import com.wfm.dto.DeskRequest;
 import com.wfm.dto.DeskResponse;
 import com.wfm.dto.SchedulingModeRequest;
@@ -57,8 +58,13 @@ public class DeskController {
         return toResponse(deskService.switchSchedulingMode(deskId, request.mode()));
     }
 
+    @PutMapping("/{deskId}/day-start")
+    public DeskResponse setDayStart(@PathVariable UUID deskId, @RequestBody DayStartRequest request) {
+        return toResponse(deskService.setDayStart(deskId, request.dayStart()));
+    }
+
     private DeskResponse toResponse(Desk desk) {
         return new DeskResponse(desk.getId(), desk.getName(), desk.getDescription(),
-                desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode());
+                desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode(), desk.getDayStart());
     }
 }
