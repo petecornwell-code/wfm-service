@@ -1,5 +1,6 @@
 package com.wfm.util;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
@@ -141,7 +142,57 @@ public final class DayWindow {
         return toLocalTime(startMinute(base) + minutes);
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Day-start-aware vocabulary (BDAY-03). The block above this banner is what BDAY-04 removes:
+    // every function above assumes a business day starts at 00:00. The five functions below take
+    // an explicit day-start anchor instead, and collapse onto their midnight-implicit counterparts
+    // above exactly when that anchor is 00:00 -- DayWindowTest proves this exhaustively.
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * Day-start-relative minute of a time in a START position, {@code [0, 1440)}. RED-phase stub.
+     */
+    public static int startMinuteFromDayStart(LocalTime dayStart, LocalTime start) {
+        throw new UnsupportedOperationException("not yet implemented");
+    }
+
+    /**
+     * Day-start-relative minute of a time in an END position, {@code (0, 1440]}. RED-phase stub.
+     */
+    public static int endMinuteFromDayStart(LocalTime dayStart, LocalTime end) {
+        throw new UnsupportedOperationException("not yet implemented");
+    }
+
+    /**
+     * Converts a day-start-relative offset back to a {@link LocalTime}. RED-phase stub.
+     */
+    public static LocalTime timeAtDayStartOffset(LocalTime dayStart, int minutesFromDayStart) {
+        throw new UnsupportedOperationException("not yet implemented");
+    }
+
+    /**
+     * The business date a calendar date and time-of-day belong to, given a day-start anchor.
+     * RED-phase stub.
+     */
+    public static LocalDate businessDateOf(LocalTime dayStart, LocalDate calendarDate, LocalTime timeOfDay) {
+        throw new UnsupportedOperationException("not yet implemented");
+    }
+
+    /**
+     * The calendar date a business date and day-start-relative offset land on. RED-phase stub.
+     */
+    public static LocalDate calendarDateAtDayStartOffset(LocalTime dayStart, LocalDate businessDate,
+                                                          int minutesFromDayStart) {
+        throw new UnsupportedOperationException("not yet implemented");
+    }
+
     private static void requireNonNull(LocalTime value, String name) {
+        if (value == null) {
+            throw new IllegalArgumentException(name + " must not be null");
+        }
+    }
+
+    private static void requireNonNull(LocalDate value, String name) {
         if (value == null) {
             throw new IllegalArgumentException(name + " must not be null");
         }

@@ -6,7 +6,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -255,6 +262,244 @@ class DayWindowTest {
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> DayWindow.toLocalTime(-1))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    // --------------------------------------------------------------------------------------
+    // Day-start-aware vocabulary (BDAY-03). These prove the anchored functions below collapse
+    // onto their midnight-implicit counterparts above exactly when the anchor is 00:00 -- the
+    // provable-no-op claim of the whole phase -- exhaustively across all 1440 minutes, not at
+    // sampled points.
+    // --------------------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("anchored functions equal their midnight-implicit counterparts at a 00:00 anchor")
+    class AnchoredEquivalenceAtMidnightAnchor {
+
+        @Test
+        @DisplayName("startMinuteFromDayStart/endMinuteFromDayStart equal startMinute/endMinute for every minute of the day")
+        void startAndEndMinuteEquivalence() {
+            for (int m = 0; m < 1440; m++) {
+                LocalTime t = DayWindow.toLocalTime(m);
+                assertThat(DayWindow.startMinuteFromDayStart(MIDNIGHT, t))
+                        .as("startMinuteFromDayStart(MIDNIGHT, %s)", t)
+                        .isEqualTo(DayWindow.startMinute(t));
+                assertThat(DayWindow.endMinuteFromDayStart(MIDNIGHT, t))
+                        .as("endMinuteFromDayStart(MIDNIGHT, %s)", t)
+                        .isEqualTo(DayWindow.endMinute(t));
+            }
+        }
+
+        @Test
+        @DisplayName("timeAtDayStartOffset equals toLocalTime for every offset in [0, 1440]")
+        void timeAtDayStartOffsetEquivalence() {
+            for (int m = 0; m <= 1440; m++) {
+                assertThat(DayWindow.timeAtDayStartOffset(MIDNIGHT, m))
+                        .as("timeAtDayStartOffset(MIDNIGHT, %d)", m)
+                        .isEqualTo(DayWindow.toLocalTime(m));
+            }
+        }
+
+        @Test
+        @DisplayName("calendarDateAtDayStartOffset returns the same calendar date for every offset in [0, 1440)")
+        void calendarDateAtDayStartOffsetEquivalence() {
+            LocalDate d = LocalDate.of(2026, 10, 1);
+            for (int m = 0; m < 1440; m++) {
+                assertThat(DayWindow.calendarDateAtDayStartOffset(MIDNIGHT, d, m))
+                        .as("calendarDateAtDayStartOffset(MIDNIGHT, %s, %d)", d, m)
+                        .isEqualTo(d);
+            }
+        }
+
+        @Test
+        @DisplayName("businessDateOf returns the calendar date for every minute of the day")
+        void businessDateOfEquivalence() {
+            LocalDate d = LocalDate.of(2026, 10, 1);
+            for (int m = 0; m < 1440; m++) {
+                LocalTime t = DayWindow.toLocalTime(m);
+                assertThat(DayWindow.businessDateOf(MIDNIGHT, d, t))
+                        .as("businessDateOf(MIDNIGHT, %s, %s)", d, t)
+                        .isEqualTo(d);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("anchored behaviour at a 21:00 anchor")
+    class AnchoredBehaviorAt2100 {
+
+        private final LocalTime anchor = LocalTime.of(21, 0);
+
+        @Test
+        void startMinuteFromDayStartCases() {
+            assertThat(DayWindow.startMinuteFromDayStart(anchor, LocalTime.of(21, 0))).isZero();
+            assertThat(DayWindow.startMinuteFromDayStart(anchor, LocalTime.of(22, 0))).isEqualTo(60);
+            assertThat(DayWindow.startMinuteFromDayStart(anchor, MIDNIGHT)).isEqualTo(180);
+            assertThat(DayWindow.startMinuteFromDayStart(anchor, LocalTime.of(20, 45))).isEqualTo(1425);
+        }
+
+        @Test
+        @DisplayName("21:00 in an END position is the end of a 21:00-anchored business day (1440), NOT 00:00's 180")
+        void endMinuteFromDayStartCases() {
+            assertThat(DayWindow.endMinuteFromDayStart(anchor, LocalTime.of(21, 0))).isEqualTo(1440);
+            assertThat(DayWindow.endMinuteFromDayStart(anchor, MIDNIGHT)).isEqualTo(180);
+        }
+
+        @Test
+        void timeAtDayStartOffsetCases() {
+            assertThat(DayWindow.timeAtDayStartOffset(anchor, 0)).isEqualTo(LocalTime.of(21, 0));
+            assertThat(DayWindow.timeAtDayStartOffset(anchor, 180)).isEqualTo(MIDNIGHT);
+            assertThat(DayWindow.timeAtDayStartOffset(anchor, 1439)).isEqualTo(LocalTime.of(20, 59));
+            assertThat(DayWindow.timeAtDayStartOffset(anchor, 1440)).isEqualTo(LocalTime.of(21, 0));
+        }
+
+        @Test
+        void businessDateOfCases() {
+            assertThat(DayWindow.businessDateOf(anchor, LocalDate.of(2026, 10, 1), LocalTime.of(21, 0)))
+                    .isEqualTo(LocalDate.of(2026, 10, 1));
+            assertThat(DayWindow.businessDateOf(anchor, LocalDate.of(2026, 10, 2), LocalTime.of(3, 0)))
+                    .isEqualTo(LocalDate.of(2026, 10, 1));
+            assertThat(DayWindow.businessDateOf(anchor, LocalDate.of(2026, 10, 1), LocalTime.of(20, 59)))
+                    .isEqualTo(LocalDate.of(2026, 9, 30));
+        }
+
+        @Test
+        void calendarDateAtDayStartOffsetCases() {
+            LocalDate d = LocalDate.of(2026, 10, 1);
+            assertThat(DayWindow.calendarDateAtDayStartOffset(anchor, d, 0)).isEqualTo(d);
+            assertThat(DayWindow.calendarDateAtDayStartOffset(anchor, d, 179)).isEqualTo(d);
+            assertThat(DayWindow.calendarDateAtDayStartOffset(anchor, d, 180)).isEqualTo(d.plusDays(1));
+            assertThat(DayWindow.calendarDateAtDayStartOffset(anchor, d, 1439)).isEqualTo(d.plusDays(1));
+        }
+    }
+
+    @Nested
+    @DisplayName("round-trip consistency across several anchors")
+    class RoundTripConsistency {
+
+        private final List<LocalTime> anchors = List.of(
+                MIDNIGHT, LocalTime.of(21, 0), LocalTime.of(6, 15), LocalTime.of(23, 45));
+
+        @Test
+        @DisplayName("startMinuteFromDayStart(anchor, timeAtDayStartOffset(anchor, m)) == m for every offset")
+        void startMinuteRoundTrips() {
+            for (LocalTime anchor : anchors) {
+                for (int m = 0; m < 1440; m++) {
+                    LocalTime t = DayWindow.timeAtDayStartOffset(anchor, m);
+                    assertThat(DayWindow.startMinuteFromDayStart(anchor, t))
+                            .as("anchor=%s, m=%d, t=%s", anchor, m, t)
+                            .isEqualTo(m);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("the walk's forward direction and isDesired's classifying direction agree")
+        void businessDateRoundTrips() {
+            LocalDate d = LocalDate.of(2026, 10, 1);
+            for (LocalTime anchor : anchors) {
+                for (int m = 0; m < 1440; m++) {
+                    LocalDate calendarDate = DayWindow.calendarDateAtDayStartOffset(anchor, d, m);
+                    LocalTime time = DayWindow.timeAtDayStartOffset(anchor, m);
+                    assertThat(DayWindow.businessDateOf(anchor, calendarDate, time))
+                            .as("anchor=%s, m=%d, calendarDate=%s, time=%s", anchor, m, calendarDate, time)
+                            .isEqualTo(d);
+                }
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("day-start-aware functions fail loudly at the boundary")
+    class FailLoudlyAtTheDayStartBoundary {
+
+        private final LocalTime anchor = LocalTime.of(21, 0);
+        private final LocalDate date = LocalDate.of(2026, 10, 1);
+
+        @Test
+        void startMinuteFromDayStartRejectsNulls() {
+            assertThatThrownBy(() -> DayWindow.startMinuteFromDayStart(null, LocalTime.NOON))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dayStart");
+            assertThatThrownBy(() -> DayWindow.startMinuteFromDayStart(anchor, null))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("start");
+        }
+
+        @Test
+        void endMinuteFromDayStartRejectsNulls() {
+            assertThatThrownBy(() -> DayWindow.endMinuteFromDayStart(null, LocalTime.NOON))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dayStart");
+            assertThatThrownBy(() -> DayWindow.endMinuteFromDayStart(anchor, null))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("end");
+        }
+
+        @Test
+        void timeAtDayStartOffsetRejectsNullDayStartAndOutOfRangeOffsets() {
+            assertThatThrownBy(() -> DayWindow.timeAtDayStartOffset(null, 0))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dayStart");
+            assertThatThrownBy(() -> DayWindow.timeAtDayStartOffset(anchor, -1))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> DayWindow.timeAtDayStartOffset(anchor, 1441))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void businessDateOfRejectsNulls() {
+            assertThatThrownBy(() -> DayWindow.businessDateOf(null, date, LocalTime.NOON))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dayStart");
+            assertThatThrownBy(() -> DayWindow.businessDateOf(anchor, null, LocalTime.NOON))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("calendarDate");
+            assertThatThrownBy(() -> DayWindow.businessDateOf(anchor, date, null))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("timeOfDay");
+        }
+
+        @Test
+        void calendarDateAtDayStartOffsetRejectsNullsAndOutOfRangeOffsets() {
+            assertThatThrownBy(() -> DayWindow.calendarDateAtDayStartOffset(null, date, 0))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("dayStart");
+            assertThatThrownBy(() -> DayWindow.calendarDateAtDayStartOffset(anchor, null, 0))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("businessDate");
+            assertThatThrownBy(() -> DayWindow.calendarDateAtDayStartOffset(anchor, date, -1))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> DayWindow.calendarDateAtDayStartOffset(anchor, date, 1440))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("deprecation is live: every midnight-implicit function is @Deprecated, no anchored function is")
+    class DeprecationIsLive {
+
+        private static final Set<String> MIDNIGHT_IMPLICIT = Set.of(
+                "startMinute", "endMinute", "durationMinutes", "isForwardWithinDay", "overlaps",
+                "contains", "startsBefore", "toLocalTime", "plusWithinDay");
+
+        private static final Set<String> ANCHORED = Set.of(
+                "startMinuteFromDayStart", "endMinuteFromDayStart", "timeAtDayStartOffset",
+                "businessDateOf", "calendarDateAtDayStartOffset");
+
+        @Test
+        @DisplayName("every midnight-implicit static carries @Deprecated; no anchored static does")
+        void deprecationMatchesTheMidnightImplicitSetExactly() {
+            List<Method> publicStatics = Arrays.stream(DayWindow.class.getDeclaredMethods())
+                    .filter(m -> Modifier.isPublic(m.getModifiers()) && Modifier.isStatic(m.getModifiers()))
+                    .collect(Collectors.toList());
+
+            assertThat(publicStatics).as("public static methods declared on DayWindow").isNotEmpty();
+
+            for (Method m : publicStatics) {
+                boolean deprecated = m.isAnnotationPresent(Deprecated.class);
+                if (MIDNIGHT_IMPLICIT.contains(m.getName())) {
+                    assertThat(deprecated).as("%s must carry @Deprecated (BDAY-04)", m.getName()).isTrue();
+                } else if (ANCHORED.contains(m.getName())) {
+                    assertThat(deprecated).as("%s must NOT carry @Deprecated", m.getName()).isFalse();
+                }
+            }
+
+            Set<String> actuallyDeprecated = publicStatics.stream()
+                    .filter(m -> m.isAnnotationPresent(Deprecated.class))
+                    .map(Method::getName)
+                    .collect(Collectors.toSet());
+            assertThat(actuallyDeprecated).containsExactlyInAnyOrderElementsOf(MIDNIGHT_IMPLICIT);
         }
     }
 }
