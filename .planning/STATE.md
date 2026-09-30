@@ -2,37 +2,37 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 18
-current_phase_name: Business-Day Foundation & Guards
-status: verifying
-stopped_at: Completed 18-06-PLAN.md
-last_updated: "2026-09-30T18:13:25.844Z"
+current_phase: 19
+current_phase_name: DayWindow Re-anchoring
+status: planning
+stopped_at: Phase 18 complete, ready to plan Phase 19
+last_updated: "2026-09-30T19:50:39.801Z"
 last_activity: 2026-09-30
-last_activity_desc: Phase 18 execution started
-state_head: 6a7f4d1dca6363f29b4bca77522c1ddb9273bf44
+last_activity_desc: Phase 18 complete, transitioned to Phase 19
+state_head: ca9fa36e4b9caecdd219617ca349cbe18ae60ad4
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
   completed_plans: 6
-  percent: 0
+  percent: 20
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
+See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 18 — Business-Day Foundation & Guards
+**Current focus:** Phase 19 — DayWindow Re-anchoring
 
 ## Current Position
 
-Phase: 18 (Business-Day Foundation & Guards) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Last activity: 2026-09-30 — Phase 18 execution started
+Phase: 19 — DayWindow Re-anchoring
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-30 — Phase 18 complete, transitioned to Phase 19
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
 planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
 
@@ -310,12 +310,13 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **[RESOLVED 2026-09-03] Plan 15-14's CI runtime question is answered.** The first deploy gate since Phase 15 (run `33801422860`, Phase 16's push) measured the Test job at **15m34s** against HANDOFF.md's 12m53s baseline: +2m41s (+21%) while the suite grew 590 -> 720 tests (+22%). Growth is proportional to test count, not a convergence regression — which is what the note was asking about. No action needed.
 - Plan 15-14: full-suite runtime-budget delta for the new SolverQualityGuardTest could not be cleanly measured in-session (two consecutive ./gradlew test runs showed +147s then +235s deltas against HANDOFF.md's 8m08s baseline, confounded by cumulative machine load from three back-to-back ~10-12min suite runs on a fanless dev laptop). Isolated guard-class cost is 20-31s, well under the 90s budget. A human should confirm the next CI deploy gate's Test job duration does not regress materially past the 12m53s recorded in HANDOFF.md.
 - Plan 15-15 found a pre-existing, uncommitted change to 15-UAT.md's G-15-27 entry (status open->resolved, full resolved_by/resolved_evidence) already on disk before the plan's own edits -- not authored by this execution, deliberately left uncommitted (touch no other gap entry), needs a human or future session to commit or discard it
+- **⚠ [Phase 18] The `skipped="0"` guard is a one-time observation, not a standing control (T-18-05-04).** `MidnightTimeslotPostgresTest` is what exercises V53 through real Flyway, but `@Testcontainers(disabledWithoutDocker = true)` means a machine with no Docker daemon skips the whole class and the build still reports green — the V39 failure mode. The phase's mitigation ("assert the JUnit XML shows `skipped=\"0\"`") WAS performed and evidenced in `18-05-SUMMARY.md` (`tests="6" skipped="0"`), but no code asserts it: grepping `src/test/java` and `build.gradle` for `skipped="0"` returns nothing. CI has Docker so it is live there; local `./gradlew build` without Docker is not covered. Recorded as a residual risk in `18-SECURITY.md`, not an open threat, because the mitigation as written was an execution-time check. Closing it permanently needs a standing assertion.
 - 16-02: MultiDayConstraintDiagnosticTest (solver package, wall-clock time-boxed) failed once during the mandatory full-suite run under contention; confirmed flaky, green in isolation. Pre-existing, out of this phase's scope — logged to .planning/phases/16-usual-shift-storage/deferred-items.md
 
 ## Session Continuity
 
-Last session: 2026-09-30T18:13:25.825Z
-Stopped at: Completed 18-06-PLAN.md
+Last session: 2026-09-30T19:52:28.627Z
+Stopped at: Phase 18 complete, ready to plan Phase 19
 Resume file: None
 
 ## Operator Next Steps
