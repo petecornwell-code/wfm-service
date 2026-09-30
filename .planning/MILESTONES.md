@@ -1,5 +1,50 @@
 # Milestones
 
+## v1.4 Overnight Shifts & Business Dates (Cancelled: 2026-09-30)
+
+**Status:** cancelled before shipping, by operator decision. Never pushed, never deployed; the
+live dev schema was never migrated (V53 did not run against RDS) and no client-visible behaviour
+changed at any point.
+
+**Planned scope:** 6 phases (18 Business Day Foundation & Guards, 19 DayWindow Re-anchoring,
+20 Overnight Shift Templates, 21 Solver Business-Date Correctness, 22 Minimum Rest Constraint,
+23 Phil-US Migration). Phase 18 reached 4 of 5 plans complete before cancellation; phases 19-23
+were never started.
+
+**Why cancelled:** Phase 18's final deliverable, BDAY-06's golden-file regression fixture, was
+mis-shaped, and the defect was structural rather than a matter of execution. The fixture scored
+four captured live desk shapes against the production constraint provider and byte-compared the
+result. Its inputs were chosen by availability rather than by the property under test, which made
+it wrong in both directions at once: over-sensitive, because Vinted's 287 agents and full demand
+curve mean any scoring change anywhere shifts the golden bytes with no signal about what broke;
+and under-powered on the one thing it existed to protect, because three of the four live desks
+never cross midnight, no desk has a 23:00-00:00 slot, and no break band touches an envelope edge.
+A baseline built to catch a midnight regression rested on data that barely contains midnight.
+
+The plan had itself sensed this — it required a validator asserting four specific midnight
+boundary cases — but sourced them from captured live data, which cannot supply them, because v1.4
+is the milestone that introduces overnight shifts in the first place. That contradiction surfaced
+only once the fixtures were captured and inspected against the plan's must-haves.
+
+**What was unwound:** all 32 commits (3 milestone-setup, 6 phase-18 planning, 23 plan-execution),
+including migration V53 (`desk.day_start`, `timeslot.business_date`), the day-start endpoint and
+UI cell, the business-date write path and its set-equality guard, the comparison-operator midnight
+guard, the REST capture harness and anonymisation guard, and the four anonymised desk-shape
+fixtures.
+
+**What was retained:** one salvaged commit — the `ScheduleExportService` roster-cell end-tracking
+fix. `LocalTime` has no 24:00, so an assignment ending at end-of-day stores `00:00`, the type's
+minimum, and a raw `isAfter()` comparison never let it win; the exported roster silently
+under-reported the shift's true end time. The live Vinted desk has a `15:00-00:00` template today,
+so the defect was affecting real output. It is independent of overnight-shift work and stands on
+its own.
+
+**Recovery:** the full cancelled state is preserved at tag `rescue/phase-18-unwind-20260930`
+(`a403bf0`), including all planning artifacts, the four captured fixtures and every guard test.
+Nothing is unrecoverable should the milestone be revived; a revival should re-shape BDAY-06 around
+small constructed midnight-spanning scenarios rather than captured production shapes.
+
+
 ## v1.3 Shift-Based Scheduling & Consistency (Shipped: 2026-09-21)
 
 **Phases completed:** 4 phases, 36 plans, 91 tasks

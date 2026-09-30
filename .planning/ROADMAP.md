@@ -6,6 +6,7 @@
 - ⚠ **v1.1 Schedule Quality & Reporting** — Phases 5–8 (closed early 2026-07-29; 5–6 shipped, 7–8 deferred — see Backlog 999.4–999.6)
 - ✅ **v1.2 Unified Agent Provisioning** — Phases 9–13 (shipped 2026-08-25; override closeout — see Backlog 999.9)
 - ✅ **v1.3 Shift-Based Scheduling & Consistency** — Phases 14–17 (shipped 2026-09-21; override closeout, 43/43 requirements, 10 artifacts acknowledged)
+- ✗ **v1.4 Overnight Shifts & Business Dates** — Phases 18–23 (cancelled 2026-09-30 before shipping; all work unwound, one salvaged defect fix retained — see MILESTONES.md)
 
 Next milestone not yet scoped — run `/gsd-new-milestone`.
 
