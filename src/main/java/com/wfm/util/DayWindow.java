@@ -36,6 +36,16 @@ import java.time.LocalTime;
  * per-day seat model all assume one. {@link #durationMinutes} throws rather than silently
  * returning a wrapped positive number, so the unsupported case fails loudly at the boundary
  * instead of producing a plausible wrong schedule deep in the solver.
+ *
+ * <h2>A business day that begins somewhere other than midnight (BDAY-03)</h2>
+ *
+ * <p>Every function above this heading assumes a business day starts at {@code 00:00}. A desk can
+ * declare a different day-start anchor (BDAY-01), and the functions below this heading are the
+ * anchor-aware counterparts: {@link #startMinuteFromDayStart}, {@link #endMinuteFromDayStart},
+ * {@link #timeAtDayStartOffset}, {@link #businessDateOf} and {@link #calendarDateAtDayStartOffset}.
+ * They collapse onto their midnight-implicit counterparts above exactly when the anchor is
+ * {@code 00:00} — {@code DayWindowTest} proves this exhaustively, across all 1440 minutes of the
+ * day rather than at sampled points, not merely at a few spot checks.
  */
 public final class DayWindow {
 
@@ -47,7 +57,11 @@ public final class DayWindow {
     /**
      * Minute-of-day of a time in a START position, {@code 00:00} &rarr; {@code 0}.
      * Range {@code [0, 1440)}.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static int startMinute(LocalTime start) {
         requireNonNull(start, "start");
         return start.getHour() * 60 + start.getMinute();
@@ -56,7 +70,11 @@ public final class DayWindow {
     /**
      * Minute-of-day of a time in an END position, {@code 00:00} &rarr; {@link #MINUTES_PER_DAY}.
      * Range {@code (0, 1440]}.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static int endMinute(LocalTime end) {
         requireNonNull(end, "end");
         return end.equals(LocalTime.MIDNIGHT) ? MINUTES_PER_DAY : end.getHour() * 60 + end.getMinute();
@@ -70,7 +88,12 @@ public final class DayWindow {
      *         i.e. a shift crossing midnight, which this model does not support (see the class
      *         javadoc). Failing here is deliberate: the alternative is a negative duration
      *         travelling silently into net-hours and coverage arithmetic.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static int durationMinutes(LocalTime start, LocalTime end) {
         int minutes = endMinute(end) - startMinute(start);
         if (minutes <= 0) {
@@ -83,7 +106,12 @@ public final class DayWindow {
     }
 
     /** True when {@code [start, end)} runs forward within one day — the non-throwing predicate
-     *  counterpart of {@link #durationMinutes}, for validators that want to report rather than throw. */
+     *  counterpart of {@link #durationMinutes}, for validators that want to report rather than throw.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}. */
+    @Deprecated
     public static boolean isForwardWithinDay(LocalTime start, LocalTime end) {
         return start != null && end != null && endMinute(end) > startMinute(start);
     }
@@ -91,14 +119,24 @@ public final class DayWindow {
     /**
      * True when the half-open intervals {@code [s1, e1)} and {@code [s2, e2)} overlap. Intervals
      * that merely touch (one's end equals the other's start) do NOT overlap.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static boolean overlaps(LocalTime s1, LocalTime e1, LocalTime s2, LocalTime e2) {
         return startMinute(s1) < endMinute(e2) && endMinute(e1) > startMinute(s2);
     }
 
     /**
      * True when {@code [innerStart, innerEnd)} lies entirely within {@code [outerStart, outerEnd)}.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static boolean contains(LocalTime outerStart, LocalTime outerEnd,
                                    LocalTime innerStart, LocalTime innerEnd) {
         return startMinute(innerStart) >= startMinute(outerStart)
@@ -108,7 +146,12 @@ public final class DayWindow {
     /**
      * True when {@code start} falls strictly before the END boundary {@code end} — the
      * midnight-correct replacement for {@code start.isBefore(end)} in a generation or scan loop.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
+     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
+     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
+    @Deprecated
     public static boolean startsBefore(LocalTime start, LocalTime end) {
         return startMinute(start) < endMinute(end);
     }
@@ -118,7 +161,11 @@ public final class DayWindow {
      * {@link LocalTime#MIDNIGHT} so a round trip through {@link #endMinute} is lossless.
      *
      * @throws IllegalArgumentException outside {@code [0, 1440]}.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
+     *         {@link #timeAtDayStartOffset(LocalTime, int)}.
      */
+    @Deprecated
     public static LocalTime toLocalTime(int minuteOfDay) {
         if (minuteOfDay < 0 || minuteOfDay > MINUTES_PER_DAY) {
             throw new IllegalArgumentException(
@@ -137,7 +184,11 @@ public final class DayWindow {
      * <p>Unlike {@link LocalTime#plusMinutes}, which wraps silently ({@code 23:00 + 120 = 01:00},
      * an earlier time that then fails every ordering check downstream), this throws past the end
      * of the day.
+     *
+     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
+     *         {@link #timeAtDayStartOffset(LocalTime, int)}.
      */
+    @Deprecated
     public static LocalTime plusWithinDay(LocalTime base, int minutes) {
         return toLocalTime(startMinute(base) + minutes);
     }
@@ -150,40 +201,91 @@ public final class DayWindow {
     // ------------------------------------------------------------------------------------------
 
     /**
-     * Day-start-relative minute of a time in a START position, {@code [0, 1440)}. RED-phase stub.
+     * Day-start-relative minute of a time in a START position, {@code [0, 1440)} — the direct
+     * generalisation of {@link #startMinute}: at a {@code 00:00} anchor the two agree exactly for
+     * every time of day (proven exhaustively in {@code DayWindowTest}).
+     *
+     * @throws IllegalArgumentException when {@code dayStart} or {@code start} is null.
      */
     public static int startMinuteFromDayStart(LocalTime dayStart, LocalTime start) {
-        throw new UnsupportedOperationException("not yet implemented");
+        requireNonNull(dayStart, "dayStart");
+        requireNonNull(start, "start");
+        return Math.floorMod(startMinute(start) - startMinute(dayStart), MINUTES_PER_DAY);
     }
 
     /**
-     * Day-start-relative minute of a time in an END position, {@code (0, 1440]}. RED-phase stub.
+     * Day-start-relative minute of a time in an END position, {@code (0, 1440]}, mapping a result
+     * of zero to {@link #MINUTES_PER_DAY} so a time equal to the anchor reads as the end of the
+     * business day — the direct generalisation of {@link #endMinute}'s {@code 00:00}-means-end-of-
+     * day rule, not a special case bolted on. At a {@code 00:00} anchor the two agree exactly for
+     * every time of day (proven exhaustively in {@code DayWindowTest}).
+     *
+     * @throws IllegalArgumentException when {@code dayStart} or {@code end} is null.
      */
     public static int endMinuteFromDayStart(LocalTime dayStart, LocalTime end) {
-        throw new UnsupportedOperationException("not yet implemented");
+        requireNonNull(dayStart, "dayStart");
+        requireNonNull(end, "end");
+        int raw = Math.floorMod(startMinute(end) - startMinute(dayStart), MINUTES_PER_DAY);
+        return raw == 0 ? MINUTES_PER_DAY : raw;
     }
 
     /**
-     * Converts a day-start-relative offset back to a {@link LocalTime}. RED-phase stub.
+     * Converts a day-start-relative offset back to a {@link LocalTime}, adding the offset to the
+     * anchor's minute-of-day modulo the day so a round trip through {@link #startMinuteFromDayStart}
+     * is lossless. At a {@code 00:00} anchor this agrees exactly with {@link #toLocalTime} for
+     * every offset in {@code [0, 1440]} (proven exhaustively in {@code DayWindowTest}).
+     *
+     * @throws IllegalArgumentException when {@code dayStart} is null, or {@code minutesFromDayStart}
+     *         is outside {@code [0, 1440]}.
      */
     public static LocalTime timeAtDayStartOffset(LocalTime dayStart, int minutesFromDayStart) {
-        throw new UnsupportedOperationException("not yet implemented");
+        requireNonNull(dayStart, "dayStart");
+        if (minutesFromDayStart < 0 || minutesFromDayStart > MINUTES_PER_DAY) {
+            throw new IllegalArgumentException("minutesFromDayStart must be within [0, "
+                    + MINUTES_PER_DAY + "] but was " + minutesFromDayStart);
+        }
+        return toLocalTime(Math.floorMod(startMinute(dayStart) + minutesFromDayStart, MINUTES_PER_DAY));
     }
 
     /**
-     * The business date a calendar date and time-of-day belong to, given a day-start anchor.
-     * RED-phase stub.
+     * The business date a calendar date and time-of-day belong to, given a day-start anchor: the
+     * calendar date itself when the time's minute-of-day is at or after the anchor's, and the
+     * previous calendar date otherwise. At a {@code 00:00} anchor this always returns the calendar
+     * date unchanged (proven exhaustively in {@code DayWindowTest}) — {@code isDesired} is the
+     * second caller (BDAY-03), classifying an existing row's business date from its stored calendar
+     * date and start time without ever reading the stored BDAY-02 {@code business_date} column.
+     *
+     * @throws IllegalArgumentException when {@code dayStart}, {@code calendarDate} or
+     *         {@code timeOfDay} is null.
      */
     public static LocalDate businessDateOf(LocalTime dayStart, LocalDate calendarDate, LocalTime timeOfDay) {
-        throw new UnsupportedOperationException("not yet implemented");
+        requireNonNull(dayStart, "dayStart");
+        requireNonNull(calendarDate, "calendarDate");
+        requireNonNull(timeOfDay, "timeOfDay");
+        return startMinute(timeOfDay) >= startMinute(dayStart) ? calendarDate : calendarDate.minusDays(1);
     }
 
     /**
-     * The calendar date a business date and day-start-relative offset land on. RED-phase stub.
+     * The calendar date a business date and day-start-relative offset land on: the business date
+     * plus one day for every whole {@link #MINUTES_PER_DAY} the anchor and offset together carry
+     * past midnight. At a {@code 00:00} anchor this always returns the business date unchanged for
+     * every offset in {@code [0, 1440)} (proven exhaustively in {@code DayWindowTest}) — the
+     * generation walk's forward direction (BDAY-03), turning a business date plus offset into the
+     * calendar date a {@code Timeslot} row actually stores.
+     *
+     * @throws IllegalArgumentException when {@code dayStart} or {@code businessDate} is null, or
+     *         {@code minutesFromDayStart} is outside {@code [0, 1440)}.
      */
     public static LocalDate calendarDateAtDayStartOffset(LocalTime dayStart, LocalDate businessDate,
                                                           int minutesFromDayStart) {
-        throw new UnsupportedOperationException("not yet implemented");
+        requireNonNull(dayStart, "dayStart");
+        requireNonNull(businessDate, "businessDate");
+        if (minutesFromDayStart < 0 || minutesFromDayStart >= MINUTES_PER_DAY) {
+            throw new IllegalArgumentException("minutesFromDayStart must be within [0, "
+                    + MINUTES_PER_DAY + ") but was " + minutesFromDayStart);
+        }
+        int daysForward = (startMinute(dayStart) + minutesFromDayStart) / MINUTES_PER_DAY;
+        return businessDate.plusDays(daysForward);
     }
 
     private static void requireNonNull(LocalTime value, String name) {

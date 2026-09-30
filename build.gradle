@@ -72,6 +72,17 @@ dependencies {
     testRuntimeOnly 'org.postgresql:postgresql'
 }
 
+// BDAY-04: DayWindow's nine midnight-implicit statics carry @Deprecated (BDAY-03) naming the
+// anchored replacement each caller should move to. Without this flag javac emits one aggregate
+// "uses deprecated API" note per compilation unit instead of a warning per call site, which is
+// only half of what the annotations exist for -- the compiler, not a stale grep, must enumerate
+// every remaining call site BDAY-04 re-points. No flag turning warnings into build failures
+// exists and none is added here, so this stays noisy for exactly one phase and cannot fail the
+// build on its own.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-Xlint:deprecation'
+}
+
 tasks.named('test') {
     useJUnitPlatform()
 
