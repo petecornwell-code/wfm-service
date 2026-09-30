@@ -5,6 +5,7 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Desk;
+import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
 import com.wfm.model.SchedulingMode;
 import com.wfm.repository.AgentRepository;
@@ -214,6 +215,16 @@ public class DeskService {
      *
      * <p>The equal-value early return precedes every business-rule refusal: re-asserting the
      * value a desk already holds is not a transition.
+     *
+     * <p>Changing a desk's day start is refused unconditionally whenever an ACCEPTED schedule
+     * exists on it, naming the blocking schedule's id and period. The environment named {@code
+     * dev} is the live system with real tenant data, and one live desk already holds an accepted
+     * schedule -- silently mutating the anchor under it would silently invalidate a schedule an
+     * operator has already committed to. No requirement in this milestone changes a live desk's
+     * day start, so there is deliberately no bypass: an override with no caller is untested
+     * surface area. MIGR-04 is where a documented, tested reversal belongs. The refusal reads the
+     * ordered finder below so its message is deterministic when more than one ACCEPTED schedule
+     * exists on the desk.
      */
     @Transactional
     public Desk setDayStart(UUID deskId, LocalTime dayStart) {
@@ -230,6 +241,14 @@ public class DeskService {
 
         if (dayStart.equals(desk.getDayStart())) {
             return desk;
+        }
+
+        List<Schedule> accepted = scheduleRepository
+                .findByTenantIdAndDeskIdAndStatusOrderByCreatedAtDesc(tenantId, deskId, ScheduleStatus.ACCEPTED);
+        if (!accepted.isEmpty()) {
+            Schedule blocking = accepted.get(0);
+            throw new ConflictException("Desk has an accepted schedule (" + blocking.getId()
+                    + ", " + blocking.getPeriodStartDate() + " to " + blocking.getPeriodEndDate() + ")");
         }
 
         desk.setDayStart(dayStart);

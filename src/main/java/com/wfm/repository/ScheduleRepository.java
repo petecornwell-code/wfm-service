@@ -25,5 +25,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     boolean existsByTenantIdAndDeskIdAndStatus(long tenantId, UUID deskId,
                                                 com.wfm.model.ScheduleStatus status);
 
+    // BDAY-01: the explicit ordering here is load-bearing, not cosmetic -- it is the only thing
+    // that makes DeskService.setDayStart's accepted-schedule refusal message deterministic when
+    // a desk holds more than one ACCEPTED schedule. Without it, which schedule's id/period the
+    // refusal names would depend on incidental row order rather than being reproducible.
+    List<Schedule> findByTenantIdAndDeskIdAndStatusOrderByCreatedAtDesc(long tenantId, UUID deskId,
+                                                com.wfm.model.ScheduleStatus status);
+
     void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }
