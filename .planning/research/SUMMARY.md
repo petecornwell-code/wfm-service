@@ -89,8 +89,10 @@ generic caution.
 - Constructed midnight-spanning regression scenarios chosen by the property under test; Phil-US as a
   small live drift guard only.
 
-**Candidate additions surfaced by research, NOT currently in PROJECT.md's v1.5 list (P2 — flag to
-operator for explicit accept/decline, do not silently adopt):**
+**Candidate additions surfaced by research — ACCEPTED INTO v1.5 SCOPE by operator decision
+2026-09-30.** Both were put to the operator explicitly rather than silently adopted, and both were
+accepted. They carry requirement IDs in `REQUIREMENTS.md` (`OVNT-07` span labelling, `SOLV-07`
+anchor-agreement guard) and must be mapped to phases like any other requirement:
 - **Business-day calendar-span labelling on operator-facing surfaces.** FEATURES.md's "Mixed
   Day/Night Desks" analysis found this is a real, precedented usability problem: a desk anchored at
   `21:00` stores a `09:00` day shift's agent-day facts against business-day "Tuesday" even though a
