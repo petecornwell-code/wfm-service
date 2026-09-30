@@ -3,9 +3,9 @@ phase: "18"
 slug: "business-day-foundation-guards"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+status: validated
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-30"
 ---
 
@@ -54,7 +54,12 @@ Filled by `/gsd-validate-phase 18` after PLAN.md files exist — task IDs are no
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 18-01-01 | 01 | 1 | BDAY-01 | — | N/A | unit | `{command}` | ⬜ TBD | ⬜ pending |
+| 18-01 | 01 | 1 | BDAY-01, BDAY-02 | — | N/A | unit + Postgres-backed | `./gradlew test --tests "com.wfm.service.DeskServiceDayStartTest"` | ✅ `src/test/java/com/wfm/service/DeskServiceDayStartTest.java` | ✅ green |
+| 18-02 | 02 | 2 | BDAY-01, BDAY-02 | — | N/A | migration consistency | `./gradlew test --tests "com.wfm.migration.MigrationEntityConsistencyTest"` | ✅ `src/test/java/com/wfm/migration/MigrationEntityConsistencyTest.java` | ✅ green |
+| 18-03 | 03 | 2 | BDAY-03, BDAY-02 | — | N/A | unit (plain JUnit, no Spring, no DB) | `./gradlew test --tests "com.wfm.service.TimeslotGeneratorServiceTest"` | ✅ `src/test/java/com/wfm/service/TimeslotGeneratorServiceTest.java` | ✅ green |
+| 18-04 | 04 | 2 | BDAY-06 | — | N/A | pure `SolutionManager` evaluation (no solve, no DB) | `./gradlew test --tests "com.wfm.solver.MidnightBoundaryRegressionTest"` | ✅ `src/test/java/com/wfm/solver/MidnightBoundaryRegressionTest.java` (+ `MidnightBoundaryFixture`, `MidnightBoundaryFixtureLoadsTest`, `MidnightGapScanTest`) | ✅ green |
+| 18-05 | 05 | 3 | BDAY-08, BDAY-02 | — | N/A | build-time structural scan + behavioral + Postgres-backed | `./gradlew test --tests "com.wfm.service.BusinessDateWritePathGuardTest"` | ✅ `src/test/java/com/wfm/service/BusinessDateWritePathGuardTest.java` | ✅ green |
+| 18-06 | 06 | 3 | BDAY-05 | — | N/A | build-time structural scan (with pipeline red-proof) | `./gradlew test --tests "com.wfm.service.MidnightTimeArithmeticGuardTest"` | ✅ `src/test/java/com/wfm/service/MidnightTimeArithmeticGuardTest.java` (+ `src/test/resources/midnight-guard-offender/OffendingSample.java`) | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -73,16 +78,16 @@ Filled by `/gsd-validate-phase 18` after PLAN.md files exist — task IDs are no
 
 ## Wave 0 Requirements
 
-- [ ] `TimeslotGeneratorServiceTest` — direct unit test for BDAY-03's contiguous-24h-one-business-date
+- [x] `TimeslotGeneratorServiceTest` — direct unit test for BDAY-03's contiguous-24h-one-business-date
       claim against a hand-built 21:00-anchor `Desk`, no Spring context
-- [ ] A new test class for BDAY-06's constructed regression suite — no existing file to extend. Follow
+- [x] A new test class for BDAY-06's constructed regression suite — no existing file to extend. Follow
       `LiveShapeShiftDeskFixture`'s class-load-validator idiom for D-17's non-vacuity predicates and
       `ShiftEnvelopeGroundTruthTest`'s `SolutionManager.update()` usage for scoring, but do NOT inherit
       either class's `solveCleanFixture()`-first pattern (D-14 forbids calling `solve()`)
-- [ ] D-25's pipeline-level red-proof for the comparison-operator guard — needs a test-resources
+- [x] D-25's pipeline-level red-proof for the comparison-operator guard — needs a test-resources
       directory holding one synthetic offending file and a parameterised scan root. Confirm no such
       fixture directory already exists before creating one.
-- [ ] Framework install: **none** — JUnit 5, AssertJ, Timefold Solver Test and Testcontainers are already
+- [x] Framework install: **none** — JUnit 5, AssertJ, Timefold Solver Test and Testcontainers are already
       `build.gradle` dependencies
 
 ---
@@ -97,12 +102,41 @@ Filled by `/gsd-validate-phase 18` after PLAN.md files exist — task IDs are no
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s for per-task quick runs
-- [ ] V53 exercised at least once through `PostgresBackedTest`
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s for per-task quick runs
+- [x] V53 exercised at least once through `PostgresBackedTest`
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-09-30 by `/gsd-validate-phase 18` (PARTIAL — 6 requirements automated, 1 manual-only behavior)
+
+---
+
+## Validation Audit 2026-09-30
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+**Method.** State A audit. All six requirements (BDAY-01, -02, -03, -05, -06, -08) were
+cross-referenced against test classes on disk; every one exists at the path the
+requirement→test mapping predicted. No auditor spawn was needed.
+
+**Green evidence.** The deploy gate for commit `4065041` ran `./gradlew build --no-daemon` —
+the full unfiltered suite — and passed (GitHub Actions run `36762808705`). No filtered
+`--tests` run was used to establish this, because a filtered run deletes the other classes'
+JUnit XML and would invalidate any suite-level aggregate read afterwards.
+
+**Wave 0.** All four items complete, and their two binding constraints hold on inspection:
+`TimeslotGeneratorServiceTest` loads no Spring context, and `MidnightBoundaryRegressionTest`
+never calls `solve()` (D-14).
+
+**Why `nyquist_compliant: false` with zero gaps.** One behavior remains manual-only by
+design — the `day_start` disclosure copy in desk configuration (D-28: no frontend test
+framework exists, and Phase 19 deletes the copy). That is a knowingly accepted exception,
+not an unfilled gap. It was verified by hand on 2026-09-30 against the deployed environment
+and recorded as passed in `18-UAT.md`.
