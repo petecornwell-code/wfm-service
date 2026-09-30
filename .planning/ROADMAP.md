@@ -7,10 +7,202 @@
 - ✅ **v1.2 Unified Agent Provisioning** — Phases 9–13 (shipped 2026-08-25; override closeout — see Backlog 999.9)
 - ✅ **v1.3 Shift-Based Scheduling & Consistency** — Phases 14–17 (shipped 2026-09-21; override closeout, 43/43 requirements, 10 artifacts acknowledged)
 - ✗ **v1.4 Overnight Shifts & Business Dates** — Phases 18–23 (cancelled 2026-09-30 before shipping; all work unwound, one salvaged defect fix retained — see MILESTONES.md)
-
-Next milestone not yet scoped — run `/gsd-new-milestone`.
+- 🚧 **v1.5 Overnight Shifts & Business Dates** — Phases 18–22 (in progress; started 2026-09-30 as v1.4's successor — phase numbers 18–23 were not reused, since v1.4 shipped nothing)
 
 ## Phases
+
+### 🚧 v1.5 Overnight Shifts & Business Dates (In Progress)
+
+**Milestone Goal:** A shift can span midnight and belongs to the business day it starts on — for
+any desk, any day start, any future data set.
+
+**Phase numbering continues from v1.3's Phase 17.** v1.4 attempted this same scope under Phase
+numbers 18–23 and was cancelled 2026-09-30 before shipping, with all 32 commits unwound (see
+MILESTONES.md and the `## Milestones` entry above) — its numbers are not reserved. v1.5 restarts at
+**Phase 18** with a redesigned regression-proof strategy: constructed midnight-spanning scenarios
+prove correctness, and one small live desk (Phil-US, 48 agents) is demoted to a drift guard, rather
+than four captured live desks standing in for both jobs at once.
+
+- [ ] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
+- [ ] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change
+- [ ] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved
+- [ ] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block
+- [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
+
+### Phase 18: Business-Day Foundation & Guards
+**Goal**: The guard tests and regression fixtures that will prove the re-anchoring correct already
+exist and pass green against today's `00:00`-only behaviour, and the schema/plumbing for a per-desk
+day start exists as a provable no-op — so the re-anchoring in Phase 19 is provably the first change
+that could make any of this red.
+**Depends on**: Nothing new — first phase of v1.5, continuing from v1.3's Phase 17
+**Requirements**: BDAY-01, BDAY-02, BDAY-03, BDAY-05, BDAY-06, BDAY-08
+**Success Criteria** (what must be TRUE):
+  1. A desk can store a day-start time (surfaced in the desk configuration UI, but gated to accept
+     only `00:00` in production) and a timeslot can store a business date, and every existing desk's
+     business date is provably identical to its calendar date — by construction, not convention
+     (BDAY-01, BDAY-02).
+  2. `TimeslotGeneratorService`, given a desk object configured with a 21:00 day start, generates a
+     contiguous 24-hour run of timeslots whose business date is the same single date across the
+     whole span — proven by a direct unit test even though the production API still refuses to save
+     that value on a live desk until Phase 20 lifts the gate (BDAY-03).
+  3. A structural guard test fails the build if any scheduling-time comparison (`isAfter`/`isBefore`/
+     `compareTo`) or arithmetic operation bypasses the shared `DayWindow` utility, and a dedicated
+     test proves the guard can actually go red on a freshly introduced offending line (BDAY-05).
+  4. A constructed regression suite of midnight-boundary scenarios — chosen by the property under
+     test (a 23:00–00:00 slot, an envelope flush to end-of-day, a shift starting before and ending
+     after midnight, a break band touching an envelope edge, PTO on the starting vs. ending day,
+     contracted-hours-starting-weekday-only) — exists and passes against today's implementation, with
+     a class-load validator that fails the build if a named boundary case goes missing (BDAY-06).
+  5. A write-path guard test proves exactly one code path derives a timeslot's business date and
+     exactly one propagates it forward, failing in both directions — on an unexpected new writer and
+     on a stale allowlist entry (BDAY-08).
+**Notes**: Standard, well-documented pattern — skip a dedicated research phase. Direct reference
+implementations exist both in this codebase (`MidnightTimeArithmeticGuardTest`,
+`ShiftDeskEndToEndRegressionTest`'s scoring-only pattern) and on v1.4's unwound branch
+(`84fdc3f` schema, `2196e40` write paths, `7d42f23` write-path guard, `63d85a6` comparison-operator
+guard extension, at tag `rescue/phase-18-unwind-20260930`). **Open decision for phase planning:**
+cherry-pick those four commits or re-author fresh against the current tree, which has since had at
+least one relevant fix land (`5ddd8dc`) — not settled by research. **Open decision:** the golden-file
+justification-log enforcement mechanism for the BDAY-06 fixture — three ranked options existed in
+v1.4's own research (hash-based recommended), never settled. A `day_start` control shown in the UI
+before it does anything must make the `00:00`-only restriction explicit in its copy, not enforce it
+silently via a backend 400.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 19: DayWindow Re-anchoring
+**Goal**: `DayWindow`'s interval arithmetic is anchored on a caller-supplied day start instead of an
+implicit midnight, in one atomic, compiler-forced, revertible change — proven behaviour-preserving
+for every desk still at the `00:00` default.
+**Depends on**: Phase 18 (guard tests must be green before this lands — there is nothing to compare
+against otherwise)
+**Requirements**: BDAY-04
+**Success Criteria** (what must be TRUE):
+  1. Every `DayWindow` call site supplies an explicit day-start parameter; the one-argument,
+     midnight-implicit overload no longer exists, so a missed site is a compile failure, not a
+     judgement call (BDAY-04).
+  2. `durationMinutes` and the other position-aware functions no longer throw on an end time earlier
+     than the start time — that condition now means "crosses the anchor," not "malformed" (BDAY-04).
+  3. A parameterised unit test proves the re-anchored functions produce byte-identical output to the
+     pre-migration implementation when day-start is fixed at midnight, run through `DayWindow`'s full
+     existing test suite.
+  4. Phase 18's guard tests (BDAY-05, BDAY-06) still pass green after the re-anchoring lands — proving
+     the migration did not silently leave a drifted caller on old semantics.
+  5. The change lands as its own isolated, `git diff --name-only`-provable commit — touching only
+     `DayWindow` and its call sites, separate from the constraint-provider re-point that consumes it
+     in Phase 20.
+**Notes**: Standard, well-documented pattern — the compiler-forced-overload technique is fully
+specified against three alternatives with no open design question remaining. **Action for phase
+planning:** re-grep the exact `DayWindow` call-site count fresh (previously estimated at ~112
+references across 16 files) before starting — that count was measured on a tree that has since
+moved. This is the single riskiest edit in the milestone; isolate it exactly as scoped and do not
+combine it with the join re-point that follows.
+**Plans**: TBD
+
+### Phase 20: Solver Business-Date Correctness
+**Goal**: Every solver join, the pre-solve seat-supply check, SLOT-mode accounting, and demand
+upload/coverage reporting all resolve the same business date for the same timeslot — proven by
+per-constraint match counts, not just score — and one small live desk shows the re-anchoring changed
+nothing it shouldn't have.
+**Depends on**: Phase 18 (`Timeslot.getBusinessDate()` must exist), Phase 19 (`DayWindow` must
+correctly express overnight intervals for the constraints that do interval math, not just
+date-equality joins)
+**Requirements**: SOLV-01, SOLV-02, SOLV-03, SOLV-04, SOLV-05, SOLV-06, SOLV-07, BDAY-07
+**Success Criteria** (what must be TRUE):
+  1. All business-date-relevant joins in `ScheduleConstraintProvider` (re-verified count, ~12 at
+     research time) key on business date, moved in one deliberate pass, backed by a structural guard
+     test that fails if any constraint joins on calendar date where business date is meant — in both
+     directions (SOLV-01, SOLV-02).
+  2. Break-band, contiguity and envelope-compliance constraints hold correctly for an agent-day that
+     spans midnight, and the pre-solve seat-supply check reports a shortfall against the business day
+     it actually affects (SOLV-03, SOLV-05).
+  3. An overnight SLOT-mode stretch counts against a single business day's contracted hours instead
+     of under-allocating both calendar days it touches — closing a defect that is already live today,
+     independent of overnight shifts (SOLV-04).
+  4. Every migrated join carries a non-vacuity assertion and a per-constraint match-count assertion,
+     so a silent non-join (zero matching tuples, scored identically to "satisfied") cannot pass as
+     correct (SOLV-06).
+  5. Demand upload, coverage reporting and the solver are proven — by a guard test, not convention —
+     to resolve the same business date for the same timeslot, and one small live desk (Phil-US, 48
+     agents, not Vinted's 287) produces unchanged per-constraint match counts and score across the
+     whole re-anchoring, decomposed enough that a failure names which constraint moved (SOLV-07,
+     BDAY-07).
+**Notes**: Standard, well-documented pattern — the join-migration technique and guard-test shape are
+directly copied from two proven precedents in this codebase. **Action for phase planning:** re-grep
+the "12 `timeslot.getDate()` joins" count fresh before writing the migration — measured on a tree
+that has since moved. **Open decision:** the final allowlist contents for the new
+`BusinessDateJoinGuardTest` — research expects "plausibly none" survive as legitimate calendar-date
+uses inside a join, but this needs verifying against the current `ScheduleConstraintProvider`, not
+assuming. **Open decision:** whether `agent_shift_assignment` needs its own `business_date` column
+or derives one through its `Timeslot` relation — resolve before writing the joins that touch it.
+SOLV-07 (the anchor-agreement guard between demand upload/coverage and the solver) was accepted into
+v1.5 scope by operator decision 2026-09-30, flagged by research as a real gap, not an assumed
+by-product of SOLV-01..04 — treat it as its own deliverable here.
+**Plans**: TBD
+
+### Phase 21: Overnight Shift Templates
+**Goal**: A desk can define a shift that spans midnight, and every surface that touches it — save-time
+validation, contracted-hours consumption, day-off blocking, the schedule UI grid, the Excel export —
+treats it correctly as one continuous thing belonging to the business day it starts on.
+**Depends on**: Phase 19 (`DayWindow.durationMinutes` must not throw on an overnight interval), Phase
+20 (business-date joins must be trustworthy)
+**Requirements**: OVNT-01, OVNT-02, OVNT-03, OVNT-04, OVNT-05, OVNT-06, OVNT-07
+**Success Criteria** (what must be TRUE):
+  1. An operator can save a shift template whose end time is earlier in the clock than its start
+     time, with correct net hours computed for the overnight span (OVNT-01).
+  2. That shift is reported, everywhere it is displayed, against the business day it starts on
+     (OVNT-02), and a day-off or PTO marking on that starting business day blocks the shift from
+     being assigned (OVNT-03).
+  3. The shift consumes the contracted hours of the weekday it starts on only, never split across two
+     weekday rows (OVNT-04), and shift-library validation refuses an overnight template whose
+     envelope does not fit inside its desk's business day (OVNT-05).
+  4. The schedule UI grid and the Excel export render the overnight shift as one continuous block,
+     never two fragments, with a distinct, non-blank, non-duplicate continuation indicator on the
+     morning-after cell (OVNT-06).
+  5. The shift is labelled with the calendar dates it spans wherever it is displayed, so a
+     business-day-anchored surface still discloses that it runs into the next calendar day (OVNT-07).
+**Notes**: Research flag — genuinely needs a design pass at plan time. The Excel/UI
+continuation-indicator design is specified conceptually ("a distinct, non-blank, non-duplicate
+treatment") but the actual visual/legend convention needs a concrete pass against the existing
+cell-code legend before planning locks it in. This phase is also the natural place to close part of
+the pre-existing v1.3 "it will still save" envelope-vs-operating-window gap for the overnight case
+specifically (OVNT-05) — do not let the old advisory-only behaviour persist here. If Phase 20 decides
+`agent_shift_assignment` needs its own `business_date` column, this is the phase that populates and
+reads it for overnight shift assignment.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 22: Minimum Rest
+**Goal**: An operator can require a minimum gap between an agent's consecutive shifts, enforced as a
+hard constraint the solver cannot silently violate, with a pre-solve refusal for the structurally
+unavoidable cases and a per-agent, per-date waiver for the genuinely exceptional ones.
+**Depends on**: Phase 19 (interval arithmetic across a business-date boundary), Phase 21 (overnight
+shift templates must exist for consecutive shifts to actually be adjacent to each other)
+**Requirements**: REST-01, REST-02, REST-03, REST-04, REST-05, REST-06, REST-07
+**Success Criteria** (what must be TRUE):
+  1. An operator can set a minimum rest period between consecutive shifts, per desk, via the desk
+     configuration UI, and a desk that sets none solves exactly as it does today (REST-01, REST-04).
+  2. The solver treats insufficient rest — measured between actual end and start instants, ordered by
+     actual start instant rather than calendar-date bucket, covering same-day back-to-back shifts as
+     well as overnight ones — as a hard violation, with explicit, tested behaviour at the first and
+     last day of the solving horizon rather than an accidental one (REST-02, REST-05).
+  3. A rest violation that is structurally unavoidable is refused before the solve runs, naming the
+     agent and the two shifts, by a mechanism genuinely separate from the in-solve hard constraint —
+     not a hoped-for side effect of it (REST-03).
+  4. An operator can waive minimum rest for one agent on one business date, with a recorded reason,
+     through the existing per-agent exception mechanism; the solver treats a waived pair as legal, and
+     a waived occurrence does not trigger the pre-solve refusal (REST-06).
+  5. A waived rest violation is visible in the solved schedule's output, so a waiver cannot silently
+     hide a roster problem (REST-07).
+**Notes**: Research flag — genuinely needs deeper research at plan time. The exact horizon-edge
+lookback strategy (query cost bound; whether to fetch the agent's actual pre-horizon last shift or
+accept a documented, tested blind spot) is not fully settled by the milestone's research, nor is how
+the pre-solve refusal composes with a desk whose shift library structurally cannot avoid a rest
+violation for some agent — distinct from the ENVL-07 seat-supply-gate precedent's simpler case. If a
+horizon-edge lookback query is built, bound it to the maximum configured rest period across all desks
+and batch it as one query, not N+1 per agent.
+**Plans**: TBD
+**UI hint**: yes
 
 <details>
 <summary>✅ v1.3 Shift-Based Scheduling & Consistency (Phases 14–17) — SHIPPED 2026-09-21</summary>

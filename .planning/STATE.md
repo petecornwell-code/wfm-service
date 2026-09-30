@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 status: planning
-last_updated: "2026-09-30T10:50:10.671Z"
+last_updated: "2026-09-30T12:00:00.000Z"
 last_activity: 2026-09-30
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-21 at v1.3 close)
+See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 
-**Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.3 close — unchanged.)*
-**Current focus:** Planning the next milestone — run `/gsd-new-milestone`
+**Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
+**Current focus:** v1.5 roadmap created (Phases 18–22, 29/29 requirements mapped) — ready to plan Phase 18 via `/gsd-plan-phase 18`
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 18 of 22 (Business-Day Foundation & Guards) — not yet planned
 Plan: —
-Status: Defining requirements
-Last activity: 2026-09-30 — Milestone v1.5 started
+Status: Roadmap created — ready to plan Phase 18
+Last activity: 2026-09-30 — v1.5 ROADMAP.md created: 5 phases (18 Business-Day Foundation & Guards,
+19 DayWindow Re-anchoring, 20 Solver Business-Date Correctness, 21 Overnight Shift Templates, 22
+Minimum Rest), all 29 v1.5 requirements mapped, zero orphans
 
 ## Milestone v1.3 Outcome
 
@@ -137,6 +139,24 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 
 ### Roadmap Evolution
 
+- **2026-09-30: v1.5 ROADMAP.md created.** 29 v1.5 requirements (BDAY, OVNT, SOLV, REST) mapped to 5
+  phases, numbered 18–22, continuing from v1.3's Phase 17 — v1.4's Phase numbers 18–23 are not
+  reused, since v1.4 was cancelled before shipping and all 32 commits were unwound (tag
+  `rescue/phase-18-unwind-20260930`). Coarse granularity's usual 2–4 phase count was not applied
+  here: the milestone's own non-negotiable, dependency-driven sequencing (guards before re-anchoring,
+  re-anchoring isolated as its own atomic commit, solver joins only after both exist) forces 5
+  distinct phase-entry gates that cannot be safely compressed. Phase 19 (DayWindow Re-anchoring) is a
+  deliberate single-requirement phase — BDAY-04 alone — because architecture research identifies it
+  as the single riskiest, most isolated, independently revertible edit in the milestone and both the
+  requirements doc and architecture research insist it not be combined with the join re-point that
+  consumes it. Five open decisions carried forward as phase-level notes rather than resolved here:
+  cherry-pick vs. re-author v1.4's rescue-tag commits (Phase 18), the golden-file justification-log
+  mechanism (Phase 18), re-grep the 112-call-site/16-file `DayWindow` count (Phase 19) and the
+  12-join count (Phase 20) fresh before each phase starts, the `BusinessDateJoinGuardTest` allowlist
+  contents (Phase 20), and whether `agent_shift_assignment` needs its own `business_date` column
+  (Phase 20, consumed by Phase 21). Two phases flagged by research as genuinely needing a design pass
+  at plan time rather than following a standard pattern: Phase 21's overnight continuation-indicator
+  convention, and Phase 22's minimum-rest horizon-edge lookback strategy.
 - **2026-08-25: v1.3 ROADMAP.md created.** 34 v1.3 requirements (SHLB, MODE, ENVL, USHF, CONS, DRFT) plus 5 cross-cutting XCUT verification requirements mapped to 4 phases (14–17), continuing numbering from v1.2's Phase 13. Coarse granularity. Phases 3/4 of the original 9-phase research draft (revert investigation, coupling spike) were dropped — both were resolved during research/orchestrator archaeology before roadmap creation, not left as phases. See Milestone v1.3 Roadmap above and `.planning/ROADMAP.md` Phase Details for full success criteria, dependencies, and salvage-material notes.
 - Phase 13 added 2026-08-21: **Per-Day Hours Visibility** — closure phase for the v1.2 milestone audit's critical finding (I-1/F-1). Phase 9 made `agent_day_hours` authoritative and Phase 10 populates it, but `DeskAgentService.toResponse` and `DeskAgentExportService` still read the retired `Agent.contractedHoursPerDay` scalar, which the upload path nulls — so the roster shows a desk-default number unrelated to the uploaded Mon–Sun values. Solver unaffected. Also folds I-3 (Edit Hours wipes MANDATORY/PTO) and I-4 (hardcoded specialty headers). See `.planning/v1.2-MILESTONE-AUDIT.md`.
 - v1.2 milestone close PAUSED 2026-08-21 pending Phase 13 — audit returned `gaps_found` (19/19 requirements satisfied, but 1 critical cross-phase integration gap and 1 broken E2E flow). Recorded closeout choices for when it resumes: override_closeout noting Phase 12 withdrawal; acknowledge all 3 open todos as deferred.

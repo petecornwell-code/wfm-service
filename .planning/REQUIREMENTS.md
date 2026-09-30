@@ -193,41 +193,41 @@ Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BDAY-01 | — | Pending |
-| BDAY-02 | — | Pending |
-| BDAY-03 | — | Pending |
-| BDAY-04 | — | Pending |
-| BDAY-05 | — | Pending |
-| BDAY-06 | — | Pending |
-| BDAY-07 | — | Pending |
-| BDAY-08 | — | Pending |
-| OVNT-01 | — | Pending |
-| OVNT-02 | — | Pending |
-| OVNT-03 | — | Pending |
-| OVNT-04 | — | Pending |
-| OVNT-05 | — | Pending |
-| OVNT-06 | — | Pending |
-| OVNT-07 | — | Pending |
-| SOLV-01 | — | Pending |
-| SOLV-02 | — | Pending |
-| SOLV-03 | — | Pending |
-| SOLV-04 | — | Pending |
-| SOLV-05 | — | Pending |
-| SOLV-06 | — | Pending |
-| SOLV-07 | — | Pending |
-| REST-01 | — | Pending |
-| REST-02 | — | Pending |
-| REST-03 | — | Pending |
-| REST-04 | — | Pending |
-| REST-05 | — | Pending |
-| REST-06 | — | Pending |
-| REST-07 | — | Pending |
+| BDAY-01 | Phase 18 | Pending |
+| BDAY-02 | Phase 18 | Pending |
+| BDAY-03 | Phase 18 | Pending |
+| BDAY-04 | Phase 19 | Pending |
+| BDAY-05 | Phase 18 | Pending |
+| BDAY-06 | Phase 18 | Pending |
+| BDAY-07 | Phase 20 | Pending |
+| BDAY-08 | Phase 18 | Pending |
+| OVNT-01 | Phase 21 | Pending |
+| OVNT-02 | Phase 21 | Pending |
+| OVNT-03 | Phase 21 | Pending |
+| OVNT-04 | Phase 21 | Pending |
+| OVNT-05 | Phase 21 | Pending |
+| OVNT-06 | Phase 21 | Pending |
+| OVNT-07 | Phase 21 | Pending |
+| SOLV-01 | Phase 20 | Pending |
+| SOLV-02 | Phase 20 | Pending |
+| SOLV-03 | Phase 20 | Pending |
+| SOLV-04 | Phase 20 | Pending |
+| SOLV-05 | Phase 20 | Pending |
+| SOLV-06 | Phase 20 | Pending |
+| SOLV-07 | Phase 20 | Pending |
+| REST-01 | Phase 22 | Pending |
+| REST-02 | Phase 22 | Pending |
+| REST-03 | Phase 22 | Pending |
+| REST-04 | Phase 22 | Pending |
+| REST-05 | Phase 22 | Pending |
+| REST-06 | Phase 22 | Pending |
+| REST-07 | Phase 22 | Pending |
 
 **Coverage:**
 
 - v1.5 requirements: 29 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 29 ⚠️
+- Mapped to phases: 29 (roadmap created 2026-09-30 — Phases 18–22)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-30*
