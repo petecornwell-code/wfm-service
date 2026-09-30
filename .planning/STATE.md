@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 18
 current_phase_name: Business-Day Foundation & Guards
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-09-30T15:13:00.873Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-09-30T15:59:55.915Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 18 execution started
-state_head: 27c6add9cffab09c1600c88f2fdcaeb2b3b7f5a7
+state_head: 8e48eb9d3fa0a7b4bf3e2d57746b865e69b3aabf
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 ## Current Position
 
 Phase: 18 (Business-Day Foundation & Guards) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 18 execution started
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
@@ -284,6 +284,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 18]: Task 1 checkpoint resolved as-specified: V53's three-statement, single-migration shape (ADD COLUMN nullable, UPDATE backfill from date, ALTER COLUMN SET NOT NULL) confirmed; timeslot.business_date is a stored, write-time-populated column, neither a Postgres generated column nor a lazily-computed getter. — D-09/D-10 are locked decisions; defer-backfill was presented and rejected because it would create an unset state every reader must handle.
 - [Phase 18]: P-01/F-1 resolved as option (a): confirmOverride stripped entirely from DayStartRequest, DeskController.setDayStart, and DeskService.setDayStart rather than carried as inert dead surface with no reader in this phase. — An override with no caller is untested surface area whose name and semantics would be fixed by this phase and inherited by a later migration phase not yet designed.
 - [Phase 18]: 18-02: P-05/P-06/P-07/P-08 executed exactly as specified — unconditional accepted-schedule refusal (no bypass), read-only Day Start disclosure cell naming the 00:00-only restriction in rendered text, Scheduling Mode comment restated without a decision-document citation.
+- [Phase 18]: Phase 18 Plan 3: Task 3 (tdd=true) carries zero src/main files by design -- a direct-proof task over Task 2's already-implemented behaviour, not new-feature TDD; documented explicitly rather than forcing an artificial RED phase. — The tests are new but the production logic they exercise was built in the plan's own preceding non-TDD task, so every new test passed on first run -- the expected outcome, not a red flag.
+- [Phase 18]: Phase 18 Plan 3: requireDayStartTiles deliberately calls the deprecated DayWindow.startMinute(dayStart) rather than an anchored function -- it needs the anchor's own plain minute-of-day, not a business-day-relative offset. — Matches the salvaged 985e365 analog verbatim; contributes to D-21's expected one-phase-noisy build rather than adding a fresh raw-arithmetic exemption.
 
 ### Blockers/Concerns
 
@@ -305,8 +307,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-30T15:13:00.850Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-09-30T15:59:55.894Z
+Stopped at: Completed 18-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -360,3 +362,4 @@ Resume file: None
 | Phase 17 P05 | 21 min | 2 tasks | 3 files |
 | Phase 18 P01 | 26min | 3 tasks | 15 files |
 | Phase 18 P02 | 47min | 3 tasks | 6 files |
+| Phase 18 P03 | 38 min | 3 tasks | 10 files |
