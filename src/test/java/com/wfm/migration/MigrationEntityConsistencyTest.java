@@ -3,9 +3,11 @@ package com.wfm.migration;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.AgentUsualShift;
 import com.wfm.model.ConstraintWeights;
+import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
+import com.wfm.model.Timeslot;
 import jakarta.persistence.Column;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Transient;
@@ -80,6 +82,15 @@ class MigrationEntityConsistencyTest {
      * fold-in-version-order logic already handles correctly -- {@code score} (V2's merge of
      * {@code hard_score}/{@code soft_score} into one column) and {@code version} (V20) both
      * resolve to existing columns the same way {@code scheduling_mode} does now.
+     *
+     * <p>{@code timeslot} and {@code desk} added in Phase 18 (BDAY-01/BDAY-02): this map is a
+     * hardcoded set, so a table absent from it is a table the reconciliation silently does not
+     * watch. Both of this phase's schema changes -- V53's {@code desk.day_start} and {@code
+     * timeslot.business_date} -- land on tables that were previously unwatched; reconciling them
+     * against {@link Desk}'s {@code dayStart} field and {@link Timeslot}'s {@code businessDate}
+     * field closes that gap. Both map through the pre-existing {@code LocalTime -> TIME} and
+     * {@code LocalDate -> DATE} entries in {@link #COMPATIBLE_SQL_TYPES} -- no new
+     * type-compatibility entry is needed.
      */
     private static final Map<String, Class<?>> DECLARED_TABLES = Map.of(
             "shift_template", ShiftTemplate.class,
@@ -87,7 +98,9 @@ class MigrationEntityConsistencyTest {
             "agent_shift_assignment", AgentShiftAssignment.class,
             "constraint_weights", ConstraintWeights.class,
             "schedule", Schedule.class,
-            "agent_usual_shift", AgentUsualShift.class
+            "agent_usual_shift", AgentUsualShift.class,
+            "timeslot", Timeslot.class,
+            "desk", Desk.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */
