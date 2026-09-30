@@ -95,13 +95,13 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 ### Business Day Model (BDAY)
 
 - [x] **BDAY-01**: Operator can set the time a desk's day begins, and a desk that has never set one behaves exactly as it does today
-- [ ] **BDAY-02**: A timeslot records the business day it belongs to, distinct from its calendar date
+- [x] **BDAY-02**: A timeslot records the business day it belongs to, distinct from its calendar date
 - [x] **BDAY-03**: Timeslot generation for a desk whose day starts at 21:00 produces a contiguous 24-hour business day spanning two calendar dates
 - [ ] **BDAY-04**: Interval arithmetic is anchored on the desk's day start rather than midnight, and the `00:00`-means-end-of-day convention is retired
 - [ ] **BDAY-05**: A guard test fails if any scheduling interval calculation bypasses the shared day-window utility — comparisons (`isAfter`/`isBefore`/`compareTo`) as well as arithmetic
 - [x] **BDAY-06**: A constructed regression suite proves behaviour across the midnight boundary, its scenarios chosen by the property under test, with a validator that fails if those scenarios do not actually contain the boundary cases they claim to
 - [ ] **BDAY-07**: One small live desk produces an unchanged schedule across the re-anchoring, compared on per-constraint match counts as well as score
-- [ ] **BDAY-08**: Exactly one code path writes a timeslot's business date, proven by a write-path guard test that fails in both directions
+- [x] **BDAY-08**: Exactly one code path writes a timeslot's business date, proven by a write-path guard test that fails in both directions
 
 ### Overnight Shifts (OVNT)
 
@@ -194,13 +194,13 @@ Populated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | BDAY-01 | Phase 18 | Complete |
-| BDAY-02 | Phase 18 | Pending |
+| BDAY-02 | Phase 18 | Complete |
 | BDAY-03 | Phase 18 | Complete |
 | BDAY-04 | Phase 19 | Pending |
 | BDAY-05 | Phase 18 | Pending |
 | BDAY-06 | Phase 18 | Complete |
 | BDAY-07 | Phase 20 | Pending |
-| BDAY-08 | Phase 18 | Pending |
+| BDAY-08 | Phase 18 | Complete |
 | OVNT-01 | Phase 21 | Pending |
 | OVNT-02 | Phase 21 | Pending |
 | OVNT-03 | Phase 21 | Pending |

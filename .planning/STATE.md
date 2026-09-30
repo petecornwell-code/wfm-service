@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 18
 current_phase_name: Business-Day Foundation & Guards
 status: executing
-stopped_at: Completed 18-04-PLAN.md
-last_updated: "2026-09-30T16:50:01.654Z"
+stopped_at: Completed 18-05-PLAN.md
+last_updated: "2026-09-30T17:40:56.545Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 18 execution started
-state_head: afeaa3e5745790a3f11bb7e4655d55f27507e672
+state_head: df0bb1764e1867fb4927e7f0df053870f58093bc
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 ## Current Position
 
 Phase: 18 (Business-Day Foundation & Guards) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 18 execution started
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
@@ -288,6 +288,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 18]: Phase 18 Plan 3: requireDayStartTiles deliberately calls the deprecated DayWindow.startMinute(dayStart) rather than an anchored function -- it needs the anchor's own plain minute-of-day, not a business-day-relative offset. — Matches the salvaged 985e365 analog verbatim; contributes to D-21's expected one-phase-noisy build rather than adding a fresh raw-arithmetic exemption.
 - [Phase 18]: Phase 18 Plan 4: BDAY-06's constructed midnight-boundary suite scores every constraint-level scenario via SolutionManager.update/.explain only -- solve()/buildSolver() never appear anywhere in this plan's seven new test-scope files. A class-load static validator (composing the LiveShapeShiftDeskFixture idiom with the parsed-.md-allowlist idiom) fails the build if a named boundary predicate stops firing or the predicate/resource pair disagree.
 - [Phase 18]: Phase 18 Plan 4: Both TDD tasks carried zero src/main files by design -- direct-proof tasks over already-correct, already-existing production code, following 18-03 plan 3's precedent. Every expected value was independently argued from the relevant constraint/method definition before running; all 16 new tests across both files passed on first run.
+- [Phase 18]: Phase 18 Plan 5: Landed 7d42f23's salvaged BusinessDateWritePathGuardTest/bday-02-write-paths.md verbatim apart from D-24's rewrites -- no assertion logic changed, only comment citations (SOLV-01/BDAY-04/OVNT-01) and the resource's Generation-row prose updated to match the shipped 18-03 generator.
+- [Phase 18]: Phase 18 Plan 5: Confirmed via direct src/main/java grep that exactly two setBusinessDate call sites exist (TimeslotGeneratorService:160 DERIVING, ScheduleService:328 PROPAGATING) -- no third writer found, guard's allowlists match exactly.
+- [Phase 18]: Phase 18 Plan 5: Task 2's business-date round-trip assertions were added to the existing generatesAFullMidnightEndingDay test (not a new test method), yielding 6 total test methods (5 pre-existing + 1 new desk-default test) -- matching the plan's own acceptance_criteria exactly, even though the plan's <verify>/plan-level <verification> separately state an internally-inconsistent "seven". Resolved in favor of the literal acceptance_criteria.
 
 ### Blockers/Concerns
 
@@ -309,8 +312,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-30T16:50:01.625Z
-Stopped at: Completed 18-04-PLAN.md
+Last session: 2026-09-30T17:40:56.525Z
+Stopped at: Completed 18-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -366,3 +369,4 @@ Resume file: None
 | Phase 18 P02 | 47min | 3 tasks | 6 files |
 | Phase 18 P03 | 38 min | 3 tasks | 10 files |
 | Phase 18 P04 | 48min | 3 tasks | 7 files |
+| Phase 18 P05 | 30min | 2 tasks | 3 files |
