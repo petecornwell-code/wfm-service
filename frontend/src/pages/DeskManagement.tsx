@@ -89,7 +89,7 @@ export default function DeskManagement() {
 
       <table>
         <thead>
-          <tr><th>Name</th><th>Description</th><th>Default Hours/Day</th><th>Scheduling Mode</th><th>Actions</th></tr>
+          <tr><th>Name</th><th>Description</th><th>Default Hours/Day</th><th>Scheduling Mode</th><th>Day Start</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {deskList.map(desk => (
@@ -99,8 +99,17 @@ export default function DeskManagement() {
                   <td><input value={editName} onChange={e => setEditName(e.target.value)} style={{ width: '100%' }} /></td>
                   <td><input value={editDescription} onChange={e => setEditDescription(e.target.value)} style={{ width: '100%' }} /></td>
                   <td><input type="number" value={editHours} onChange={e => setEditHours(Number(e.target.value))} step="0.25" style={{ width: '80px' }} /></td>
-                  {/* Read-only in both branches — the mode cannot be changed from this page (D-14); a plain-text cell keeps the row's column count equal across edit/display so the table does not shift while a row is being edited. */}
+                  {/* Read-only in both branches — the mode cannot be changed from this page. Switching
+                      modes is validated against the shift library and desk state (a running solve,
+                      uncovered demand), so an inline edit here would bypass that gate; a plain-text
+                      cell keeps the row's column count equal across edit/display so the table does not
+                      shift while a row is being edited. */}
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
+                  {/* Read-only in both branches for the same reason Scheduling Mode is above — the
+                      backend refuses anything but 00:00 (BDAY-01), so an editable control here would
+                      offer the operator a value the system will reject. BDAY-04 is what widens the
+                      accepted range and is expected to make this cell editable. */}
+                  <td>{desk.dayStart} (only 00:00 is supported until overnight scheduling lands)</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button className="primary" onClick={handleUpdate}>Save</button>
                     <button onClick={() => setEditingId(null)}>Cancel</button>
@@ -112,6 +121,7 @@ export default function DeskManagement() {
                   <td>{desk.description || '—'}</td>
                   <td>{desk.defaultContractedHoursPerDay}</td>
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
+                  <td>{desk.dayStart} (only 00:00 is supported until overnight scheduling lands)</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button onClick={() => startEdit(desk)}>Edit</button>
                     <button className="danger" onClick={() => handleDelete(desk.id)}>Delete</button>
