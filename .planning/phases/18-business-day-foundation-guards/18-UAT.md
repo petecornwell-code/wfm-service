@@ -1,24 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 18-business-day-foundation-guards
 source: [18-VERIFICATION.md]
 started: 2026-09-30T18:42:53Z
-updated: 2026-09-30T18:42:53Z
+updated: 2026-09-30T19:41:14Z
 ---
 
 ## Current Test
 
-number: 1
-name: Day Start disclosure renders correctly in desk configuration
-expected: |
-  1. A "Day Start" column appears after "Scheduling Mode", for every desk row.
-  2. Its value reads 00:00 on every existing desk.
-  3. The cell is visibly non-editable -- no input, no dropdown, nothing focusable -- in both
-     the normal row and a row that has been put into edit mode.
-  4. The cell's own rendered text states that only 00:00 is supported until overnight
-     scheduling lands. It must be readable copy on screen, not a tooltip and not a code comment.
-  5. The row's columns stay aligned when a row is switched into edit mode and back.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -40,14 +30,14 @@ why_human: |
   non-editable <td> -- but on-screen appearance and column alignment cannot be grepped.
   A .tsx source-scan test was considered at discussion and rejected as brittle to ordinary
   rewording for a control Phase 19 deletes within one phase.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
