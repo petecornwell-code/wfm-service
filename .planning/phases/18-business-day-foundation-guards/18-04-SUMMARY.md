@@ -226,3 +226,20 @@ None - no external service configuration required.
 ---
 *Phase: 18-business-day-foundation-guards*
 *Completed: 2026-09-30*
+
+## Self-Check: PASSED
+
+- `src/test/java/com/wfm/solver/MidnightBoundaryFixture.java` - FOUND
+- `src/test/java/com/wfm/solver/MidnightBoundaryFixtureLoadsTest.java` - FOUND
+- `src/test/java/com/wfm/support/AssertsTodaysBehaviour.java` - FOUND
+- `src/test/resources/midnight-boundary-scenarios.md` - FOUND
+- `src/test/java/com/wfm/solver/MidnightBoundaryRegressionTest.java` - FOUND
+- `src/test/java/com/wfm/service/MidnightBoundaryPropertyTest.java` - FOUND
+- `src/test/java/com/wfm/support/MidnightBoundaryScenarioRegistryTest.java` - FOUND
+
+Section added by the execute-phase orchestrator: the executor completed all four commits but
+returned without writing this section, leaving the SUMMARY incomplete against the template.
+Verified independently before adding it — 4 task commits present, all 7 declared artifacts on
+disk, zero `solve(`/`buildSolver(` occurrences in the fixture and regression test (D-14),
+`git diff --name-only 6c407e8..HEAD` touches no path under `src/main` (D-18), and the suite
+reports 1096 tests / 0 failures / 0 errors / 4 pre-existing skips.
