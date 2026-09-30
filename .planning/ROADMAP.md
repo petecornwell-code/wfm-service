@@ -118,8 +118,21 @@ specified against three alternatives with no open design question remaining. **A
 planning:** re-grep the exact `DayWindow` call-site count fresh (previously estimated at ~112
 references across 16 files) before starting — that count was measured on a tree that has since
 moved. This is the single riskiest edit in the milestone; isolate it exactly as scoped and do not
-combine it with the join re-point that follows.
-**Plans**: TBD
+combine it with the join re-point that follows. **Re-grepped 2026-09-30:** 264 references across 27
+files, of which 83 are production call sites of the nine midnight-implicit forms across 15 files.
+**Planner decisions:** P-01 (the `ifExists`-gated constraints keep one named, allowlisted midnight
+anchor that SOLV-01 removes — Timefold 1.16.0 has no Penta stream), P-04 (`schedule.day_start` is a
+persisted column, V54), P-06 (criterion 5 is checked over the commit range from the additive
+plumbing commit forward, not a single commit). All three are recorded in full in `19-01-PLAN.md`.
+**Plans**: 6 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — Additive solver anchor channel (V54, `Schedule`/`ScheduleConfig`/DTO), then the tracer: one desk anchor reaches one constraint's interval check end-to-end
+- [ ] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable
+- [ ] 19-03-PLAN.md — The three D-09 model helpers take a `DayWindow`, across every caller; controller served by the service
+- [ ] 19-04-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly
+- [ ] 19-05-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan
+- [ ] 19-06-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5
 
 ### Phase 20: Solver Business-Date Correctness
 **Goal**: Every solver join, the pre-solve seat-supply check, SLOT-mode accounting, and demand
