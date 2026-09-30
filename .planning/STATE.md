@@ -2,9 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
+current_phase: 18
+current_phase_name: Business-Day Foundation & Guards
 status: planning
-last_updated: "2026-09-30T12:00:00.000Z"
+stopped_at: Phase 18 context gathered
+last_updated: "2026-09-30T13:02:21.285Z"
 last_activity: 2026-09-30
+last_activity_desc: "Phase 18 context gathered - 28 decisions captured across 4 gray areas"
+state_head: 440fa93f66f66d29ae0391976c44e1bc7a09ee8b
 progress:
   total_phases: 5
   completed_phases: 0
@@ -20,13 +25,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** v1.5 roadmap created (Phases 18–22, 29/29 requirements mapped) — ready to plan Phase 18 via `/gsd-plan-phase 18`
+**Current focus:** Phase 18 context gathered (28 decisions, 4 gray areas) — ready to plan via `/gsd-plan-phase 18`
 
 ## Current Position
 
-Phase: 18 of 22 (Business-Day Foundation & Guards) — not yet planned
+Phase: 18 of 22 (Business-Day Foundation & Guards) — context gathered, not yet planned
 Plan: —
-Status: Roadmap created — ready to plan Phase 18
+Status: 18-CONTEXT.md written — ready to plan Phase 18
 Last activity: 2026-09-30 — v1.5 ROADMAP.md created: 5 phases (18 Business-Day Foundation & Guards,
 19 DayWindow Re-anchoring, 20 Solver Business-Date Correctness, 21 Overnight Shift Templates, 22
 Minimum Rest), all 29 v1.5 requirements mapped, zero orphans
@@ -297,9 +302,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-17T21:52:19.156Z
-Stopped at: Phase 17 complete — all phases complete
-Resume file: None
+Last session: 2026-09-30T13:02:21.272Z
+Stopped at: Phase 18 context gathered
+Resume file: .planning/phases/18-business-day-foundation-guards/18-CONTEXT.md
 
 ## Operator Next Steps
 
