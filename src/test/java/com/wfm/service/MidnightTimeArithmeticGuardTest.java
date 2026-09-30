@@ -89,9 +89,17 @@ class MidnightTimeArithmeticGuardTest {
 
     private static final Path SOURCE_ROOT = Path.of("src", "main", "java");
 
+    /**
+     * The fixture root for the pipeline-level red-proof below. Lives under {@code
+     * src/test/resources} — never {@code src/main/java} — so a killed or crashed run cannot leave
+     * a deliberately offending {@code .java} file inside a compiled source set.
+     */
+    private static final Path COMPARISON_OFFENDER_ROOT =
+            Path.of("src", "test", "resources", "midnight-guard-offender");
+
     @Test
     void rawTimeArithmeticInProductionCode_matchesTheAllowlistExactly() throws IOException {
-        Set<String> derived = scanProductionSources(MidnightTimeArithmeticGuardTest::isRawArithmetic);
+        Set<String> derived = scanProductionSources(SOURCE_ROOT, MidnightTimeArithmeticGuardTest::isRawArithmetic);
         Set<String> allowlist = parseAllowlist();
 
         Set<String> notAllowlisted = new HashSet<>(derived);
@@ -125,7 +133,7 @@ class MidnightTimeArithmeticGuardTest {
      */
     @Test
     void rawTimeComparisonsInProductionCode_matchesTheComparisonAllowlistExactly() throws IOException {
-        Set<String> derived = scanProductionSources(MidnightTimeArithmeticGuardTest::isRawComparison);
+        Set<String> derived = scanProductionSources(SOURCE_ROOT, MidnightTimeArithmeticGuardTest::isRawComparison);
         Set<String> allowlist = parseComparisonAllowlist();
 
         Set<String> notAllowlisted = new HashSet<>(derived);
@@ -157,7 +165,7 @@ class MidnightTimeArithmeticGuardTest {
                 for (String header : forStatementHeaders(
                         Files.readAllLines(file, StandardCharsets.UTF_8))) {
                     if (header.contains("DayWindow.plusWithinDay(")) {
-                        offenders.add(toFullyQualifiedName(file) + " :: " + header);
+                        offenders.add(toFullyQualifiedName(SOURCE_ROOT, file) + " :: " + header);
                     }
                 }
             }
@@ -262,6 +270,49 @@ class MidnightTimeArithmeticGuardTest {
         assertThat(isRawComparison("// slotStart.isBefore(cutoff) is handled by DayWindow")).isFalse();
     }
 
+    /**
+     * {@link #theScanDetectsAFreshOccurrence} and {@link #theComparisonScanDetectsAFreshOccurrence}
+     * above prove the matcher PREDICATE is live against synthetic strings, and that the receiver
+     * heuristic cuts both ways -- but neither exercises walk, comment-strip or set-compare. That
+     * leaves one failure mode uncovered: if the final assertion were weakened from set equality to
+     * a subset check, both of those red-proofs would still pass, because neither ever reaches the
+     * set-compare step. This test points the exact same shared pipeline ({@link
+     * #scanProductionSources}) at {@link #COMPARISON_OFFENDER_ROOT} -- a fixture holding one
+     * tracked, never-compiled synthetic offender -- and proves walk, comment-strip, match and
+     * set-compare are all live together.
+     */
+    @Test
+    @DisplayName("the guard can go red through its whole pipeline, not only its matcher")
+    void pipelineRedProof_walkStripMatchAndSetCompareAreAllLive() throws IOException {
+        // 1. A guard on the guard's own fixture: a moved or renamed file must fail loudly here
+        // rather than silently emptying the scan below.
+        List<Path> fixtureFiles;
+        try (Stream<Path> files = Files.walk(COMPARISON_OFFENDER_ROOT)) {
+            fixtureFiles = files.filter(p -> p.toString().endsWith(".java")).toList();
+        }
+        assertThat(fixtureFiles)
+                .as("the pipeline red-proof fixture must hold exactly one .java file under %s",
+                        COMPARISON_OFFENDER_ROOT)
+                .hasSize(1);
+
+        // 2. The shared walk, pointed at the fixture root with the comparison matcher, must find
+        // exactly the one real offending line -- not two, which would mean comment-stripping
+        // silently stopped working, since the fixture also carries a commented-out occurrence of
+        // the same token.
+        Set<String> derived = scanProductionSources(
+                COMPARISON_OFFENDER_ROOT, MidnightTimeArithmeticGuardTest::isRawComparison);
+        assertThat(derived)
+                .as("walk + comment-strip + match against the fixture must yield exactly one entry")
+                .hasSize(1);
+
+        // 3. The step the matcher-level red-proofs above cannot reach: asserting set equality
+        // between that one-entry result and an empty expected set must throw an AssertionError,
+        // proving the set-compare step is live too -- not only the matcher predicate. This is the
+        // exact shape of the real assertions above, with an intentionally wrong expected set.
+        assertThatThrownBy(() -> assertThat(derived).containsExactlyInAnyOrderElementsOf(Set.of()))
+                .isInstanceOf(AssertionError.class);
+    }
+
     @Test
     void missingAllowlistHeading_failsLoudly() {
         // The parser must never silently return an empty set for a malformed resource -- that is
@@ -282,14 +333,22 @@ class MidnightTimeArithmeticGuardTest {
 
     // --- scanning ---
 
-    /** Walks {@code src/main/java} once, collecting every line {@code matcher} accepts. Shared by
-     *  both the arithmetic and the comparison assertions so there is one walk, not two. */
-    private Set<String> scanProductionSources(Predicate<String> matcher) throws IOException {
+    /**
+     * Walks {@code root} once, collecting every line {@code matcher} accepts. Shared by the
+     * arithmetic assertion, the comparison assertion and the pipeline-level red-proof below, so
+     * there is one walk implementation, not several that can drift apart. {@code root} is a
+     * parameter so the red-proof can point the exact same pipeline at a fixture directory; every
+     * real (non-red-proof) assertion always passes {@link #SOURCE_ROOT} explicitly — if the
+     * parameterisation ever left one of them pointed at a fixture directory instead, {@link
+     * #theScanActuallySeesProductionSource} asserts against {@code SOURCE_ROOT} by name and would
+     * fail rather than pass vacuously.
+     */
+    private Set<String> scanProductionSources(Path root, Predicate<String> matcher) throws IOException {
         Set<String> found = new LinkedHashSet<>();
-        try (Stream<Path> files = Files.walk(SOURCE_ROOT)) {
+        try (Stream<Path> files = Files.walk(root)) {
             List<Path> javaFiles = files.filter(p -> p.toString().endsWith(".java")).sorted().toList();
             for (Path file : javaFiles) {
-                String fqcn = toFullyQualifiedName(file);
+                String fqcn = toFullyQualifiedName(root, file);
                 if (IMPLEMENTATION_CLASS.equals(fqcn)) {
                     continue;
                 }
@@ -400,8 +459,11 @@ class MidnightTimeArithmeticGuardTest {
         return line.strip();
     }
 
-    private static String toFullyQualifiedName(Path file) {
-        String relative = SOURCE_ROOT.relativize(file).toString();
+    /** Relativises {@code file} against {@code root} -- {@code root} is a parameter for the same
+     *  reason {@link #scanProductionSources} takes one: the red-proof below relativises against
+     *  the fixture root, not {@link #SOURCE_ROOT}. */
+    private static String toFullyQualifiedName(Path root, Path file) {
+        String relative = root.relativize(file).toString();
         return relative.substring(0, relative.length() - ".java".length())
                 .replace(java.io.File.separatorChar, '.');
     }
