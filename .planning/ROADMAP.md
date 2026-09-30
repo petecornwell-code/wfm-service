@@ -23,7 +23,7 @@ MILESTONES.md and the `## Milestones` entry above) — its numbers are not reser
 prove correctness, and one small live desk (Phil-US, 48 agents) is demoted to a drift guard, rather
 than four captured live desks standing in for both jobs at once.
 
-- [ ] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
+- [x] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
 - [ ] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change
 - [ ] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved
 - [ ] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block
@@ -77,18 +77,18 @@ Plans:
 
 **Wave 1**
 
-- [ ] 18-01-PLAN.md — Tracer: day-start and business-date land end to end, every write path green (BDAY-01, BDAY-02)
+- [x] 18-01-PLAN.md — Tracer: day-start and business-date land end to end, every write path green (BDAY-01, BDAY-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 18-02-PLAN.md — Accepted-schedule refusal, day-start disclosure, migration reconciliation (BDAY-01, BDAY-02)
-- [ ] 18-03-PLAN.md — Anchored DayWindow helpers and the business-day generation walk (BDAY-03, BDAY-02)
-- [ ] 18-04-PLAN.md — Constructed midnight-boundary regression suite with a non-vacuity validator (BDAY-06)
+- [x] 18-02-PLAN.md — Accepted-schedule refusal, day-start disclosure, migration reconciliation (BDAY-01, BDAY-02)
+- [x] 18-03-PLAN.md — Anchored DayWindow helpers and the business-day generation walk (BDAY-03, BDAY-02)
+- [x] 18-04-PLAN.md — Constructed midnight-boundary regression suite with a non-vacuity validator (BDAY-06)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 18-05-PLAN.md — Business-date write-path guard and V53 through real Flyway (BDAY-08, BDAY-02)
-- [ ] 18-06-PLAN.md — Comparison-operator guard extension and its pipeline-level red-proof (BDAY-05)
+- [x] 18-05-PLAN.md — Business-date write-path guard and V53 through real Flyway (BDAY-08, BDAY-02)
+- [x] 18-06-PLAN.md — Comparison-operator guard extension and its pipeline-level red-proof (BDAY-05)
 
 **UI hint**: yes
 

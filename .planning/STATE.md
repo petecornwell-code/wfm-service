@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 18
 current_phase_name: Business-Day Foundation & Guards
-status: executing
-stopped_at: Completed 18-05-PLAN.md
-last_updated: "2026-09-30T17:40:56.545Z"
+status: verifying
+stopped_at: Completed 18-06-PLAN.md
+last_updated: "2026-09-30T18:13:25.844Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 18 execution started
-state_head: df0bb1764e1867fb4927e7f0df053870f58093bc
+state_head: 6a7f4d1dca6363f29b4bca77522c1ddb9273bf44
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 
 Phase: 18 (Business-Day Foundation & Guards) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-30 — Phase 18 execution started
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
 planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
@@ -291,6 +291,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 18]: Phase 18 Plan 5: Landed 7d42f23's salvaged BusinessDateWritePathGuardTest/bday-02-write-paths.md verbatim apart from D-24's rewrites -- no assertion logic changed, only comment citations (SOLV-01/BDAY-04/OVNT-01) and the resource's Generation-row prose updated to match the shipped 18-03 generator.
 - [Phase 18]: Phase 18 Plan 5: Confirmed via direct src/main/java grep that exactly two setBusinessDate call sites exist (TimeslotGeneratorService:160 DERIVING, ScheduleService:328 PROPAGATING) -- no third writer found, guard's allowlists match exactly.
 - [Phase 18]: Phase 18 Plan 5: Task 2's business-date round-trip assertions were added to the existing generatesAFullMidnightEndingDay test (not a new test method), yielding 6 total test methods (5 pre-existing + 1 new desk-default test) -- matching the plan's own acceptance_criteria exactly, even though the plan's <verify>/plan-level <verification> separately state an internally-inconsistent "seven". Resolved in favor of the literal acceptance_criteria.
+- [Phase 18]: Phase 18 Plan 6: reconciled the salvaged ten-entry comparison allowlist to nine entries per P-30 -- the TimeslotGeneratorService entry is stale since 18-03's generator re-authoring replaced its raw LocalTime comparison with anchored integer-offset arithmetic through DayWindow. — Confirmed by running the guard test, not by inspection alone; the removed line no longer exists in any form in the settled tree.
+- [Phase 18]: Phase 18 Plan 6: resolved Task 2's raw-arithmetic-pipeline-proof conditional in favor of the more specific, numbered P-28 decision -- the synthetic offender fixture holds exactly two lines and proves only the comparison pipeline, which is the one D-25 names as the uncovered failure mode. — A single fixture line cannot trigger both COMPARISON_TOKENS and RAW_ARITHMETIC_TOKENS without becoming a second line, contradicting P-28's exactly-one-entry contract.
 
 ### Blockers/Concerns
 
@@ -312,8 +314,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:40:56.525Z
-Stopped at: Completed 18-05-PLAN.md
+Last session: 2026-09-30T18:13:25.825Z
+Stopped at: Completed 18-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -370,3 +372,4 @@ Resume file: None
 | Phase 18 P03 | 38 min | 3 tasks | 10 files |
 | Phase 18 P04 | 48min | 3 tasks | 7 files |
 | Phase 18 P05 | 30min | 2 tasks | 3 files |
+| Phase 18 P06 | ~40min | 2 tasks | 3 files |
