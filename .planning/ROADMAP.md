@@ -124,15 +124,17 @@ files, of which 83 are production call sites of the nine midnight-implicit forms
 anchor that SOLV-01 removes — Timefold 1.16.0 has no Penta stream), P-04 (`schedule.day_start` is a
 persisted column, V54), P-06 (criterion 5 is checked over the commit range from the additive
 plumbing commit forward, not a single commit). All three are recorded in full in `19-01-PLAN.md`.
-**Plans**: 6 plans
+**Plans**: 8 plans, 6 waves
 
 Plans:
-- [ ] 19-01-PLAN.md — Additive solver anchor channel (V54, `Schedule`/`ScheduleConfig`/DTO), then the tracer: one desk anchor reaches one constraint's interval check end-to-end
-- [ ] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable
-- [ ] 19-03-PLAN.md — The three D-09 model helpers take a `DayWindow`, across every caller; controller served by the service
-- [ ] 19-04-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly
-- [ ] 19-05-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan
-- [ ] 19-06-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5
+- [ ] 19-01-PLAN.md — Additive solver anchor channel as a provable no-op (V54, `Schedule`/`ScheduleConfig`/DTO); the range's exclusive lower bound (wave 1)
+- [ ] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable (wave 1)
+- [ ] 19-03-PLAN.md — Tracer: `DayWindow.anchoredAt` plus nine instance methods, and one desk anchor reaches one constraint's interval check end-to-end (wave 2)
+- [ ] 19-04-PLAN.md — Break-band times and net hours take a `DayWindow` across every caller; controller served by the service; `breakClustering` wired (wave 3)
+- [ ] 19-05-PLAN.md — Retire the transitional one-argument `ShiftBandPair.covers` and re-point its remaining callers (wave 4)
+- [ ] 19-06-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly (wave 5)
+- [ ] 19-07-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan (wave 5)
+- [ ] 19-08-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5 (wave 6)
 
 ### Phase 20: Solver Business-Date Correctness
 **Goal**: Every solver join, the pre-solve seat-supply check, SLOT-mode accounting, and demand
