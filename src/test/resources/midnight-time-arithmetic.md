@@ -26,11 +26,58 @@ constraint would reintroduce it with no test failing, exactly as the original co
 
 ## What is enforced
 
-The set of lines in `src/main/java` (excluding `DayWindow` itself, which is the implementation)
-matching any of `Duration.between(`, `ChronoUnit.MINUTES`, `.plusMinutes(` or `.minusMinutes(`
-must equal the fenced allowlist below **exactly** — set equality, never subset. A new occurrence
-fails the build; an allowlisted line that no longer exists also fails the build, so the list
-cannot rot.
+This guard enforces two independent families, each checked by its own set-equality assertion in
+`MidnightTimeArithmeticGuardTest`.
+
+**Raw arithmetic.** The set of lines in `src/main/java` (excluding `DayWindow` itself, which is
+the implementation) matching any of `Duration.between(`, `ChronoUnit.MINUTES`, `.plusMinutes(` or
+`.minusMinutes(` must equal the "Permitted raw time arithmetic" allowlist below **exactly** — set
+equality, never subset. A new occurrence fails the build; an allowlisted line that no longer
+exists also fails the build, so the list cannot rot. This family is unconditional: every match on
+these four tokens counts, because they are already low-noise on their own.
+
+**Raw comparisons.** `LocalTime.MIDNIGHT.isAfter(LocalTime.of(23, 0))` being `false` is the other
+half of the same bug class (see above) and was, until this section existed, completely unguarded.
+A line matching `.isAfter(`, `.isBefore(` or `.compareTo(` is only in scope when its RECEIVER
+looks like a scheduling time — the identifier immediately to the left of the token, ignoring one
+trailing empty argument list (so both `slotStart.isBefore(x)` and `getStartTime().isBefore(x)`
+resolve to a receiver name). A receiver counts when it, case-insensitively, **ends with** `time`,
+`start` or `end`, or **begins with** `envelope`, `band`, `break` or `slot`. The argument is
+deliberately never inspected — only the receiver — because inspecting the argument pulls in
+`date.isAfter(periodEnd)` and `hours.compareTo(breakConfig.getMaxHours())`: `LocalDate` and
+`BigDecimal` comparisons with nothing to do with the midnight boundary. These three tokens appear
+roughly a hundred times combined across `src/main/java`, almost all of them date or decimal
+comparisons; an ungated scan would demand a hundred-entry allowlist, which is the
+guard-becomes-decoration failure this file's own javadoc warns against, so gating by receiver name
+is what keeps the list reviewable.
+
+**The heuristic's limitations — read this before editing the comparison allowlist.** This
+receiver-name heuristic is the part of the guard most likely to rot, and it has three known,
+named limitations:
+
+1. **It is name-based rather than type-aware.** It never inspects the receiver's declared type, so
+   a scheduling time held in a local variable whose name does not match the pattern list (e.g. a
+   variable called `t` or `whenDone`) escapes the scan entirely, and a `LocalDate` or other
+   non-time value held in a matching-named local (e.g. a `LocalDate` called `periodStart`) is
+   caught spuriously. A type-aware parser was evaluated and rejected as a new build dependency;
+   revisit only if this heuristic proves noisy in practice.
+2. **It inspects only the receiver, never the argument.** A scheduling time appearing solely as
+   the *argument* of a comparison — never as the receiver — escapes the scan, by the same design
+   choice that keeps date and decimal noise out (see above).
+3. **It tolerates exactly one trailing empty argument list.** A two-level accessor chain (e.g.
+   `shift.getBandPair().getStartTime().isBefore(x)`) resolves to the nearest name before the
+   token — here `getStartTime()` — rather than the true owner further left (`shift`). For this
+   heuristic's purpose that is fine, since `getStartTime()` is itself the receiver that matters,
+   but a chain shaped differently could resolve to an unexpected name.
+
+A false positive fails safe: a human looks at a diff and adds a justified allowlist entry or a
+`DayWindow` fix. A false negative is only possible under one of the three limitations above;
+narrowing that gap further is deferred rather than solved by a heavier, parser-based detector.
+
+**Deliberately out of scope.** Date tokens — `.getDate()`, `.getDayOfWeek()`, `.plusDays(`,
+`ChronoUnit.DAYS` — are not guarded here. `SOLV-02` owns the calendar-vs-business-date join guard,
+and adding date tokens to either family here would pre-empt that requirement rather than support
+it.
 
 Comment lines are stripped before matching, so prose mentioning these names is free.
 
@@ -67,3 +114,39 @@ com.wfm.service.ScheduleOutputService :: long dist = Math.abs(ChronoUnit.MINUTES
   agent's preferred break START, used to pick the closest break for the preference report. Both
   are start times. The overlap test in the same class, which *does* involve break ends, goes
   through `DayWindow.overlaps`.
+
+### Permitted raw time comparisons
+
+```
+com.wfm.service.FteUploadService :: if (startTime == null || slotStart.isBefore(startTime)) startTime = slotStart;
+com.wfm.service.ScheduleExportService :: if (earliest == null || ad.startTime().isBefore(earliest)) earliest = ad.startTime();
+com.wfm.service.ScheduleOutputService :: startOk = actStart != null && !actStart.isBefore(prefStart);
+com.wfm.service.ScheduleOutputService :: int sign = actualStartTime.isAfter(usualStartTime) ? 1
+com.wfm.service.ScheduleOutputService :: : actualStartTime.isBefore(usualStartTime) ? -1 : 0;
+com.wfm.service.ShiftLibraryGenerationService :: if (start.isBefore(earliestStart) || DayWindow.endMinute(end) > DayWindow.endMinute(latestEnd)) {
+com.wfm.service.ShiftLibraryGenerationService :: int startCompare = candidate.spanStart().compareTo(currentBest.spanStart());
+com.wfm.solver.AgentAssignmentDifficultyComparator :: int timeCompare = a.getTimeslot().getStartTime().compareTo(b.getTimeslot().getStartTime());
+com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
+```
+
+### Why each comparison is permitted
+
+- **`FteUploadService`** — the min-start tracking beside the sheet's already-correct max-end
+  tracking two lines below it (which routes through `DayWindow.endMinute`). Both operands of this
+  line are slot START times; the ambiguity only exists at the end boundary.
+- **`ScheduleExportService`** — the earliest-start half of the roster cell's earliest/latest loop.
+  The latest-end half of the same loop routes through `DayWindow.endMinute` (see "Permitted raw
+  time arithmetic" above); this line's both operands are assignment START times.
+- **`ScheduleOutputService`, all three lines** — the preference-report start check
+  (`actStart`/`prefStart`) and the two ternary branches of the drift-sign calculation
+  (`actualStartTime`/`usualStartTime`). Every operand named here is a START time; no end is
+  involved in any of the three.
+- **`ShiftLibraryGenerationService`, both lines** — the earliest-start clause that shares its line
+  with an already-correct `DayWindow.endMinute` end comparison (`start`/`earliestStart` are both
+  starts; only the end half needed `DayWindow`), and the span-start tie-break
+  (`candidate.spanStart()`/`currentBest.spanStart()`), whose `spanStart()` is built via
+  `DayWindow.toLocalTime` and is a START position by construction.
+- **`AgentAssignmentDifficultyComparator`** — the start-time tie-break between two timeslots'
+  `getStartTime()`. Both are START positions; the comparator never orders by end.
+- **`ScheduleConstraintProvider`** — the preferred-start comparison between a timeslot's START and
+  an agent's preferred START time. No end is involved.

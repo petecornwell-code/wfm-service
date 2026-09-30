@@ -12,7 +12,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +56,7 @@ class MidnightTimeArithmeticGuardTest {
 
     private static final String RESOURCE = "midnight-time-arithmetic.md";
     private static final String ALLOWLIST_HEADING = "### Permitted raw time arithmetic";
+    private static final String COMPARISON_ALLOWLIST_HEADING = "### Permitted raw time comparisons";
 
     /**
      * The tokens that constitute raw interval arithmetic on a time. {@code ChronoUnit.MINUTES}
@@ -67,6 +70,20 @@ class MidnightTimeArithmeticGuardTest {
             ".plusMinutes(",
             ".minusMinutes(");
 
+    /**
+     * The tokens that constitute a raw comparison between two scheduling times. Unlike {@link
+     * #RAW_ARITHMETIC_TOKENS}, these are gated by {@link #isRawComparison}'s receiver-name
+     * heuristic rather than being unconditional: their raw whole-file counts under {@code
+     * src/main/java} number in the dozens each, and most of those are {@code LocalDate} and
+     * {@code BigDecimal} comparisons that have nothing to do with the midnight boundary. An
+     * ungated scan would demand a hundred-entry allowlist, which is the guard-becomes-decoration
+     * failure this class's own warning above exists to prevent.
+     */
+    private static final List<String> COMPARISON_TOKENS = List.of(
+            ".isAfter(",
+            ".isBefore(",
+            ".compareTo(");
+
     /** DayWindow is the implementation of the rule, so it is the one file exempt from it. */
     private static final String IMPLEMENTATION_CLASS = "com.wfm.util.DayWindow";
 
@@ -74,7 +91,7 @@ class MidnightTimeArithmeticGuardTest {
 
     @Test
     void rawTimeArithmeticInProductionCode_matchesTheAllowlistExactly() throws IOException {
-        Set<String> derived = scanProductionSources();
+        Set<String> derived = scanProductionSources(MidnightTimeArithmeticGuardTest::isRawArithmetic);
         Set<String> allowlist = parseAllowlist();
 
         Set<String> notAllowlisted = new HashSet<>(derived);
@@ -91,6 +108,40 @@ class MidnightTimeArithmeticGuardTest {
                         (durationMinutes / overlaps / contains / startsBefore / endMinute / \
                         plusWithinDay) unless BOTH endpoints are start times, in which case add \
                         the line to the allowlist WITH a note saying why: %s
+
+                        STALE, allowlisted but no longer present -- remove the entry: %s""",
+                        RESOURCE, notAllowlisted, staleEntries)
+                .containsExactlyInAnyOrderElementsOf(allowlist);
+    }
+
+    /**
+     * The second half of the midnight-boundary hole: {@code
+     * LocalTime.MIDNIGHT.isAfter(LocalTime.of(23, 0))} is {@code false}, so a raw {@code isAfter} /
+     * {@code isBefore} / {@code compareTo} on two scheduling times is exactly as wrong as the raw
+     * arithmetic above, and equally unguarded until this test. Gated by {@link #isRawComparison}'s
+     * receiver-name heuristic rather than unconditional, for the reason documented on {@link
+     * #COMPARISON_TOKENS}. Same set-equality contract as the arithmetic assertion above: widening
+     * either direction to a subset check turns the guard into decoration.
+     */
+    @Test
+    void rawTimeComparisonsInProductionCode_matchesTheComparisonAllowlistExactly() throws IOException {
+        Set<String> derived = scanProductionSources(MidnightTimeArithmeticGuardTest::isRawComparison);
+        Set<String> allowlist = parseComparisonAllowlist();
+
+        Set<String> notAllowlisted = new HashSet<>(derived);
+        notAllowlisted.removeAll(allowlist);
+        Set<String> staleEntries = new HashSet<>(allowlist);
+        staleEntries.removeAll(derived);
+
+        assertThat(derived)
+                .as("""
+                        Raw LocalTime interval comparisons in src/main/java must equal the \
+                        comparison allowlist in %s exactly.
+
+                        NEW, not allowlisted -- route these through com.wfm.util.DayWindow \
+                        (startsBefore / overlaps / contains / endMinute) unless BOTH endpoints \
+                        are start times, in which case add the line to the allowlist WITH a note \
+                        saying why: %s
 
                         STALE, allowlisted but no longer present -- remove the entry: %s""",
                         RESOURCE, notAllowlisted, staleEntries)
@@ -164,8 +215,11 @@ class MidnightTimeArithmeticGuardTest {
     void allowlist_parsesAsNonEmpty() throws IOException {
         // An empty expected set would make the set-equality assertion above vacuously satisfiable
         // if production code ever stopped matching at all. parseAllowlist throws on empty, so
-        // reaching this assertion is itself part of the proof.
+        // reaching this assertion is itself part of the proof. Same reasoning applies to the
+        // comparison allowlist -- an empty comparison section would make the second assertion
+        // above vacuous in exactly the same way.
         assertThat(parseAllowlist()).isNotEmpty();
+        assertThat(parseComparisonAllowlist()).isNotEmpty();
     }
 
     @Test
@@ -196,17 +250,41 @@ class MidnightTimeArithmeticGuardTest {
     }
 
     @Test
+    void theComparisonScanDetectsAFreshOccurrence() {
+        // Proves the comparison matcher is live rather than structurally unable to fail, and that
+        // its receiver-name heuristic runs both ways: a scheduling-time receiver is caught, a
+        // LocalDate or BigDecimal receiver is not, and a comment mentioning any of the tokens is
+        // never matched regardless of receiver.
+        assertThat(isRawComparison("if (slotStart.isBefore(cutoff)) { }")).isTrue();
+        assertThat(isRawComparison("if (envelopeStart.isAfter(bandEnd)) { }")).isTrue();
+        assertThat(isRawComparison("if (date.isAfter(periodEnd)) { }")).isFalse();
+        assertThat(isRawComparison("if (hours.compareTo(breakConfig.getMaxHours()) > 0) { }")).isFalse();
+        assertThat(isRawComparison("// slotStart.isBefore(cutoff) is handled by DayWindow")).isFalse();
+    }
+
+    @Test
     void missingAllowlistHeading_failsLoudly() {
         // The parser must never silently return an empty set for a malformed resource -- that is
-        // the one way this guard could pass while enforcing nothing.
+        // the one way this guard could pass while enforcing nothing. Proven generically for an
+        // arbitrary heading, and specifically for both concrete allowlist headings this class
+        // parses, so neither the arithmetic nor the comparison assertion can go vacuous.
         assertThatThrownBy(() -> parseFencedBlock(readResource(), "### No Such Heading"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No Such Heading");
+        assertThatThrownBy(() -> parseFencedBlock("# Empty resource\n\nno headings here", ALLOWLIST_HEADING))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(ALLOWLIST_HEADING);
+        assertThatThrownBy(() -> parseFencedBlock(
+                        "# Empty resource\n\nno headings here", COMPARISON_ALLOWLIST_HEADING))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(COMPARISON_ALLOWLIST_HEADING);
     }
 
     // --- scanning ---
 
-    private Set<String> scanProductionSources() throws IOException {
+    /** Walks {@code src/main/java} once, collecting every line {@code matcher} accepts. Shared by
+     *  both the arithmetic and the comparison assertions so there is one walk, not two. */
+    private Set<String> scanProductionSources(Predicate<String> matcher) throws IOException {
         Set<String> found = new LinkedHashSet<>();
         try (Stream<Path> files = Files.walk(SOURCE_ROOT)) {
             List<Path> javaFiles = files.filter(p -> p.toString().endsWith(".java")).sorted().toList();
@@ -217,7 +295,7 @@ class MidnightTimeArithmeticGuardTest {
                 }
                 for (String rawLine : Files.readAllLines(file, StandardCharsets.UTF_8)) {
                     String code = stripComment(rawLine);
-                    if (isRawArithmetic(rawLine)) {
+                    if (matcher.test(rawLine)) {
                         found.add(fqcn + " :: " + code);
                     }
                 }
@@ -233,6 +311,76 @@ class MidnightTimeArithmeticGuardTest {
             return false;
         }
         return RAW_ARITHMETIC_TOKENS.stream().anyMatch(code::contains);
+    }
+
+    /**
+     * True when this source line contains a raw comparison ({@link #COMPARISON_TOKENS}) whose
+     * RECEIVER looks like a scheduling time, per {@link #looksLikeSchedulingTime}. Only the
+     * receiver is inspected — the argument deliberately is not, because inspecting it pulls in
+     * {@code date.isAfter(periodEnd)} and {@code hours.compareTo(breakConfig.getMaxHours())} --
+     * {@code LocalDate} and {@code BigDecimal} noise this guard does not own (see
+     * midnight-time-arithmetic.md: date tokens belong to SOLV-02's calendar-vs-business-date join
+     * guard).
+     */
+    private static boolean isRawComparison(String rawLine) {
+        String code = stripComment(rawLine);
+        if (code.isEmpty()) {
+            return false;
+        }
+        for (String token : COMPARISON_TOKENS) {
+            int from = 0;
+            while (true) {
+                int pos = code.indexOf(token, from);
+                if (pos < 0) {
+                    break;
+                }
+                if (looksLikeSchedulingTime(receiverName(code, pos))) {
+                    return true;
+                }
+                from = pos + 1;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The identifier immediately to the left of a comparison token starting at {@code tokenStart}
+     * (the token's leading {@code .}), tolerating one trailing empty argument list so that both a
+     * bare field ({@code slotStart}) and an accessor ({@code getStartTime()}) resolve to a single
+     * name — the receiver, not any qualifier further left.
+     */
+    private static String receiverName(String code, int tokenStart) {
+        int p = tokenStart - 1;
+        if (p >= 1 && code.charAt(p) == ')' && code.charAt(p - 1) == '(') {
+            p -= 2;
+        }
+        int end = p + 1;
+        int start = end;
+        while (start > 0 && isIdentifierChar(code.charAt(start - 1))) {
+            start--;
+        }
+        return code.substring(Math.max(start, 0), Math.max(end, 0));
+    }
+
+    private static boolean isIdentifierChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+
+    /**
+     * The receiver-name heuristic documented in {@code midnight-time-arithmetic.md}: a receiver
+     * looks like a scheduling time when its name ENDS WITH {@code time}, {@code start} or
+     * {@code end}, or BEGINS WITH {@code envelope}, {@code band}, {@code break} or {@code slot} —
+     * case-insensitively. A false positive fails safe (a human looks at a diff); a receiver named
+     * something else entirely is invisible to this heuristic by design.
+     */
+    private static boolean looksLikeSchedulingTime(String receiver) {
+        if (receiver.isEmpty()) {
+            return false;
+        }
+        String name = receiver.toLowerCase(Locale.ROOT);
+        return name.endsWith("time") || name.endsWith("start") || name.endsWith("end")
+                || name.startsWith("envelope") || name.startsWith("band") || name.startsWith("break")
+                || name.startsWith("slot");
     }
 
     /**
@@ -265,6 +413,17 @@ class MidnightTimeArithmeticGuardTest {
         if (entries.isEmpty()) {
             throw new IllegalStateException(
                     RESOURCE + " parsed to an EMPTY allowlist under '" + ALLOWLIST_HEADING
+                            + "'. An empty expected set would make the guard vacuous.");
+        }
+        return entries;
+    }
+
+    private Set<String> parseComparisonAllowlist() throws IOException {
+        Set<String> entries = parseFencedBlock(readResource(), COMPARISON_ALLOWLIST_HEADING);
+        if (entries.isEmpty()) {
+            throw new IllegalStateException(
+                    RESOURCE + " parsed to an EMPTY comparison allowlist under '"
+                            + COMPARISON_ALLOWLIST_HEADING
                             + "'. An empty expected set would make the guard vacuous.");
         }
         return entries;
