@@ -74,12 +74,22 @@ have knowable answers (D-13). Planning also found one contradiction between two 
 resolved as planner decision P-01 in `18-01-PLAN.md`.
 **Plans**: 6 plans
 Plans:
+
+**Wave 1**
+
 - [ ] 18-01-PLAN.md — Tracer: day-start and business-date land end to end, every write path green (BDAY-01, BDAY-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 18-02-PLAN.md — Accepted-schedule refusal, day-start disclosure, migration reconciliation (BDAY-01, BDAY-02)
 - [ ] 18-03-PLAN.md — Anchored DayWindow helpers and the business-day generation walk (BDAY-03, BDAY-02)
 - [ ] 18-04-PLAN.md — Constructed midnight-boundary regression suite with a non-vacuity validator (BDAY-06)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 18-05-PLAN.md — Business-date write-path guard and V53 through real Flyway (BDAY-08, BDAY-02)
 - [ ] 18-06-PLAN.md — Comparison-operator guard extension and its pipeline-level red-proof (BDAY-05)
+
 **UI hint**: yes
 
 ### Phase 19: DayWindow Re-anchoring
