@@ -56,3 +56,27 @@ envelope crossing the day anchor
   stores the smallest value in its type for "the end of the day". Reusable verbatim against a
   genuine multi-day-spanning envelope should one ever exist -- this predicate reads only a
   schedule's own problem facts, never a fixture's construction helpers.
+
+## Scenarios asserting today's behaviour
+
+Three scenarios in this suite assert what this codebase does TODAY at a property whose correct
+behaviour has not shipped yet. Each is marked `@AssertsTodaysBehaviour` on its test method
+(`com.wfm.support.AssertsTodaysBehaviour`); `MidnightBoundaryScenarioRegistryTest` asserts the
+marked-method set and the fenced registry below are set-equal in BOTH directions. A later phase
+implementing one of these requirements must remove the corresponding entry below in the SAME
+change that flips the assertion it names -- leaving a stale entry here after the method it
+described was deleted or rewritten fails the build exactly as an unregistered new mark does.
+
+| Scenario | Flipped by | What it flips to |
+|---|---|---|
+| A day-off record's attribution to a shift's calendar date | OVNT-03 | Attribution follows the business day a midnight-spanning shift starts on, not each individually stamped calendar date |
+| Contracted hours consumed by the starting weekday only | OVNT-04 | The whole stretch of a midnight-spanning shift consumes only the starting weekday's contracted-hours row |
+| A shift starting before and ending after midnight | OVNT-01 | The interval means the shift crosses the day anchor into the next calendar date, not that the interval is malformed |
+
+### Scenarios asserting today's behaviour
+
+```
+com.wfm.solver.MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly -> OVNT-03
+com.wfm.service.MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows -> OVNT-04
+com.wfm.service.MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses -> OVNT-01
+```
