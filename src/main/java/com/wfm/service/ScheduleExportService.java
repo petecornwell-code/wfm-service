@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.dto.AgentDayOffResponse;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleDetailResponse.*;
+import com.wfm.util.DayWindow;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
@@ -363,7 +364,11 @@ public class ScheduleExportService {
         LocalTime latest = null;
         for (AssignmentDetail ad : entry.assignments()) {
             if (earliest == null || ad.startTime().isBefore(earliest)) earliest = ad.startTime();
-            if (latest == null || ad.endTime().isAfter(latest)) latest = ad.endTime();
+            // Compared as END boundaries: an assignment ending at midnight stores 00:00, which
+            // isAfter() reads as the earliest time of day, so the roster cell would under-report
+            // the shift's true end time. See FteUploadService and ShiftLibraryGenerationService
+            // for the same precedent.
+            if (latest == null || DayWindow.endMinute(ad.endTime()) > DayWindow.endMinute(latest)) latest = ad.endTime();
         }
         return earliest + "-" + latest;
     }
