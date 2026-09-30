@@ -369,6 +369,7 @@ class DeskServiceSchedulingModeTest {
         timeslot.setDate(date);
         timeslot.setStartTime(LocalTime.of(8, 0));
         timeslot.setEndTime(LocalTime.of(8, 30));
+        timeslot.setBusinessDate(date);
         return timeslotRepository.save(timeslot);
     }
 

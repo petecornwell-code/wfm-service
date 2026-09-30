@@ -322,6 +322,10 @@ public class ScheduleService {
             snapshot.setDate(live.getDate());
             snapshot.setStartTime(live.getStartTime());
             snapshot.setEndTime(live.getEndTime());
+            // BDAY-02/BDAY-08: this is the propagating writer -- it copies the live row's
+            // already-derived business_date rather than computing a new one, since this is a
+            // snapshot of an already-generated row, not a new generation.
+            snapshot.setBusinessDate(live.getBusinessDate());
             entityManager.persist(snapshot);
             timeslotRemap.put(live.getId(), snapshot.getId());
         }

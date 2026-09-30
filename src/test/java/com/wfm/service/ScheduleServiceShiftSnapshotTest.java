@@ -247,6 +247,7 @@ class ScheduleServiceShiftSnapshotTest {
         liveTimeslot.setDate(MONDAY);
         liveTimeslot.setStartTime(LocalTime.of(8, 0));
         liveTimeslot.setEndTime(LocalTime.of(9, 0));
+        liveTimeslot.setBusinessDate(MONDAY);
         liveTimeslot = timeslotRepository.save(liveTimeslot);
 
         UUID inMemoryScheduleId = UUID.randomUUID();
@@ -684,6 +685,7 @@ class ScheduleServiceShiftSnapshotTest {
             ts.setDate(date);
             ts.setStartTime(start);
             ts.setEndTime(start.plusHours(1));
+            ts.setBusinessDate(date);
             saved.add(timeslotRepository.save(ts));
         }
         return saved;

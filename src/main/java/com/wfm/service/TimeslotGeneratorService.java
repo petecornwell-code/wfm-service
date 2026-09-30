@@ -141,6 +141,11 @@ public class TimeslotGeneratorService {
                     ts.setDate(date);
                     ts.setStartTime(slotStart);
                     ts.setEndTime(slotEnd);
+                    // BDAY-02/BDAY-08: this generator is the sole deriving writer of
+                    // business_date. Today's value equals the calendar date because no desk
+                    // has a non-default day start; BDAY-04 is what makes the two diverge, once
+                    // a desk's day start can be something other than 00:00.
+                    ts.setBusinessDate(date);
                     toCreate.add(ts);
                 }
             }

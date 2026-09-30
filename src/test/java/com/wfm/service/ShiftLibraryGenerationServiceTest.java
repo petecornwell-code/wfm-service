@@ -905,6 +905,7 @@ class ShiftLibraryGenerationServiceTest {
         timeslot.setDate(date);
         timeslot.setStartTime(start);
         timeslot.setEndTime(end);
+        timeslot.setBusinessDate(date);
         return timeslotRepository.save(timeslot);
     }
 

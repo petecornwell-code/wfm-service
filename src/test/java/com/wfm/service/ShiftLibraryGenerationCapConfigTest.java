@@ -121,6 +121,7 @@ class ShiftLibraryGenerationCapConfigTest {
         timeslot.setDate(date);
         timeslot.setStartTime(start);
         timeslot.setEndTime(end);
+        timeslot.setBusinessDate(date);
         timeslot = timeslotRepository.save(timeslot);
 
         StaffingRequirement requirement = new StaffingRequirement();
