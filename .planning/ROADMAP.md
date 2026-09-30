@@ -30,6 +30,7 @@ than four captured live desks standing in for both jobs at once.
 - [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
 
 ### Phase 18: Business-Day Foundation & Guards
+
 **Goal**: The guard tests and regression fixtures that will prove the re-anchoring correct already
 exist and pass green against today's `00:00`-only behaviour, and the schema/plumbing for a per-desk
 day start exists as a provable no-op — so the re-anchoring in Phase 19 is provably the first change
@@ -37,6 +38,7 @@ that could make any of this red.
 **Depends on**: Nothing new — first phase of v1.5, continuing from v1.3's Phase 17
 **Requirements**: BDAY-01, BDAY-02, BDAY-03, BDAY-05, BDAY-06, BDAY-08
 **Success Criteria** (what must be TRUE):
+
   1. A desk can store a day-start time (surfaced in the desk configuration UI, but gated to accept
      only `00:00` in production) and a timeslot can store a business date, and every existing desk's
      business date is provably identical to its calendar date — by construction, not convention
@@ -93,6 +95,7 @@ Plans:
 **UI hint**: yes
 
 ### Phase 19: DayWindow Re-anchoring
+
 **Goal**: `DayWindow`'s interval arithmetic is anchored on a caller-supplied day start instead of an
 implicit midnight, in one atomic, compiler-forced, revertible change — proven behaviour-preserving
 for every desk still at the `00:00` default.
@@ -100,6 +103,7 @@ for every desk still at the `00:00` default.
 against otherwise)
 **Requirements**: BDAY-04
 **Success Criteria** (what must be TRUE):
+
   1. Every `DayWindow` call site supplies an explicit day-start parameter; the one-argument,
      midnight-implicit overload no longer exists, so a missed site is a compile failure, not a
      judgement call (BDAY-04).
@@ -127,16 +131,34 @@ plumbing commit forward, not a single commit). All three are recorded in full in
 **Plans**: 8 plans, 6 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 19-01-PLAN.md — Additive solver anchor channel as a provable no-op (V54, `Schedule`/`ScheduleConfig`/DTO); the range's exclusive lower bound (wave 1)
 - [ ] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 19-03-PLAN.md — Tracer: `DayWindow.anchoredAt` plus nine instance methods, and one desk anchor reaches one constraint's interval check end-to-end (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 19-04-PLAN.md — Break-band times and net hours take a `DayWindow` across every caller; controller served by the service; `breakClustering` wired (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 19-05-PLAN.md — Retire the transitional one-argument `ShiftBandPair.covers` and re-point its remaining callers (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 19-06-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly (wave 5)
 - [ ] 19-07-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 19-08-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5 (wave 6)
 
 ### Phase 20: Solver Business-Date Correctness
+
 **Goal**: Every solver join, the pre-solve seat-supply check, SLOT-mode accounting, and demand
 upload/coverage reporting all resolve the same business date for the same timeslot — proven by
 per-constraint match counts, not just score — and one small live desk shows the re-anchoring changed
@@ -146,6 +168,7 @@ correctly express overnight intervals for the constraints that do interval math,
 date-equality joins)
 **Requirements**: SOLV-01, SOLV-02, SOLV-03, SOLV-04, SOLV-05, SOLV-06, SOLV-07, BDAY-07
 **Success Criteria** (what must be TRUE):
+
   1. All business-date-relevant joins in `ScheduleConstraintProvider` (re-verified count, ~12 at
      research time) key on business date, moved in one deliberate pass, backed by a structural guard
      test that fails if any constraint joins on calendar date where business date is meant — in both
@@ -178,6 +201,7 @@ by-product of SOLV-01..04 — treat it as its own deliverable here.
 **Plans**: TBD
 
 ### Phase 21: Overnight Shift Templates
+
 **Goal**: A desk can define a shift that spans midnight, and every surface that touches it — save-time
 validation, contracted-hours consumption, day-off blocking, the schedule UI grid, the Excel export —
 treats it correctly as one continuous thing belonging to the business day it starts on.
@@ -185,6 +209,7 @@ treats it correctly as one continuous thing belonging to the business day it sta
 20 (business-date joins must be trustworthy)
 **Requirements**: OVNT-01, OVNT-02, OVNT-03, OVNT-04, OVNT-05, OVNT-06, OVNT-07
 **Success Criteria** (what must be TRUE):
+
   1. An operator can save a shift template whose end time is earlier in the clock than its start
      time, with correct net hours computed for the overnight span (OVNT-01).
   2. That shift is reported, everywhere it is displayed, against the business day it starts on
@@ -210,6 +235,7 @@ reads it for overnight shift assignment.
 **UI hint**: yes
 
 ### Phase 22: Minimum Rest
+
 **Goal**: An operator can require a minimum gap between an agent's consecutive shifts, enforced as a
 hard constraint the solver cannot silently violate, with a pre-solve refusal for the structurally
 unavoidable cases and a per-agent, per-date waiver for the genuinely exceptional ones.
@@ -217,6 +243,7 @@ unavoidable cases and a per-agent, per-date waiver for the genuinely exceptional
 shift templates must exist for consecutive shifts to actually be adjacent to each other)
 **Requirements**: REST-01, REST-02, REST-03, REST-04, REST-05, REST-06, REST-07
 **Success Criteria** (what must be TRUE):
+
   1. An operator can set a minimum rest period between consecutive shifts, per desk, via the desk
      configuration UI, and a desk that sets none solves exactly as it does today (REST-01, REST-04).
   2. The solver treats insufficient rest — measured between actual end and start instants, ordered by
@@ -301,7 +328,6 @@ Backlog 999.1–999.3.
 Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
-
 
 ## Backlog
 
