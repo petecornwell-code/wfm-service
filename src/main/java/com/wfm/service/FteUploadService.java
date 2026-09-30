@@ -128,9 +128,11 @@ public class FteUploadService {
                 throw new IllegalArgumentException("Could not determine date/time range from spreadsheet");
             }
 
-            // Generate timeslots for the full date range (reuses existing if they match)
+            // Generate timeslots for the full date range (reuses existing if they match).
+            // BDAY-01: DeskService.setDayStart's 00:00-only gate makes any other anchor
+            // unreachable this phase; Phase 19 re-anchors this to the desk's own value.
             List<Timeslot> timeslots = timeslotGeneratorService.generateTimeslots(
-                    deskId, minDate, maxDate, startTime, endTime, incrementMinutes);
+                    deskId, minDate, maxDate, LocalTime.MIDNIGHT, startTime, endTime, incrementMinutes);
 
             // Build lookup: date -> startTime -> Timeslot
             Map<LocalDate, Map<LocalTime, Timeslot>> timeslotLookup = new HashMap<>();

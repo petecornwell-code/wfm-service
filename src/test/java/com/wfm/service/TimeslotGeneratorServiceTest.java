@@ -33,7 +33,7 @@ class TimeslotGeneratorServiceTest {
     /** Convenience wrapper: is a slot [start, start+durationMinutes) wanted at this increment? */
     private static boolean desired(LocalTime start, int durationMinutes, int incrementMinutes) {
         return TimeslotGeneratorService.isDesired(
-                DAY, start, start.plusMinutes(durationMinutes),
+                LocalTime.MIDNIGHT, DAY, start, start.plusMinutes(durationMinutes),
                 PERIOD_START, PERIOD_END, OPEN, CLOSE, incrementMinutes);
     }
 
@@ -116,7 +116,7 @@ class TimeslotGeneratorServiceTest {
         private static boolean desiredOn(LocalDate date) {
             LocalTime start = LocalTime.of(9, 0);
             return TimeslotGeneratorService.isDesired(
-                    date, start, start.plusMinutes(60),
+                    LocalTime.MIDNIGHT, date, start, start.plusMinutes(60),
                     PERIOD_START, PERIOD_END, OPEN, CLOSE, 60);
         }
 

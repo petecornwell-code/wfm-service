@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,10 +42,13 @@ public class TimeslotController {
     @PostMapping("/generate")
     public ResponseEntity<List<TimeslotResponse>> generateTimeslots(@PathVariable UUID deskId,
                                                                       @RequestBody GenerateTimeslotsRequest request) {
+        // BDAY-01: DeskService.setDayStart's 00:00-only gate makes any other anchor unreachable
+        // through this endpoint this phase; Phase 19 re-anchors this to the desk's own value.
         List<Timeslot> generated = timeslotGeneratorService.generateTimeslots(
                 deskId,
                 request.periodStartDate(),
                 request.periodEndDate(),
+                LocalTime.MIDNIGHT,
                 request.startTime(),
                 request.endTime(),
                 request.incrementMinutes()

@@ -77,7 +77,7 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
         UUID deskId = saveDesk();
 
         List<Timeslot> created = timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
         entityManager.flush();
 
         assertThat(created).hasSize(16);
@@ -97,10 +97,10 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
         UUID deskId = saveDesk();
 
         List<Timeslot> first = timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
         entityManager.flush();
         List<Timeslot> second = timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
 
         // isDesired used to judge every slot on such a day obsolete, so the second call would
         // delete all 16 and recreate them -- taking any linked staffing requirements with them.
@@ -115,7 +115,7 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
         TenantContext.setTenantId(TENANT_ID);
         UUID deskId = saveDesk();
         timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(8, 0), LocalTime.MIDNIGHT, 60);
         entityManager.flush();
         entityManager.clear();
 
@@ -135,7 +135,7 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
         TenantContext.setTenantId(TENANT_ID);
         UUID deskId = saveDesk();
         timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(8, 0), LocalTime.of(17, 0), 30);
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(8, 0), LocalTime.of(17, 0), 30);
         entityManager.flush();
         entityManager.clear();
 
@@ -153,7 +153,7 @@ class MidnightTimeslotPostgresTest extends PostgresBackedTest {
         UUID deskId = saveDesk();
 
         assertThatThrownBy(() -> timeslotGeneratorService.generateTimeslots(
-                deskId, DAY, DAY, LocalTime.of(22, 0), LocalTime.of(6, 0), 60))
+                deskId, DAY, DAY, LocalTime.MIDNIGHT, LocalTime.of(22, 0), LocalTime.of(6, 0), 60))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Time range must be positive");
     }

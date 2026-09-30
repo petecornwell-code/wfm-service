@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,14 +70,22 @@ public class TimeslotGeneratorService {
 
     @Transactional
     public List<Timeslot> generateTimeslots(UUID deskId, LocalDate periodStart, LocalDate periodEnd,
-                                            LocalTime startTime, LocalTime endTime, int incrementMinutes) {
+                                            LocalTime dayStart, LocalTime startTime, LocalTime endTime,
+                                            int incrementMinutes) {
         if (incrementMinutes != 15 && incrementMinutes != 30 && incrementMinutes != 60) {
             throw new IllegalArgumentException("incrementMinutes must be 15, 30, or 60");
         }
-        // endTime 00:00 means END OF DAY (1440), so this is DayWindow arithmetic rather than
-        // startTime.until(endTime) -- the raw call returns a NEGATIVE range for any desk whose
-        // day runs to midnight and rejects it as "not positive".
-        long rangeMinutes = (long) DayWindow.endMinute(endTime) - DayWindow.startMinute(startTime);
+        // BDAY-03: the refusal fires before TenantContext.getTenantId() and before any repository
+        // call -- late but loud at the generation boundary, the same rule DayWindow itself
+        // follows. The increment is not desk state; it arrives per call, inferred from the
+        // uploaded spreadsheet's own columns, so this cannot be validated any earlier than here.
+        requireDayStartTiles(dayStart, incrementMinutes);
+
+        // endTime 00:00 means END OF the dayStart-anchored business day, so this is DayWindow
+        // arithmetic anchored at dayStart rather than startTime.until(endTime) -- the raw call
+        // returns a NEGATIVE range for any desk whose business day runs to its own anchor.
+        long rangeMinutes = (long) DayWindow.endMinuteFromDayStart(dayStart, endTime)
+                - DayWindow.startMinuteFromDayStart(dayStart, startTime);
         if (rangeMinutes <= 0 || rangeMinutes % incrementMinutes != 0) {
             throw new IllegalArgumentException("Time range must be positive and evenly divisible by incrementMinutes");
         }
@@ -92,7 +101,7 @@ public class TimeslotGeneratorService {
 
         // Check if existing timeslots already match the requested parameters.
         // If so, return them as-is to preserve linked staffing requirements.
-        if (timeslotsMatch(existing, periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
+        if (timeslotsMatch(dayStart, existing, periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
             return existing;
         }
 
@@ -102,7 +111,7 @@ public class TimeslotGeneratorService {
         Map<String, Timeslot> survivingByKey = new HashMap<>();
         List<UUID> obsoleteIds = new ArrayList<>();
         for (Timeslot ts : existing) {
-            if (isDesired(ts.getDate(), ts.getStartTime(), ts.getEndTime(),
+            if (isDesired(dayStart, ts.getDate(), ts.getStartTime(), ts.getEndTime(),
                     periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
                 survivingByKey.put(slotKey(ts.getDate(), ts.getStartTime(), ts.getEndTime()), ts);
             } else {
@@ -121,31 +130,34 @@ public class TimeslotGeneratorService {
             entityManager.clear();
         }
 
-        // Create timeslots for slots that don't already exist
+        // Create timeslots for slots that don't already exist. BDAY-03: periodStart and
+        // periodEnd are BUSINESS dates now, so the outer cursor walks business days and each
+        // slot's calendar date and times are DERIVED from the anchor plus the slot's offset --
+        // never computed with local minute arithmetic, so an anchor-crossing bug cannot hide
+        // outside DayWindow.
         List<Timeslot> toCreate = new ArrayList<>();
-        // Iterate on minute-of-day rather than on LocalTime: the previous
-        // `time.isBefore(endTime)` loop produced ZERO slots for a desk ending at midnight, and
-        // LocalTime.plusMinutes would have wrapped past midnight into the next morning rather
-        // than stopping. The final slot of a midnight-ending day is written with endTime 00:00.
-        int firstMinute = DayWindow.startMinute(startTime);
-        int lastMinute = DayWindow.endMinute(endTime);
-        for (LocalDate date = periodStart; !date.isAfter(periodEnd); date = date.plusDays(1)) {
-            for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
-                LocalTime slotStart = DayWindow.toLocalTime(minute);
-                LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
-                String key = slotKey(date, slotStart, slotEnd);
+        int firstOffset = DayWindow.startMinuteFromDayStart(dayStart, startTime);
+        int lastOffset = DayWindow.endMinuteFromDayStart(dayStart, endTime);
+        for (LocalDate businessDate = periodStart; !businessDate.isAfter(periodEnd);
+                businessDate = businessDate.plusDays(1)) {
+            for (int offset = firstOffset; offset < lastOffset; offset += incrementMinutes) {
+                LocalDate slotDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, offset);
+                LocalTime slotStart = DayWindow.timeAtDayStartOffset(dayStart, offset);
+                LocalTime slotEnd = DayWindow.timeAtDayStartOffset(dayStart, offset + incrementMinutes);
+                String key = slotKey(slotDate, slotStart, slotEnd);
                 if (!survivingByKey.containsKey(key)) {
                     Timeslot ts = new Timeslot();
                     ts.setTenantId(tenantId);
                     ts.setDeskId(deskId);
-                    ts.setDate(date);
+                    ts.setDate(slotDate);
                     ts.setStartTime(slotStart);
                     ts.setEndTime(slotEnd);
-                    // BDAY-02/BDAY-08: this generator is the sole deriving writer of
-                    // business_date. Today's value equals the calendar date because no desk
-                    // has a non-default day start; BDAY-04 is what makes the two diverge, once
-                    // a desk's day start can be something other than 00:00.
-                    ts.setBusinessDate(date);
+                    // BDAY-02/BDAY-03: business_date is the BUSINESS-day cursor itself, not the
+                    // derived calendar date -- the two diverge whenever dayStart is not 00:00. A
+                    // 21:00-anchored desk's post-midnight rows carry the FOLLOWING calendar date
+                    // but the ORIGINAL business date. This generator remains the sole deriving
+                    // writer of business_date (BDAY-08); it never reads the column back.
+                    ts.setBusinessDate(businessDate);
                     toCreate.add(ts);
                 }
             }
@@ -154,11 +166,53 @@ public class TimeslotGeneratorService {
             timeslotRepository.saveAll(toCreate);
         }
 
-        return timeslotRepository
+        // BDAY-03: the closing read-back's bounds are business dates, not calendar dates.
+        // A 21:00-anchored desk's last business day writes rows on calendar periodEnd + 1, so
+        // the fetch widens its calendar upper bound by one day and then filters and orders on
+        // the DERIVED business date -- never the stored column -- so a calendar-bounded
+        // fetch cannot silently under-return the post-midnight half of the last business day.
+        // At a 00:00 anchor the widened fetch's extra rows are all removed by the filter, so the
+        // returned list and its order are unchanged.
+        List<Timeslot> readBack = timeslotRepository
                 .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
-                        tenantId, deskId, periodStart, periodEnd);
+                        tenantId, deskId, periodStart, periodEnd.plusDays(1));
+        return readBack.stream()
+                .filter(ts -> {
+                    LocalDate businessDate = DayWindow.businessDateOf(dayStart, ts.getDate(), ts.getStartTime());
+                    return !businessDate.isBefore(periodStart) && !businessDate.isAfter(periodEnd);
+                })
+                .sorted(Comparator
+                        .comparing((Timeslot ts) -> DayWindow.businessDateOf(dayStart, ts.getDate(), ts.getStartTime()))
+                        .thenComparingInt(ts -> DayWindow.startMinuteFromDayStart(dayStart, ts.getStartTime())))
+                .toList();
     }
 
+    /**
+     * BDAY-03: whether {@code dayStart} is a whole multiple of {@code incrementMinutes} -- the
+     * necessary condition for a desk's day-start to tile the generation grid without leaving a
+     * fractional slot. Package-private static, the same shape as {@link #isDesired}, so a plain
+     * unit test can call it directly with an arbitrary day-start.
+     *
+     * @throws IllegalArgumentException naming the day-start, the increment, and why the two
+     *         cannot tile a day, or when {@code dayStart} is null.
+     */
+    static void requireDayStartTiles(LocalTime dayStart, int incrementMinutes) {
+        if (dayStart == null) {
+            throw new IllegalArgumentException(
+                    "Day start is required to check tiling against the generation increment");
+        }
+        if (DayWindow.startMinute(dayStart) % incrementMinutes != 0) {
+            throw new IllegalArgumentException(
+                    "Desk day-start " + dayStart + " is not a whole multiple of the "
+                            + incrementMinutes + "-minute generation increment and cannot tile a day");
+        }
+    }
+
+    // BDAY-02: slotKey stays keyed on the CALENDAR date, never the business date, because it
+    // mirrors the database's partial unique index on (tenant, desk, date, start_time, end_time).
+    // The survivor map above and the newly-generated keys here are built the same way, so a
+    // stale slot can never block its own replacement -- the business date is not part of a
+    // row's identity.
     private static String slotKey(LocalDate date, LocalTime start, LocalTime end) {
         return date + "|" + start + "|" + end;
     }
@@ -176,16 +230,28 @@ public class TimeslotGeneratorService {
      * added the correctly-sized slot alongside it. The unique index includes {@code end_time},
      * so the database accepts both and the desk ends up mixing granularities.
      */
-    static boolean isDesired(LocalDate date, LocalTime slotStart, LocalTime slotEnd,
+    static boolean isDesired(LocalTime dayStart, LocalDate date, LocalTime slotStart, LocalTime slotEnd,
                              LocalDate periodStart, LocalDate periodEnd,
                              LocalTime startTime, LocalTime endTime, int incrementMinutes) {
-        if (date.isBefore(periodStart) || date.isAfter(periodEnd)) return false;
-        // DayWindow throughout: `!slotStart.isBefore(endTime)` is true for EVERY slot when
-        // endTime is 00:00, which marked every slot on a midnight-ending desk as obsolete.
-        if (slotStart.isBefore(startTime) || !DayWindow.startsBefore(slotStart, endTime)) return false;
-        long minutesFromStart = (long) DayWindow.startMinute(slotStart) - DayWindow.startMinute(startTime);
+        // BDAY-03: classify the row's business date by DERIVING it from the row's own calendar
+        // date and start time -- never by reading the stored business_date column, so
+        // SOLV-01 remains the first consumer of that stored value.
+        LocalDate businessDate = DayWindow.businessDateOf(dayStart, date, slotStart);
+        if (businessDate.isBefore(periodStart) || businessDate.isAfter(periodEnd)) return false;
+
+        // Anchored offset comparisons throughout: at a 00:00 anchor these agree exactly with the
+        // raw LocalTime comparisons they replace, including the rule that a slot ending exactly
+        // at the anchor (00:00 at a 00:00 anchor) still belongs to the business day it closes.
+        int slotStartOffset = DayWindow.startMinuteFromDayStart(dayStart, slotStart);
+        int windowStartOffset = DayWindow.startMinuteFromDayStart(dayStart, startTime);
+        int windowEndOffset = DayWindow.endMinuteFromDayStart(dayStart, endTime);
+        if (slotStartOffset < windowStartOffset || slotStartOffset >= windowEndOffset) return false;
+
+        long minutesFromStart = (long) slotStartOffset - windowStartOffset;
         if (minutesFromStart % incrementMinutes != 0) return false;
-        return DayWindow.endMinute(slotEnd) == DayWindow.startMinute(slotStart) + incrementMinutes;
+
+        int slotEndOffset = DayWindow.endMinuteFromDayStart(dayStart, slotEnd);
+        return slotEndOffset == slotStartOffset + incrementMinutes;
     }
 
     /**
@@ -198,17 +264,20 @@ public class TimeslotGeneratorService {
      * previous version inspected only the first and last rows, so corruption in the middle
      * of the period could report a match and skip the cleanup entirely.
      */
-    private boolean timeslotsMatch(List<Timeslot> existing, LocalDate periodStart, LocalDate periodEnd,
-                                   LocalTime startTime, LocalTime endTime, int incrementMinutes) {
+    private boolean timeslotsMatch(LocalTime dayStart, List<Timeslot> existing, LocalDate periodStart,
+                                   LocalDate periodEnd, LocalTime startTime, LocalTime endTime,
+                                   int incrementMinutes) {
         if (existing.isEmpty()) return false;
 
+        // periodStart/periodEnd are business days now (BDAY-03), so this is a span of
+        // business days -- which is what it should always have been counting.
         long days = ChronoUnit.DAYS.between(periodStart, periodEnd) + 1;
-        long slotsPerDay =
-                ((long) DayWindow.endMinute(endTime) - DayWindow.startMinute(startTime)) / incrementMinutes;
+        long slotsPerDay = ((long) DayWindow.endMinuteFromDayStart(dayStart, endTime)
+                - DayWindow.startMinuteFromDayStart(dayStart, startTime)) / incrementMinutes;
         if (existing.size() != days * slotsPerDay) return false;
 
         for (Timeslot ts : existing) {
-            if (!isDesired(ts.getDate(), ts.getStartTime(), ts.getEndTime(),
+            if (!isDesired(dayStart, ts.getDate(), ts.getStartTime(), ts.getEndTime(),
                     periodStart, periodEnd, startTime, endTime, incrementMinutes)) {
                 return false;
             }

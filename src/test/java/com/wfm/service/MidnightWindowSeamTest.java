@@ -43,7 +43,7 @@ class MidnightWindowSeamTest {
 
         private boolean desired(LocalTime slotStart, LocalTime slotEnd) {
             return TimeslotGeneratorService.isDesired(
-                    MONDAY, slotStart, slotEnd, MONDAY, MONDAY, OPEN, CLOSE, 60);
+                    LocalTime.MIDNIGHT, MONDAY, slotStart, slotEnd, MONDAY, MONDAY, OPEN, CLOSE, 60);
         }
 
         @Test
