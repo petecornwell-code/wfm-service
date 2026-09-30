@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 18
 current_phase_name: Business-Day Foundation & Guards
-status: planning
-stopped_at: Phase 18 planned - 6 plans across 3 waves
-last_updated: "2026-09-30T14:20:21.795Z"
+status: executing
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-09-30T14:52:31.400Z"
 last_activity: 2026-09-30
-last_activity_desc: Phase 18 planned - 6 plans, 3 waves, checker passed with 0 blockers
-state_head: 25af83b08edb49218f922c6a83e6ab2dad5e9962
+last_activity_desc: Phase 18 execution started
+state_head: 1cd52e2843822629a697c1bdcf5345a60740b809
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30 at v1.5 start)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 18 planned (6 plans, 3 waves) — ready to execute via `/gsd-execute-phase 18`
+**Current focus:** Phase 18 — Business-Day Foundation & Guards
 
 ## Current Position
 
-Phase: 18 (Business-Day Foundation & Guards) — READY TO EXECUTE
-Plan: —
-Status: 6 plans written and verified (0 blockers, 0 warnings, 1 advisory) — ready to execute
-Last activity: 2026-09-30 — Phase 18 planned: 6 plans across 3 waves, tracer-first. Research and
+Phase: 18 (Business-Day Foundation & Guards) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-09-30 — Phase 18 execution started
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
 planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
 
@@ -281,6 +281,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 17]: 17-03: SolverUsualShiftWritePathGuardTest proves XCUT-02 by behavioural mock-interaction proof plus a structural comment-stripped source scan -- ushf-05-write-paths.md now has 10 rows, UsualShiftWritePathGuardTest's hardcoded count updated to match
 - [Phase 17]: [Phase 17] Phase 17 Plan 04 checkpoint (proposed): consistentStartWeight=2 soft, preferredStartShiftModeWeight=1 soft shipped via V49 -- identical to V38/V48's incumbent values. D-08's ordering invariant (preference strictly below, both nonzero) makes 2 the smallest consistency weight that can satisfy it at all; the A/B benchmark itself was a null result (construction-heuristic plateau, ruled out as a step-budget/list-order artifact), so the shipped value rests on the redone per-agent-day sizing arithmetic and the explain() breakdown, not on the A/B. Worst-case projected total (~1,120 soft, 12% over minStaffingWeight's 1000 ceiling, entire roster drifting every day) is a documented, accepted residual risk -- no compliant weight pair avoids it under D-08.
 - [Phase 17]: Drift Report summary bar computed client-side from the date-filtered entry set, not report.summary, since schedules.get() never sends a date query param on initial fetch
+- [Phase 18]: Task 1 checkpoint resolved as-specified: V53's three-statement, single-migration shape (ADD COLUMN nullable, UPDATE backfill from date, ALTER COLUMN SET NOT NULL) confirmed; timeslot.business_date is a stored, write-time-populated column, neither a Postgres generated column nor a lazily-computed getter. — D-09/D-10 are locked decisions; defer-backfill was presented and rejected because it would create an unset state every reader must handle.
+- [Phase 18]: P-01/F-1 resolved as option (a): confirmOverride stripped entirely from DayStartRequest, DeskController.setDayStart, and DeskService.setDayStart rather than carried as inert dead surface with no reader in this phase. — An override with no caller is untested surface area whose name and semantics would be fixed by this phase and inherited by a later migration phase not yet designed.
 
 ### Blockers/Concerns
 
@@ -302,9 +304,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-09-30T13:02:21.272Z
-Stopped at: Phase 18 context gathered
-Resume file: .planning/phases/18-business-day-foundation-guards/18-CONTEXT.md
+Last session: 2026-09-30T14:52:31.383Z
+Stopped at: Completed 18-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -355,3 +357,4 @@ Resume file: .planning/phases/18-business-day-foundation-guards/18-CONTEXT.md
 | Phase 17 P03 | 55min | 3 tasks | 9 files |
 | Phase 17 P04 | ~46min (two sessions) | 3 tasks | 4 files |
 | Phase 17 P05 | 21 min | 2 tasks | 3 files |
+| Phase 18 P01 | 26min | 3 tasks | 15 files |
