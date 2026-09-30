@@ -10,6 +10,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers {@link TimeslotGeneratorService#isDesired}, the predicate that decides which
@@ -30,11 +32,19 @@ class TimeslotGeneratorServiceTest {
     private static final LocalTime OPEN = LocalTime.of(8, 0);
     private static final LocalTime CLOSE = LocalTime.of(18, 0);
 
-    /** Convenience wrapper: is a slot [start, start+durationMinutes) wanted at this increment? */
-    private static boolean desired(LocalTime start, int durationMinutes, int incrementMinutes) {
+    /** Convenience wrapper: is a slot [start, start+durationMinutes) wanted at this increment,
+     *  at a given day-start anchor? BDAY-03: threading the anchor through and defaulting it to
+     *  00:00 below is the invariance proof itself -- every pre-existing call site below reads
+     *  unchanged and still exercises exactly the same 00:00-anchor behaviour it always did. */
+    private static boolean desired(LocalTime dayStart, LocalTime start, int durationMinutes,
+                                   int incrementMinutes) {
         return TimeslotGeneratorService.isDesired(
-                LocalTime.MIDNIGHT, DAY, start, start.plusMinutes(durationMinutes),
+                dayStart, DAY, start, start.plusMinutes(durationMinutes),
                 PERIOD_START, PERIOD_END, OPEN, CLOSE, incrementMinutes);
+    }
+
+    private static boolean desired(LocalTime start, int durationMinutes, int incrementMinutes) {
+        return desired(LocalTime.MIDNIGHT, start, durationMinutes, incrementMinutes);
     }
 
     @Nested
@@ -132,6 +142,78 @@ class TimeslotGeneratorServiceTest {
             assertThat(desiredOn(PERIOD_START)).isTrue();
             assertThat(desiredOn(PERIOD_END)).isTrue();
             assertThat(desiredOn(PERIOD_START.plusDays(1))).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("requireDayStartTiles")
+    class RequireDayStartTiles {
+
+        @Test
+        @DisplayName("00:00 tiles 15, 30 and 60")
+        void midnightTilesEveryIncrement() {
+            assertThatCode(() -> TimeslotGeneratorService.requireDayStartTiles(LocalTime.MIDNIGHT, 15))
+                    .doesNotThrowAnyException();
+            assertThatCode(() -> TimeslotGeneratorService.requireDayStartTiles(LocalTime.MIDNIGHT, 30))
+                    .doesNotThrowAnyException();
+            assertThatCode(() -> TimeslotGeneratorService.requireDayStartTiles(LocalTime.MIDNIGHT, 60))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a 21:00 anchor tiles a 30-minute increment -- 1260 minutes is a whole multiple of 30")
+        void nonMidnightAnchorTiles() {
+            assertThatCode(() -> TimeslotGeneratorService.requireDayStartTiles(LocalTime.of(21, 0), 30))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a 21:10 anchor cannot tile a 15-minute increment -- throws naming both values and 'tile'")
+        void nonTilingAnchorThrows() {
+            assertThatThrownBy(() -> TimeslotGeneratorService.requireDayStartTiles(LocalTime.of(21, 10), 15))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("21:10")
+                    .hasMessageContaining("15")
+                    .hasMessageContaining("tile");
+        }
+
+        @Test
+        @DisplayName("a null anchor throws")
+        void nullAnchorThrows() {
+            assertThatThrownBy(() -> TimeslotGeneratorService.requireDayStartTiles(null, 30))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("isDesired at a 21:00 anchor -- the row's business date is DERIVED, never read from a column")
+    class AnchoredAt2100 {
+
+        private final LocalTime anchor = LocalTime.of(21, 0);
+        private final LocalDate businessDay = LocalDate.of(2026, 8, 13);
+
+        private boolean desiredAt(LocalDate calendarDate, LocalTime start, LocalTime end,
+                                  LocalDate periodStart, LocalDate periodEnd) {
+            return TimeslotGeneratorService.isDesired(
+                    anchor, calendarDate, start, end, periodStart, periodEnd, anchor, anchor, 60);
+        }
+
+        @Test
+        @DisplayName("a 23:00 row on calendar D and a 02:00 row on calendar D+1 both classify into "
+                + "business day D and are kept for a period containing D")
+        void rowsStraddlingMidnightBothClassifyIntoBusinessDayD() {
+            assertThat(desiredAt(businessDay, LocalTime.of(23, 0), LocalTime.MIDNIGHT,
+                    businessDay, businessDay)).isTrue();
+            assertThat(desiredAt(businessDay.plusDays(1), LocalTime.of(2, 0), LocalTime.of(3, 0),
+                    businessDay, businessDay)).isTrue();
+        }
+
+        @Test
+        @DisplayName("a 20:00 row on calendar D classifies into the PREVIOUS business day and is "
+                + "discarded for a period of exactly D")
+        void earlyEveningRowClassifiesIntoThePreviousBusinessDay() {
+            assertThat(desiredAt(businessDay, LocalTime.of(20, 0), LocalTime.of(21, 0),
+                    businessDay, businessDay)).isFalse();
         }
     }
 }
