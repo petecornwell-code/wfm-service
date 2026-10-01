@@ -10,16 +10,23 @@ Every consumer of a timeslot's date resolves the **business** date rather than t
 and every one of those resolutions is policed by a structural guard rather than by convention. Three
 distinct migrations sit inside that sentence, and the ROADMAP entry as written only names the first:
 
-1. **12 date joins** in `ScheduleConstraintProvider` — one shared `DATE` lambda at `:91-92` feeding 7
-   `groupBy` sites, plus 11 direct `getDate()` sites (SOLV-01, SOLV-02, SOLV-04, SOLV-06).
+1. **8 Timeslot-side date edits** in `ScheduleConstraintProvider`, covering 14 logical join/groupBy
+   operations — the shared `DATE` lambda at `:91-92` (feeding 7 `groupBy(AGENT_ID, DATE, …)` sites) plus
+   7 standalone `equal()` calls at `:175, :222, :510, :608, :745, :1082, :1193` (SOLV-01, SOLV-02,
+   SOLV-04, SOLV-06). **Corrected post-research 2026-10-01:** this section first said "12 date joins …
+   plus 11 direct `getDate()` sites". Four of those 11 — `:678, :916, :972, :1028` — are
+   `AgentShiftAssignment.getDate()` and touch no `Timeslot` at all, so both sides are already
+   business-date-shaped and they need **no edit**. Verified by reading each enclosing stream's lead
+   type. The grep count of 12 `getDate()` occurrences was right; the edit surface it implied was not.
 2. **19 interval-anchor sites** in `ScheduleConstraintProvider` that currently run on
    `PENDING_DESK_ANCHOR`, a hardcoded `DayWindow.anchoredAt(LocalTime.MIDNIGHT)` placeholder whose own
    javadoc names `SOLV-01` as its removal owner (SOLV-03). **Break bands and contiguity cannot hold
    across midnight while they run on a hardcoded midnight anchor — SOLV-03 is not a test-only
    deliverable.**
-3. **Coverage-reporting and library-generation date keys** — ~6 grouping sites in
-   `ScheduleOutputService` and 2 calendar-weekday derivations in `ShiftLibraryGenerationService`
-   (SOLV-07).
+3. **Demand-upload, coverage-reporting and library-generation date keys** — ~6 grouping sites in
+   `ScheduleOutputService`, 4 key positions in `ShiftLibraryGenerationService` (`:180, :226, :486,
+   :616` — corrected from 2 post-research), and the destructive delete range in
+   `StaffingRequirementService:172-175` (D-15) (SOLV-07).
 
 Plus the pre-solve seat-supply shortfall reporting per business day (SOLV-05), a Phil-US-shaped
 constructed drift guard (BDAY-07, as amended by D-14), and — as the phase's final commit — deletion
@@ -134,8 +141,9 @@ deferred out of v1.5).
 ### The join guard
 
 - **D-08:** **`BusinessDateJoinGuardTest` scans key positions only — `join` / `equal` / `groupBy` /
-  `computeIfAbsent` — across three files**: `ScheduleConstraintProvider`, `ScheduleOutputService`, and
-  (per D-13) `ShiftLibraryGenerationService`. Display and label sites are out of scope *by construction
+  `computeIfAbsent` — across four files**: `ScheduleConstraintProvider`, `ScheduleOutputService`,
+  (per D-13) `ShiftLibraryGenerationService`, and (per D-15) `StaffingRequirementService`. *Three at
+  the time of the discussion; the fourth was added post-research.* Display and label sites are out of scope *by construction
   rather than by allowlist entry*, which is what keeps the allowlist near-empty. That matters: Phase 18
   measured the alternative — D-03 of `18-CONTEXT.md` found a naive token scan would demand a 100+ entry
   allowlist and "become decoration". One guard covers both SOLV-02 and SOLV-07's structural half.
@@ -184,9 +192,13 @@ deferred out of v1.5).
   — **Reversibility:** `reversible` — a history-shape choice; a single commit is itself the cheap
   revert that motivates it.
 
-- **D-13:** **`ShiftLibraryGenerationService` is the third guarded file, and both of its weekday
-  derivations migrate in this phase.** `:180` and `:486` derive a weekday from a timeslot's calendar
-  date (`sr.getTimeslot().getDate().getDayOfWeek()`). On a `21:00` desk a `02:00` Monday-business-day
+- **D-13:** **`ShiftLibraryGenerationService` is a guarded file, and all of its key positions migrate
+  in this phase.** `:180` and `:486` derive a weekday from a timeslot's calendar date
+  (`sr.getTimeslot().getDate().getDayOfWeek()`). **Corrected post-research 2026-10-01: there are 4 key
+  positions, not 2** — `:226` builds a `ShiftLibraryValidationService.Window(date, start, end)` used as
+  distinct/sort identity, and `:616` collects `demandedDates` before deriving a weekday for supply
+  hours. Both are key positions under D-08's own test, so this decision already covers them; only the
+  count was wrong. On a `21:00` desk a `02:00` Monday-business-day
   slot has calendar weekday Tuesday, so library generation buckets demand under the wrong weekday —
   a real instance of this defect class. It was surfaced during this discussion, not inherited as a
   known item, and no Phase 20 success criterion names library generation. Leaving a known instance
@@ -219,6 +231,25 @@ deferred out of v1.5).
   — **Reversibility:** `costly` — restoring a live proof means building the data or endpoint path this
   phase declined to build, and the pre-migration match counts are then only recoverable by checking out
   the pre-migration commit.
+
+### Post-research amendment (2026-10-01)
+
+- **D-15:** **`StaffingRequirementService` is the fourth guarded file, and its delete range migrates in
+  this phase.** `:172-175` derives min/max dates from the uploaded payload's timeslots and feeds them
+  straight into `deleteLiveByDeskAndDateRange` — a **destructive delete keyed on calendar date**. On a
+  re-anchored desk that deletes the wrong span of live demand, which is the most damaging failure
+  available anywhere in this phase: it destroys operator data rather than mis-scoring a schedule. It
+  also sits on the literal "demand upload" path that SOLV-07 names, so excluding it would let the
+  guard's green overstate what SOLV-07 actually proves. `:378` is a response-DTO field and stays on
+  calendar date by D-10's display rule.
+
+  **Implementation hazard, flagged by research:** the repository query behind
+  `deleteLiveByDeskAndDateRange` filters on `timeslot.date`. The range and the filter must move
+  together or the delete silently changes span — a half-migration here is worse than none. This
+  decision was taken after the discussion closed, on the operator's explicit choice between migrating
+  now, allowlisting for Phase 21, and leaving the three-file scope alone.
+  — **Reversibility:** `costly` — a destructive write path; reverting means re-reasoning about which
+  span was deleted on any desk uploaded to in the interim.
 
 ### Claude's Discretion
 
@@ -423,11 +454,19 @@ deferred out of v1.5).
 - **The ROADMAP's "re-grep the 12 `timeslot.getDate()` joins count fresh" action is discharged:**
   re-measured on HEAD at 2026-10-01, still exactly **12** in `ScheduleConstraintProvider.java`. The
   planner does not need to re-derive it, but should re-verify if the tree moves before execution.
-- **The roadmap calls SOLV-04 "a defect that is already live today, independent of overnight shifts."**
-  Worth a sceptical look during research: with every desk at a `00:00` anchor, business date equals
-  calendar date, so it is not obvious what is live. The sites are real (`:704, :730, :745, :692, :718`);
-  the "already live" framing may be the part that is wrong. Do not let an unfalsifiable "already live"
-  claim become an untestable acceptance criterion.
+- **SOLV-04's "already live today" claim was challenged here and research upheld it.** The scepticism
+  recorded at discussion time — that with every desk at a `00:00` anchor business date equals calendar
+  date, so nothing could be live — was **wrong**. `AgentAssignment`'s only planning variable is the
+  agent (the timeslot is fixed), and `contractedHoursOver`/`Under` already group by calendar date, so
+  nothing stops a SLOT-mode desk placing the same agent across a midnight boundary on today's data.
+  The defect is live. Sites: `:704, :730, :745, :692, :718`. Research recommends proving it with a
+  constructed fixture rather than live data, consistent with D-14.
+- **SOLV-05's defect is a key-type mismatch, not a missing feature** (found in research, not at
+  discussion time). `requireShiftEnvelopeSeatSupply` at `SolverService:1432-1455` groups shift
+  assignments by **business** date but timeslots by **calendar** date, so
+  `timeslotsByDate.getOrDefault(businessDate, …)` silently returns empty on any re-anchored desk. That
+  is a **false refusal** — the gate would block a solvable desk — not merely a mis-keyed report. Write
+  the acceptance criterion against the false-refusal behaviour, not against the report's wording.
 - **The guard's own documentation is a deliverable, not a side-effect.** D-10's reasoning (display is
   out of scope *by construction*) and D-09's reasoning (why three of the four candidate tokens are not
   scanned) both belong in the guard's docs, so the next reader does not file either as a gap. Phase 19
