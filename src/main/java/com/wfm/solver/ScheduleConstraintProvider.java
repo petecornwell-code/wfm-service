@@ -1170,7 +1170,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .join(ScheduleConfig.class)
                 .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
                 .join(Timeslot.class, equal((sa, cfg) -> sa.getDate(), Timeslot::getDate))
-                .filter((sa, cfg, ts) -> isOnBreak(ts, sa.getShiftBandPair()))
+                // BDAY-04: the desk's real anchor reaches this constraint via the ScheduleConfig
+                // tuple member's own day-start accessor, the same null-falls-back-to-MIDNIGHT
+                // default shiftEnvelopeCompliance above uses, for the identical unmigrated-fixture
+                // reason (Rule 2).
+                .filter((sa, cfg, ts) -> {
+                    LocalTime dayStart = cfg.dayStart();
+                    DayWindow window = DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);
+                    return isOnBreak(ts, sa.getShiftBandPair(), window);
+                })
                 .groupBy((sa, cfg, ts) -> ts, countTri())
                 .map((ts, onBreak) -> ts, (ts, onBreak) -> new ClusterMark(0, onBreak));
 
@@ -1347,12 +1355,12 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * false both outside the envelope AND inside the break, while this answers "is this
      * specifically the break", needed to count on-break agents rather than illegal seats.
      */
-    private static boolean isOnBreak(Timeslot ts, ShiftBandPair pair) {
+    private static boolean isOnBreak(Timeslot ts, ShiftBandPair pair, DayWindow window) {
         if (pair == null || pair.band() == null || pair.band().getDurationMinutes() <= 0) {
             return false;
         }
-        LocalTime breakStart = pair.band().getBreakStartTime(pair.template());
-        LocalTime breakEnd = pair.band().getBreakEndTime(pair.template());
-        return DayWindow.overlaps(ts.getStartTime(), ts.getEndTime(), breakStart, breakEnd);
+        LocalTime breakStart = pair.band().getBreakStartTime(pair.template(), window);
+        LocalTime breakEnd = pair.band().getBreakEndTime(pair.template(), window);
+        return window.anchoredOverlaps(ts.getStartTime(), ts.getEndTime(), breakStart, breakEnd);
     }
 }

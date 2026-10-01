@@ -9,6 +9,7 @@ import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.util.DayWindow;
+import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.repository.AgentShiftAssignmentRepository;
@@ -60,6 +61,19 @@ public class ShiftTemplateService {
         this.deskRepository = deskRepository;
         this.agentShiftAssignmentRepository = agentShiftAssignmentRepository;
         this.agentUsualShiftRepository = agentUsualShiftRepository;
+    }
+
+    /**
+     * The anchor source for callers that cannot reach a {@link com.wfm.model.Desk} themselves
+     * (BDAY-04, P-03) -- {@link com.wfm.controller.ShiftTemplateController} in particular, so it
+     * does not grow a {@code DeskRepository} of its own. Loads through the same tenant-scoped
+     * {@code findByIdAndTenantId} shape this class already uses, so a cross-tenant {@code deskId}
+     * produces the same not-found outcome every other method here produces (T-19-05).
+     */
+    public DayWindow dayWindowFor(UUID deskId) {
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, TenantContext.getTenantId())
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        return DayWindow.anchoredAt(desk.getDayStart());
     }
 
     /**

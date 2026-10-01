@@ -153,6 +153,7 @@ public class ShiftLibraryGenerationService {
                         "Desk " + deskId + " has live demand but no live timeslot grid bounds"));
 
         BreakConfig breakConfig = resolveBreakConfig(tenantId, deskId);
+        DayWindow window = breakConfig.window();
         int maxCandidates = resolveMaxCandidates();
 
         Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = agentDayHours.stream()
@@ -196,7 +197,7 @@ public class ShiftLibraryGenerationService {
                         List.of(new ErrorDetail("candidates", message, null)));
             }
 
-            List<Candidate> clusterSelected = greedyCover(clusterCandidates, clusterWindows);
+            List<Candidate> clusterSelected = greedyCover(clusterCandidates, clusterWindows, window);
             clusterSelected = expandForSupply(clusterSelected, clusterCandidates, clusterWindows,
                     demandHours(clusterDemand), supplyHours(clusterDemand, hoursByWeekday));
             selected.addAll(clusterSelected);
@@ -215,7 +216,8 @@ public class ShiftLibraryGenerationService {
         // uncoveredDetails is computed INSIDE buildResponse, from the emitted (deduped, final-band)
         // templates -- never from these pre-expansion single-band candidates (Task 1/G-15-23) -- so
         // the report and the returned templates can never disagree.
-        return buildResponse(selected, hoursByWeekday, demandByWeekdayAndStart, bounds.incrementMinutes(), windows);
+        return buildResponse(selected, hoursByWeekday, demandByWeekdayAndStart, bounds.incrementMinutes(), windows,
+                window);
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
@@ -240,12 +242,20 @@ public class ShiftLibraryGenerationService {
         List<Schedule> schedules = scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(
                 tenantId, deskId, PageRequest.of(0, 1));
         if (schedules.isEmpty()) {
-            return new BreakConfig(FALLBACK_BREAK_DURATION_MINUTES, FALLBACK_BREAK_MIN_SHIFT_HOURS);
+            return new BreakConfig(FALLBACK_BREAK_DURATION_MINUTES, FALLBACK_BREAK_MIN_SHIFT_HOURS,
+                    DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         }
         Schedule latest = schedules.get(0);
         BigDecimal breakMinShiftHours = latest.getBreakMinShiftHours() != null
                 ? latest.getBreakMinShiftHours() : FALLBACK_BREAK_MIN_SHIFT_HOURS;
-        return new BreakConfig(latest.getBreakDurationMinutes(), breakMinShiftHours);
+        // BDAY-04/P-02 rule 5: this class holds neither a DeskRepository nor a Schedule
+        // parameter of its own -- the most-recently-created Schedule this method already loads
+        // for the break duration/threshold is the one channel D-08 establishes that reaches a
+        // desk's anchor from here, so the window is bound from the SAME load rather than a second
+        // query. Falls back to a midnight anchor exactly like the break-duration fields above do
+        // when the desk has no persisted schedule yet.
+        LocalTime dayStart = latest.getDayStart() != null ? latest.getDayStart() : LocalTime.MIDNIGHT;
+        return new BreakConfig(latest.getBreakDurationMinutes(), breakMinShiftHours, DayWindow.anchoredAt(dayStart));
     }
 
     // --- Candidate enumeration (P-08) ---
@@ -630,7 +640,7 @@ public class ShiftLibraryGenerationService {
     }
 
     private List<Candidate> greedyCover(List<Candidate> candidates,
-                                         List<ShiftLibraryValidationService.Window> windows) {
+                                         List<ShiftLibraryValidationService.Window> windows, DayWindow dayWindow) {
         Set<ShiftLibraryValidationService.Window> uncovered = new LinkedHashSet<>(windows);
         List<Candidate> selected = new ArrayList<>();
         while (!uncovered.isEmpty()) {
@@ -639,7 +649,8 @@ public class ShiftLibraryGenerationService {
             for (Candidate candidate : candidates) {
                 int coverCount = 0;
                 for (ShiftLibraryValidationService.Window window : uncovered) {
-                    if (shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), window)) {
+                    if (shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), window,
+                            dayWindow)) {
                         coverCount++;
                     }
                 }
@@ -657,7 +668,7 @@ public class ShiftLibraryGenerationService {
             selected.add(best);
             Candidate finalBest = best;
             uncovered.removeIf(window ->
-                    shiftLibraryValidationService.covers(finalBest.template(), finalBest.bands(), window));
+                    shiftLibraryValidationService.covers(finalBest.template(), finalBest.bands(), window, dayWindow));
         }
         return selected;
     }
@@ -716,12 +727,13 @@ public class ShiftLibraryGenerationService {
                                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
                                                           Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
                                                           int incrementMinutes,
-                                                          List<ShiftLibraryValidationService.Window> windows) {
+                                                          List<ShiftLibraryValidationService.Window> windows,
+                                                          DayWindow window) {
         List<EmittedRow> rows = new ArrayList<>();
         for (Candidate candidate : selected) {
             List<DayOfWeek> validWeekdays = candidate.template().getValidWeekdays().stream().sorted().toList();
             List<ShiftTemplateBreakBand> bands = suggestedBands(candidate, validWeekdays, hoursByWeekday,
-                    demandByWeekdayAndStart, incrementMinutes, windows);
+                    demandByWeekdayAndStart, incrementMinutes, windows, window);
             rows.add(new EmittedRow(candidate.template(), bands, validWeekdays, candidate.netHours()));
         }
 
@@ -752,7 +764,7 @@ public class ShiftLibraryGenerationService {
         // before expansion -- so the reported list and the returned templates can never disagree
         // (Task 1). Assigning "Suggested N" AFTER dedupe keeps the numbering contiguous: a collapsed
         // duplicate never leaves a gap an operator would read as a missing row.
-        List<ErrorDetail> uncoveredDetails = computeUncoveredDetails(deduped, windows);
+        List<ErrorDetail> uncoveredDetails = computeUncoveredDetails(deduped, windows, window);
 
         LocalDate today = LocalDate.now();
         List<SuggestedTemplate> templates = new ArrayList<>();
@@ -790,11 +802,12 @@ public class ShiftLibraryGenerationService {
      * describing the emitted shape).
      */
     private List<ErrorDetail> computeUncoveredDetails(List<EmittedRow> rows,
-                                                       List<ShiftLibraryValidationService.Window> windows) {
+                                                       List<ShiftLibraryValidationService.Window> windows,
+                                                       DayWindow dayWindow) {
         List<ErrorDetail> details = new ArrayList<>();
         for (ShiftLibraryValidationService.Window window : windows) {
             boolean covered = rows.stream()
-                    .anyMatch(r -> shiftLibraryValidationService.covers(r.template(), r.bands(), window));
+                    .anyMatch(r -> shiftLibraryValidationService.covers(r.template(), r.bands(), window, dayWindow));
             if (!covered) {
                 details.add(new ErrorDetail("coverage", window.date() + " " + window.startTime()
                         + "-" + window.endTime(), null));
@@ -849,7 +862,8 @@ public class ShiftLibraryGenerationService {
                                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
                                                           Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
                                                           int incrementMinutes,
-                                                          List<ShiftLibraryValidationService.Window> windows) {
+                                                          List<ShiftLibraryValidationService.Window> windows,
+                                                          DayWindow dayWindow) {
         if (candidate.durationMinutes() == 0 || candidate.bands().isEmpty()) {
             return List.of(); // break-less template: no break to spread
         }
@@ -883,11 +897,13 @@ public class ShiftLibraryGenerationService {
         // by the chosen set, force it back in -- evicting the worst (highest-scoring) member so the
         // count this candidate emits does not change.
         List<ShiftLibraryValidationService.Window> originallyCovered = windows.stream()
-                .filter(w -> shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), w))
+                .filter(w -> shiftLibraryValidationService.covers(candidate.template(), candidate.bands(), w,
+                        dayWindow))
                 .toList();
         List<ShiftTemplateBreakBand> chosenPreview = toBands(chosen, duration, null);
         boolean coverageOk = originallyCovered.stream()
-                .allMatch(w -> shiftLibraryValidationService.covers(candidate.template(), chosenPreview, w));
+                .allMatch(w -> shiftLibraryValidationService.covers(candidate.template(), chosenPreview, w,
+                        dayWindow));
         if (!coverageOk) {
             int worst = chosen.stream().max(Comparator.comparingInt(scoreByOffset::get)).orElseThrow();
             chosen.remove(worst);
@@ -969,7 +985,7 @@ public class ShiftLibraryGenerationService {
         return (int) perBand;
     }
 
-    private record BreakConfig(int breakDurationMinutes, BigDecimal breakMinShiftHours) {}
+    private record BreakConfig(int breakDurationMinutes, BigDecimal breakMinShiftHours, DayWindow window) {}
 
     private record Candidate(ShiftTemplate template, List<ShiftTemplateBreakBand> bands, LocalTime spanStart,
                               int spanLengthMinutes, int offsetMinutes, int durationMinutes, BigDecimal netHours) {}

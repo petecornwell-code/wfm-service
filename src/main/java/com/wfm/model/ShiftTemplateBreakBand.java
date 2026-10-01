@@ -61,18 +61,26 @@ public class ShiftTemplateBreakBand {
     public Integer getCapacity() { return capacity; }
     public void setCapacity(Integer capacity) { this.capacity = capacity; }
 
-    /** Break start = the template's shift start plus this band's offset (relocated from ShiftTemplate, P-02). */
+    /**
+     * Break start = the template's shift start plus this band's offset (relocated from
+     * ShiftTemplate, P-02). Takes the caller's bound {@code window} (BDAY-04) rather than
+     * resolving or defaulting an anchor itself (D-08) -- a model class never holds or looks up a
+     * day-start anchor.
+     */
     @Transient
-    public LocalTime getBreakStartTime(ShiftTemplate template) {
+    public LocalTime getBreakStartTime(ShiftTemplate template, DayWindow window) {
         return template.getStartTime() == null
                 ? null
-                : DayWindow.plusWithinDay(template.getStartTime(), offsetMinutes);
+                : window.anchoredPlusWithinDay(template.getStartTime(), offsetMinutes);
     }
 
-    /** Break end = this band's break start plus its own duration (relocated from ShiftTemplate, P-02). */
+    /**
+     * Break end = this band's break start plus its own duration (relocated from ShiftTemplate,
+     * P-02). Takes the caller's bound {@code window} (BDAY-04); see {@link #getBreakStartTime}.
+     */
     @Transient
-    public LocalTime getBreakEndTime(ShiftTemplate template) {
-        LocalTime breakStart = getBreakStartTime(template);
-        return breakStart == null ? null : DayWindow.plusWithinDay(breakStart, durationMinutes);
+    public LocalTime getBreakEndTime(ShiftTemplate template, DayWindow window) {
+        LocalTime breakStart = getBreakStartTime(template, window);
+        return breakStart == null ? null : window.anchoredPlusWithinDay(breakStart, durationMinutes);
     }
 }

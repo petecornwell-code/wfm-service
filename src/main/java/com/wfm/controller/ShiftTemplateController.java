@@ -7,6 +7,7 @@ import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.service.ShiftTemplateService;
+import com.wfm.util.DayWindow;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -30,15 +31,26 @@ public class ShiftTemplateController {
 
     @GetMapping
     public List<ShiftTemplateResponse> listShiftTemplates(@PathVariable UUID deskId) {
-        return shiftTemplateService.listShiftTemplates(deskId).stream()
-                .map(this::toResponse).toList();
+        List<ShiftTemplate> templates = shiftTemplateService.listShiftTemplates(deskId);
+        if (templates.isEmpty()) {
+            // T-14-15: a cross-tenant deskId yields zero templates here (the query is already
+            // tenant-scoped), and must stay a silent empty list, not an EntityNotFoundException
+            // from a window lookup this case never needed -- resolving the window only when
+            // there is a template to map keeps that existing tenant-isolation behaviour intact.
+            return List.of();
+        }
+        // One window for the whole stream -- every template on this route belongs to the same
+        // desk, so the anchor is bound once rather than once per template (BDAY-04).
+        DayWindow window = shiftTemplateService.dayWindowFor(deskId);
+        return templates.stream().map(template -> toResponse(template, window)).toList();
     }
 
     @PostMapping
     public ResponseEntity<ShiftTemplateResponse> createShiftTemplate(@PathVariable UUID deskId,
                                                                        @RequestBody ShiftTemplateRequest request) {
         ShiftTemplate created = shiftTemplateService.createShiftTemplate(deskId, request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(toResponse(created, shiftTemplateService.dayWindowFor(deskId)));
     }
 
     /**
@@ -52,7 +64,8 @@ public class ShiftTemplateController {
     public ShiftTemplateResponse updateShiftTemplate(@PathVariable UUID deskId,
                                                        @PathVariable UUID id,
                                                        @RequestBody ShiftTemplateRequest request) {
-        return toResponse(shiftTemplateService.updateShiftTemplate(deskId, id, request));
+        ShiftTemplate updated = shiftTemplateService.updateShiftTemplate(deskId, id, request);
+        return toResponse(updated, shiftTemplateService.dayWindowFor(deskId));
     }
 
     /**
@@ -66,7 +79,7 @@ public class ShiftTemplateController {
         return ResponseEntity.noContent().build();
     }
 
-    private ShiftTemplateResponse toResponse(ShiftTemplate template) {
+    private ShiftTemplateResponse toResponse(ShiftTemplate template, DayWindow window) {
         List<ShiftTemplateBreakBand> bands = shiftTemplateBreakBandRepository
                 .findByTenantIdAndShiftTemplateIdOrderByOffsetMinutesAsc(template.getTenantId(), template.getId());
         List<BreakBandResponse> bandResponses = bands.stream()
@@ -74,8 +87,8 @@ public class ShiftTemplateController {
                         band.getId(),
                         band.getOffsetMinutes(),
                         band.getDurationMinutes(),
-                        band.getBreakStartTime(template),
-                        band.getBreakEndTime(template),
+                        band.getBreakStartTime(template, window),
+                        band.getBreakEndTime(template, window),
                         band.getCapacity(),
                         template.getNetHours(band.getDurationMinutes())))
                 .toList();

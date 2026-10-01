@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -162,7 +163,8 @@ class MidnightWindowSeamTest {
             band.setOffsetMinutes(240);
             band.setDurationMinutes(60);
             return ShiftLibraryValidationService.covers(t, List.of(band),
-                    new ShiftLibraryValidationService.Window(MONDAY, windowStart, windowEnd));
+                    new ShiftLibraryValidationService.Window(MONDAY, windowStart, windowEnd),
+                    DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         }
 
         @Test
