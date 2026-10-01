@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 19
 current_phase_name: DayWindow Re-anchoring
 status: executing
-stopped_at: Completed 19-05-PLAN.md
-last_updated: "2026-10-01T03:21:09.305Z"
+stopped_at: Completed 19-06-PLAN.md
+last_updated: "2026-10-01T04:37:25.346Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 19 execution started
-state_head: faed18a0fc6fbd2a208f6afa915a88cf554311a1
+state_head: 5c9a728c72622770f9c0465ba2ba687ab05edefa
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 19 (DayWindow Re-anchoring) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Plan 19-02 complete (17641c5)
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
@@ -301,6 +301,10 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 19]: ShiftLibraryGenerationService's window is bound in resolveBreakConfig from the same Schedule load already run for break-duration config (P-02 rule 5), not a second DeskRepository lookup — Avoids a second repository dependency in a class the plan's own anchor-source table says has neither a DeskRepository nor a Schedule parameter of its own; future plans (19-06/19-07) should bind at this same BreakConfig.window() place
 - [Phase 19]: Plan 19-05: ShiftBandPair.covers retired to exactly two shapes (both transitional midnight delegates deleted), correcting a pre-dispatch count note that suggested keeping a third form.
 - [Phase 19]: Plan 19-05: Three pre-existing test fixtures (ScheduleOutputServiceShiftReportingTest, ScheduleServiceShiftSnapshotTest, ScheduleEnvelopeRepairServiceTest) crashed on a null dayStart once ScheduleOutputService/ScheduleEnvelopeRepairService started reading it; fixed at the test level (explicit setDayStart(MIDNIGHT)), not with a production fallback, to preserve the zero-midnight-literal discipline these two files must hold.
+- [Phase 19]: Phase 19 Plan 06: TimeslotGeneratorService.getLiveBounds, FteUploadService and StaffingRequirementService each gained a DeskRepository directly (not the anchor-source table's "propagate outward" shape) -- verified their real callers resolve no desk/dayStart either.
+- [Phase 19]: Phase 19 Plan 06: TimeslotGeneratorService.requireDayStartTiles stays plain LocalTime arithmetic rather than a bound DayWindow instance -- its argument is the anchor itself, and binding window=anchoredAt(dayStart) then calling window.anchoredStartMinute(dayStart) always reads zero, a regression the plan's own transformation text did not account for.
+- [Phase 19]: Phase 19 Plan 06: StaffingRequirementService.intervalMinutes reproduces DayWindow.durationMinutes's throw-on-non-forward behaviour explicitly via anchoredIsForwardWithinDay, since the anchored instance method no longer throws and StaffingRequirementErlangTest#midnightCrossingTimeslotIsRejected pins exactly this throw.
+- [Phase 19]: Phase 19 Plan 06: One comparison in ShiftLibraryGenerationService.expandForSupply is deliberately left on the deprecated DayWindow.endMinute static form -- MidnightTimeArithmeticGuardTest's comparison allowlist (a file reserved for plan 19-07) keys that exact line's text; deferred to 19-07/19-08.
 
 ### Blockers/Concerns
 
@@ -323,8 +327,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T03:21:01.789Z
-Stopped at: Completed 19-05-PLAN.md
+Last session: 2026-10-01T04:37:25.323Z
+Stopped at: Completed 19-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -387,3 +391,4 @@ Resume file: None
 | Phase 19 P03 | 40 min | 1 tasks | 5 files |
 | Phase 19 P04 | 100min | 2 tasks | 14 files |
 | Phase 19 P05 | 95min | 1 tasks | 21 files |
+| Phase 19 P06 | 90min | 3 tasks | 14 files |
