@@ -56,6 +56,9 @@ so downstream agents need not read the v1.4 document to act:
   its removal is a visible, reviewable act. The gate is not in `TimeslotGeneratorService`, which takes
   `dayStart` as a parameter — which is what makes BDAY-03's unit test reachable (v1.4 D-18).
   — **Reversibility:** `reversible` — one validation; the column and its range are unaffected.
+  — **Superseded on ownership:** `19-CONTEXT.md` D-01 is the authoritative resolution — the gate's
+  deletion belongs to `SOLV-01` (Phase 20), not `BDAY-04` (Phase 19). This D-07's one-visible-line
+  intent stands unchanged; only the ownership claim moved.
 - **D-08:** A day-start that is **not a whole multiple of the generation increment refuses loudly at
   generation**, naming the day-start, the increment, and why they cannot tile. The increment is not desk
   state — it arrives per call, inferred from the FTE spreadsheet's own columns

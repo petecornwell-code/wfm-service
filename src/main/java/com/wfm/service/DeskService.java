@@ -208,10 +208,12 @@ public class DeskService {
      * Sets a desk's business-day start time (BDAY-01), mirroring {@link #switchSchedulingMode}'s
      * shape: null check, gate, tenant-scoped lookup, equal-value no-op, then write.
      *
-     * <p>Today only {@code 00:00} is accepted; BDAY-04 widens the accepted range to 15-minute
-     * boundaries, and nothing in this codebase honours a non-default day start until BDAY-04
-     * re-anchors {@link com.wfm.util.DayWindow}. This is the one validation line BDAY-04
-     * deletes -- kept as one visible, reviewable condition rather than folded into a range check.
+     * <p>Today only {@code 00:00} is accepted; SOLV-01 widens the accepted range to 15-minute
+     * boundaries. {@link com.wfm.util.DayWindow} has already been re-anchored to take an explicit
+     * day-start anchor, but the solver's joins are not yet business-date-keyed, so nothing in this
+     * codebase honours a non-default day start until SOLV-01 lands. This is the one validation
+     * line SOLV-01 deletes -- kept as one visible, reviewable condition rather than folded into a
+     * range check.
      *
      * <p>The equal-value early return precedes every business-rule refusal: re-asserting the
      * value a desk already holds is not a transition.

@@ -107,7 +107,7 @@ export default function DeskManagement() {
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
                   {/* Read-only in both branches for the same reason Scheduling Mode is above — the
                       backend refuses anything but 00:00 (BDAY-01), so an editable control here would
-                      offer the operator a value the system will reject. BDAY-04 is what widens the
+                      offer the operator a value the system will reject. SOLV-01 is what widens the
                       accepted range and is expected to make this cell editable. */}
                   <td>{desk.dayStart} (only 00:00 is supported until overnight scheduling lands)</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
