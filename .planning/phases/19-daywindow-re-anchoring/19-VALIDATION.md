@@ -67,7 +67,7 @@ the table.
 | 19-07 T3 | 19-07 | 5 | BDAY-04 | T-19-15 (guard reused by plan 19-08) | Third allowlist section + guard scan, proven two-directional | unit + integration | `./gradlew test --tests "com.wfm.service.MidnightTimeArithmeticGuardTest"`; `./gradlew test` | `ca9a450` | ✅ green |
 | 19-08 T1 | 19-08 | 6 | BDAY-04 | T-19-15 | Nine statics demoted to private; oracle flipped onto the bound instance; reflective guard inverted | compile + unit + integration | `./gradlew compileJava compileTestJava`; `./gradlew test --tests "com.wfm.util.DayWindowTest"`; `./gradlew test` | `4a129d3` | ✅ green |
 | 19-08 T2 | 19-08 | 6 | BDAY-04 | — | Criterion 4 (eight guards) and criterion 5 (commit-range isolation) proven over the actual range | integration + process check | eight-selector guard set; `./gradlew test`; `git diff --name-only 47649f1..4a129d3` | *(this plan's metadata commit)* | ✅ green |
-| 19-08 T3 | 19-08 | 6 | BDAY-04 | T-19-13 | `DeskService`/`DeskManagement.tsx` name `SOLV-01`, not `BDAY-04`, as the range-widener; gate itself untouched | unit + build + process check | `./gradlew test --tests "com.wfm.service.DeskServiceDayStartTest"`; `npm --prefix frontend run build` | *(filled after Task 3 commits)* | ⬜ pending |
+| 19-08 T3 | 19-08 | 6 | BDAY-04 | T-19-13 | `DeskService`/`DeskManagement.tsx` name `SOLV-01`, not `BDAY-04`, as the range-widener; gate itself untouched | unit + build + process check | `./gradlew test --tests "com.wfm.service.DeskServiceDayStartTest"` (11/11 green); `npm --prefix frontend run build` (exit 0) | `05d7ae6` | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
