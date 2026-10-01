@@ -30,15 +30,48 @@ public record ScheduleConfig(
         int overallocationHardLimitPct,
         int underallocationHardLimitPct,
         SchedulingMode schedulingMode,
-        int consistencyToleranceMinutes
+        int consistencyToleranceMinutes,
+        LocalTime dayStart
 ) {
     /** Default tolerance band (minutes) used by the 12-argument delegating constructor below. */
     public static final int DEFAULT_CONSISTENCY_TOLERANCE_MINUTES = 60;
 
     /**
+     * Delegating constructor preserving the pre-Phase-19 13-argument shape, so every
+     * pre-BDAY-04 test construction site compiles unchanged — supplies {@code LocalTime.MIDNIGHT}
+     * for the new 14th component. This midnight default exists for test fixtures only; the single
+     * production construction site ({@link Schedule#getScheduleConfig()}) passes the value
+     * explicitly. Deliberate carve-out from the D-07 allowlist, whose scope is {@code src/main/java}.
+     */
+    public ScheduleConfig(
+            int incrementMinutes,
+            LocalTime startTime,
+            LocalTime endTime,
+            int breakDurationMinutes,
+            BigDecimal breakMinShiftHours,
+            BigDecimal breakBlockedHours,
+            BreakAlignment breakStartAlignment,
+            int breakClusterThresholdPct,
+            BigDecimal defaultContractedHoursPerDay,
+            int overallocationHardLimitPct,
+            int underallocationHardLimitPct,
+            SchedulingMode schedulingMode,
+            int consistencyToleranceMinutes
+    ) {
+        this(incrementMinutes, startTime, endTime, breakDurationMinutes, breakMinShiftHours,
+                breakBlockedHours, breakStartAlignment, breakClusterThresholdPct,
+                defaultContractedHoursPerDay, overallocationHardLimitPct, underallocationHardLimitPct,
+                schedulingMode, consistencyToleranceMinutes, LocalTime.MIDNIGHT);
+    }
+
+    /**
      * Delegating constructor preserving the pre-Phase-17 12-argument shape, so every existing
      * test construction site compiles unchanged — each supplies
-     * {@link #DEFAULT_CONSISTENCY_TOLERANCE_MINUTES} for the new 13th component.
+     * {@link #DEFAULT_CONSISTENCY_TOLERANCE_MINUTES} for the 13th component and
+     * {@code LocalTime.MIDNIGHT} for the new 14th component (BDAY-04). This midnight default
+     * exists for test fixtures only; the single production construction site
+     * ({@link Schedule#getScheduleConfig()}) passes the value explicitly. Deliberate carve-out
+     * from the D-07 allowlist, whose scope is {@code src/main/java}.
      */
     public ScheduleConfig(
             int incrementMinutes,
@@ -57,6 +90,6 @@ public record ScheduleConfig(
         this(incrementMinutes, startTime, endTime, breakDurationMinutes, breakMinShiftHours,
                 breakBlockedHours, breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay, overallocationHardLimitPct, underallocationHardLimitPct,
-                schedulingMode, DEFAULT_CONSISTENCY_TOLERANCE_MINUTES);
+                schedulingMode, DEFAULT_CONSISTENCY_TOLERANCE_MINUTES, LocalTime.MIDNIGHT);
     }
 }

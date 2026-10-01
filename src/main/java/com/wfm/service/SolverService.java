@@ -611,7 +611,14 @@ public class SolverService {
 
     // --- Schedule builder ---
 
-    private Schedule buildSchedule(long tenantId, UUID deskId, SolveRequest request, Desk desk) {
+    // Package-private and static (BDAY-04) so ScheduleConfigAnchorPlumbingTest can target this
+    // hop in isolation via a test-only bridge (SolverServiceBuildScheduleAccess), matching the
+    // "Package-private so ConstraintVerifier can target this constraint in isolation" convention
+    // already used in ScheduleConstraintProvider and the requireShiftEnvelopeSeatSupply /
+    // forcedAgentDaysByTimeslotId precedent in this class. Static because the method body touches
+    // no instance field — only its own parameters — so widening visibility introduces no new
+    // coupling to solver-service state.
+    static Schedule buildSchedule(long tenantId, UUID deskId, SolveRequest request, Desk desk) {
         if (request.periodStartDate() == null || request.periodEndDate() == null
                 || request.startTime() == null || request.endTime() == null) {
             throw new IllegalArgumentException(
@@ -629,6 +636,9 @@ public class SolverService {
         s.setStatus(ScheduleStatus.RUNNING);
         s.setCreatedAt(OffsetDateTime.now());
         s.setSchedulingMode(desk.getSchedulingMode());
+        // BDAY-04 (D-10's additive commit): the desk's dayStart flows onto the schedule the same
+        // way schedulingMode already does, immediately above. Nothing reads this value yet.
+        s.setDayStart(desk.getDayStart());
 
         s.setPeriodStartDate(request.periodStartDate());
         s.setPeriodEndDate(request.periodEndDate());

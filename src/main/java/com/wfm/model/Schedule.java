@@ -43,6 +43,14 @@ public class Schedule {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    // BDAY-04: the desk's day start, snapshotted onto the schedule the same way startTime and
+    // schedulingMode already are. Written only by SolverService.buildSchedule from the tenant-scoped
+    // Desk already loaded for the solve; not defaulted here so a row written before V54 relies on
+    // the column's own DEFAULT '00:00', and a row this class constructs in memory without a writer
+    // exposes null rather than a silently substituted midnight (see ScheduleConfigAnchorPlumbingTest).
+    @Column(name = "day_start")
+    private LocalTime dayStart;
+
     @Column(name = "period_start_date", nullable = false)
     private LocalDate periodStartDate;
 
@@ -216,6 +224,9 @@ public class Schedule {
     public LocalTime getEndTime() { return endTime; }
     public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
 
+    public LocalTime getDayStart() { return dayStart; }
+    public void setDayStart(LocalTime dayStart) { this.dayStart = dayStart; }
+
     public LocalDate getPeriodStartDate() { return periodStartDate; }
     public void setPeriodStartDate(LocalDate periodStartDate) { this.periodStartDate = periodStartDate; }
 
@@ -335,6 +346,6 @@ public class Schedule {
                 breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay,
                 overallocationHardLimitPct, underallocationHardLimitPct,
-                schedulingMode, consistencyToleranceMinutes);
+                schedulingMode, consistencyToleranceMinutes, dayStart);
     }
 }

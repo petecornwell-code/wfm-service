@@ -591,6 +591,7 @@ public class ScheduleService {
         r.setPeriodEndDate(s.getPeriodEndDate());
         r.setStartTime(s.getStartTime());
         r.setEndTime(s.getEndTime());
+        r.setDayStart(s.getDayStart());
         r.setIncrementMinutes(s.getIncrementMinutes());
         r.setBreakDurationMinutes(s.getBreakDurationMinutes());
         r.setBreakBlockedHours(s.getBreakBlockedHours());

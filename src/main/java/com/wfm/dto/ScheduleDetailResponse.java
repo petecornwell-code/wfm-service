@@ -16,6 +16,11 @@ public class ScheduleDetailResponse {
     private LocalDate periodEndDate;
     private LocalTime startTime;
     private LocalTime endTime;
+    // BDAY-04: the desk's day start, snapshotted from the Schedule the same way startTime/endTime
+    // already are. No initialiser -- an unset fixture must fail loudly at anchoredAt rather than
+    // silently binding midnight. ScheduleExportService reads it from this DTO in plan 19-06, since
+    // it receives only this DTO, never a Schedule.
+    private LocalTime dayStart;
     private int incrementMinutes;
     private int breakDurationMinutes;
     private BigDecimal breakBlockedHours;
@@ -233,6 +238,8 @@ public class ScheduleDetailResponse {
     public void setStartTime(LocalTime v) { this.startTime = v; }
     public LocalTime getEndTime() { return endTime; }
     public void setEndTime(LocalTime v) { this.endTime = v; }
+    public LocalTime getDayStart() { return dayStart; }
+    public void setDayStart(LocalTime v) { this.dayStart = v; }
     public int getIncrementMinutes() { return incrementMinutes; }
     public void setIncrementMinutes(int v) { this.incrementMinutes = v; }
     public int getBreakDurationMinutes() { return breakDurationMinutes; }
