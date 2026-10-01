@@ -236,11 +236,11 @@ BDAY-07 carries its 2026-10-01 amendment.
 Plans:
 **Wave 1**
 
-- [ ] 20-01-PLAN.md — Tracer: carry the desk anchor into a Quad-arity constraint's reach (additive, zero behaviour change), then three 21:00-anchored scenarios red against it (wave 1)
+- [x] 20-01-PLAN.md — Tracer: carry the desk anchor into a Quad-arity constraint's reach (additive, zero behaviour change), then three 21:00-anchored scenarios red against it (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 20-02-PLAN.md — The two structural guards: `BusinessDateJoinGuardTest` over four files (red) and `AgentDayDerivationGuardTest` over D-06's chain (green) (wave 2)
+- [x] 20-02-PLAN.md — The two structural guards: `BusinessDateJoinGuardTest` over four files (red) and `AgentDayDerivationGuardTest` over D-06's chain (green) (wave 2)
 - [ ] 20-03-PLAN.md — The two per-constraint count proofs: SOLV-06's reflective anchor-invariance table (red) and BDAY-07's 48-agent Phil-US-shaped drift baseline (green) (wave 2)
 - [ ] 20-04-PLAN.md — SOLV-04's constructed SLOT-mode overnight proof (red) and SOLV-05's seat-supply key-system fix (wave 2)
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 0
 fixed_count: 0
-total_count: 9
-last_updated: 2026-09-17T16:33:12.009Z
+total_count: 10
+last_updated: 2026-10-01T18:52:23.613Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,7 @@ last_updated: 2026-09-17T16:33:12.009Z
 | 7 | 13 | unrun-verify | src/main/java/com/wfm/controller/GlobalExceptionHandler.java |  | 13-06 Task 2 <human-check> HTTP-level walkthrough (malformed day-segment returns 400 not 500, valid/out-of-range day-hours paths unchanged, bulk contracted-hours 400 message, genuine 500 still generic) not run — no live backend available in this executor session; only the direct handler unit test (GlobalExceptionHandlerTest) proves the response the handler builds, not Spring's dispatch to it (P-17) | open |  | 2026-08-24T12:54:26.239Z |  |
 | 8 | 15 | deviation | build.gradle |  | Rule 3 blocking fix: restored the wfm.benchmark system-property test-JVM passthrough (removed at commit 299c42c alongside the Phase 12 harness) — without it -Dwfm.benchmark=true never reaches the test JVM and ShiftModelBenchmarkTest silently never runs | open |  | 2026-08-27T05:52:41.259Z |  |
 | 9 | 17 | stub | src/main/java/com/wfm/service/ScheduleOutputService.java |  | buildDriftReport's popularity field always returns List.of() -- DRFT-04's over-subscription ranking is plan 17-03's deliverable (D-13), explicitly deferred per the plan's own Task 1 action text | open |  | 2026-09-17T16:33:12.009Z |  |
+| 10 | 20 | deviation | src/test/resources/bday-join-guard.md |  | BusinessDateJoinGuardTest cannot see ScheduleConstraintProvider's shared DATE lambda (lines 91-92) or the seven groupBy(AGENT_ID, DATE, ...) consumers it feeds -- symbolic-constant indirection breaks the guard's single-line verb+receiver co-occurrence scan. Covers ~half of SOLV-01's edit surface; plan 20-05's migration at these 8 lines must be verified by direct code review, not by this guard's green. | open |  | 2026-10-01T18:52:23.613Z |  |
 
 ````json
 [
@@ -135,6 +136,19 @@ last_updated: 2026-09-17T16:33:12.009Z
     "recorded_at": "2026-09-17T16:33:12.009Z",
     "resolved_at": null,
     "milestone": "v1.3"
+  },
+  {
+    "id": 10,
+    "kind": "deviation",
+    "phase": "20",
+    "file": "src/test/resources/bday-join-guard.md",
+    "line": null,
+    "description": "BusinessDateJoinGuardTest cannot see ScheduleConstraintProvider's shared DATE lambda (lines 91-92) or the seven groupBy(AGENT_ID, DATE, ...) consumers it feeds -- symbolic-constant indirection breaks the guard's single-line verb+receiver co-occurrence scan. Covers ~half of SOLV-01's edit surface; plan 20-05's migration at these 8 lines must be verified by direct code review, not by this guard's green.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T18:52:23.613Z",
+    "resolved_at": null,
+    "milestone": "v1.5"
   }
 ]
 ````
