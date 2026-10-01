@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: executing
-stopped_at: Completed 20-05-PLAN.md
-last_updated: "2026-10-01T23:23:07.981Z"
+stopped_at: Completed 20-06-PLAN.md
+last_updated: "2026-10-01T23:49:31.678Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: c0ceb71f070052fd4e91251bba11cb82cc17579b
+state_head: ab88fd4520e18dd4c7da8220d5303f9ce83bda8f
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 20
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 20 (Solver Business-Date Correctness) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 20 execution started
 
@@ -312,6 +312,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: Phase 20 Plan 4: a null Timeslot.businessDate is not reachable in production (V53's NOT NULL constraint plus BusinessDateWritePathGuardTest's single-writer guard) -- the NPE requireShiftEnvelopeSeatSupply's re-keyed groupingBy could throw on a null key was reachable only from five test-only fixtures that never set businessDate, all now fixed; no defensive production code added since the schema/write-path guard already makes the null structurally impossible
 - [Phase 20]: Task 1 checkpoint resolved tagged-collector for honourPreferredBreakTime's anchor mechanism; joins ScheduleConfig before the groupBy, folding the day-start into a composed collector so match count cannot move by construction, confirmed unmoved by PhilUsShapedDriftGuardTest's unedited literals.
 - [Phase 20]: A 600x+ local-search performance regression found during this plan's own wave-close gate was root-caused by controlled A/B isolation to 18 pre-existing test fixtures never calling Timeslot#setBusinessDate (same gap class plan 20-04 fixed five times) -- not to the join migration or the tagged-collector mechanism. Fixed; full suite back to its ~11-minute historical baseline.
+- [Phase 20]: ScheduleOutputService and ShiftLibraryGenerationService migrated to business-date key positions; BusinessDateJoinGuardTest went fully GREEN as an unplanned early side effect (StaffingRequirementService's D-15 defect remains unfixed, structurally invisible to the guard) — Documented explicitly in bday-join-guard.md so the green is not mistaken for SOLV-07 completion before plan 20-07
 
 ### Blockers/Concerns
 
@@ -334,8 +335,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T23:23:02.573Z
-Stopped at: Completed 20-05-PLAN.md
+Last session: 2026-10-01T23:49:31.648Z
+Stopped at: Completed 20-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -406,3 +407,4 @@ Resume file: None
 | Phase 20 P03 | 32min | 2 tasks | 2 files |
 | Phase 20 P04 | 66min | 2 tasks | 10 files |
 | Phase 20-solver-business-date-correctness P05 | 3h 10min | 2 tasks | 24 files |
+| Phase 20 P06 | 23min | 2 tasks | 6 files |
