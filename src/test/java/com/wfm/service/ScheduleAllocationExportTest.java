@@ -59,6 +59,7 @@ class ScheduleAllocationExportTest {
 
     private static ScheduleDetailResponse detail() {
         ScheduleDetailResponse d = new ScheduleDetailResponse();
+        d.setDayStart(LocalTime.MIDNIGHT);
         d.setDeskName("Vinted");
         d.setStatus("COMPLETED");
         d.setPeriodStartDate(DAY_ONE);
@@ -321,6 +322,7 @@ class ScheduleAllocationExportTest {
     @DisplayName("an empty schedule produces no allocation sheets and does not throw")
     void emptyScheduleIsSafe() throws IOException {
         ScheduleDetailResponse empty = new ScheduleDetailResponse();
+        empty.setDayStart(LocalTime.MIDNIGHT);
         empty.setDeskName("Empty");
         empty.setAgentSchedule(List.of());
 
@@ -342,6 +344,7 @@ class ScheduleAllocationExportTest {
          */
         private Sheet sheet() throws IOException {
             ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(LocalTime.MIDNIGHT);
             d.setDeskName("Vinted");
             d.setStatus("COMPLETED");
             d.setPeriodStartDate(DAY_ONE);

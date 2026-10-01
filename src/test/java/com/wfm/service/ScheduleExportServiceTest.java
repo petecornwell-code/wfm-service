@@ -226,6 +226,7 @@ class ScheduleExportServiceTest {
 
     private ScheduleDetailResponse detailWith(List<AgentScheduleEntry> entries) {
         ScheduleDetailResponse detail = new ScheduleDetailResponse();
+        detail.setDayStart(LocalTime.MIDNIGHT);
         detail.setDeskName("Test Desk");
         detail.setStatus("COMPLETED");
         detail.setPeriodStartDate(DAY);

@@ -47,14 +47,19 @@ public class ScheduleExportService {
      *                reason. An empty list omits the sheet rather than writing an empty one.
      */
     public byte[] exportToExcel(ScheduleDetailResponse detail, List<AgentDayOffResponse> daysOff) {
+        // BDAY-04 (plan 19-06): one window per entry point, bound from the anchor field plan 19-01
+        // added to this DTO. Passed straight to the factory with no null-coalescing to midnight,
+        // so a fixture that leaves the anchor unset fails loudly here rather than silently
+        // exporting at midnight.
+        DayWindow window = DayWindow.anchoredAt(detail.getDayStart());
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             CellStyle headerStyle = createHeaderStyle(workbook);
 
             writeOverview(workbook, headerStyle, detail);
             writeStaffingSummary(workbook, headerStyle, detail.getStaffingSummary());
             writeAgentSchedule(workbook, headerStyle, detail.getAgentSchedule());
-            writeRoster(workbook, detail, daysOff);
-            writeAgentAllocation(workbook, detail);
+            writeRoster(workbook, detail, daysOff, window);
+            writeAgentAllocation(workbook, detail, window);
             writePreferenceReport(workbook, headerStyle, detail.getPreferenceReport());
             writeDriftReport(workbook, headerStyle, detail.getDriftReport());
             writeConstraintViolations(workbook, headerStyle, detail.getViolatedHardConstraints(),
@@ -236,7 +241,7 @@ public class ScheduleExportService {
      * envelopes, so a SLOT-mode export still produces a usable roster rather than an empty grid.
      */
     private void writeRoster(XSSFWorkbook workbook, ScheduleDetailResponse detail,
-                             List<AgentDayOffResponse> daysOff) {
+                             List<AgentDayOffResponse> daysOff, DayWindow window) {
         List<AgentScheduleEntry> entries = detail.getAgentSchedule();
         boolean noEntries = entries == null || entries.isEmpty();
         boolean noLeave = daysOff == null || daysOff.isEmpty();
@@ -253,7 +258,7 @@ public class ScheduleExportService {
         if (entries != null) {
             for (AgentScheduleEntry e : entries) {
                 if (e.date() == null) continue;
-                String code = shiftCode(e);
+                String code = shiftCode(e, window);
                 if (code == null) continue;
                 dates.add(e.date());
                 shiftByAgent.computeIfAbsent(name(e.agentName()), n -> new HashMap<>())
@@ -353,7 +358,7 @@ public class ScheduleExportService {
      * The code one roster cell carries: the assigned envelope where there is one, otherwise the
      * span actually worked. Returns null for an agent-day with neither, which reads as blank.
      */
-    private static String shiftCode(AgentScheduleEntry entry) {
+    private static String shiftCode(AgentScheduleEntry entry, DayWindow window) {
         if (entry.shift() != null) {
             return entry.shift().startTime() + "-" + entry.shift().endTime();
         }
@@ -368,7 +373,7 @@ public class ScheduleExportService {
             // isAfter() reads as the earliest time of day, so the roster cell would under-report
             // the shift's true end time. See FteUploadService and ShiftLibraryGenerationService
             // for the same precedent.
-            if (latest == null || DayWindow.endMinute(ad.endTime()) > DayWindow.endMinute(latest)) latest = ad.endTime();
+            if (latest == null || window.anchoredEndMinute(ad.endTime()) > window.anchoredEndMinute(latest)) latest = ad.endTime();
         }
         return earliest + "-" + latest;
     }
@@ -623,7 +628,7 @@ public class ScheduleExportService {
      * <p>One sheet per date rather than the UI's stacked blocks: a frozen header and agent column
      * cannot span stacked tables, and freezing is what makes a 16-column grid readable at all.
      */
-    private void writeAgentAllocation(XSSFWorkbook workbook, ScheduleDetailResponse detail) {
+    private void writeAgentAllocation(XSSFWorkbook workbook, ScheduleDetailResponse detail, DayWindow window) {
         List<AgentScheduleEntry> entries = detail.getAgentSchedule();
         if (entries == null || entries.isEmpty()) {
             return;
@@ -657,7 +662,7 @@ public class ScheduleExportService {
 
             Map<LocalTime, Integer> dayUnfilled =
                     unfilled.getOrDefault(date.toString(), Map.of());
-            writeAllocationSheet(workbook, styles, date, dayEntries, dayUnfilled);
+            writeAllocationSheet(workbook, styles, date, dayEntries, dayUnfilled, window);
         }
     }
 
@@ -691,15 +696,15 @@ public class ScheduleExportService {
 
     private void writeAllocationSheet(XSSFWorkbook workbook, AllocationStyles styles, LocalDate date,
                                        List<AgentScheduleEntry> dayEntries,
-                                       Map<LocalTime, Integer> unfilledPerSlot) {
+                                       Map<LocalTime, Integer> unfilledPerSlot, DayWindow window) {
         // Slot columns come from assigned seats, break spans AND unfilled seats, so a timeslot
         // nobody was assigned to still appears as a column rather than silently vanishing from
         // the day — that column is precisely where the shortfall is.
         Set<LocalTime> slotSet = new TreeSet<>(unfilledPerSlot.keySet());
-        int increment = incrementMinutes(dayEntries);
+        int increment = incrementMinutes(dayEntries, window);
         for (AgentScheduleEntry e : dayEntries) {
             for (AssignmentDetail a : e.assignments()) slotSet.add(a.startTime());
-            for (BreakDetail b : e.breaks()) slotSet.addAll(slotStarts(b, increment));
+            for (BreakDetail b : e.breaks()) slotSet.addAll(slotStarts(b, increment, window));
         }
         if (slotSet.isEmpty()) {
             return;
@@ -740,7 +745,7 @@ public class ScheduleExportService {
                 agentsPerSlot.merge(a.startTime(), 1, Integer::sum);
             }
             Set<LocalTime> breakSlots = new LinkedHashSet<>();
-            for (BreakDetail b : entry.breaks()) breakSlots.addAll(slotStarts(b, increment));
+            for (BreakDetail b : entry.breaks()) breakSlots.addAll(slotStarts(b, increment, window));
 
             for (int i = 0; i < slots.size(); i++) {
                 LocalTime slot = slots.get(i);
@@ -845,11 +850,11 @@ public class ScheduleExportService {
     }
 
     /** Grid increment, derived from the first assignment of the day; 0 when unknown. */
-    private int incrementMinutes(List<AgentScheduleEntry> dayEntries) {
+    private int incrementMinutes(List<AgentScheduleEntry> dayEntries, DayWindow window) {
         for (AgentScheduleEntry e : dayEntries) {
             for (AssignmentDetail a : e.assignments()) {
                 if (a.startTime() != null && a.endTime() != null) {
-                    return com.wfm.util.DayWindow.durationMinutes(a.startTime(), a.endTime());
+                    return window.anchoredDurationMinutes(a.startTime(), a.endTime());
                 }
             }
         }
@@ -857,17 +862,17 @@ public class ScheduleExportService {
     }
 
     /** Every grid slot a break covers. A break can span several slots (D-01 bands). */
-    private List<LocalTime> slotStarts(BreakDetail b, int incrementMinutes) {
+    private List<LocalTime> slotStarts(BreakDetail b, int incrementMinutes, DayWindow window) {
         List<LocalTime> out = new ArrayList<>();
         if (b.startTime() == null) return out;
         if (incrementMinutes <= 0 || b.endTime() == null) {
             out.add(b.startTime());
             return out;
         }
-        int from = com.wfm.util.DayWindow.startMinute(b.startTime());
-        int to = com.wfm.util.DayWindow.endMinute(b.endTime());
+        int from = window.anchoredStartMinute(b.startTime());
+        int to = window.anchoredEndMinute(b.endTime());
         for (int m = from; m < to; m += incrementMinutes) {
-            out.add(com.wfm.util.DayWindow.toLocalTime(m));
+            out.add(window.anchoredToLocalTime(m));
         }
         return out;
     }

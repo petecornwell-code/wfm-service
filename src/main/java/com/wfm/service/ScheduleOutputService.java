@@ -214,7 +214,7 @@ public class ScheduleOutputService {
                     // both from the seat pattern.
                     shiftStart = shiftDescriptor.startTime();
                     shiftEnd = shiftDescriptor.endTime();
-                    breaks = bandBreaks(shiftDescriptor);
+                    breaks = bandBreaks(shiftDescriptor, window);
                     List<Timeslot> dayTimeslots = timeslotsByDate.getOrDefault(date, List.of());
                     divergence = computeDivergence(shiftDescriptor, dayAssignments, dayTimeslots, window);
                 } else {
@@ -223,7 +223,7 @@ public class ScheduleOutputService {
                     // breaks, no divergence.
                     shiftStart = first.getTimeslot().getStartTime();
                     shiftEnd = dayAssignments.get(dayAssignments.size() - 1).getTimeslot().getEndTime();
-                    breaks = findBreaks(dayAssignments);
+                    breaks = findBreaks(dayAssignments, window);
                 }
 
                 entries.add(new AgentScheduleEntry(
@@ -299,6 +299,11 @@ public class ScheduleOutputService {
      * 8.3 Preference Report — per-agent per-day preference resolution and honour flags.
      */
     public PreferenceReport buildPreferenceReport(Schedule schedule) {
+        // BDAY-04 (plan 19-06): one window per public method, bound from the Schedule this method
+        // already receives — same accessor style buildAgentSchedule and buildConstraintViolations
+        // use (plan 19-05).
+        DayWindow window = DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart());
+
         // Group assignments by agent + date, compute actual start times and breaks
         Map<UUID, Map<LocalDate, LocalTime>> actualStartTimes = new HashMap<>();
         Map<UUID, Map<LocalDate, List<BreakDetail>>> actualBreaks = new HashMap<>();
@@ -337,8 +342,8 @@ public class ScheduleOutputService {
                 ShiftDescriptor descriptor = shiftDescriptorsByAgentDate
                         .getOrDefault(agentEntry.getKey(), Map.of()).get(dateEntry.getKey());
                 List<BreakDetail> breaks = descriptor != null
-                        ? bandBreaks(descriptor)
-                        : findBreaks(dayAssignments);
+                        ? bandBreaks(descriptor, window)
+                        : findBreaks(dayAssignments, window);
                 if (!breaks.isEmpty()) {
                     actualBreaks
                             .computeIfAbsent(agentEntry.getKey(), k -> new HashMap<>())
@@ -393,7 +398,7 @@ public class ScheduleOutputService {
             } else {
                 breakOk = breaksOverlapPreferred(
                         actualBreaks.getOrDefault(agentId, Map.of()).get(date),
-                        prefBreak, schedule.getBreakDurationMinutes());
+                        prefBreak, schedule.getBreakDurationMinutes(), window);
             }
             if (prefBreak != null) {
                 totalFields++;
@@ -810,14 +815,14 @@ public class ScheduleOutputService {
      * duration — never the gap-walking helper (Task 2). Empty when the band offset or duration is
      * absent or non-positive, which is the legitimate no-break template shape P-02 permits.
      */
-    private List<BreakDetail> bandBreaks(ShiftDescriptor descriptor) {
+    private List<BreakDetail> bandBreaks(ShiftDescriptor descriptor, DayWindow window) {
         Integer offset = descriptor.bandOffsetMinutes();
         Integer duration = descriptor.bandDurationMinutes();
         if (offset == null || duration == null || duration <= 0) {
             return List.of();
         }
-        LocalTime breakStart = DayWindow.plusWithinDay(descriptor.startTime(), offset);
-        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, duration);
+        LocalTime breakStart = window.anchoredPlusWithinDay(descriptor.startTime(), offset);
+        LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, duration);
         return List.of(new BreakDetail(breakStart, breakEnd, duration));
     }
 
@@ -928,16 +933,16 @@ public class ScheduleOutputService {
         return "NONE";
     }
 
-    private List<BreakDetail> findBreaks(List<AgentAssignment> sortedAssignments) {
+    private List<BreakDetail> findBreaks(List<AgentAssignment> sortedAssignments, DayWindow window) {
         if (sortedAssignments.size() < 2) return List.of();
 
         List<BreakDetail> breaks = new ArrayList<>();
         for (int i = 0; i < sortedAssignments.size() - 1; i++) {
             LocalTime currentEnd = sortedAssignments.get(i).getTimeslot().getEndTime();
             LocalTime nextStart = sortedAssignments.get(i + 1).getTimeslot().getStartTime();
-            if (DayWindow.endMinute(currentEnd) < DayWindow.startMinute(nextStart)) {
+            if (window.anchoredEndMinute(currentEnd) < window.anchoredStartMinute(nextStart)) {
                 int durationMinutes =
-                        DayWindow.startMinute(nextStart) - DayWindow.endMinute(currentEnd);
+                        window.anchoredStartMinute(nextStart) - window.anchoredEndMinute(currentEnd);
                 breaks.add(new BreakDetail(currentEnd, nextStart, durationMinutes));
             }
         }
@@ -969,12 +974,13 @@ public class ScheduleOutputService {
      * The preferred break timeslot spans [prefBreak, prefBreak + breakDurationMinutes).
      * An actual break overlaps if its time range intersects the preferred range.
      */
-    private boolean breaksOverlapPreferred(List<BreakDetail> breaks, LocalTime prefBreak, int breakDurationMinutes) {
+    private boolean breaksOverlapPreferred(List<BreakDetail> breaks, LocalTime prefBreak, int breakDurationMinutes,
+                                            DayWindow window) {
         if (breaks == null || breaks.isEmpty() || prefBreak == null) return false;
-        LocalTime prefEnd = DayWindow.plusWithinDay(prefBreak, breakDurationMinutes);
+        LocalTime prefEnd = window.anchoredPlusWithinDay(prefBreak, breakDurationMinutes);
         for (BreakDetail bd : breaks) {
             // Overlap: actual break start < preferred end AND actual break end > preferred start
-            if (DayWindow.overlaps(bd.startTime(), bd.endTime(), prefBreak, prefEnd)) {
+            if (window.anchoredOverlaps(bd.startTime(), bd.endTime(), prefBreak, prefEnd)) {
                 return true;
             }
         }

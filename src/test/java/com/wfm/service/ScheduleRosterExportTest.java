@@ -139,6 +139,7 @@ class ScheduleRosterExportTest {
 
     private ScheduleDetailResponse detail(List<AgentScheduleEntry> entries) {
         ScheduleDetailResponse d = new ScheduleDetailResponse();
+        d.setDayStart(LocalTime.MIDNIGHT);
         d.setDeskName("Vinted");
         d.setStatus("COMPLETED");
         d.setPeriodStartDate(MON);
