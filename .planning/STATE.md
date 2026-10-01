@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: executing
-stopped_at: Completed 20-03-PLAN.md
-last_updated: "2026-10-01T19:29:55.078Z"
+stopped_at: Completed 20-04-PLAN.md
+last_updated: "2026-10-01T20:47:05.749Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: af0afc1b3ceb1a6ad23666bbdad6e3d2d239801a
+state_head: 1200263b20c480af2b1eea26343514d041d81765
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 18
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 20 (Solver Business-Date Correctness) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 20 execution started
 
@@ -309,6 +309,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 19]: DayWindow's public surface reduced to the five anchored primitives plus anchoredAt plus the nine anchored* instance methods; reflective guard inverted and proven red; criterion 5 commit-range isolation proven over 47649f1..4a129d3; DeskService/DeskManagement.tsx corrected to name SOLV-01 instead of BDAY-04 as the day-start range's widener. — Closes Phase 19 (DayWindow Re-anchoring, BDAY-04). The compiler now proves no midnight-implicit call site was missed; the frozen oracle and inverted reflective guard make the public/private boundary enforced rather than conventional.
 - [Phase 20]: A @ConstraintWeight-ZERO constraint (Shift start mix) is elided entirely from Timefold's explain() match-total map rather than reported at zero -- both new test classes (ConstraintMatchCountNonVacuityTest, PhilUsShapedDriftGuardTest) normalise this weight to non-zero before reading any count, which changes no match but preserves the "exactly one match total found" completeness invariant. — Confirmed empirically (with and without a weight override) before either literal baseline table was written -- not a plan narrative issue, a real Timefold behaviour this phase's own guards must account for.
 - [Phase 20]: PhilUsShapedDriftGuardTest's 48-agent composition is the unique maximal-full-time two-tier split (44 full-time @ FTE 1.0, 4 part-time @ FTE 0.15) summing to exactly 44.6 total FTE; demand at every timeslot is derived directly from cohort membership rather than authored independently, giving an exact envelope-respecting seat-to-agent pinning. — Avoids a generic round-robin seat-pinning rule accidentally mismatching agents to seats outside their chosen envelope, which would make the fixture's literal baseline fragile and hard to re-derive after any future edit.
+- [Phase 20]: Phase 20 Plan 4: a null Timeslot.businessDate is not reachable in production (V53's NOT NULL constraint plus BusinessDateWritePathGuardTest's single-writer guard) -- the NPE requireShiftEnvelopeSeatSupply's re-keyed groupingBy could throw on a null key was reachable only from five test-only fixtures that never set businessDate, all now fixed; no defensive production code added since the schema/write-path guard already makes the null structurally impossible
 
 ### Blockers/Concerns
 
@@ -331,8 +332,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T19:29:55.036Z
-Stopped at: Completed 20-03-PLAN.md
+Last session: 2026-10-01T20:47:05.717Z
+Stopped at: Completed 20-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -401,3 +402,4 @@ Resume file: None
 | Phase 20 P01 | 48min | 2 tasks | 4 files |
 | Phase 20 P02 | 22min | 2 tasks | 6 files |
 | Phase 20 P03 | 32min | 2 tasks | 2 files |
+| Phase 20 P04 | 66min | 2 tasks | 10 files |

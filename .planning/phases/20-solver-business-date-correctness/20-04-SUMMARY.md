@@ -48,7 +48,11 @@ key-decisions:
   - "MidnightBoundaryScenarioRegistryTest's two-class, exactly-three-entries scan is widened to three classes and exactly four entries (Rule 3, blocking) -- its hardcoded scan would never have seen SlotModeOvernightContractedHoursTest's @AssertsTodaysBehaviour marker, making the plan's own required registry entry structurally undetectable by the two-directional guard it is supposed to satisfy."
   - "computeCapacityWarnings is deliberately left unwidened -- it has no per-date map or date key at all, so it cannot hold a calendar/business mismatch, and SOLV-05's 'reports shortfalls per business day' is discharged by requireShiftEnvelopeSeatSupply's fix, the mechanism that actually blocks a solve. Recorded as a comment at the call site, not merely in this summary."
 
-requirements-completed: [SOLV-04, SOLV-05]
+# SOLV-04 is also declared by plan 20-05 (the migration plan that flips
+# SlotModeOvernightContractedHoursTest's forward assertions green) -- the shared-ID gate (#2388)
+# correctly defers marking it complete until 20-05 lands too, matching 20-03's own precedent for
+# SOLV-06/BDAY-07.
+requirements-completed: [SOLV-05]
 
 # Coverage metadata (#1602)
 coverage:

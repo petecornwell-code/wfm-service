@@ -130,7 +130,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [ ] **SOLV-02**: A test fails if any constraint joins on a timeslot's calendar date where business date is meant
 - [ ] **SOLV-03**: Break bands, contiguity and envelope compliance hold across the midnight boundary
 - [ ] **SOLV-04**: SLOT mode counts an overnight stretch against a single business day rather than under-allocating both calendar days
-- [ ] **SOLV-05**: The pre-solve seat-supply check reports shortfalls per business day
+- [x] **SOLV-05**: The pre-solve seat-supply check reports shortfalls per business day
 - [ ] **SOLV-06**: Each migrated join is proven non-vacuous — per-constraint match counts are asserted, so a constraint that matches nothing cannot pass as satisfied
 - [ ] **SOLV-07**: Demand upload, coverage reporting and the solver provably resolve the same business date for the same timeslot, guarded by a test rather than by convention
 
@@ -223,7 +223,7 @@ Populated during roadmap creation.
 | SOLV-02 | Phase 20 | Pending |
 | SOLV-03 | Phase 20 | Pending |
 | SOLV-04 | Phase 20 | Pending |
-| SOLV-05 | Phase 20 | Pending |
+| SOLV-05 | Phase 20 | Complete |
 | SOLV-06 | Phase 20 | Pending |
 | SOLV-07 | Phase 20 | Pending |
 | REST-01 | Phase 22 | Pending |
