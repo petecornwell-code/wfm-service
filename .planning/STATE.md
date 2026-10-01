@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 19
 current_phase_name: DayWindow Re-anchoring
 status: executing
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-10-01T00:16:40.453Z"
-last_activity: 2026-09-30
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-10-01T00:46:07.355Z"
+last_activity: 2026-10-01
 last_activity_desc: Phase 19 execution started
-state_head: 47649f1c352300772fc1d4b7a5ffa6f2b7f6c1a3
+state_head: 17641c51474a082ffa59752f2467b80d6996bf27
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 14
-  completed_plans: 7
+  completed_plans: 8
   percent: 20
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 19 (DayWindow Re-anchoring) — EXECUTING
-Plan: 2 of 8
-Status: Executing Phase 19
-Last activity: 2026-09-30 — Plan 19-01 complete (47649f1)
+Plan: 3 of 8
+Status: Ready to execute
+Last activity: 2026-10-01 — Plan 19-02 complete (17641c5)
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
 planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
 
@@ -294,6 +294,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 18]: Phase 18 Plan 6: reconciled the salvaged ten-entry comparison allowlist to nine entries per P-30 -- the TimeslotGeneratorService entry is stale since 18-03's generator re-authoring replaced its raw LocalTime comparison with anchored integer-offset arithmetic through DayWindow. — Confirmed by running the guard test, not by inspection alone; the removed line no longer exists in any form in the settled tree.
 - [Phase 18]: Phase 18 Plan 6: resolved Task 2's raw-arithmetic-pipeline-proof conditional in favor of the more specific, numbered P-28 decision -- the synthetic offender fixture holds exactly two lines and proves only the comparison pipeline, which is the one D-25 names as the uncovered failure mode. — A single fixture line cannot trigger both COMPARISON_TOKENS and RAW_ARITHMETIC_TOKENS without becoming a second line, contradicting P-28's exactly-one-entry contract.
 - [Phase 19]: Phase 19 Plan 01: widened SolverService.buildSchedule to package-private+static and added a new test-only bridge class (SolverServiceBuildScheduleAccess), mirroring the existing SolverSeatSupplyGateAccess convention, so ScheduleConfigAnchorPlumbingTest in com.wfm.solver can exercise it — Package-private alone does not cross the com.wfm.solver/com.wfm.service package boundary the plan's own test file path requires
+- [Phase 19]: Phase 19 Plan 02: split 'class' from the identifier across two lines in FrozenOracleEquivalence's declaration since the literal substring 'class FrozenOracle' also matches 'class FrozenOracleEquivalence', which would have doubled the oracle-uniqueness grep check
+- [Phase 19]: Phase 19 Plan 02: expectedDurationAfterMigration passes today's already-positive raw value through unchanged, returns 0 for a zero-length pair at a non-anchor instant, and wraps forward a full day only for a true reversal -- a three-way split needed to avoid confusing zero-length with whole-day at the equal-endpoint boundary
 
 ### Blockers/Concerns
 
@@ -316,8 +318,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T00:16:40.434Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-10-01T00:46:07.333Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -376,3 +378,4 @@ Resume file: None
 | Phase 18 P05 | 30min | 2 tasks | 3 files |
 | Phase 18 P06 | ~40min | 2 tasks | 3 files |
 | Phase 19 P01 | 45min | 1 tasks | 8 files |
+| Phase 19 P02 | ~30min | 2 tasks | 1 files |
