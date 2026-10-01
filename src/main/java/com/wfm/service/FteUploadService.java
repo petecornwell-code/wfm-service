@@ -3,10 +3,13 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.util.DayWindow;
 import com.wfm.dto.FteUploadResult;
+import com.wfm.exception.EntityNotFoundException;
+import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.StaffingSource;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -40,23 +43,36 @@ public class FteUploadService {
     private final SpecializationRepository specializationRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
+    private final DeskRepository deskRepository;
     private final EntityManager entityManager;
 
     public FteUploadService(TimeslotRepository timeslotRepository,
                             SpecializationRepository specializationRepository,
                             StaffingRequirementRepository staffingRequirementRepository,
                             TimeslotGeneratorService timeslotGeneratorService,
+                            DeskRepository deskRepository,
                             EntityManager entityManager) {
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotGeneratorService = timeslotGeneratorService;
+        this.deskRepository = deskRepository;
         this.entityManager = entityManager;
     }
 
     @Transactional
     public FteUploadResult uploadFtes(UUID deskId, MultipartFile file) throws IOException {
         long tenantId = TenantContext.getTenantId();
+
+        // BDAY-04 (plan 19-06, Rule 3 deviation -- see this plan's SUMMARY): this class holds
+        // neither a DeskRepository nor a Schedule parameter of its own in the anchor-source table's
+        // original classification, but neither of its two real callers (StaffingRequirementController,
+        // via the controller's own upload endpoint) resolves a desk or a dayStart either -- the
+        // "propagate outward" channel the table assumed has no reachable anchor at the other end.
+        // Loading the desk directly here, once per upload, is this class's own anchor source.
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        DayWindow window = DayWindow.anchoredAt(desk.getDayStart());
 
         List<String> saved = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
@@ -109,16 +125,16 @@ public class FteUploadService {
                     LocalTime slotEnd = (i + 1 < headerTimes.size() && headerTimes.get(i + 1) != null)
                             ? headerTimes.get(i + 1)
                             : (incrementMinutes > 0
-                                    ? DayWindow.plusWithinDay(slotStart, incrementMinutes) : null);
+                                    ? window.anchoredPlusWithinDay(slotStart, incrementMinutes) : null);
                     if (slotEnd != null) {
                         // Compared as END boundaries: a final slot ending at midnight stores 00:00,
                         // which isAfter() reads as the earliest time of day, so the sheet's window
                         // would have been recorded as ending an increment early.
-                        if (endTime == null || DayWindow.endMinute(slotEnd) > DayWindow.endMinute(endTime)) {
+                        if (endTime == null || window.anchoredEndMinute(slotEnd) > window.anchoredEndMinute(endTime)) {
                             endTime = slotEnd;
                         }
                         if (incrementMinutes == 0) {
-                            incrementMinutes = DayWindow.durationMinutes(slotStart, slotEnd);
+                            incrementMinutes = window.anchoredDurationMinutes(slotStart, slotEnd);
                         }
                     }
                 }
@@ -129,10 +145,11 @@ public class FteUploadService {
             }
 
             // Generate timeslots for the full date range (reuses existing if they match).
-            // BDAY-01: DeskService.setDayStart's 00:00-only gate makes any other anchor
-            // unreachable this phase; Phase 19 re-anchors this to the desk's own value.
+            // BDAY-01/BDAY-04: DeskService.setDayStart's 00:00-only gate (lifted by SOLV-01) is
+            // what keeps desk.getDayStart() at MIDNIGHT for every desk today; this now passes the
+            // desk's real anchor rather than a hardcoded literal.
             List<Timeslot> timeslots = timeslotGeneratorService.generateTimeslots(
-                    deskId, minDate, maxDate, LocalTime.MIDNIGHT, startTime, endTime, incrementMinutes);
+                    deskId, minDate, maxDate, desk.getDayStart(), startTime, endTime, incrementMinutes);
 
             // Build lookup: date -> startTime -> Timeslot
             Map<LocalDate, Map<LocalTime, Timeslot>> timeslotLookup = new HashMap<>();

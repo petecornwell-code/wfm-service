@@ -199,7 +199,7 @@ public class ShiftLibraryGenerationService {
 
             List<Candidate> clusterSelected = greedyCover(clusterCandidates, clusterWindows, window);
             clusterSelected = expandForSupply(clusterSelected, clusterCandidates, clusterWindows,
-                    demandHours(clusterDemand), supplyHours(clusterDemand, hoursByWeekday));
+                    demandHours(clusterDemand, window), supplyHours(clusterDemand, hoursByWeekday), window);
             selected.addAll(clusterSelected);
         }
 
@@ -302,20 +302,20 @@ public class ShiftLibraryGenerationService {
                     continue; // break-less-template prohibition -- never generated at full length
                 }
                 int spanLength = netMinutes + breakDuration;
-                for (int spanStartMinute = DayWindow.startMinute(earliestStart);
-                     spanStartMinute <= DayWindow.startMinute(latestStart);
+                for (int spanStartMinute = window.anchoredStartMinute(earliestStart);
+                     spanStartMinute <= window.anchoredStartMinute(latestStart);
                      spanStartMinute += increment) {
                     // Minute-of-day, not LocalTime.plusMinutes: a latestStart within one increment
                     // of midnight made the old loop wrap to 00:00 and never terminate.
-                    LocalTime spanStart = DayWindow.toLocalTime(spanStartMinute);
+                    LocalTime spanStart = window.anchoredToLocalTime(spanStartMinute);
                     // A span finishing exactly at midnight is legal (end 00:00 == minute 1440);
                     // one running PAST midnight is not modelled, so it is skipped here rather than
                     // silently wrapping to an earlier time as LocalTime.plusMinutes would.
-                    int spanEndMinute = DayWindow.startMinute(spanStart) + spanLength;
+                    int spanEndMinute = window.anchoredStartMinute(spanStart) + spanLength;
                     if (spanEndMinute > DayWindow.MINUTES_PER_DAY) {
                         continue;
                     }
-                    LocalTime spanEnd = DayWindow.toLocalTime(spanEndMinute);
+                    LocalTime spanEnd = window.anchoredToLocalTime(spanEndMinute);
                     if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, spanStart)
                             || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd)) {
                         continue;
@@ -326,8 +326,8 @@ public class ShiftLibraryGenerationService {
                     } else {
                         for (int offset = increment; offset + breakDuration <= spanLength - increment;
                              offset += increment) {
-                            LocalTime breakStart = DayWindow.plusWithinDay(spanStart, offset);
-                            LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, breakDuration);
+                            LocalTime breakStart = window.anchoredPlusWithinDay(spanStart, offset);
+                            LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, breakDuration);
                             if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, breakStart)
                                     || !ShiftTemplateService.isAligned(bounds.startTime(), increment, breakEnd)) {
                                 continue;
@@ -542,7 +542,8 @@ public class ShiftLibraryGenerationService {
      */
     private List<Candidate> expandForSupply(List<Candidate> selected, List<Candidate> candidates,
                                              List<ShiftLibraryValidationService.Window> windows,
-                                             BigDecimal demandHours, BigDecimal supplyHours) {
+                                             BigDecimal demandHours, BigDecimal supplyHours,
+                                             DayWindow window) {
         if (demandHours.signum() <= 0 || supplyHours.compareTo(demandHours) <= 0) {
             return selected; // not over-supplied — minimal cover is the right answer
         }
@@ -563,7 +564,7 @@ public class ShiftLibraryGenerationService {
         // Ranked by END minute-of-day: natural order puts a midnight end (00:00) FIRST, so a
         // desk running to midnight would report its second-latest window end as the latest.
         LocalTime latestEnd = windows.stream().map(ShiftLibraryValidationService.Window::endTime)
-                .max(Comparator.comparingInt(DayWindow::endMinute)).orElseThrow();
+                .max(Comparator.comparingInt(window::anchoredEndMinute)).orElseThrow();
 
         List<Candidate> expanded = new ArrayList<>(selected);
         for (Candidate candidate : candidates) {
@@ -575,6 +576,13 @@ public class ShiftLibraryGenerationService {
             }
             LocalTime start = candidate.template().getStartTime();
             LocalTime end = candidate.template().getEndTime();
+            // BDAY-04 (plan 19-06, Rule 4 deviation -- see this plan's SUMMARY): kept on the
+            // deprecated static deliberately. MidnightTimeArithmeticGuardTest's comparison
+            // allowlist (src/test/resources/midnight-time-arithmetic.md, a file reserved for plan
+            // 19-07) keys this exact line's text, including the DayWindow.endMinute(...) calls;
+            // converting them to the instance form changes the line's text and desyncs the
+            // allowlist, which this plan cannot touch. The window-based form is otherwise
+            // equivalent and should be adopted once plan 19-07 or 19-08 re-keys the allowlist.
             if (start.isBefore(earliestStart) || DayWindow.endMinute(end) > DayWindow.endMinute(latestEnd)) {
                 continue; // never propose an envelope reaching outside the demanded range
             }
@@ -589,10 +597,10 @@ public class ShiftLibraryGenerationService {
     }
 
     /** Total demanded person-hours: each requirement's FTEs multiplied by its timeslot length. */
-    private BigDecimal demandHours(List<StaffingRequirement> demand) {
+    private BigDecimal demandHours(List<StaffingRequirement> demand, DayWindow window) {
         BigDecimal total = BigDecimal.ZERO;
         for (StaffingRequirement sr : demand) {
-            long minutes = DayWindow.durationMinutes(sr.getTimeslot().getStartTime(),
+            long minutes = window.anchoredDurationMinutes(sr.getTimeslot().getStartTime(),
                     sr.getTimeslot().getEndTime());
             total = total.add(BigDecimal.valueOf(minutes)
                     .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP)
@@ -883,7 +891,7 @@ public class ShiftLibraryGenerationService {
         Map<Integer, Integer> scoreByOffset = new LinkedHashMap<>();
         for (int offset : admissibleOffsets) {
             scoreByOffset.put(offset, scoreOffset(candidate.template(), offset, duration, validWeekdays,
-                    demandByWeekdayAndStart, incrementMinutes));
+                    demandByWeekdayAndStart, incrementMinutes, dayWindow));
         }
 
         List<Integer> ranked = new ArrayList<>(admissibleOffsets);
@@ -922,17 +930,17 @@ public class ShiftLibraryGenerationService {
      */
     private int scoreOffset(ShiftTemplate template, int offset, int duration, List<DayOfWeek> validWeekdays,
                              Map<DayOfWeek, Map<LocalTime, Integer>> demandByWeekdayAndStart,
-                             int incrementMinutes) {
-        LocalTime breakStart = DayWindow.plusWithinDay(template.getStartTime(), offset);
-        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, duration);
+                             int incrementMinutes, DayWindow dayWindow) {
+        LocalTime breakStart = dayWindow.anchoredPlusWithinDay(template.getStartTime(), offset);
+        LocalTime breakEnd = dayWindow.anchoredPlusWithinDay(breakStart, duration);
         int maxAcrossWeekdays = 0;
         for (DayOfWeek weekday : validWeekdays) {
             Map<LocalTime, Integer> daySlots = demandByWeekdayAndStart.getOrDefault(weekday, Map.of());
             int sum = 0;
             // Minute-of-day cursor, so a band reaching midnight cannot wrap the scan.
-            for (int minute = DayWindow.startMinute(breakStart);
-                    minute < DayWindow.endMinute(breakEnd); minute += incrementMinutes) {
-                sum += daySlots.getOrDefault(DayWindow.toLocalTime(minute), 0);
+            for (int minute = dayWindow.anchoredStartMinute(breakStart);
+                    minute < dayWindow.anchoredEndMinute(breakEnd); minute += incrementMinutes) {
+                sum += daySlots.getOrDefault(dayWindow.anchoredToLocalTime(minute), 0);
             }
             maxAcrossWeekdays = Math.max(maxAcrossWeekdays, sum);
         }

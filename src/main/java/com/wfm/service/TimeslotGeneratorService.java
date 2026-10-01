@@ -4,8 +4,11 @@ import com.wfm.config.TenantContext;
 import com.wfm.util.DayWindow;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
+import com.wfm.exception.EntityNotFoundException;
+import com.wfm.model.Desk;
 import com.wfm.model.ScheduleStatus;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -33,16 +36,33 @@ public class TimeslotGeneratorService {
     private final TimeslotRepository timeslotRepository;
     private final StaffingRequirementRepository staffingRequirementRepository;
     private final ScheduleRepository scheduleRepository;
+    private final DeskRepository deskRepository;
     private final EntityManager entityManager;
 
     public TimeslotGeneratorService(TimeslotRepository timeslotRepository,
                                     StaffingRequirementRepository staffingRequirementRepository,
                                     ScheduleRepository scheduleRepository,
+                                    DeskRepository deskRepository,
                                     EntityManager entityManager) {
         this.timeslotRepository = timeslotRepository;
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.scheduleRepository = scheduleRepository;
+        this.deskRepository = deskRepository;
         this.entityManager = entityManager;
+    }
+
+    /**
+     * The anchor source for {@link #getLiveBounds} (BDAY-04, Rule 3 deviation -- see this plan's
+     * SUMMARY): the column values that method converts back to {@link LocalTime} are genuinely
+     * minute-of-day, not day-start-relative offsets, but the conversion must still go through a
+     * bound window rather than a midnight literal so a future non-{@code 00:00} desk is not
+     * silently misreported. Throws on a missing desk, matching {@code ShiftTemplateService
+     * .dayWindowFor}'s convention for a class whose other methods also throw on a missing desk.
+     */
+    private DayWindow dayWindowFor(UUID deskId) {
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, TenantContext.getTenantId())
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        return DayWindow.anchoredAt(desk.getDayStart());
     }
 
     public List<Timeslot> listTimeslots(UUID deskId, LocalDate from, LocalDate to) {
@@ -57,13 +77,14 @@ public class TimeslotGeneratorService {
         Object[] cols = (row[0] instanceof Object[]) ? (Object[]) row[0] : row;
         if (cols[0] == null) return Optional.empty();
         // Columns 2 and 3 are minute-of-day integers, not TIME values -- see the query's javadoc.
-        // DayWindow.toLocalTime maps 1440 back to 00:00, so a desk ending at midnight reports its
-        // true end rather than the 23:00 that MAX(end_time) used to return.
+        // window.anchoredToLocalTime maps 1440 back to 00:00, so a desk ending at midnight reports
+        // its true end rather than the 23:00 that MAX(end_time) used to return.
+        DayWindow window = dayWindowFor(deskId);
         return Optional.of(new TimeslotBoundsResponse(
                 ((java.sql.Date) cols[0]).toLocalDate(),
                 ((java.sql.Date) cols[1]).toLocalDate(),
-                DayWindow.toLocalTime(((Number) cols[2]).intValue()),
-                DayWindow.toLocalTime(((Number) cols[3]).intValue()),
+                window.anchoredToLocalTime(((Number) cols[2]).intValue()),
+                window.anchoredToLocalTime(((Number) cols[3]).intValue()),
                 ((Number) cols[4]).intValue()
         ));
     }
@@ -201,7 +222,14 @@ public class TimeslotGeneratorService {
             throw new IllegalArgumentException(
                     "Day start is required to check tiling against the generation increment");
         }
-        if (DayWindow.startMinute(dayStart) % incrementMinutes != 0) {
+        // This reads dayStart's OWN minute-of-day from midnight -- not a day-start-relative
+        // offset, since the anchor IS the reference point here, not a scheduling time measured
+        // against it. Binding a window at dayStart and calling its anchored accessor would always
+        // read back zero (an anchor measured against itself), so this stays plain LocalTime
+        // arithmetic rather than routing through DayWindow -- the one call in this plan's eight
+        // files where the anchored instance API does not apply (see this plan's SUMMARY).
+        int dayStartMinuteOfDay = dayStart.getHour() * 60 + dayStart.getMinute();
+        if (dayStartMinuteOfDay % incrementMinutes != 0) {
             throw new IllegalArgumentException(
                     "Desk day-start " + dayStart + " is not a whole multiple of the "
                             + incrementMinutes + "-minute generation increment and cannot tile a day");

@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import com.wfm.config.TenantContext;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -50,10 +51,12 @@ class TimeslotGeneratorBusinessDateTest {
     private final StaffingRequirementRepository staffingRequirementRepository =
             mock(StaffingRequirementRepository.class);
     private final ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+    private final DeskRepository deskRepository = mock(DeskRepository.class);
     private final EntityManager entityManager = mock(EntityManager.class);
 
     private final TimeslotGeneratorService service = new TimeslotGeneratorService(
-            timeslotRepository, staffingRequirementRepository, scheduleRepository, entityManager);
+            timeslotRepository, staffingRequirementRepository, scheduleRepository, deskRepository,
+            entityManager);
 
     /**
      * Mutable backing store the {@code saveAll} and closing-read-back stubs share, so the
