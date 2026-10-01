@@ -33,6 +33,13 @@ public class FteSpreadsheetGenerator {
             bold.setBold(true);
             headerStyle.setFont(bold);
 
+            // BDAY-04 (plan 19-07): this is a standalone report-generation utility with its own
+            // main and zero queue/tenant context reachable, so it cannot bind a real queue's day
+            // start — bound once from LocalTime.MIDNIGHT instead, per D-07's allowlisted carve-out.
+            // Every resulting window.anchoredXxx(...) call below is listed in
+            // midnight-time-arithmetic.md's "Permitted midnight anchors" section.
+            DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
             for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
                 Sheet sheet = workbook.createSheet(date.toString());
 
@@ -45,11 +52,11 @@ public class FteSpreadsheetGenerator {
                 int col = 1;
                 // Minute-of-day cursor: stepping a LocalTime past 23:00 gives 00:00, which reads
                 // as minute 0 and makes the loop wrap around the clock instead of ending.
-                int firstMinute = DayWindow.startMinute(startTime);
-                int lastMinute = DayWindow.endMinute(endTime);
+                int firstMinute = window.anchoredStartMinute(startTime);
+                int lastMinute = window.anchoredEndMinute(endTime);
                 for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
-                    LocalTime t = DayWindow.toLocalTime(minute);
-                    LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
+                    LocalTime t = window.anchoredToLocalTime(minute);
+                    LocalTime slotEnd = window.anchoredToLocalTime(minute + incrementMinutes);
                     Cell cell = header.createCell(col++);
                     cell.setCellValue(t.format(TIME_FMT) + "-" + slotEnd.format(TIME_FMT));
                     cell.setCellStyle(headerStyle);
@@ -60,8 +67,8 @@ public class FteSpreadsheetGenerator {
                     Row row = sheet.createRow(r + 1);
                     row.createCell(0).setCellValue(specializations.get(r));
                     int slotCol = 1;
-                    for (int minute = DayWindow.startMinute(startTime);
-                            minute < DayWindow.endMinute(endTime); minute += incrementMinutes) {
+                    for (int minute = window.anchoredStartMinute(startTime);
+                            minute < window.anchoredEndMinute(endTime); minute += incrementMinutes) {
                         // Sample FTE value: varies by specialization and time
                         int fte = 2 + (r % 3) + (slotCol % 4);
                         row.createCell(slotCol++).setCellValue(fte);

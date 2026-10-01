@@ -290,7 +290,7 @@ public class SolverService {
 
         // 7. Run pre-solve validation (12 checks from spec §7.11)
         runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
-                eligibleAgents, allDaysOff, exceptions, agentDayHours, resolvedPreferences);
+                eligibleAgents, allDaysOff, exceptions, agentDayHours, resolvedPreferences, window);
 
         // 8. Build lookup map for exceptions
         Map<UUID, Map<LocalDate, BigDecimal>> agentExceptionMap = new HashMap<>();
@@ -1062,7 +1062,8 @@ public class SolverService {
                                        List<AgentDayOff> daysOff,
                                        List<AgentException> exceptions,
                                        List<AgentDayHours> agentDayHours,
-                                       List<AgentPreference> preferences) {
+                                       List<AgentPreference> preferences,
+                                       DayWindow window) {
         List<ErrorDetail> errors = new ArrayList<>();
 
         // 1. Period length: 1-31 days
@@ -1100,7 +1101,7 @@ public class SolverService {
                                 + " does not match timeslot end " + lastOnDay.getEndTime(),
                         schedule.getEndTime().toString()));
             }
-            long timeslotMinutes = DayWindow.durationMinutes(first.getStartTime(), first.getEndTime());
+            long timeslotMinutes = window.anchoredDurationMinutes(first.getStartTime(), first.getEndTime());
             if (timeslotMinutes != schedule.getIncrementMinutes()) {
                 errors.add(new ErrorDetail("incrementMinutes",
                         "Schedule incrementMinutes " + schedule.getIncrementMinutes()
@@ -1218,7 +1219,13 @@ public class SolverService {
         // 10. Coverage window must be >= contracted hours + break for each agent-day
         // A schedule ending at midnight stores 00:00; the raw call would make its coverage
         // window negative and fail every agent's contracted-hours feasibility check.
-        long coverageMinutes = DayWindow.durationMinutes(schedule.getStartTime(), schedule.getEndTime());
+        // BDAY-04 (plan 19-07): this check reads the Schedule's own start/end, so it reaches the
+        // anchor through the Schedule it already has in scope, via the same read path
+        // ScheduleOutputService uses (schedule.getScheduleConfig().dayStart()) — not the
+        // propagated `window` parameter above, which is this method's desk-anchored binding for
+        // the raw-timeslot check instead.
+        DayWindow scheduleWindow = DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart());
+        long coverageMinutes = scheduleWindow.anchoredDurationMinutes(schedule.getStartTime(), schedule.getEndTime());
         BigDecimal coverageHours = BigDecimal.valueOf(coverageMinutes)
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
         BigDecimal breakHours = BigDecimal.valueOf(schedule.getBreakDurationMinutes())
