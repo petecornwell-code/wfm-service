@@ -776,4 +776,113 @@ class DayWindowTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("the throw domain of durationMinutes and plusWithinDay is pinned as data, not prose (BDAY-04 criterion 2)")
+    class ThrowDomainIsPinned {
+
+        /**
+         * True exactly when today's {@code durationMinutes(start, end)} throws: the half-open
+         * interval {@code endMinute(end) - startMinute(start)} is not strictly positive. Criterion
+         * 2 removes this throw; {@link #expectedDurationAfterMigration} records what the anchored
+         * composition must yield at every point of this domain instead.
+         */
+        private static boolean durationMinutesThrows(LocalTime start, LocalTime end) {
+            return FrozenOracle.endMinute(end) - FrozenOracle.startMinute(start) <= 0;
+        }
+
+        /**
+         * True exactly when today's {@code plusWithinDay(base, minutes)} throws: the summed
+         * minute-of-day falls outside {@code [0, MINUTES_PER_DAY]}.
+         */
+        private static boolean plusWithinDayThrows(LocalTime base, int minutes) {
+            int target = FrozenOracle.startMinute(base) + minutes;
+            return target < 0 || target > FrozenOracle.MINUTES_PER_DAY;
+        }
+
+        /**
+         * The value the post-migration anchored composition must yield for a pair, matching
+         * today's already-correct, non-throwing value outside {@link #durationMinutesThrows}'s
+         * domain. Inside that domain: a true reversal (the raw difference is negative) wraps
+         * forward across the anchor -- D-11's crossing-the-anchor duration. A zero-length pair at
+         * a non-anchor instant (the raw difference is exactly zero) is a genuine zero-minute
+         * interval, not a wrap -- the distinction this migration is most likely to blur with the
+         * ordinary whole-day-at-the-anchor case (raw already positive, e.g. {@code (00:00,
+         * 00:00)}), which this function leaves untouched rather than re-deriving.
+         */
+        private static int expectedDurationAfterMigration(LocalTime start, LocalTime end) {
+            int raw = FrozenOracle.endMinute(end) - FrozenOracle.startMinute(start);
+            if (raw > 0) {
+                return raw;
+            }
+            if (raw == 0) {
+                return 0;
+            }
+            return raw + FrozenOracle.MINUTES_PER_DAY;
+        }
+
+        @Test
+        @DisplayName("the durationMinutes throw predicate agrees with the live static for every ordered pair of minutes")
+        void durationMinutesPredicateAgreesForEveryOrderedPair() {
+            for (int i = 0; i < 1440; i++) {
+                LocalTime start = DayWindow.toLocalTime(i);
+                for (int j = 0; j < 1440; j++) {
+                    LocalTime end = DayWindow.toLocalTime(j);
+                    boolean liveThrows;
+                    try {
+                        DayWindow.durationMinutes(start, end);
+                        liveThrows = false;
+                    } catch (IllegalArgumentException e) {
+                        liveThrows = true;
+                    }
+                    assertThat(durationMinutesThrows(start, end))
+                            .as("durationMinutesThrows(%s, %s)", start, end)
+                            .isEqualTo(liveThrows);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("the plusWithinDay throw predicate agrees with the live static for every base minute "
+                + "against a bounded offset set")
+        void plusWithinDayPredicateAgreesForEveryBaseMinute() {
+            for (int b = 0; b < 1440; b++) {
+                LocalTime base = DayWindow.toLocalTime(b);
+                int exactBoundaryOffset = DayWindow.MINUTES_PER_DAY - b;
+                int[] offsets = {0, 1, 15, 30, 60, exactBoundaryOffset, exactBoundaryOffset + 1};
+                for (int offset : offsets) {
+                    boolean liveThrows;
+                    try {
+                        DayWindow.plusWithinDay(base, offset);
+                        liveThrows = false;
+                    } catch (IllegalArgumentException e) {
+                        liveThrows = true;
+                    }
+                    assertThat(plusWithinDayThrows(base, offset))
+                            .as("plusWithinDayThrows(%s, %d)", base, offset)
+                            .isEqualTo(liveThrows);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("the whole-day/zero-length boundary at equal endpoints: only the anchor-equals-itself "
+                + "case is a full day")
+        void equalEndpointBoundaryIsNotConfusedWithTheWholeDayCase() {
+            assertThat(expectedDurationAfterMigration(LocalTime.of(9, 0), LocalTime.of(9, 0)))
+                    .as("a non-anchor instant equal to itself yields zero minutes after migration, not a whole day")
+                    .isEqualTo(0);
+            assertThat(expectedDurationAfterMigration(MIDNIGHT, MIDNIGHT))
+                    .as("the anchor equal to itself yields a full business day after migration, matching "
+                            + "today's unchanged value")
+                    .isEqualTo(1440);
+            assertThat(durationMinutesThrows(MIDNIGHT, MIDNIGHT))
+                    .as("(00:00, 00:00) is not in today's throw domain either -- it already returns 1440 "
+                            + "without throwing")
+                    .isFalse();
+            assertThat(DayWindow.durationMinutes(MIDNIGHT, MIDNIGHT))
+                    .as("today's unmigrated value at the anchor case is already 1440, unchanged by this plan")
+                    .isEqualTo(1440);
+        }
+    }
 }
