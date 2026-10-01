@@ -25,7 +25,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 19 — DayWindow Re-anchoring
+**Current focus:** Phase 20 — Solver Business-Date Correctness
 
 ## Current Position
 
@@ -33,8 +33,6 @@ Phase: 20 — Solver Business-Date Correctness
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-10-01 — Phase 19 complete, transitioned to Phase 20
-pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
-planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
 
 ## Milestone v1.3 Outcome
 
