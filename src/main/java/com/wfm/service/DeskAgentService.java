@@ -7,6 +7,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.*;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
+import com.wfm.util.DayWindow;
 import com.wfm.util.EnrichedColumnLayout;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -78,6 +80,19 @@ public class DeskAgentService {
         return value != null ? value : new BigDecimal("8.00");
     }
 
+    /**
+     * The anchor source for this class's two public read methods (BDAY-04, P-02 rule 2) — bound
+     * once per call from the same {@link #deskRepository} this class already holds for the
+     * {@code assignAgents} existence guard. Falls back to a midnight anchor on a missing desk
+     * rather than throwing, matching {@link #resolveScheduleDefault}'s own graceful-default shape
+     * for a desk-scoped read.
+     */
+    private DayWindow dayWindowFor(long tenantId, UUID deskId) {
+        return DayWindow.anchoredAt(deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .map(Desk::getDayStart)
+                .orElse(LocalTime.MIDNIGHT));
+    }
+
     /** Single bulk per-desk fetch, grouped by agent then weekday — no N+1 (mirrors pendingByAgent). */
     private Map<UUID, Map<DayOfWeek, AgentDayHours>> loadDayHoursByAgent(long tenantId, UUID deskId) {
         List<AgentDayHours> rows = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
@@ -121,6 +136,7 @@ public class DeskAgentService {
     public List<DeskAgentResponse> listDeskAgentResponses(UUID deskId, String search, String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
 
         List<Agent> agents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
 
@@ -144,7 +160,8 @@ public class DeskAgentService {
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
                         usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
                         bandsByTemplateId,
-                        pendingByAgent.getOrDefault(a.getId(), List.of())))
+                        pendingByAgent.getOrDefault(a.getId(), List.of()),
+                        dayWindow))
                 .toList();
     }
 
@@ -152,7 +169,7 @@ public class DeskAgentService {
                                           Map<DayOfWeek, AgentDayHours> dayRows,
                                           Map<DayOfWeek, AgentUsualShift> usualRows,
                                           Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                          List<LocalDate> pendingPtoDates) {
+                                          List<LocalDate> pendingPtoDates, DayWindow dayWindow) {
         Specialization ps = a.getPrimarySpecialization();
 
         // Single combined loop: the D-16 usual-shift discriminator's NOT_WORKED arm needs the
@@ -174,7 +191,7 @@ public class DeskAgentService {
             }
 
             usualShift.put(day, usualShiftEntry(day, usualRows.get(day), dayRow, hoursEntry.effectiveHours(),
-                    bandsByTemplateId, today));
+                    bandsByTemplateId, today, dayWindow));
         }
 
         return new DeskAgentResponse(
@@ -207,7 +224,7 @@ public class DeskAgentService {
     private DeskAgentResponse.UsualShiftEntry usualShiftEntry(DayOfWeek day, AgentUsualShift usualRow,
                                                                 AgentDayHours dayRow, BigDecimal effectiveHours,
                                                                 Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                                                LocalDate today) {
+                                                                LocalDate today, DayWindow dayWindow) {
         if (usualRow == null) {
             return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.NOT_SET, null, null, null);
         }
@@ -220,7 +237,8 @@ public class DeskAgentService {
         // any weekday, whereas "not worked" is a per-weekday condition that could flip back with
         // one hours edit.
         if (!isLive) {
-            String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours);
+            String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours,
+                    dayWindow);
             return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.STORED_INACTIVE,
                     storedName, DeskAgentResponse.UsualShiftReason.RETIRED, advisory);
         }
@@ -240,7 +258,7 @@ public class DeskAgentService {
                     storedName, DeskAgentResponse.UsualShiftReason.NOT_WORKED, null);
         }
 
-        String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours);
+        String advisory = hoursAdvisory(usualRow.getShiftTemplate(), day, bandsByTemplateId, effectiveHours, dayWindow);
         return new DeskAgentResponse.UsualShiftEntry(DeskAgentResponse.UsualShiftStatus.LIVE, storedName, null, advisory);
     }
 
@@ -261,11 +279,11 @@ public class DeskAgentService {
      */
     private String hoursAdvisory(ShiftTemplate template, DayOfWeek day,
                                   Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                  BigDecimal effectiveHours) {
+                                  BigDecimal effectiveHours, DayWindow dayWindow) {
         List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
         List<BigDecimal> bandNetHours = bands.isEmpty()
-                ? List.of(template.getNetHours(0))
-                : bands.stream().map(b -> template.getNetHours(b.getDurationMinutes())).toList();
+                ? List.of(template.getNetHours(0, dayWindow))
+                : bands.stream().map(b -> template.getNetHours(b.getDurationMinutes(), dayWindow)).toList();
 
         BigDecimal normalizedEffective = BigDecimals.normalize(effectiveHours);
         boolean anyBandMatches = bandNetHours.stream()
@@ -290,6 +308,7 @@ public class DeskAgentService {
     public DeskAgentResponse getDeskAgentResponse(UUID deskId, UUID agentId) {
         long tenantId = TenantContext.getTenantId();
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
 
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
@@ -302,7 +321,7 @@ public class DeskAgentService {
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
 
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
     }
 
     @Transactional
@@ -336,6 +355,7 @@ public class DeskAgentService {
         }
 
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId,
@@ -344,7 +364,7 @@ public class DeskAgentService {
                 .map(a -> toResponse(a, scheduleDefault,
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
                         usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
-                        bandsByTemplateId, List.of()))
+                        bandsByTemplateId, List.of(), dayWindow))
                 .toList();
     }
 
@@ -384,6 +404,7 @@ public class DeskAgentService {
         long tenantId = TenantContext.getTenantId();
 
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
 
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
@@ -416,7 +437,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
     }
 
     @Transactional
@@ -424,6 +445,7 @@ public class DeskAgentService {
         long tenantId = TenantContext.getTenantId();
 
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
 
         Agent agent = agentRepository.findByIdAndTenantIdAndDeskId(agentId, tenantId, deskId)
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
@@ -466,7 +488,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
     }
 
     /**
@@ -482,6 +504,7 @@ public class DeskAgentService {
         long tenantId = TenantContext.getTenantId();
 
         BigDecimal scheduleDefault = resolveScheduleDefault(tenantId, deskId);
+        DayWindow dayWindow = dayWindowFor(tenantId, deskId);
 
         // Mandatory access-control step (T-13-05): resolve the agent within tenant+desk scope
         // BEFORE any AgentDayHoursRepository call — findByAgent_IdAndDayOfWeek accepts a raw
@@ -519,7 +542,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of());
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
     }
 
     /**

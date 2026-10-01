@@ -181,7 +181,7 @@ public class ShiftLibraryGenerationService {
                     .toList();
 
             List<Candidate> clusterCandidates =
-                    enumerateCandidates(clusterWindows, bounds, breakConfig, hoursByWeekday, cluster);
+                    enumerateCandidates(clusterWindows, bounds, breakConfig, hoursByWeekday, cluster, window);
             totalCandidates += clusterCandidates.size();
 
             // P-08's named refusal: exceeding the declared candidate cap is reported, never
@@ -275,7 +275,7 @@ public class ShiftLibraryGenerationService {
     private List<Candidate> enumerateCandidates(List<ShiftLibraryValidationService.Window> windows,
                                                  TimeslotBoundsResponse bounds, BreakConfig breakConfig,
                                                  Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
-                                                 Set<DayOfWeek> demandedWeekdays) {
+                                                 Set<DayOfWeek> demandedWeekdays, DayWindow window) {
         int increment = bounds.incrementMinutes();
         int maxCandidates = resolveMaxCandidates();
 
@@ -322,7 +322,7 @@ public class ShiftLibraryGenerationService {
                     }
                     if (breakDuration == 0) {
                         addCandidateIfAdmissible(candidates, spanStart, spanEnd, spanLength, 0, 0,
-                                hours, demandedWeekdays, hoursByWeekday);
+                                hours, demandedWeekdays, hoursByWeekday, window);
                     } else {
                         for (int offset = increment; offset + breakDuration <= spanLength - increment;
                              offset += increment) {
@@ -333,7 +333,7 @@ public class ShiftLibraryGenerationService {
                                 continue;
                             }
                             addCandidateIfAdmissible(candidates, spanStart, spanEnd, spanLength, offset,
-                                    breakDuration, hours, demandedWeekdays, hoursByWeekday);
+                                    breakDuration, hours, demandedWeekdays, hoursByWeekday, window);
                         }
                     }
                     if (candidates.size() > maxCandidates) {
@@ -354,7 +354,7 @@ public class ShiftLibraryGenerationService {
     private void addCandidateIfAdmissible(List<Candidate> candidates, LocalTime spanStart, LocalTime spanEnd,
                                            int spanLength, int offset, int duration, BigDecimal hours,
                                            Set<DayOfWeek> demandedWeekdays,
-                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+                                           Map<DayOfWeek, List<BigDecimal>> hoursByWeekday, DayWindow window) {
         Set<DayOfWeek> validWeekdays = EnumSet.noneOf(DayOfWeek.class);
         for (DayOfWeek weekday : demandedWeekdays) {
             boolean matches = hoursByWeekday.getOrDefault(weekday, List.of()).stream()
@@ -389,7 +389,7 @@ public class ShiftLibraryGenerationService {
             bands = List.of(band);
         }
 
-        BigDecimal netHours = template.getNetHours(duration);
+        BigDecimal netHours = template.getNetHours(duration, window);
         candidates.add(new Candidate(template, bands, spanStart, spanLength, offset, duration, netHours));
     }
 

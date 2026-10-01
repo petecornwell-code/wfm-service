@@ -21,6 +21,7 @@ import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -449,7 +450,7 @@ class ShiftLibraryValidationServiceTest {
         UUID deskId = saveDesk(TENANT_A);
         ShiftTemplate template = saveTemplate(deskId, "S1", LocalTime.of(8, 0), LocalTime.of(17, 0), 240, 60,
                 Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
-        assertThat(template.getNetHours(60)).isEqualByComparingTo("8.00");
+        assertThat(template.getNetHours(60, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEqualByComparingTo("8.00");
         Agent agent = saveAgent(TENANT_A, deskId, "A1");
         saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("8.00"));
 

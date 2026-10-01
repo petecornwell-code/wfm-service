@@ -105,14 +105,16 @@ class MidnightWindowSeamTest {
         @Test
         @DisplayName("15:00-00:00 less a one-hour break is 8 hours, not minus sixteen")
         void midnightEndingShiftNetHours() {
-            assertThat(template(LocalTime.of(15, 0), LocalTime.MIDNIGHT).getNetHours(60))
+            assertThat(template(LocalTime.of(15, 0), LocalTime.MIDNIGHT)
+                    .getNetHours(60, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                     .isEqualByComparingTo(BigDecimal.valueOf(8.0));
         }
 
         @Test
         @DisplayName("a break-less midnight-ending envelope is its full nine hours")
         void noBreak() {
-            assertThat(template(LocalTime.of(15, 0), LocalTime.MIDNIGHT).getNetHours(0))
+            assertThat(template(LocalTime.of(15, 0), LocalTime.MIDNIGHT)
+                    .getNetHours(0, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                     .isEqualByComparingTo(BigDecimal.valueOf(9.0));
         }
     }

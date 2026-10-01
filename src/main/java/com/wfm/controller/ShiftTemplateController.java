@@ -90,7 +90,7 @@ public class ShiftTemplateController {
                         band.getBreakStartTime(template, window),
                         band.getBreakEndTime(template, window),
                         band.getCapacity(),
-                        template.getNetHours(band.getDurationMinutes())))
+                        template.getNetHours(band.getDurationMinutes(), window)))
                 .toList();
         return new ShiftTemplateResponse(
                 template.getId(),

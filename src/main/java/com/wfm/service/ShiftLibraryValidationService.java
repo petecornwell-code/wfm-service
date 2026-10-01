@@ -114,13 +114,13 @@ public class ShiftLibraryValidationService {
 
         Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = loadHoursByWeekday(tenantId, deskId);
         List<HoursAdvisory> hoursAdvisories =
-                findHoursAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+                findHoursAdvisories(templates, bandsByTemplateId, hoursByWeekday, dayWindow);
         List<String> unsatisfiableWeekdays =
-                findUnsatisfiableWeekdays(templates, bandsByTemplateId, demand, hoursByWeekday);
+                findUnsatisfiableWeekdays(templates, bandsByTemplateId, demand, hoursByWeekday, dayWindow);
         List<CapacityAdvisory> capacityAdvisories =
-                findCapacityAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+                findCapacityAdvisories(templates, bandsByTemplateId, hoursByWeekday, dayWindow);
         List<BreakConcentrationAdvisory> breakConcentrationAdvisories =
-                findBreakConcentrationAdvisories(templates, bandsByTemplateId, hoursByWeekday);
+                findBreakConcentrationAdvisories(templates, bandsByTemplateId, hoursByWeekday, dayWindow);
         List<PeakShortfallAdvisory> peakShortfallAdvisories =
                 findPeakShortfalls(templates, bandsByTemplateId, demand, hoursByWeekday, dayWindow);
 
@@ -371,11 +371,12 @@ public class ShiftLibraryValidationService {
      */
     private List<HoursAdvisory> findHoursAdvisories(List<ShiftTemplate> templates,
                                                       Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                                      Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+                                                      Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                      DayWindow dayWindow) {
         List<HoursAdvisory> advisories = new ArrayList<>();
         for (ShiftTemplate template : templates) {
             List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
-            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands, dayWindow);
             for (DayOfWeek weekday : template.getValidWeekdays()) {
                 List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
                 boolean anyBandMatches = bandNetHours.stream().anyMatch(net -> anyHoursMatch(candidates, net));
@@ -392,7 +393,8 @@ public class ShiftLibraryValidationService {
     private List<String> findUnsatisfiableWeekdays(List<ShiftTemplate> templates,
                                                      Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
                                                      List<StaffingRequirement> demand,
-                                                     Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+                                                     Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                     DayWindow dayWindow) {
         Map<DayOfWeek, List<LocalDate>> demandDatesByWeekday = demand.stream()
                 .map(sr -> sr.getTimeslot().getDate())
                 .distinct()
@@ -413,7 +415,7 @@ public class ShiftLibraryValidationService {
                     return false;
                 }
                 List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(t.getId(), List.of());
-                return netHoursForBands(t, bands).stream().anyMatch(net -> anyHoursMatch(candidates, net));
+                return netHoursForBands(t, bands, dayWindow).stream().anyMatch(net -> anyHoursMatch(candidates, net));
             });
             if (!satisfiable) {
                 unsatisfiable.add(weekday.name());
@@ -427,11 +429,12 @@ public class ShiftLibraryValidationService {
      * bands (P-02: "zero bands = no break"). A one-band template's list always has exactly one
      * element, matching Phase 14's single-scalar shape exactly.
      */
-    private static List<BigDecimal> netHoursForBands(ShiftTemplate template, List<ShiftTemplateBreakBand> bands) {
+    private static List<BigDecimal> netHoursForBands(ShiftTemplate template, List<ShiftTemplateBreakBand> bands,
+                                                      DayWindow dayWindow) {
         if (bands.isEmpty()) {
-            return List.of(template.getNetHours(0));
+            return List.of(template.getNetHours(0, dayWindow));
         }
-        return bands.stream().map(b -> template.getNetHours(b.getDurationMinutes())).toList();
+        return bands.stream().map(b -> template.getNetHours(b.getDurationMinutes(), dayWindow)).toList();
     }
 
     // --- Capacity shortfall advisory (D-03 residual risk, Task 3, P-06) ---
@@ -447,7 +450,8 @@ public class ShiftLibraryValidationService {
      */
     private List<CapacityAdvisory> findCapacityAdvisories(List<ShiftTemplate> templates,
                                                             Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                                            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+                                                            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+                                                            DayWindow dayWindow) {
         List<CapacityAdvisory> advisories = new ArrayList<>();
         LocalDate today = LocalDate.now();
         for (ShiftTemplate template : templates) {
@@ -459,7 +463,7 @@ public class ShiftLibraryValidationService {
                 continue; // unlimited by construction
             }
             int capacityTotal = bands.stream().mapToInt(ShiftTemplateBreakBand::getCapacity).sum();
-            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands, dayWindow);
             for (DayOfWeek weekday : template.getValidWeekdays()) {
                 List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());
                 long admissibleHeadcount = candidates.stream()
@@ -522,13 +526,13 @@ public class ShiftLibraryValidationService {
                 List<ShiftTemplateBreakBand> bands = bandsByTemplateId.getOrDefault(template.getId(), List.of());
                 if (bands.isEmpty()) {
                     if (covers(template, List.of(), window, dayWindow)) {
-                        coveringNetHours.add(template.getNetHours(0));
+                        coveringNetHours.add(template.getNetHours(0, dayWindow));
                     }
                     continue;
                 }
                 for (ShiftTemplateBreakBand band : bands) {
                     if (covers(template, List.of(band), window, dayWindow)) {
-                        coveringNetHours.add(template.getNetHours(band.getDurationMinutes()));
+                        coveringNetHours.add(template.getNetHours(band.getDurationMinutes(), dayWindow));
                     }
                 }
             }
@@ -600,7 +604,8 @@ public class ShiftLibraryValidationService {
     private List<BreakConcentrationAdvisory> findBreakConcentrationAdvisories(
             List<ShiftTemplate> templates,
             Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+            Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
+            DayWindow dayWindow) {
         List<BreakConcentrationAdvisory> advisories = new ArrayList<>();
         LocalDate today = LocalDate.now();
         for (ShiftTemplate template : templates) {
@@ -614,7 +619,7 @@ public class ShiftLibraryValidationService {
             boolean anyUnlimited = bands.stream().anyMatch(b -> b.getCapacity() == null);
             int largestBand = anyUnlimited ? Integer.MAX_VALUE
                     : bands.stream().mapToInt(ShiftTemplateBreakBand::getCapacity).max().orElse(0);
-            List<BigDecimal> bandNetHours = netHoursForBands(template, bands);
+            List<BigDecimal> bandNetHours = netHoursForBands(template, bands, dayWindow);
 
             for (DayOfWeek weekday : template.getValidWeekdays()) {
                 List<BigDecimal> candidates = hoursByWeekday.getOrDefault(weekday, List.of());

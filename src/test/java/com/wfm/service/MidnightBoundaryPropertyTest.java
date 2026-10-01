@@ -145,7 +145,8 @@ class MidnightBoundaryPropertyTest {
 
             assertThat(created.getEndTime()).isEqualTo(LocalTime.MIDNIGHT);
             // 540 envelope minutes - 60 break minutes = 480 minutes = 8.00 net hours.
-            assertThat(created.getNetHours(60)).isEqualByComparingTo(new BigDecimal("8.00"));
+            assertThat(created.getNetHours(60, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
+                    .isEqualByComparingTo(new BigDecimal("8.00"));
         }
 
         @Test

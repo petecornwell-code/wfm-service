@@ -201,7 +201,7 @@ final class MidnightBoundaryFixture {
                     DayWindow.toLocalTime(m), DayWindow.toLocalTime(m + INCREMENT_MINUTES)));
         }
 
-        BigDecimal contractedHours = template.getNetHours(60);
+        BigDecimal contractedHours = template.getNetHours(60, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), date, contractedHours);
 
         AgentShiftAssignment shiftRow = new AgentShiftAssignment();

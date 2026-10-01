@@ -124,15 +124,19 @@ public class ShiftTemplate {
      * exact-equality comparisons all normalize to scale 2 anyway) — a scale-4 intermediate
      * followed by a second round to scale 2 is a latent double-rounding hazard for grid
      * increments not evenly divisible into whole cents of an hour.
+     *
+     * <p>Takes the caller's bound {@code window} (BDAY-04) rather than resolving or defaulting
+     * an anchor itself (D-08) — this entity holds only a {@code deskId}, never a day-start value.
      */
     @Transient
-    public BigDecimal getNetHours(int breakDurationMinutes) {
+    public BigDecimal getNetHours(int breakDurationMinutes, DayWindow window) {
         if (startTime == null || endTime == null) {
             return null;
         }
-        // DayWindow, not Duration.between: an endTime of 00:00 means END OF DAY here, and the
-        // raw call would return a negative span for any shift finishing at midnight.
-        long totalMinutes = DayWindow.durationMinutes(startTime, endTime);
+        // window.anchoredDurationMinutes, not Duration.between: an endTime equal to the anchor
+        // means END OF DAY here, and the raw call would return a negative span for any shift
+        // finishing at the anchor.
+        long totalMinutes = window.anchoredDurationMinutes(startTime, endTime);
         long netMinutes = totalMinutes - breakDurationMinutes;
         return BigDecimal.valueOf(netMinutes).divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
     }

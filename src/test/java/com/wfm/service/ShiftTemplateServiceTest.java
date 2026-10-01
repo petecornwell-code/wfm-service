@@ -15,6 +15,7 @@ import com.wfm.exception.EntityNotFoundException;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
+import com.wfm.util.DayWindow;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.AgentShiftAssignmentRepository;
 import com.wfm.repository.AgentUsualShiftRepository;
@@ -292,7 +293,8 @@ class ShiftTemplateServiceTest {
         template.setStartTime(LocalTime.of(8, 0));
         template.setEndTime(LocalTime.of(12, 0));
 
-        assertThat(template.getNetHours(0)).isEqualByComparingTo(new BigDecimal("4.00"));
+        assertThat(template.getNetHours(0, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
+                .isEqualByComparingTo(new BigDecimal("4.00"));
     }
 
     @Test

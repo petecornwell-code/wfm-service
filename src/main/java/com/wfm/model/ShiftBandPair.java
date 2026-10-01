@@ -140,9 +140,22 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
                 java.time.temporal.ChronoUnit.MINUTES.between(usualStartTime, assignedEnvelopeStart));
     }
 
-    /** Net working duration for this specific pair — delegates to the band-parameterised helper. */
+    /**
+     * Net working duration for this specific pair — delegates to the band-parameterised helper.
+     *
+     * @deprecated BDAY-04, transitional (plan 19-04, out of this plan's own file scope): this
+     *         record's remaining callers ({@code AgentShiftAssignment},
+     *         {@code ShiftLibraryGenerationService}'s {@code Candidate}/{@code EmittedRow} report
+     *         fields, and their tests) do not yet reach a desk anchor, so this binds
+     *         {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} rather than breaking them --
+     *         correct everywhere this is still called, mirroring the transitional shape plan 19-03
+     *         already established for {@link #covers(Timeslot)} above. Callers move to a
+     *         window-aware form as each is migrated.
+     */
+    @Deprecated
     public BigDecimal netHours() {
-        return template.getNetHours(band == null ? 0 : band.getDurationMinutes());
+        return template.getNetHours(band == null ? 0 : band.getDurationMinutes(),
+                DayWindow.anchoredAt(LocalTime.MIDNIGHT));
     }
 
     /** Diagnostic label — never parsed, only displayed. */
