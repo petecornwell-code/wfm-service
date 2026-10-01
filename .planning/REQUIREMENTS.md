@@ -111,7 +111,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **BDAY-04**: Interval arithmetic is anchored on the desk's day start rather than midnight, and the `00:00`-means-end-of-day convention is retired
 - [x] **BDAY-05**: A guard test fails if any scheduling interval calculation bypasses the shared day-window utility — comparisons (`isAfter`/`isBefore`/`compareTo`) as well as arithmetic
 - [x] **BDAY-06**: A constructed regression suite proves behaviour across the midnight boundary, its scenarios chosen by the property under test, with a validator that fails if those scenarios do not actually contain the boundary cases they claim to
-- [ ] **BDAY-07**: A constructed fixture built to one small live desk's shape (Phil-US, 48 agents) produces an unchanged schedule across the re-anchoring, compared on per-constraint match counts as well as score
+- [x] **BDAY-07**: A constructed fixture built to one small live desk's shape (Phil-US, 48 agents) produces an unchanged schedule across the re-anchoring, compared on per-constraint match counts as well as score
 - [x] **BDAY-08**: Exactly one code path writes a timeslot's business date, proven by a write-path guard test that fails in both directions
 
 ### Overnight Shifts (OVNT)
@@ -127,11 +127,11 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 ### Solver Correctness (SOLV)
 
 - [ ] **SOLV-01**: Every constraint that groups an agent's day joins on business date, so an overnight shift's post-midnight timeslots are included
-- [ ] **SOLV-02**: A test fails if any constraint joins on a timeslot's calendar date where business date is meant
-- [ ] **SOLV-03**: Break bands, contiguity and envelope compliance hold across the midnight boundary
-- [ ] **SOLV-04**: SLOT mode counts an overnight stretch against a single business day rather than under-allocating both calendar days
+- [x] **SOLV-02**: A test fails if any constraint joins on a timeslot's calendar date where business date is meant
+- [x] **SOLV-03**: Break bands, contiguity and envelope compliance hold across the midnight boundary
+- [x] **SOLV-04**: SLOT mode counts an overnight stretch against a single business day rather than under-allocating both calendar days
 - [x] **SOLV-05**: The pre-solve seat-supply check reports shortfalls per business day
-- [ ] **SOLV-06**: Each migrated join is proven non-vacuous — per-constraint match counts are asserted, so a constraint that matches nothing cannot pass as satisfied
+- [x] **SOLV-06**: Each migrated join is proven non-vacuous — per-constraint match counts are asserted, so a constraint that matches nothing cannot pass as satisfied
 - [ ] **SOLV-07**: Demand upload, coverage reporting and the solver provably resolve the same business date for the same timeslot, guarded by a test rather than by convention
 
 ### Minimum Rest (REST)
@@ -210,7 +210,7 @@ Populated during roadmap creation.
 | BDAY-04 | Phase 19 | Complete |
 | BDAY-05 | Phase 18 | Complete |
 | BDAY-06 | Phase 18 | Complete |
-| BDAY-07 | Phase 20 | Pending |
+| BDAY-07 | Phase 20 | Complete |
 | BDAY-08 | Phase 18 | Complete |
 | OVNT-01 | Phase 21 | Pending |
 | OVNT-02 | Phase 21 | Pending |
@@ -220,11 +220,11 @@ Populated during roadmap creation.
 | OVNT-06 | Phase 21 | Pending |
 | OVNT-07 | Phase 21 | Pending |
 | SOLV-01 | Phase 20 | Pending |
-| SOLV-02 | Phase 20 | Pending |
-| SOLV-03 | Phase 20 | Pending |
-| SOLV-04 | Phase 20 | Pending |
+| SOLV-02 | Phase 20 | Complete |
+| SOLV-03 | Phase 20 | Complete |
+| SOLV-04 | Phase 20 | Complete |
 | SOLV-05 | Phase 20 | Complete |
-| SOLV-06 | Phase 20 | Pending |
+| SOLV-06 | Phase 20 | Complete |
 | SOLV-07 | Phase 20 | Pending |
 | REST-01 | Phase 22 | Pending |
 | REST-02 | Phase 22 | Pending |
