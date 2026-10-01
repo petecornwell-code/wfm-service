@@ -318,6 +318,14 @@ public class SolverService {
                 resolveUsualShiftTargets(allUsualShifts, schedule, agentDayConfigs);
 
         // 9b. Compute capacity warnings (demand vs supply)
+        // SOLV-05 decision, recorded rather than left to inference: this schedule-wide total is
+        // deliberately NOT widened to a per-business-day breakdown in this phase. It sums demand
+        // and supply across the whole schedule with no per-date map or date key at all, so it
+        // cannot hold a calendar/business-date mismatch the way requireShiftEnvelopeSeatSupply's
+        // two maps could -- there is nothing here for SOLV-05's key-system fix to apply to. It is
+        // also advisory only; requireShiftEnvelopeSeatSupply (below, per rostered date) is the
+        // mechanism that actually blocks a solve, and that is where SOLV-05's "reports shortfalls
+        // per business day" requirement is discharged.
         computeCapacityWarnings(schedule, staffingRequirements, agentDayConfigs);
 
         // 9c. SHIFT-mode-only: the desk's live (template,band) pairs and one AgentShiftAssignment
@@ -1442,9 +1450,21 @@ public class SolverService {
         Map<LocalDate, List<AgentShiftAssignment>> rowsByDate = shiftAssignments.stream()
                 .collect(Collectors.groupingBy(AgentShiftAssignment::getDate,
                         LinkedHashMap::new, Collectors.toList()));
+        // SOLV-05: this map MUST share rowsByDate's key system -- both are looked up by the SAME
+        // key in the per-date loop below. AgentShiftAssignment::getDate above is already the
+        // business date (D-05); Timeslot::getBusinessDate is its business-date counterpart, not
+        // the calendar-date Timeslot::getDate this line used to call. Before this fix the two maps
+        // disagreed on a re-anchored (non-midnight) desk -- rowsByDate's key was always a business
+        // date, but this map's key was a calendar date, so timeslotsByDate.getOrDefault(businessDate,
+        // ...) below silently returned an EMPTY list for any business day whose timeslots carry a
+        // different calendar date. That made librarySupplySlots compute to zero and the gate throw
+        // a FALSE REFUSAL of a solvable desk -- not a mis-keyed report, a refusal of a desk that
+        // could actually be solved. The lookup's getOrDefault makes a key-system disagreement
+        // silent rather than loud, which is what made this bug invisible until a desk was actually
+        // re-anchored.
         Map<LocalDate, List<Timeslot>> timeslotsByDate = (timeslots == null ? List.<Timeslot>of() : timeslots)
                 .stream()
-                .collect(Collectors.groupingBy(Timeslot::getDate, LinkedHashMap::new, Collectors.toList()));
+                .collect(Collectors.groupingBy(Timeslot::getBusinessDate, LinkedHashMap::new, Collectors.toList()));
         Map<UUID, Long> seatsByTimeslotId = (assignments == null ? List.<AgentAssignment>of() : assignments)
                 .stream()
                 .filter(a -> a.getTimeslot() != null)
@@ -1457,6 +1477,13 @@ public class SolverService {
             List<AgentShiftAssignment> rows = entry.getValue();
             List<Timeslot> dateTimeslots = timeslotsByDate.getOrDefault(date, List.of());
 
+            // SOLV-05: `date` here is already the business date (rowsByDate's key, derived from
+            // AgentShiftAssignment::getDate) and is passed straight through to
+            // coveredTimeslotsOnDate, which derives a weekday from it for the template
+            // weekday-eligibility check below. That is the CORRECT weekday for an overnight
+            // stretch -- a stretch consumes the weekday it starts on -- so this was checked
+            // deliberately and left alone; only timeslotsByDate's key (above) needed the fix. A
+            // later reader must not "fix" this into a calendar date.
             List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(date, dateTimeslots, pairs, window);
             int librarySupplySlots = coveredTimeslots.stream()
                     .mapToInt(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L).intValue())

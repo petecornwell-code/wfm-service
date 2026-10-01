@@ -52,6 +52,10 @@ class ShiftEnvelopeSupplyGateTest {
     private static final LocalTime TEMPLATE_START = LocalTime.of(8, 0);
     private static final LocalTime TEMPLATE_END = LocalTime.of(17, 0);
 
+    // SOLV-05: a non-midnight desk anchor and its own business day, for the re-anchoring proof.
+    private static final LocalTime NINE_PM_ANCHOR = LocalTime.of(21, 0);
+    private static final LocalDate NINE_PM_BUSINESS_DAY = LocalDate.of(2026, 9, 14); // Monday
+
     // ------------------------------------------------------------------
     //  Fixture builders
     // ------------------------------------------------------------------
@@ -62,6 +66,12 @@ class ShiftEnvelopeSupplyGateTest {
         ts.setDate(DAY);
         ts.setStartTime(start);
         ts.setEndTime(start.plusHours(1));
+        // SOLV-05: every pre-existing case in this class runs at the implicit 00:00 anchor
+        // (DayWindow.anchoredAt(LocalTime.MIDNIGHT)), where business date equals calendar date by
+        // construction -- byte-identical to leaving businessDate unset for every assertion these
+        // cases already make, now required because requireShiftEnvelopeSeatSupply's timeslot map
+        // is keyed by Timeslot::getBusinessDate rather than Timeslot::getDate.
+        ts.setBusinessDate(DAY);
         return ts;
     }
 
@@ -150,6 +160,9 @@ class ShiftEnvelopeSupplyGateTest {
         ts.setDate(date);
         ts.setStartTime(start);
         ts.setEndTime(start.plusHours(1));
+        // SOLV-05: this helper's callers also run at the implicit 00:00 anchor -- see the
+        // identical comment on timeslot(LocalTime) above.
+        ts.setBusinessDate(date);
         return ts;
     }
 
@@ -895,6 +908,192 @@ class ShiftEnvelopeSupplyGateTest {
                         assertThat(d.message())
                                 .as("names the seat count")
                                 .contains("only 2 seat(s)");
+                    });
+                });
+    }
+
+    // ------------------------------------------------------------------
+    //  SOLV-05 -- the gate's two maps share one key system (plan 20-04, Task 2)
+    //
+    //  requireShiftEnvelopeSeatSupply groups shift-assignment rows by business date
+    //  (AgentShiftAssignment::getDate, already business-date-shaped per D-05) and looks them up
+    //  against a timeslot map keyed the same way. On a desk anchored anywhere but 00:00 those two
+    //  key systems used to disagree -- Timeslot::getDate is calendar date -- so the lookup
+    //  silently returned an empty list and the gate refused a desk that could actually be solved.
+    //  The three cases below assert both directions of the fix (sufficient supply is no longer
+    //  refused; a genuine shortfall still is) plus the 00:00 regression.
+    // ------------------------------------------------------------------
+
+    private static Timeslot timeslotWithBusinessDate(LocalDate calendarDate, LocalDate businessDate, LocalTime start) {
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(calendarDate);
+        ts.setStartTime(start);
+        ts.setEndTime(start.plusHours(1));
+        ts.setBusinessDate(businessDate);
+        return ts;
+    }
+
+    /**
+     * A shift template whose envelope is {@code 22:00-06:00} (net 8h, no break band -- P-02's
+     * "zero bands = no break") relative to a {@code 21:00} desk anchor.
+     */
+    private static ShiftTemplate ninePmTemplate() {
+        ShiftTemplate t = new ShiftTemplate();
+        t.setValidWeekdays(EnumSet.allOf(DayOfWeek.class));
+        t.setId(UUID.randomUUID());
+        t.setName("Overnight");
+        t.setStartTime(LocalTime.of(22, 0));
+        t.setEndTime(LocalTime.of(6, 0));
+        t.setEffectiveFrom(LocalDate.of(2020, 1, 1));
+        return t;
+    }
+
+    /**
+     * The 8 hourly timeslots {@code ninePmTemplate()}'s envelope covers for the business day
+     * starting {@code businessDate} at the {@code 21:00} anchor: two on calendar
+     * {@code businessDate} ({@code 22:00-23:00}, {@code 23:00-00:00}) and six on calendar
+     * {@code businessDate.plusDays(1)} ({@code 00:00-01:00} .. {@code 05:00-06:00}) -- every one
+     * of them carries business date {@code businessDate}, derived through {@link
+     * DayWindow#businessDateOf}, never hand-computed (this is the exact geometry SOLV-05's fix
+     * concerns: a business day's timeslots carrying a calendar date other than the business date).
+     */
+    private static List<Timeslot> ninePmWindow(LocalDate businessDate) {
+        LocalDate calendarD = businessDate;
+        LocalDate calendarDPlus1 = businessDate.plusDays(1);
+        List<Timeslot> slots = new ArrayList<>();
+        for (LocalTime start : List.of(LocalTime.of(22, 0), LocalTime.of(23, 0))) {
+            LocalDate derivedBusinessDate = DayWindow.businessDateOf(NINE_PM_ANCHOR, calendarD, start);
+            slots.add(timeslotWithBusinessDate(calendarD, derivedBusinessDate, start));
+        }
+        for (LocalTime start : List.of(LocalTime.of(0, 0), LocalTime.of(1, 0), LocalTime.of(2, 0),
+                LocalTime.of(3, 0), LocalTime.of(4, 0), LocalTime.of(5, 0))) {
+            LocalDate derivedBusinessDate = DayWindow.businessDateOf(NINE_PM_ANCHOR, calendarDPlus1, start);
+            slots.add(timeslotWithBusinessDate(calendarDPlus1, derivedBusinessDate, start));
+        }
+        return slots;
+    }
+
+    /** One seat per covered timeslot per agent -- {@code ninePmWindow} has no break, so every slot is covered. */
+    private static List<AgentAssignment> ninePmFullSupplySeats(List<Timeslot> window, int perSlot) {
+        List<AgentAssignment> seats = new ArrayList<>();
+        for (Timeslot ts : window) {
+            for (int i = 0; i < perSlot; i++) {
+                seats.add(seat(ts));
+            }
+        }
+        return seats;
+    }
+
+    private static AgentDayConfig ninePmDayConfig(UUID agentId, BigDecimal hours) {
+        return new AgentDayConfig(agentId, NINE_PM_BUSINESS_DAY, hours, 60, 60,
+                new BigDecimal("4.00"), new BigDecimal("1.00"), BreakAlignment.ON_HOUR, 100, 70);
+    }
+
+    @Test
+    @DisplayName("SHIFT, 21:00 anchor: sufficient library-covered supply is NOT falsely refused")
+    void ninePmAnchor_sufficientSupplyIsNotRefused() {
+        ShiftTemplate t = ninePmTemplate();
+        ShiftBandPair pair = new ShiftBandPair(t, null);
+        List<Timeslot> window = ninePmWindow(NINE_PM_BUSINESS_DAY);
+
+        Agent a1 = agent("A-1");
+        AgentDayConfig dc1 = ninePmDayConfig(a1.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(
+                shiftRowOnDate(NINE_PM_BUSINESS_DAY, a1, dc1, List.of(pair)));
+
+        // One agent's worth of seats across all 8 covered timeslots -- supply meets demand exactly.
+        List<AgentAssignment> assignments = new ArrayList<>(ninePmFullSupplySeats(window, 1));
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> {
+            SolverService.requireShiftEnvelopeSeatSupply(
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null,
+                    DayWindow.anchoredAt(NINE_PM_ANCHOR));
+            throw new RuntimeException("SENTINEL: gate returned normally");
+        }).hasMessage("SENTINEL: gate returned normally");
+    }
+
+    @Test
+    @DisplayName("SHIFT, 21:00 anchor: a genuine shortfall is STILL refused -- closing the false "
+            + "refusal must not open a false acceptance")
+    void ninePmAnchor_genuineShortfallIsStillRefused() {
+        ShiftTemplate t = ninePmTemplate();
+        ShiftBandPair pair = new ShiftBandPair(t, null);
+        List<Timeslot> window = ninePmWindow(NINE_PM_BUSINESS_DAY);
+
+        Agent a1 = agent("A-1");
+        Agent a2 = agent("A-2");
+        AgentDayConfig dc1 = ninePmDayConfig(a1.getId(), new BigDecimal("8.00"));
+        AgentDayConfig dc2 = ninePmDayConfig(a2.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(
+                shiftRowOnDate(NINE_PM_BUSINESS_DAY, a1, dc1, List.of(pair)),
+                shiftRowOnDate(NINE_PM_BUSINESS_DAY, a2, dc2, List.of(pair)));
+
+        // Only ONE agent's worth of seats exist (8 slots), but TWO agent-days are contracted 8h
+        // each -- 16 slots required, 8 supplied, a genuine shortfall of 8.
+        List<AgentAssignment> assignments = new ArrayList<>(ninePmFullSupplySeats(window, 1));
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null,
+                DayWindow.anchoredAt(NINE_PM_ANCHOR)))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message()).contains(NINE_PM_BUSINESS_DAY.toString());
+                        assertThat(d.message()).as("names the demand").contains("16 slot(s)");
+                        assertThat(d.message()).as("names the shortfall figure")
+                                .contains("a shortfall of 8 slot(s)");
+                    });
+                });
+    }
+
+    @Test
+    @DisplayName("SHIFT, 00:00 anchor: business date equals calendar date -- the shortfall "
+            + "refusal is unchanged")
+    void midnightAnchor_businessDateEqualsCalendarDate_shortfallStillRefused() {
+        // Built explicitly (not via the shared operatingWindow() helper) so this case ASSERTS,
+        // rather than merely inherits, that business date equals calendar date at the 00:00
+        // anchor -- the "no change at 00:00" claim made checkable rather than inferred.
+        List<Timeslot> window = new ArrayList<>();
+        for (LocalTime time = OPEN; time.isBefore(CLOSE); time = time.plusHours(1)) {
+            LocalDate businessDate = DayWindow.businessDateOf(LocalTime.MIDNIGHT, DAY, time);
+            window.add(timeslotWithBusinessDate(DAY, businessDate, time));
+        }
+        for (Timeslot ts : window) {
+            assertThat(ts.getBusinessDate())
+                    .as("at the 00:00 anchor, business date must equal calendar date")
+                    .isEqualTo(ts.getDate());
+        }
+
+        ShiftTemplate t = template(TEMPLATE_START, TEMPLATE_END, LocalDate.of(2020, 1, 1), null);
+        ShiftBandPair pair = new ShiftBandPair(t, band(t));
+
+        Agent a1 = agent("A-1");
+        Agent a2 = agent("A-2");
+        AgentDayConfig dc1 = dayConfig(a1.getId(), new BigDecimal("8.00"));
+        AgentDayConfig dc2 = dayConfig(a2.getId(), new BigDecimal("8.00"));
+        List<AgentShiftAssignment> rows = List.of(
+                shiftRow(a1, dc1, List.of(pair)), shiftRow(a2, dc2, List.of(pair)));
+
+        // Same shape as refusesOnShortfall(): only ONE agent's worth of seats exist (8 slots),
+        // but TWO agent-days are contracted 8h each -- the same outcome as its calendar-date-keyed
+        // equivalent above, asserted here against explicitly business-dated timeslots.
+        List<AgentAssignment> assignments = new ArrayList<>(fullSupplySeats(window, 1));
+
+        List<String> warnings = new ArrayList<>();
+        assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null,
+                DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
+                    assertThat(details).isNotEmpty();
+                    assertThat(details).anySatisfy(d -> {
+                        assertThat(d.message()).contains(DAY.toString());
+                        assertThat(d.message()).containsIgnoringCase("8");
                     });
                 });
     }
