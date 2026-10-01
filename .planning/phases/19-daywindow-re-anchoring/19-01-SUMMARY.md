@@ -149,6 +149,15 @@ None - no external service configuration required.
 - **Commit `47649f1` is the V54-plumbing commit** — plan 19-08's criterion 5 check (`git diff --name-only <V54-plumbing-sha>..<last-re-anchoring-commit-sha>`) must use `47649f1` as the exclusive lower bound of that range.
 - No blockers. Full unfiltered `./gradlew test` is green (0 `FAILED` lines, exit 0) both before and after this plan's edits.
 
+## Self-Check: PASSED
+
+- FOUND: `src/main/resources/db/migration/V54__add_schedule_day_start.sql`
+- FOUND: `src/test/java/com/wfm/solver/ScheduleConfigAnchorPlumbingTest.java`
+- FOUND: `src/test/java/com/wfm/service/SolverServiceBuildScheduleAccess.java`
+- FOUND: `.planning/phases/19-daywindow-re-anchoring/19-01-SUMMARY.md`
+- FOUND commit `47649f1` (task commit) in `git log --oneline --all`
+- FOUND commit `963c2bd` (plan metadata commit) in `git log --oneline --all`
+
 ---
 *Phase: 19-daywindow-re-anchoring*
 *Completed: 2026-09-30*
