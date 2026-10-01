@@ -235,15 +235,22 @@ public class ShiftTemplateService {
         if (request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("Shift template name is required");
         }
+
+        // BDAY-04 (plan 19-06): one window per validate() call, bound through the existing
+        // dayWindowFor(UUID) seam rather than loading the desk a second time. D-11: the
+        // forward-interval refusal below must keep its exact message and its position before the
+        // duration read -- preserved byte-for-byte, only the receiver changed.
+        DayWindow window = dayWindowFor(deskId);
+
         // An endTime of 00:00 means END OF DAY, so this is DayWindow's forward-within-a-day test
         // rather than endTime.isAfter(startTime) -- the latter rejects every shift finishing at
         // midnight, because LocalTime has no 24:00 and 00:00 is the smallest value in the type.
         if (request.startTime() == null || request.endTime() == null
-                || !DayWindow.isForwardWithinDay(request.startTime(), request.endTime())) {
+                || !window.anchoredIsForwardWithinDay(request.startTime(), request.endTime())) {
             throw new IllegalArgumentException("Shift template end time must be after its start time");
         }
 
-        long envelopeMinutes = DayWindow.durationMinutes(request.startTime(), request.endTime());
+        long envelopeMinutes = window.anchoredDurationMinutes(request.startTime(), request.endTime());
         validateBands(request.bands(), envelopeMinutes);
 
         if (request.validWeekdays() == null || request.validWeekdays().isEmpty()) {
@@ -258,7 +265,7 @@ public class ShiftTemplateService {
                     "Shift template effective to date cannot be before its effective from date");
         }
 
-        validateGridAlignment(deskId, request);
+        validateGridAlignment(deskId, request, window);
         validateIdentityAndNonOverlap(tenantId, deskId, request, excludeId);
     }
 
@@ -303,7 +310,7 @@ public class ShiftTemplateService {
      * Optional#empty()} and the check is skipped entirely — there is nothing to align to, and
      * failing the save would make the library unbuildable before a schedule period is generated.
      */
-    private void validateGridAlignment(UUID deskId, ShiftTemplateRequest request) {
+    private void validateGridAlignment(UUID deskId, ShiftTemplateRequest request, DayWindow window) {
         Optional<TimeslotBoundsResponse> boundsOpt = timeslotGeneratorService.getLiveBounds(deskId);
         if (boundsOpt.isEmpty()) {
             return;
@@ -311,8 +318,8 @@ public class ShiftTemplateService {
         TimeslotBoundsResponse bounds = boundsOpt.get();
 
         List<ErrorDetail> details = new ArrayList<>();
-        addIfMisaligned(details, "startTime", request.startTime(), bounds);
-        addIfMisaligned(details, "endTime", request.endTime(), bounds);
+        addIfMisaligned(details, "startTime", request.startTime(), bounds, window);
+        addIfMisaligned(details, "endTime", request.endTime(), bounds, window);
         List<BreakBandRequest> bands = request.bands();
         if (bands != null) {
             for (int i = 0; i < bands.size(); i++) {
@@ -322,10 +329,10 @@ public class ShiftTemplateService {
                 if (durationMinutes <= 0) {
                     continue;
                 }
-                LocalTime breakStart = DayWindow.plusWithinDay(request.startTime(), offsetMinutes);
-                LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, durationMinutes);
-                addIfMisaligned(details, "bands[" + i + "].breakStartTime", breakStart, bounds);
-                addIfMisaligned(details, "bands[" + i + "].breakEndTime", breakEnd, bounds);
+                LocalTime breakStart = window.anchoredPlusWithinDay(request.startTime(), offsetMinutes);
+                LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, durationMinutes);
+                addIfMisaligned(details, "bands[" + i + "].breakStartTime", breakStart, bounds, window);
+                addIfMisaligned(details, "bands[" + i + "].breakEndTime", breakEnd, bounds, window);
             }
         }
         if (!details.isEmpty()) {
@@ -335,8 +342,8 @@ public class ShiftTemplateService {
     }
 
     private void addIfMisaligned(List<ErrorDetail> details, String field, LocalTime value,
-                                  TimeslotBoundsResponse bounds) {
-        if (!isAligned(bounds.startTime(), bounds.incrementMinutes(), value)) {
+                                  TimeslotBoundsResponse bounds, DayWindow window) {
+        if (!isAligned(bounds.startTime(), bounds.incrementMinutes(), value, window)) {
             details.add(new ErrorDetail(field,
                     "Start, end, and break times must align to this desk's "
                             + bounds.incrementMinutes() + "-minute schedule grid.",
@@ -349,8 +356,14 @@ public class ShiftTemplateService {
      * whole-minute distance from the grid's start time is a non-negative exact multiple of the
      * increment. Package-private and static so this is one function rather than four inline
      * copies.
+     *
+     * <p>BDAY-04 (plan 19-06): routed through the bound window rather than the deprecated
+     * midnight-implicit statics. {@code gridStart} is the desk's live timeslot grid start, not
+     * necessarily the desk's day-start anchor, but at a {@code 00:00} anchor the two measurements
+     * agree exactly, and once a desk's grid itself becomes anchor-relative (BDAY-03's generator),
+     * this alignment check should measure against the same anchor the grid was built from.
      */
-    static boolean isAligned(LocalTime gridStart, int incrementMinutes, LocalTime candidate) {
+    static boolean isAligned(LocalTime gridStart, int incrementMinutes, LocalTime candidate, DayWindow window) {
         if (incrementMinutes <= 0) {
             // A non-positive increment cannot define a grid to align to — treat this the same as
             // "no live bounds" (skip the check) rather than dividing by zero/negative below.
@@ -361,7 +374,7 @@ public class ShiftTemplateService {
         // also starts at 00:00, and 1440 is divisible by every permitted increment (15/30/60), so
         // the verdict is "aligned" either way. Reading it as a start instead would be unsafe --
         // a genuine midnight END would come back as minute 0 and be rejected as misaligned.
-        long diffMinutes = DayWindow.endMinute(candidate) - DayWindow.startMinute(gridStart);
+        long diffMinutes = window.anchoredEndMinute(candidate) - window.anchoredStartMinute(gridStart);
         return diffMinutes >= 0 && diffMinutes % incrementMinutes == 0;
     }
 

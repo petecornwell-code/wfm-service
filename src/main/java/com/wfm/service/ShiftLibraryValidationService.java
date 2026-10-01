@@ -292,8 +292,8 @@ public class ShiftLibraryValidationService {
     /** D-02: every band whose duration is non-zero must also have an aligned break start/end. */
     private static boolean isTemplateAligned(ShiftTemplate template, List<ShiftTemplateBreakBand> bands,
                                               TimeslotBoundsResponse bounds, DayWindow dayWindow) {
-        boolean aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getStartTime())
-                && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getEndTime());
+        boolean aligned = ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getStartTime(), dayWindow)
+                && ShiftTemplateService.isAligned(bounds.startTime(), bounds.incrementMinutes(), template.getEndTime(), dayWindow);
         if (!aligned || bands == null) {
             return aligned;
         }
@@ -302,9 +302,9 @@ public class ShiftLibraryValidationService {
                 continue;
             }
             boolean bandAligned = ShiftTemplateService.isAligned(
-                    bounds.startTime(), bounds.incrementMinutes(), band.getBreakStartTime(template, dayWindow))
+                    bounds.startTime(), bounds.incrementMinutes(), band.getBreakStartTime(template, dayWindow), dayWindow)
                     && ShiftTemplateService.isAligned(
-                            bounds.startTime(), bounds.incrementMinutes(), band.getBreakEndTime(template, dayWindow));
+                            bounds.startTime(), bounds.incrementMinutes(), band.getBreakEndTime(template, dayWindow), dayWindow);
             if (!bandAligned) {
                 return false;
             }

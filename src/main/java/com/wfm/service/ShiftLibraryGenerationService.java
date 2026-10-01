@@ -316,8 +316,8 @@ public class ShiftLibraryGenerationService {
                         continue;
                     }
                     LocalTime spanEnd = window.anchoredToLocalTime(spanEndMinute);
-                    if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, spanStart)
-                            || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd)) {
+                    if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, spanStart, window)
+                            || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd, window)) {
                         continue;
                     }
                     if (breakDuration == 0) {
@@ -328,8 +328,8 @@ public class ShiftLibraryGenerationService {
                              offset += increment) {
                             LocalTime breakStart = window.anchoredPlusWithinDay(spanStart, offset);
                             LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, breakDuration);
-                            if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, breakStart)
-                                    || !ShiftTemplateService.isAligned(bounds.startTime(), increment, breakEnd)) {
+                            if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, breakStart, window)
+                                    || !ShiftTemplateService.isAligned(bounds.startTime(), increment, breakEnd, window)) {
                                 continue;
                             }
                             addCandidateIfAdmissible(candidates, spanStart, spanEnd, spanLength, offset,

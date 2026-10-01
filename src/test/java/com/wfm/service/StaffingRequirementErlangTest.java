@@ -4,10 +4,12 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.ErlangCRequest;
 import com.wfm.dto.ErlangXRequest;
 import com.wfm.dto.StaffingAdjustmentOptionsDto;
+import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.StaffingSource;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -57,11 +59,12 @@ class StaffingRequirementErlangTest {
     private final TimeslotRepository timeslotRepository = mock(TimeslotRepository.class);
     private final SpecializationRepository specializationRepository =
             mock(SpecializationRepository.class);
+    private final DeskRepository deskRepository = mock(DeskRepository.class);
     private final EntityManager entityManager = mock(EntityManager.class);
 
     private final StaffingRequirementService service = new StaffingRequirementService(
             staffingRequirementRepository, timeslotRepository, specializationRepository,
-            new ErlangCalculatorService(), entityManager);
+            new ErlangCalculatorService(), deskRepository, entityManager);
 
     private UUID timeslotId;
     private UUID specId;
@@ -71,6 +74,11 @@ class StaffingRequirementErlangTest {
         TenantContext.setTenantId(TENANT);
         when(staffingRequirementRepository.save(any(StaffingRequirement.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        // BDAY-04: every Erlang calculation now binds a DayWindow from the desk -- a desk at its
+        // default (MIDNIGHT) anchor, matching every fixture's implicit assumption before this plan.
+        Desk desk = new Desk();
+        desk.setId(DESK);
+        when(deskRepository.findByIdAndTenantId(DESK, TENANT)).thenReturn(Optional.of(desk));
     }
 
     @AfterEach

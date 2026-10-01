@@ -78,23 +78,25 @@ class MidnightWindowSeamTest {
     @DisplayName("grid alignment (ShiftTemplateService.isAligned)")
     class GridAlignment {
 
+        private static final DayWindow WINDOW = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
         @Test
         @DisplayName("a midnight end is aligned to an hourly grid opening at 08:00")
         void midnightAlignsToHourlyGrid() {
-            assertThat(ShiftTemplateService.isAligned(OPEN, 60, LocalTime.MIDNIGHT)).isTrue();
+            assertThat(ShiftTemplateService.isAligned(OPEN, 60, LocalTime.MIDNIGHT, WINDOW)).isTrue();
         }
 
         @Test
         @DisplayName("and to a 15- and 30-minute grid — 1440 divides by all three")
         void midnightAlignsToFinerGrids() {
-            assertThat(ShiftTemplateService.isAligned(OPEN, 30, LocalTime.MIDNIGHT)).isTrue();
-            assertThat(ShiftTemplateService.isAligned(OPEN, 15, LocalTime.MIDNIGHT)).isTrue();
+            assertThat(ShiftTemplateService.isAligned(OPEN, 30, LocalTime.MIDNIGHT, WINDOW)).isTrue();
+            assertThat(ShiftTemplateService.isAligned(OPEN, 15, LocalTime.MIDNIGHT, WINDOW)).isTrue();
         }
 
         @Test
         @DisplayName("an off-grid time is still misaligned")
         void offGridStillRejected() {
-            assertThat(ShiftTemplateService.isAligned(OPEN, 60, LocalTime.of(15, 30))).isFalse();
+            assertThat(ShiftTemplateService.isAligned(OPEN, 60, LocalTime.of(15, 30), WINDOW)).isFalse();
         }
     }
 

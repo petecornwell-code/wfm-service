@@ -3,10 +3,12 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
 import com.wfm.exception.EntityNotFoundException;
+import com.wfm.model.Desk;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.StaffingSource;
 import com.wfm.model.Timeslot;
+import com.wfm.repository.DeskRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -29,18 +31,54 @@ public class StaffingRequirementService {
     private final TimeslotRepository timeslotRepository;
     private final SpecializationRepository specializationRepository;
     private final ErlangCalculatorService erlangCalculatorService;
+    private final DeskRepository deskRepository;
     private final EntityManager entityManager;
 
     public StaffingRequirementService(StaffingRequirementRepository staffingRequirementRepository,
                                       TimeslotRepository timeslotRepository,
                                       SpecializationRepository specializationRepository,
                                       ErlangCalculatorService erlangCalculatorService,
+                                      DeskRepository deskRepository,
                                       EntityManager entityManager) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
         this.erlangCalculatorService = erlangCalculatorService;
+        this.deskRepository = deskRepository;
         this.entityManager = entityManager;
+    }
+
+    /**
+     * BDAY-04 (plan 19-06, Rule 3 deviation -- see this plan's SUMMARY): the anchor-source table
+     * classified this class under P-02 rule 5 ("propagate a DayWindow parameter outward to the
+     * caller that already resolves a desk"), but neither of this class's two callers
+     * (StaffingRequirementController) resolves a desk or a dayStart either. Loading the desk here,
+     * once per calculate call, is this class's own anchor source -- mirroring {@code
+     * ShiftTemplateService.dayWindowFor}'s throw-on-missing-desk convention.
+     */
+    private DayWindow dayWindowFor(UUID deskId, long tenantId) {
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        return DayWindow.anchoredAt(desk.getDayStart());
+    }
+
+    /**
+     * BDAY-04: the anchored equivalent of the deprecated {@code DayWindow.durationMinutes},
+     * reproducing its exact throw-on-non-forward behaviour (message included). Unlike {@code
+     * ShiftTemplateService.validate}'s save path (D-11), nothing upstream of either Erlang
+     * calculation already refuses a non-forward timeslot interval, and {@code
+     * StaffingRequirementErlangTest#midnightCrossingTimeslotIsRejected} pins exactly this throw.
+     * {@link DayWindow#anchoredDurationMinutes} itself no longer throws (BDAY-04 criterion 2), so
+     * the check is reproduced here rather than silently lost.
+     */
+    private static int intervalMinutes(DayWindow window, LocalTime start, LocalTime end) {
+        if (!window.anchoredIsForwardWithinDay(start, end)) {
+            throw new IllegalArgumentException(
+                    "Interval must run forward within a single day, but got " + start + " to " + end
+                            + ". A window ending at midnight is supported (end 00:00); one crossing "
+                            + "midnight into the next day is not.");
+        }
+        return window.anchoredDurationMinutes(start, end);
     }
 
     public PaginatedResponse<StaffingRequirementResponse.Item> listRequirements(
@@ -198,10 +236,11 @@ public class StaffingRequirementService {
         entityManager.flush();
         entityManager.clear();
 
+        DayWindow window = dayWindowFor(deskId, tenantId);
         List<StaffingRequirement> saved = new ArrayList<>();
         for (ErlangCRequest.Item item : request.parameters()) {
             Timeslot ts = timeslotMap.get(item.timeslotId());
-            int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
+            int intervalMinutes = intervalMinutes(window, ts.getStartTime(), ts.getEndTime());
 
             // Delegated to the same service the read-only calculator calls, so what this button
             // writes is exactly what that page previews. The DTO speaks percentages to match this
@@ -299,6 +338,7 @@ public class StaffingRequirementService {
         entityManager.clear();
 
         // Calculate and persist
+        DayWindow window = dayWindowFor(deskId, tenantId);
         List<StaffingRequirement> saved = new ArrayList<>();
         for (ErlangXRequest.Item item : request.parameters()) {
             Timeslot ts = timeslotMap.get(item.timeslotId());
@@ -307,7 +347,7 @@ public class StaffingRequirementService {
             // the request, so the figure the operator typed against a row is converted on that
             // row's own length. DayWindow because a slot ending at 00:00 ends the day -- a raw
             // Duration.between would make the last slot of a midnight desk negative.
-            int intervalMinutes = DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
+            int intervalMinutes = intervalMinutes(window, ts.getStartTime(), ts.getEndTime());
 
             ErlangCalculationResponse result = erlangCalculatorService.calculateErlangX(
                     new ErlangXCalculationRequest(
