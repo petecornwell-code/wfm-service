@@ -211,7 +211,54 @@ by research as a real gap, not an assumed by-product of SOLV-01..04 — treat it
 here. Two items absent from this entry were surfaced in discussion and are now criteria 6 and 7;
 `ShiftLibraryGenerationService`'s two calendar-weekday derivations migrate in this phase as well
 (20-CONTEXT D-13).
-**Plans**: TBD
+**Planner decisions:** P-01 (the join guard is a NEW class, `BusinessDateJoinGuardTest`, not a fourth
+scan in `MidnightTimeArithmeticGuardTest` — taking D-08's discretion, following
+`BusinessDateWritePathGuardTest`'s own precedent). P-02 (the anchor carrier is `AgentDayConfig.dayStart`
+plus a 10-argument delegating constructor, so 34 existing test construction sites compile unchanged and
+the carrier commit is provably additive). P-03 (`honourPreferredBreakTime`'s anchor mechanism is NOT
+pre-decided — it is a blocking `checkpoint:decision` in `20-05-PLAN.md`, because both candidate
+mechanisms end a grouping-node sharing arrangement six sibling constraints rely on and both can move a
+match count two committed baselines pin). P-04 (SOLV-05 is discharged by the seat-supply gate's key fix
+alone; the schedule-wide capacity warning is NOT widened — it has no per-day key to mismatch, and the
+gate is what blocks a solve). P-05 (D-15's delete gets a SECOND repository method filtering on business
+date rather than re-pointing the shared one, because two Erlang callers still pass operator-supplied
+calendar dates — both recorded by name in the guard's documentation as unreachable instances today).
+P-06 (`ScheduleConfig`'s defensive null-anchor fallback is NOT tightened — 34 test construction sites
+still reach the solver through midnight-supplying delegating constructors, so it stays load-bearing;
+carried forward per CONTEXT.md's Deferred Ideas). **Re-grepped on HEAD 2026-10-01:** the placeholder
+anchor appears on 19 lines in `ScheduleConstraintProvider.java` including its declaration, with one line
+carrying two occurrences — 19 call-site occurrences across 18 lines; `getDate()` appears at 12 sites, of
+which 8 need migration and 4 are already business-date-shaped. **Amendments D-04, D-07 and D-14 are
+already discharged** — criteria 6 and 7 exist and criterion 5 is reworded, and `REQUIREMENTS.md`'s
+BDAY-07 carries its 2026-10-01 amendment.
+**Plans**: 8 plans, 6 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 20-01-PLAN.md — Tracer: carry the desk anchor into a Quad-arity constraint's reach (additive, zero behaviour change), then three 21:00-anchored scenarios red against it (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 20-02-PLAN.md — The two structural guards: `BusinessDateJoinGuardTest` over four files (red) and `AgentDayDerivationGuardTest` over D-06's chain (green) (wave 2)
+- [ ] 20-03-PLAN.md — The two per-constraint count proofs: SOLV-06's reflective anchor-invariance table (red) and BDAY-07's 48-agent Phil-US-shaped drift baseline (green) (wave 2)
+- [ ] 20-04-PLAN.md — SOLV-04's constructed SLOT-mode overnight proof (red) and SOLV-05's seat-supply key-system fix (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 20-05-PLAN.md — THE migration, one deliberate commit: 8 key-position edits, 19 anchor occurrences across 6 constraints, the placeholder and its allowlist row gone — with a blocking decision checkpoint for `honourPreferredBreakTime` (wave 3, not autonomous)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 20-06-PLAN.md — SOLV-07's read paths: 6 coverage grouping keys and 4 library-generation key positions, two display labels deliberately unchanged (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 20-07-PLAN.md — D-15's destructive delete range and its repository filter moved together, proven by observing survivors; the join guard goes green (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 20-08-PLAN.md — The gate deletion and the 15-minute refusal, with the disclosure copy corrected first and the generation-time tiling refusal proven to fire — this phase's FINAL commit (wave 6)
 
 ### Phase 21: Overnight Shift Templates
 
