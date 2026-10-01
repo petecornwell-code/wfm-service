@@ -183,21 +183,34 @@ date-equality joins)
      so a silent non-join (zero matching tuples, scored identically to "satisfied") cannot pass as
      correct (SOLV-06).
   5. Demand upload, coverage reporting and the solver are proven — by a guard test, not convention —
-     to resolve the same business date for the same timeslot, and one small live desk (Phil-US, 48
-     agents, not Vinted's 287) produces unchanged per-constraint match counts and score across the
-     whole re-anchoring, decomposed enough that a failure names which constraint moved (SOLV-07,
-     BDAY-07).
+     to resolve the same business date for the same timeslot, and a constructed fixture built to one
+     small live desk's shape (Phil-US, 48 agents, not Vinted's 287) produces unchanged per-constraint
+     match counts and score across the whole re-anchoring, decomposed enough that a failure names
+     which constraint moved (SOLV-07, BDAY-07).
+  6. `DeskService`'s `00:00`-only gate is gone and a desk's day start accepts any 15-minute boundary,
+     refusing anything else by name at save time — landed as this phase's FINAL commit, after every
+     join and anchor above is migrated and guarded. Phase 18's generation-time tiling refusal (a
+     day-start that is not a whole multiple of the generation increment) becomes reachable through
+     the API for the first time and is proven to fire (SOLV-01).
+  7. `ScheduleConstraintProvider`'s `PENDING_DESK_ANCHOR` placeholder is gone, every one of its call
+     sites (19 at planning time) reads the desk's real anchor from the joined `ScheduleConfig`, and
+     its entry in `src/test/resources/midnight-time-arithmetic.md` is removed — with the guard going
+     red if either the constant or the allowlist entry returns (SOLV-03).
 **Notes**: Standard, well-documented pattern — the join-migration technique and guard-test shape are
-directly copied from two proven precedents in this codebase. **Action for phase planning:** re-grep
-the "12 `timeslot.getDate()` joins" count fresh before writing the migration — measured on a tree
-that has since moved. **Open decision:** the final allowlist contents for the new
-`BusinessDateJoinGuardTest` — research expects "plausibly none" survive as legitimate calendar-date
-uses inside a join, but this needs verifying against the current `ScheduleConstraintProvider`, not
-assuming. **Open decision:** whether `agent_shift_assignment` needs its own `business_date` column
-or derives one through its `Timeslot` relation — resolve before writing the joins that touch it.
-SOLV-07 (the anchor-agreement guard between demand upload/coverage and the solver) was accepted into
-v1.5 scope by operator decision 2026-09-30, flagged by research as a real gap, not an assumed
-by-product of SOLV-01..04 — treat it as its own deliverable here.
+directly copied from two proven precedents in this codebase. **Planning action discharged:** the "12
+`timeslot.getDate()` joins" count was re-measured on HEAD 2026-10-01 and is still exactly 12;
+re-verify if the tree moves before execution. **Resolved (20-CONTEXT D-08/D-09):** the
+`BusinessDateJoinGuardTest` allowlist is empty for key positions by construction — it scans only
+`join`/`equal`/`groupBy`/`computeIfAbsent` key positions for `.getDate()` on a `Timeslot` receiver,
+so display sites are out of scope without needing an allowlist entry. **Resolved (20-CONTEXT D-05):**
+`agent_shift_assignment` gets no `business_date` column — its `date` already IS the business date,
+derived from `AgentDayConfig` through the schedule period, guarded by a derivation-chain test (D-06)
+instead of duplicated into a stored column. SOLV-07 (the anchor-agreement guard between demand
+upload/coverage and the solver) was accepted into v1.5 scope by operator decision 2026-09-30, flagged
+by research as a real gap, not an assumed by-product of SOLV-01..04 — treat it as its own deliverable
+here. Two items absent from this entry were surfaced in discussion and are now criteria 6 and 7;
+`ShiftLibraryGenerationService`'s two calendar-weekday derivations migrate in this phase as well
+(20-CONTEXT D-13).
 **Plans**: TBD
 
 ### Phase 21: Overnight Shift Templates

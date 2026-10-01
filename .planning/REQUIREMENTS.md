@@ -46,8 +46,19 @@ data that barely contains midnight — because *this* milestone is what introduc
 
 v1.5 inverts that. Constructed scenarios chosen by the property under test carry correctness; one
 small live desk is demoted to a drift guard. The requirement split below (BDAY-06 constructed,
-BDAY-07 live drift) exists so the two can never again be conflated into one fixture that does
+BDAY-07 drift) exists so the two can never again be conflated into one fixture that does
 neither job.
+
+**Amended 2026-10-01 (Phase 20 discussion, 20-CONTEXT D-14).** BDAY-07's drift guard is built to a
+live desk's *shape*, not from its captured bytes. The only source of per-constraint match counts is
+`solutionManager.explain()`, which `ScheduleOutputService` deliberately refuses to call on the
+ACCEPTED/DB path, so a real before/after against the live desk would mean either polling the 4 MB
+detail payload against a two-core solver or adding operator-reachable API surface inside a
+correctness phase. What still keeps BDAY-07 distinct from BDAY-06 — and keeps v1.4's failure from
+recurring — is that it asserts **per-constraint match counts**, which carry a diagnostic signal,
+rather than golden bytes, which carry none, and that its composition is the live desk's rather than
+a property-chosen scenario's. The live half is knowingly given up for v1.5; restoring it belongs
+with MIGR-01..04.
 
 ### What research established — treat as settled
 
@@ -100,7 +111,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **BDAY-04**: Interval arithmetic is anchored on the desk's day start rather than midnight, and the `00:00`-means-end-of-day convention is retired
 - [x] **BDAY-05**: A guard test fails if any scheduling interval calculation bypasses the shared day-window utility — comparisons (`isAfter`/`isBefore`/`compareTo`) as well as arithmetic
 - [x] **BDAY-06**: A constructed regression suite proves behaviour across the midnight boundary, its scenarios chosen by the property under test, with a validator that fails if those scenarios do not actually contain the boundary cases they claim to
-- [ ] **BDAY-07**: One small live desk produces an unchanged schedule across the re-anchoring, compared on per-constraint match counts as well as score
+- [ ] **BDAY-07**: A constructed fixture built to one small live desk's shape (Phil-US, 48 agents) produces an unchanged schedule across the re-anchoring, compared on per-constraint match counts as well as score
 - [x] **BDAY-08**: Exactly one code path writes a timeslot's business date, proven by a write-path guard test that fails in both directions
 
 ### Overnight Shifts (OVNT)

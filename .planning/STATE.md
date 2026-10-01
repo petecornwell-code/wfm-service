@@ -6,10 +6,10 @@ current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: planning
 stopped_at: Phase 20 context gathered
-last_updated: "2026-10-01T14:25:57.845Z"
+last_updated: "2026-10-01T15:11:28.911Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: 42cdcd0fb8be54540bf459cd79ecb6807a71649c
+state_head: d7cc0729dd1083ea5528455320cd2a79ab3d2928
 progress:
   total_phases: 5
   completed_phases: 1
@@ -166,6 +166,7 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 
 - Phase 12 added 2026-08-13: **Atomic Shift Move** — custom Timefold move placing a full contracted shift plus its break in one step. Raised during Phase 10 UAT after the live desk proved unable to produce full-hours shifts: single-slot local search cannot cross the HARD `Exactly one break` rule, so agents pin one slot below the break threshold. Two threshold-tuning attempts were reverted (`76a715f`) before concluding a custom move is required.
 - 2026-08-13: **Timefold version corrected.** The previously stated pinned version (recorded as a later 1.3x release) was incorrect — Phase 12 verified the actual pinned version is 1.16.0 against `build.gradle:35` (`ai.timefold.solver:timefold-solver-bom:1.16.0`) and against the running solver (custom-move API confirmed to be `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, not the newer `Neighborhoods` API introduced at 1.31.0). Assumption A3 in `12-RESEARCH.md` is thereby resolved.
+- Phase 20 edited: edited fields: success_criteria (criterion 5 reworded, criteria 6-7 added), notes (both open decisions resolved) - per 20-CONTEXT D-04/D-07/D-14
 
 ### Decisions
 
