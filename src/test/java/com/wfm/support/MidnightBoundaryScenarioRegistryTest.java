@@ -17,15 +17,19 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * BDAY-06's two-directional flip registry validator. Four scenarios, spread across {@code
- * com.wfm.solver.MidnightBoundaryRegressionTest}, {@code com.wfm.service.MidnightBoundaryPropertyTest}
- * and (SOLV-04, plan 20-04) {@code com.wfm.solver.SlotModeOvernightContractedHoursTest},
- * assert TODAY's actual behaviour at a property this codebase cannot yet represent correctly.
- * Each is marked with {@link AssertsTodaysBehaviour} on its test method, and each mark is named in
- * {@code src/test/resources/midnight-boundary-scenarios.md}'s registry section. This test proves
- * the marked set and the parsed registry are exactly equal, in both directions, so a later phase
- * can neither flip one of these assertions without removing its registry entry, nor leave a
- * registry entry behind after the method it described is deleted or rewritten.
+ * BDAY-06's two-directional flip registry validator. Three scenarios, spread across {@code
+ * com.wfm.solver.MidnightBoundaryRegressionTest} and {@code
+ * com.wfm.service.MidnightBoundaryPropertyTest}, assert TODAY's actual behaviour at a property
+ * this codebase cannot yet represent correctly. {@code com.wfm.solver.SlotModeOvernightContractedHoursTest}
+ * carried a fourth (SOLV-04, plan 20-04) until plan 20-05's migration flipped its assertion and
+ * removed both the marked method and its registry entry in the same commit -- this class still
+ * resolves that class by name below (D-12: a rename of any of the three must still fail this test
+ * loudly, not silently reflect over zero methods), but it no longer contributes a marked method.
+ * Each remaining mark is named in {@code src/test/resources/midnight-boundary-scenarios.md}'s
+ * registry section. This test proves the marked set and the parsed registry are exactly equal, in
+ * both directions, so a later phase can neither flip one of these assertions without removing its
+ * registry entry, nor leave a registry entry behind after the method it described is deleted or
+ * rewritten.
  *
  * <p>Resolves all three scenario classes by fully qualified name rather than importing them
  * directly, so this validator sits in none of them and privileges none. A rename of any class must
@@ -42,9 +46,10 @@ class MidnightBoundaryScenarioRegistryTest {
     private static final String RESOURCE = "midnight-boundary-scenarios.md";
     private static final String REGISTRY_HEADING = "### Scenarios asserting today's behaviour";
 
-    /** The exact number of scenarios whose property cannot exist today, per BDAY-06's planning
-     *  (3) plus SOLV-04's constructed proof (plan 20-04, 1) -- 4 total. */
-    private static final int EXPECTED_REGISTRY_SIZE = 4;
+    /** The exact number of scenarios whose property cannot exist today -- BDAY-06's original three
+     *  (plan 20-05 removed SOLV-04's fourth, the SLOT-mode scenario plan 20-04 added, in the same
+     *  commit that flipped its assertion). */
+    private static final int EXPECTED_REGISTRY_SIZE = 3;
 
     /**
      * The milestone's own requirement IDs a {@link AssertsTodaysBehaviour#flippedBy()} value may
@@ -101,10 +106,10 @@ class MidnightBoundaryScenarioRegistryTest {
     }
 
     @Test
-    void registryHoldsExactlyFourEntries() throws Exception {
+    void registryHoldsExactlyTheExpectedEntryCount() throws Exception {
         assertThat(parseRegistry())
                 .as("the registry must hold exactly the number of scenarios whose property cannot "
-                        + "exist today -- a fourth marked scenario must not be addable without a "
+                        + "exist today -- a new marked scenario must not be addable without a "
                         + "decision to widen this count")
                 .hasSize(EXPECTED_REGISTRY_SIZE);
     }

@@ -71,6 +71,10 @@ class DeskAnchorReachesConstraintTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(DAY);
+        // SOLV-01 (plan 20-05): correct under BOTH anchors this file tests (21:00 and 00:00) --
+        // 23:00 is on-or-after either anchor, so businessDate == calendarDate == DAY either way.
+        // Without it, shiftEnvelopeCompliance's business-date join silently fails to match.
+        ts.setBusinessDate(DAY);
         ts.setStartTime(LocalTime.of(23, 0));
         ts.setEndTime(LocalTime.MIDNIGHT);
         return ts;

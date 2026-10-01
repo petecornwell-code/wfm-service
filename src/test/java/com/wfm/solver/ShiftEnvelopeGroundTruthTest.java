@@ -353,6 +353,10 @@ class ShiftEnvelopeGroundTruthTest {
         moved.setDeskId(seat.getDeskId());
         moved.setScheduleId(seat.getScheduleId());
         moved.setDate(date);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // without it, ScheduleConstraintProvider's business-date joins all silently fail to match.
+        moved.setBusinessDate(date);
         moved.setStartTime(newStart);
         moved.setEndTime(newStart.plusMinutes(ShiftModeFixtures.INCREMENT_MINUTES));
         seat.setTimeslot(moved);

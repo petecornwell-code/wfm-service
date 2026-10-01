@@ -261,6 +261,11 @@ class ShiftModeBreakGeometryGuardTest {
             Timeslot ts = new Timeslot();
             ts.setId(UUID.randomUUID());
             ts.setDate(DAY);
+            // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+            // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+            // without it, exactlyOneBreak/breakDuration/breakBlockedWindow/breakStartAlignment's
+            // shared business-date groupBy silently fails to join AgentDayConfig.
+            ts.setBusinessDate(DAY);
             ts.setStartTime(t);
             ts.setEndTime(t.plusMinutes(INCREMENT));
             slots.put(t, ts);

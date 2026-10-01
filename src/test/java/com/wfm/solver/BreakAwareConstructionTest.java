@@ -601,6 +601,17 @@ class BreakAwareConstructionTest {
         ts.setDeskId(deskId);
         ts.setScheduleId(scheduleId);
         ts.setDate(date);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored (no dayStart concept
+        // anywhere in this file), so businessDate == calendarDate here, correct and behaviourally
+        // inert -- matching plan 20-04's identical fix to five other pre-existing fixtures. Found
+        // empirically: every join ScheduleConstraintProvider now keys on Timeslot.getBusinessDate()
+        // silently mismatched against this fixture's real AgentDayConfig/AgentPreference dates,
+        // which does not merely zero out the affected constraints' matches -- contractedHoursUnderZero
+        // and agentNotWorkingThatDay fire for every agent-day/seat once assignments exist, handing the
+        // local search an unfixable hard-score floor that made this test's own 20,000-step local
+        // search phase run 600x+ slower (measured: 50 steps, 2510323 baseline 0.283s vs migrated,
+        // unfixed, >180s and still unfinished when killed) before this one-line fix.
+        ts.setBusinessDate(date);
         ts.setStartTime(start);
         ts.setEndTime(end);
         return ts;

@@ -110,6 +110,10 @@ class NonWorkingDaySeatConstraintTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(date);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // without it, agentNotWorkingThatDay's business-date join silently fails to match.
+        ts.setBusinessDate(date);
         ts.setStartTime(start);
         ts.setEndTime(start.plusHours(1));
 

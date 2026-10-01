@@ -45,25 +45,33 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     public static final String SHIFT_START_MIX_CONSTRAINT_NAME = "Shift start mix";
 
     /**
-     * A midnight anchor standing in for a desk's real day-start anchor at the constraints whose
-     * stream cannot carry {@link ScheduleConfig} as a joined tuple member. Those constraints bring
-     * {@code ScheduleConfig} into scope only via {@code .ifExists(ScheduleConfig.class,
-     * filtering(...))} to gate on scheduling mode — unlike {@code .join}, {@code ifExists} never
-     * adds its class to the output tuple, and every one of them is already a Quad (four-argument)
-     * stream by the time it reaches interval arithmetic, with Timefold 1.16.0 exposing no
-     * five-argument (Penta) stream to join a fifth tuple member into. Restructuring those streams to
-     * carry the real anchor is a solver problem-fact change — {@code SOLV-01}'s deliverable
-     * (BDAY-04/P-01), not this one.
+     * Binds a {@link DayWindow} to the desk's real day-start anchor, falling back to midnight when
+     * {@code dayStart} is null (SOLV-01/SOLV-03, D-07). This is the ONLY place in this file that
+     * binds a {@link DayWindow} after the migration — every interval-anchor call site below reads
+     * the desk's real anchor through this helper, from the joined {@link ScheduleConfig} or
+     * {@link AgentDayConfig}, replacing the hardcoded midnight placeholder this commit removes.
      *
-     * <p>Every desk's anchor is {@code 00:00} today — {@code DeskService}'s write path still
-     * refuses anything else — so this constant is byte-identical to today's production behaviour
-     * and stays so until {@code SOLV-01} replaces every call site below with the real anchor read
-     * from the joined {@code ScheduleConfig}. Named {@code PENDING}, not {@code MIDNIGHT} or
-     * {@code DEFAULT}, so a reader cannot mistake it for a deliberate choice: it is a placeholder
-     * with a removal owner, listed under {@code midnight-time-arithmetic.md}'s "Permitted midnight
-     * anchors" section.
+     * <p>A null {@code dayStart} means an unmigrated test fixture or a pre-BDAY-04 {@code Schedule}
+     * — production always supplies a real value ({@code SolverService.buildSchedule} always copies
+     * {@code Desk.dayStart}, itself defaulting to {@code MIDNIGHT}), so this is a defensive
+     * same-as-before default, not a second anchor rule (Rule 2). The midnight-anchor guard's own
+     * matcher-liveness test ({@code MidnightTimeArithmeticGuardTest}) confirms this exact
+     * null-coalescing shape is NOT treated as a midnight anchor, so this helper needs no allowlist
+     * entry in {@code midnight-time-arithmetic.md}.
      */
-    private static final DayWindow PENDING_DESK_ANCHOR = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+    private static DayWindow resolveAnchor(LocalTime dayStart) {
+        return DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);
+    }
+
+    /**
+     * {@link #resolveAnchor(LocalTime)} applied to {@code sa}'s own {@code @Transient}
+     * {@link AgentDayConfig}, null-safe for an unassigned shift row or an unmigrated fixture that
+     * never calls {@code setDayConfig}. {@link #shiftWorkContiguity} reaches the desk's real anchor
+     * this way at zero extra join cost, since {@code sa} already carries it.
+     */
+    private static DayWindow anchorFor(AgentShiftAssignment sa) {
+        return resolveAnchor(sa.getDayConfig() == null ? null : sa.getDayConfig().dayStart());
+    }
 
     // ------------------------------------------------------------------
     //  Shared grouping building blocks
@@ -89,7 +97,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             a -> a.getAgent().getId();
 
     private static final java.util.function.Function<AgentAssignment, java.time.LocalDate> DATE =
-            a -> a.getTimeslot().getDate();
+            a -> a.getTimeslot().getBusinessDate();
 
     private static final ai.timefold.solver.core.api.score.stream.uni.UniConstraintCollector<
             AgentAssignment, ?, List<AgentAssignment>> TO_LIST = toList();
@@ -172,7 +180,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter(a -> a.getAgent() != null)
                 .join(AgentDayOff.class,
                         equal(a -> a.getAgent().getId(), d -> d.getAgent().getId()),
-                        equal(a -> a.getTimeslot().getDate(), AgentDayOff::getDate))
+                        equal(a -> a.getTimeslot().getBusinessDate(), AgentDayOff::getDate))
                 .penalizeConfigurable()
                 .asConstraint("Agent day off");
     }
@@ -219,7 +227,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return factory.forEach(AgentAssignment.class)
                 .ifNotExists(AgentDayConfig.class,
                         equal(a -> a.getAgent().getId(), AgentDayConfig::agentId),
-                        equal(a -> a.getTimeslot().getDate(), AgentDayConfig::date))
+                        equal(a -> a.getTimeslot().getBusinessDate(), AgentDayConfig::date))
                 .penalizeConfigurable()
                 .asConstraint("Agent not working that day");
     }
@@ -304,11 +312,12 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         filtering((daId, date, assignments, dayConfig, cfg) ->
                                 cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
+                    DayWindow window = resolveAnchor(dayConfig.dayStart());
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) {
                         // Agent's contracted hours don't require a break — penalise any gap
-                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) != 0;
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), window) != 0;
                     }
 
                     // Only enforce break rule once agent has enough slots to need one.
@@ -318,24 +327,25 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                             .intValue();
                     if (assignments.size() < breakThresholdSlots) {
                         // During construction: only penalise fragmented shifts (>1 gap)
-                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) > 1;
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), window) > 1;
                     }
 
                     // Fully (or nearly fully) assigned: require exactly 1 gap of correct length
-                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
+                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes(), window);
                     if (gaps != 1) return true;
                     int expectedBreakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    return totalGapSlots(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) != expectedBreakSlots;
+                    return totalGapSlots(assignments, dayConfig.incrementMinutes(), window) != expectedBreakSlots;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> {
                     // Penalise by TOTAL excess break slots, not just gap count.
                     // This makes longer/extra breaks proportionally more expensive,
                     // directly targeting break overallocation.
+                    DayWindow window = resolveAnchor(dayConfig.dayStart());
                     boolean needsBreak = dayConfig.effectiveHours()
                             .compareTo(dayConfig.breakMinShiftHours()) > 0;
                     int expectedBreakSlots = needsBreak
                             ? dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes() : 0;
-                    int actualBreakSlots = totalGapSlots(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
+                    int actualBreakSlots = totalGapSlots(assignments, dayConfig.incrementMinutes(), window);
                     return Math.max(1, Math.abs(actualBreakSlots - expectedBreakSlots));
                 })
                 .asConstraint("Exactly one break");
@@ -366,7 +376,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     if (!needsBreak) return false;
 
                     int expectedSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    List<Integer> gapLengths = getGapLengths(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
+                    List<Integer> gapLengths = getGapLengths(assignments, dayConfig.incrementMinutes(),
+                            resolveAnchor(dayConfig.dayStart()));
                     if (gapLengths.size() != 1) return false; // exactlyOneBreak handles the count
                     return gapLengths.get(0) != expectedSlots;
                 })
@@ -394,18 +405,19 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                         filtering((daId, date, assignments, dayConfig, cfg) ->
                                 cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((daId, date, assignments, dayConfig) -> {
+                    DayWindow window = resolveAnchor(dayConfig.dayStart());
                     BigDecimal effectiveHours = dayConfig.effectiveHours();
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(), window);
                     if (breakStart == null) return false;
                     int breakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    LocalTime breakEnd = PENDING_DESK_ANCHOR.anchoredPlusWithinDay(
+                    LocalTime breakEnd = window.anchoredPlusWithinDay(
                             breakStart, breakSlots * dayConfig.incrementMinutes());
 
                     LocalTime shiftStart = getShiftStart(assignments);
-                    LocalTime shiftEnd = getShiftEnd(assignments, PENDING_DESK_ANCHOR);
+                    LocalTime shiftEnd = getShiftEnd(assignments, window);
                     if (shiftStart == null || shiftEnd == null) return false;
 
                     long blockedMinutes = dayConfig.breakBlockedHours()
@@ -413,11 +425,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     // Minute-of-day arithmetic: shiftEnd is an END boundary, so on a shift
                     // finishing at midnight it is 00:00 == minute 1440, and both the subtraction
                     // and the breakEnd comparison would otherwise read it as the day's start.
-                    LocalTime blockedStartEnd = PENDING_DESK_ANCHOR.anchoredPlusWithinDay(shiftStart, (int) blockedMinutes);
-                    int blockedEndStartMinute = PENDING_DESK_ANCHOR.anchoredEndMinute(shiftEnd) - (int) blockedMinutes;
+                    LocalTime blockedStartEnd = window.anchoredPlusWithinDay(shiftStart, (int) blockedMinutes);
+                    int blockedEndStartMinute = window.anchoredEndMinute(shiftEnd) - (int) blockedMinutes;
 
-                    return PENDING_DESK_ANCHOR.anchoredStartMinute(breakStart) < PENDING_DESK_ANCHOR.anchoredStartMinute(blockedStartEnd)
-                            || PENDING_DESK_ANCHOR.anchoredEndMinute(breakEnd) > blockedEndStartMinute;
+                    return window.anchoredStartMinute(breakStart) < window.anchoredStartMinute(blockedStartEnd)
+                            || window.anchoredEndMinute(breakEnd) > blockedEndStartMinute;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break blocked window");
@@ -447,7 +459,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(),
+                            resolveAnchor(dayConfig.dayStart()));
                     if (breakStart == null) return false;
 
                     return !isAligned(breakStart, dayConfig.breakStartAlignment());
@@ -507,19 +520,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
                 .join(AgentAssignment.class,
                         equal((sa, cfg) -> sa.getAgent().getId(), a -> a.getAgent().getId()),
-                        equal((sa, cfg) -> sa.getDate(), a -> a.getTimeslot().getDate()))
-                // BDAY-04/plan 19-03 (the tracer): the desk's real anchor reaches this constraint
-                // via the ScheduleConfig anchor field -- a DayWindow bound per match, not an
-                // implicit midnight. A null anchor (every Schedule built before this phase's
-                // additive 19-01 commit, and every hand-built test Schedule that never calls
-                // setDayStart) falls back to MIDNIGHT here, exactly as the pre-19-03
-                // midnight-implicit covers() always did -- production never supplies null
-                // (SolverService.buildSchedule always copies Desk.dayStart, which itself defaults
-                // to MIDNIGHT), so this is a defensive same-as-before default for unmigrated
-                // fixtures, not a behaviour change (Rule 2).
+                        equal((sa, cfg) -> sa.getDate(), a -> a.getTimeslot().getBusinessDate()))
+                // BDAY-04/plan 19-03 (the tracer), migrated by SOLV-01/SOLV-03 (plan 20-05): the
+                // desk's real anchor reaches this constraint via the ScheduleConfig anchor field --
+                // a DayWindow bound per match through the file's single resolveAnchor helper, not an
+                // implicit midnight. A null anchor (every Schedule built before BDAY-04's 19-01
+                // commit, and every hand-built test Schedule that never calls setDayStart) falls back
+                // to MIDNIGHT, exactly as the pre-19-03 midnight-implicit covers() always did --
+                // production never supplies null (SolverService.buildSchedule always copies
+                // Desk.dayStart, which itself defaults to MIDNIGHT), so this is a defensive
+                // same-as-before default for unmigrated fixtures, not a behaviour change (Rule 2).
                 .filter((sa, cfg, a) -> {
-                    LocalTime dayStart = cfg.dayStart();
-                    DayWindow window = DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);
+                    DayWindow window = resolveAnchor(cfg.dayStart());
                     return sa.getShiftBandPair() == null || !sa.getShiftBandPair().covers(a.getTimeslot(), window);
                 })
                 .penalizeConfigurable()
@@ -605,12 +617,15 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return factory.forEachIncludingUnassigned(AgentShiftAssignment.class)
                 .join(AgentAssignment.class,
                         equal(sa -> sa.getAgent().getId(), a -> a.getAgent().getId()),
-                        equal(AgentShiftAssignment::getDate, a -> a.getTimeslot().getDate()))
+                        equal(AgentShiftAssignment::getDate, a -> a.getTimeslot().getBusinessDate()))
                 .groupBy((sa, a) -> sa, toList((sa, a) -> a))
                 .ifExists(ScheduleConfig.class,
                         filtering((sa, seats, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT))
-                .filter((sa, seats) -> countNonBreakHoles(seats, sa, PENDING_DESK_ANCHOR) > 0)
-                .penalizeConfigurable((sa, seats) -> countNonBreakHoles(seats, sa, PENDING_DESK_ANCHOR))
+                // SOLV-03: sa already carries a populated @Transient AgentDayConfig
+                // (SolverService#buildShiftAssignments), so the desk's real anchor is reachable at
+                // zero extra join cost -- no ScheduleConfig join needed here.
+                .filter((sa, seats) -> countNonBreakHoles(seats, sa, anchorFor(sa)) > 0)
+                .penalizeConfigurable((sa, seats) -> countNonBreakHoles(seats, sa, anchorFor(sa)))
                 .asConstraint("Shift work contiguity");
     }
 
@@ -742,7 +757,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return factory.forEach(AgentDayConfig.class)
                 .ifNotExists(AgentAssignment.class,
                         equal(AgentDayConfig::agentId, a -> a.getAgent() != null ? a.getAgent().getId() : null),
-                        equal(AgentDayConfig::date, a -> a.getTimeslot().getDate()))
+                        equal(AgentDayConfig::date, a -> a.getTimeslot().getBusinessDate()))
                 .penalizeConfigurable(AgentDayConfig::expectedWorkSlots)
                 .asConstraint("Contracted hours (under, zero)");
     }
@@ -1079,7 +1094,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter(a -> a.getAgent() != null)
                 .join(AgentPreference.class,
                         equal(a -> a.getAgent().getId(), p -> p.getAgent().getId()),
-                        equal(a -> a.getTimeslot().getDate(), AgentPreference::getDate))
+                        equal(a -> a.getTimeslot().getBusinessDate(), AgentPreference::getDate))
                 .ifExists(ScheduleConfig.class,
                         filtering((a, p, cfg) -> cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((a, p) -> {
@@ -1091,38 +1106,91 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
     }
 
     /**
+     * A tagged per-agent-day grouping result — the assignment list plus the desk's day-start
+     * anchor, carried together through {@link #honourPreferredBreakTime}'s groupBy so the anchor is
+     * available at its filter without a second join after grouping. Mirrors {@link ClusterMark}'s
+     * identical indirection technique (SOLV-03, D-12 checkpoint: tagged-collector).
+     *
+     * <p>{@code dayStart} is constant across every row in one group — every tuple in the group
+     * joined the SAME singleton {@link ScheduleConfig} fact — so the {@code min} collector that
+     * populates it (see {@link #honourPreferredBreakTime}) trivially returns that one value rather
+     * than genuinely reducing a varying set.
+     */
+    private record AnchoredAssignments(List<AgentAssignment> assignments, LocalTime dayStart) {}
+
+    /**
      * 10. Honour preferred break time — penalise when an agent's break
      * does not start at their preferred break time.
      * Preferences are pre-resolved by SolverService with exact dates.
      *
      * <p>(Phase 15, ENVL-05/P-26) Mode-gated off for shift-scheduled desks — see
-     * {@link #honourPreferredStartTime}'s javadoc for the reclassification reasoning, and
-     * {@link #exactlyOneBreak}'s javadoc for the {@code ifExists}-not-{@code join} mechanism note
-     * (this constraint's stream is already Quad, so a literal {@code join(ScheduleConfig.class)}
-     * would need a nonexistent Penta stream).
+     * {@link #honourPreferredStartTime}'s javadoc for the reclassification reasoning.
+     *
+     * <p>(SOLV-03, D-12 checkpoint decision: tagged-collector) <b>This is the one constraint in the
+     * file that cannot reach {@link AgentDayConfig} at Quad arity</b> — it joins
+     * {@link AgentPreference} instead, and {@link AgentDayConfig} was never among this stream's
+     * tuple members. Unlike the five break-geometry constraints above, there is no existing join to
+     * fold the anchor into. The mechanism chosen at the checkpoint: join {@link ScheduleConfig} —
+     * a cheap cross join against a {@code @ProblemFactProperty} singleton, never a filter — BEFORE
+     * the grouping, and fold its {@code dayStart} into a tagged collector result
+     * ({@link AnchoredAssignments}) alongside the assignment list, so the anchor rides through the
+     * grouping without widening the subsequent {@code .join(AgentPreference.class)} past Quad.
+     *
+     * <p>The mode gate moves with the {@code ScheduleConfig} join, from the {@code ifExists}-after-
+     * grouping shape every other mode-gated constraint in this file uses to a plain {@code .filter}
+     * BEFORE grouping. This is not a behaviour change: {@code schedulingMode()} is schedule-wide (one
+     * singleton fact, never mixed across rows), so a row that would have been dropped by the old
+     * {@code ifExists} gate after grouping is dropped by this filter before grouping instead —
+     * identically for every row, which is exactly what keeps this constraint's match count unmoved
+     * ({@code PhilUsShapedDriftGuardTest}, {@code ConstraintMatchCountNonVacuityTest}).
+     *
+     * <p>This ends the shared {@code (AGENT_ID, DATE, TO_LIST)} grouping node this constraint
+     * previously shared with its five {@code exactlyOneBreak}/{@code breakDuration}/
+     * {@code breakBlockedWindow}/{@code breakStartAlignment} siblings (plus the
+     * {@code (AGENT_ID, DATE, COUNT)} node shared by {@code contractedHoursOver}/
+     * {@code contractedHoursUnder}) — a scoring-performance cost, not a correctness one. The
+     * checkpoint recorded that both candidate mechanisms gave up this same sharing equally, so it
+     * was not the deciding factor; match-count safety by construction was.
      */
     Constraint honourPreferredBreakTime(ConstraintFactory factory) {
+        // Explicitly-typed BiFunction, not an inline lambda: ConstraintCollectors#min has both a
+        // BiFunction<A,B,Mapped> overload and a Comparator<? super A> overload, and a bare two-arg
+        // lambda is structurally applicable to both (Comparator#compare also takes two arguments),
+        // which javac's overload resolution rejects as ambiguous before it ever reaches return-type
+        // checking. A statically-typed BiFunction value is not a Comparator, so it resolves to the
+        // one overload that is.
+        java.util.function.BiFunction<AgentAssignment, ScheduleConfig, LocalTime> dayStartOf =
+                (a, cfg) -> cfg.dayStart();
+        // Schedule.dayStart (and therefore ScheduleConfig.dayStart()) is genuinely null for every
+        // Schedule built before BDAY-04 and every hand-built test fixture that never calls
+        // setDayStart -- it deliberately carries no MIDNIGHT default (see Schedule.getDayStart's own
+        // javadoc). The min collector's internal TreeMap compares by natural ordering unless given a
+        // Comparator, and throws on a null key rather than silently admitting it; nullsFirst keeps a
+        // null dayStart flowing through to resolveAnchor's own null-coalescing fallback below, rather
+        // than crashing inside a collector that was never meant to be the anchor-resolution rule.
+        java.util.Comparator<LocalTime> nullSafeOrder = java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder());
         return factory.forEach(AgentAssignment.class)
                 .filter(a -> a.getAgent() != null)
-                // Keyed on the agent id rather than the Agent so this joins the shared
-                // grouping node above. The Agent was only ever used for its id.
-                .groupBy(AGENT_ID, DATE, TO_LIST)
+                .join(ScheduleConfig.class)
+                .filter((a, cfg) -> cfg.schedulingMode() != SchedulingMode.SHIFT)
+                .groupBy((a, cfg) -> a.getAgent().getId(),
+                        (a, cfg) -> a.getTimeslot().getBusinessDate(),
+                        compose(toList((a, cfg) -> a), min(dayStartOf, nullSafeOrder),
+                                AnchoredAssignments::new))
                 .join(AgentPreference.class,
-                        equal((agentId, date, assignments) -> agentId,
+                        equal((agentId, date, tagged) -> agentId,
                                 p -> p.getAgent().getId()),
-                        equal((agentId, date, assignments) -> date,
+                        equal((agentId, date, tagged) -> date,
                                 AgentPreference::getDate))
-                .ifExists(ScheduleConfig.class,
-                        filtering((agentId, date, assignments, pref, cfg) ->
-                                cfg.schedulingMode() != SchedulingMode.SHIFT))
-                .filter((agentId, date, assignments, pref) -> {
+                .filter((agentId, date, tagged, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
-                    int increment = deriveIncrement(assignments, PENDING_DESK_ANCHOR);
-                    LocalTime breakStart = findBreakStart(assignments, increment, PENDING_DESK_ANCHOR);
+                    DayWindow window = resolveAnchor(tagged.dayStart());
+                    int increment = deriveIncrement(tagged.assignments(), window);
+                    LocalTime breakStart = findBreakStart(tagged.assignments(), increment, window);
                     if (breakStart == null) return false;
                     return !breakStart.equals(pref.getPreferredBreakTime());
                 })
-                .penalizeConfigurable((agentId, date, assignments, pref) -> 1)
+                .penalizeConfigurable((agentId, date, tagged, pref) -> 1)
                 .asConstraint("Honour preferred break time");
     }
 
@@ -1190,14 +1258,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .forEach(AgentShiftAssignment.class)
                 .join(ScheduleConfig.class)
                 .filter((sa, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT)
-                .join(Timeslot.class, equal((sa, cfg) -> sa.getDate(), Timeslot::getDate))
-                // BDAY-04: the desk's real anchor reaches this constraint via the ScheduleConfig
-                // tuple member's own day-start accessor, the same null-falls-back-to-MIDNIGHT
-                // default shiftEnvelopeCompliance above uses, for the identical unmigrated-fixture
-                // reason (Rule 2).
+                .join(Timeslot.class, equal((sa, cfg) -> sa.getDate(), Timeslot::getBusinessDate))
+                // BDAY-04, migrated by SOLV-01/SOLV-03 (plan 20-05): the desk's real anchor reaches
+                // this constraint via the ScheduleConfig tuple member's own day-start accessor,
+                // through the file's single resolveAnchor helper -- the same null-falls-back-to-
+                // MIDNIGHT default shiftEnvelopeCompliance above uses, for the identical
+                // unmigrated-fixture reason (Rule 2).
                 .filter((sa, cfg, ts) -> {
-                    LocalTime dayStart = cfg.dayStart();
-                    DayWindow window = DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);
+                    DayWindow window = resolveAnchor(cfg.dayStart());
                     return isOnBreak(ts, sa.getShiftBandPair(), window);
                 })
                 .groupBy((sa, cfg, ts) -> ts, countTri())

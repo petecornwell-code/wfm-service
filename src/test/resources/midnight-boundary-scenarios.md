@@ -59,7 +59,7 @@ envelope crossing the day anchor
 
 ## Scenarios asserting today's behaviour
 
-Four scenarios in this suite assert what this codebase does TODAY at a property whose correct
+Three scenarios in this suite assert what this codebase does TODAY at a property whose correct
 behaviour has not shipped yet. Each is marked `@AssertsTodaysBehaviour` on its test method
 (`com.wfm.support.AssertsTodaysBehaviour`); `MidnightBoundaryScenarioRegistryTest` asserts the
 marked-method set and the fenced registry below are set-equal in BOTH directions. A later phase
@@ -67,12 +67,17 @@ implementing one of these requirements must remove the corresponding entry below
 change that flips the assertion it names -- leaving a stale entry here after the method it
 described was deleted or rewritten fails the build exactly as an unregistered new mark does.
 
+(SOLV-04's own entry -- "A SLOT-mode cross-midnight stretch charged to the wrong calendar dates" --
+was removed here in the SAME commit that flipped its assertion, plan 20-05: the join now resolves
+business date, so `SlotModeOvernightContractedHoursTest.TodaysBehaviour` and its registry entry are
+both gone, not merely updated. The before-picture those literals recorded now lives in plan
+20-04's SUMMARY.)
+
 | Scenario | Flipped by | What it flips to |
 |---|---|---|
 | A day-off record's attribution to a shift's calendar date | OVNT-03 | Attribution follows the business day a midnight-spanning shift starts on, not each individually stamped calendar date |
 | Contracted hours consumed by the starting weekday only | OVNT-04 | The whole stretch of a midnight-spanning shift consumes only the starting weekday's contracted-hours row |
 | A shift starting before and ending after midnight | OVNT-01 | The interval means the shift crosses the day anchor into the next calendar date, not that the interval is malformed |
-| A SLOT-mode cross-midnight stretch charged to the wrong calendar dates | SOLV-04 | Both the contracted-hours-under and agent-not-working-that-day match counts read zero, because the join resolves business date, not calendar date |
 
 ### Scenarios asserting today's behaviour
 
@@ -80,5 +85,4 @@ described was deleted or rewritten fails the build exactly as an unregistered ne
 com.wfm.solver.MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly -> OVNT-03
 com.wfm.service.MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows -> OVNT-04
 com.wfm.service.MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses -> OVNT-01
-com.wfm.solver.SlotModeOvernightContractedHoursTest.TodaysBehaviour#todaysCalendarDateJoinMisattributesTheCrossMidnightStretch -> SOLV-04
 ```

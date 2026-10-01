@@ -411,6 +411,12 @@ class UsualShiftWritePathTest {
             ts.setDeskId(deskId);
             ts.setScheduleId(scheduleId);
             ts.setDate(day);
+            // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+            // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+            // without it, ScheduleConstraintProvider's business-date joins all silently fail to
+            // match, and this test's own solve() runs a catastrophically slower, permanently
+            // infeasible search (measured and confirmed via this exact file's failure).
+            ts.setBusinessDate(day);
             ts.setStartTime(t);
             ts.setEndTime(t.plusMinutes(incrementMinutes));
             timeslots.add(ts);

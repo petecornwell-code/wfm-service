@@ -723,6 +723,10 @@ class SolverQualityGuardTest {
         moved.setDeskId(seat.getDeskId());
         moved.setScheduleId(seat.getScheduleId());
         moved.setDate(date);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // kept consistent even though this helper is currently unused (see its own javadoc).
+        moved.setBusinessDate(date);
         moved.setStartTime(newStart);
         moved.setEndTime(newStart.plusMinutes(LiveShapeShiftDeskFixture.INCREMENT_MINUTES));
         seat.setTimeslot(moved);

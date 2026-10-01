@@ -20,7 +20,6 @@ import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
-import com.wfm.support.AssertsTodaysBehaviour;
 import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
@@ -149,51 +148,6 @@ class SlotModeOvernightContractedHoursTest {
                 .getConstraintMatchCount())
                 .as("SLOT mode with zero shift-assignment rows -- structurally inert, not evidence")
                 .isEqualTo(0);
-    }
-
-    // ------------------------------------------------------------------
-    //  Today's wrong behaviour -- pinned literals, flips when plan 20-05 lands
-    // ------------------------------------------------------------------
-
-    /**
-     * Records TODAY's actual (wrong) behaviour: this codebase cannot yet represent a cross-midnight
-     * SLOT-mode agent-day as a single business day, because {@link ScheduleConstraintProvider}'s
-     * contracted-hours and not-working-that-day constraints still join on calendar date. Flips when
-     * plan 20-05 re-points that join to {@link Timeslot#getBusinessDate()} -- see this class's
-     * {@code businessDateJoinAttributesTheCrossMidnightStretchToASingleBusinessDayEach} above for
-     * the correct behaviour, asserted red against this same fixture.
-     */
-    @Nested
-    @DisplayName("today's wrong behaviour -- pinned literal counts, until plan 20-05 migrates the join")
-    class TodaysBehaviour {
-
-        @Test
-        @AssertsTodaysBehaviour(flippedBy = "SOLV-04",
-                to = "both match counts read zero once the contracted-hours and "
-                        + "agent-not-working-that-day joins resolve business date, not calendar date")
-        @DisplayName("today: the calendar-date join mis-attributes the cross-midnight stretch")
-        void todaysCalendarDateJoinMisattributesTheCrossMidnightStretch() {
-            Schedule schedule = buildSchedule();
-            SolutionManager<Schedule, HardSoftScore> solutionManager = newSolutionManager();
-
-            // Calendar D holds one assignment (23:00-00:00) and joins AgentDayConfig(date=D),
-            // whose expectedWorkSlots() is 4 -- 1 < 4, one under-allocated groupBy tuple.
-            int underCount = requireConstraint(solutionManager, schedule, "Contracted hours (under)")
-                    .getConstraintMatchCount();
-            assertThat(underCount)
-                    .as("today's calendar-date join charges calendar D's single slot against "
-                            + "business day D's four-slot contract")
-                    .isEqualTo(1);
-
-            // Calendar D+2 holds three assignments (00:00-01:00, 01:00-02:00, 02:00-03:00) with no
-            // AgentDayConfig for calendar date D+2 at all -- ifNotExists fires once per assignment.
-            int notWorkingCount = requireConstraint(solutionManager, schedule, "Agent not working that day")
-                    .getConstraintMatchCount();
-            assertThat(notWorkingCount)
-                    .as("today's calendar-date join finds no AgentDayConfig for calendar date D+2, "
-                            + "so each of its three seats registers as an unconfigured working day")
-                    .isEqualTo(3);
-        }
     }
 
     // ------------------------------------------------------------------

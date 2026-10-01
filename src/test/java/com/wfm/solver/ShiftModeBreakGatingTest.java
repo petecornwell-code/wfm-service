@@ -82,6 +82,11 @@ class ShiftModeBreakGatingTest {
         Timeslot t = new Timeslot();
         t.setId(UUID.randomUUID());
         t.setDate(DAY);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // without it, honourPreferredStartTime/honourPreferredBreakTime's business-date joins
+        // silently fail to match.
+        t.setBusinessDate(DAY);
         t.setStartTime(start);
         t.setEndTime(start.plusMinutes(INCREMENT));
         return t;

@@ -304,6 +304,10 @@ class NinetyFiveAgentReproTest {
         ts.setDeskId(deskId);
         ts.setScheduleId(scheduleId);
         ts.setDate(date);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // without it, ScheduleConstraintProvider's business-date joins all silently fail to match.
+        ts.setBusinessDate(date);
         ts.setStartTime(start);
         ts.setEndTime(end);
         return ts;

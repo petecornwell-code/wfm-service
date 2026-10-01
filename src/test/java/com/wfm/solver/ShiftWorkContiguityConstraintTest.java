@@ -63,6 +63,10 @@ class ShiftWorkContiguityConstraintTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(DAY);
+        // SOLV-01 (plan 20-05): this fixture is implicitly 00:00-anchored, so businessDate ==
+        // calendarDate here, correct and behaviourally inert (plan 20-04's established pattern) --
+        // without it, shiftWorkContiguity's business-date join silently fails to match.
+        ts.setBusinessDate(DAY);
         ts.setStartTime(LocalTime.of(hour, 0));
         ts.setEndTime(LocalTime.of(hour + 1, 0));
         return ts;

@@ -178,7 +178,6 @@ com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime
 
 ```
 com.wfm.util.FteSpreadsheetGenerator :: DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
-com.wfm.solver.ScheduleConstraintProvider :: private static final DayWindow PENDING_DESK_ANCHOR = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
 com.wfm.service.ShiftLibraryGenerationService :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 com.wfm.model.ShiftBandPair :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 ```
@@ -189,14 +188,6 @@ com.wfm.model.ShiftBandPair :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
   `main`, no `Desk` or tenant context reachable anywhere in the file (BDAY-04, plan 19-07). There is
   no desk to bind; `SOLV-01` does not own this one, since no join re-point will ever make a desk
   reachable here — it stays allowlisted for the life of this file's current shape.
-- **`ScheduleConstraintProvider.PENDING_DESK_ANCHOR`** — the single named constant seven
-  `ifExists(ScheduleConfig.class, filtering(...))`-gated constraints (`exactlyOneBreak`,
-  `breakDuration`, `breakBlockedWindow`, `breakStartAlignment`, `shiftWorkContiguity`,
-  `honourPreferredBreakTime`, reached through their shared interval-arithmetic helpers) pass instead
-  of the real desk anchor. Timefold 1.16.0 has no Penta (five-argument) constraint stream, so
-  `ScheduleConfig` cannot be joined into these already-Quad streams; `SOLV-01` owns replacing this
-  constant with the real anchor read from the joined `ScheduleConfig` when it re-points the joins
-  (BDAY-04/P-01).
 - **`ShiftLibraryGenerationService.resolveBreakConfig`** — the zero-schedule-yet fallback branch
   (plan 19-06). This class holds neither a `DeskRepository` nor a `Schedule` parameter of its own;
   when no `Schedule` has ever been created for the desk there is no anchor source to read at all, so
