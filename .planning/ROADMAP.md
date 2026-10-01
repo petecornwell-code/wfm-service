@@ -24,7 +24,7 @@ prove correctness, and one small live desk (Phil-US, 48 agents) is demoted to a 
 than four captured live desks standing in for both jobs at once.
 
 - [x] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
-- [ ] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change
+- [x] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change (completed 2026-10-01)
 - [ ] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved
 - [ ] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block
 - [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
@@ -133,29 +133,29 @@ plumbing commit forward, not a single commit). All three are recorded in full in
 Plans:
 **Wave 1**
 
-- [ ] 19-01-PLAN.md — Additive solver anchor channel as a provable no-op (V54, `Schedule`/`ScheduleConfig`/DTO); the range's exclusive lower bound (wave 1)
-- [ ] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable (wave 1)
+- [x] 19-01-PLAN.md — Additive solver anchor channel as a provable no-op (V54, `Schedule`/`ScheduleConfig`/DTO); the range's exclusive lower bound (wave 1)
+- [x] 19-02-PLAN.md — Frozen oracle: pin today's nine implementations and their throw domain while the originals are still callable (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 19-03-PLAN.md — Tracer: `DayWindow.anchoredAt` plus nine instance methods, and one desk anchor reaches one constraint's interval check end-to-end (wave 2)
+- [x] 19-03-PLAN.md — Tracer: `DayWindow.anchoredAt` plus nine instance methods, and one desk anchor reaches one constraint's interval check end-to-end (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 19-04-PLAN.md — Break-band times and net hours take a `DayWindow` across every caller; controller served by the service; `breakClustering` wired (wave 3)
+- [x] 19-04-PLAN.md — Break-band times and net hours take a `DayWindow` across every caller; controller served by the service; `breakClustering` wired (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 19-05-PLAN.md — Retire the transitional one-argument `ShiftBandPair.covers` and re-point its remaining callers (wave 4)
+- [x] 19-05-PLAN.md — Retire the transitional one-argument `ShiftBandPair.covers` and re-point its remaining callers (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 19-06-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly (wave 5)
-- [ ] 19-07-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan (wave 5)
+- [x] 19-06-PLAN.md — Eight service files re-pointed to the instance API, save-path refusal preserved exactly (wave 5)
+- [x] 19-07-PLAN.md — Solver helpers, the standalone generator, and D-07's third two-directional allowlist scan (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 19-08-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5 (wave 6)
+- [x] 19-08-PLAN.md — Demote the nine to private, flip the oracle, invert the reflective guard, prove criteria 4 and 5 (wave 6)
 
 ### Phase 20: Solver Business-Date Correctness
 

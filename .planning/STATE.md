@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 19
-current_phase_name: DayWindow Re-anchoring
-status: verifying
-stopped_at: Completed 19-08-PLAN.md
-last_updated: "2026-10-01T06:49:02.597Z"
+current_phase: 20
+current_phase_name: Solver Business-Date Correctness
+status: planning
+stopped_at: Phase 19 complete, ready to plan Phase 20
+last_updated: "2026-10-01T07:21:24.388Z"
 last_activity: 2026-10-01
-last_activity_desc: Phase 19 execution started
-state_head: 70de5fa158363ab24a06406b6977e8764246c7ba
+last_activity_desc: Phase 19 complete, transitioned to Phase 20
+state_head: 9aa9e681a9e4627ec0e65bfa99f9ce12377d2620
 progress:
   total_phases: 5
   completed_phases: 1
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 ## Current Position
 
-Phase: 19 (DayWindow Re-anchoring) — EXECUTING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-10-01 — Plan 19-02 complete (17641c5)
+Phase: 20 — Solver Business-Date Correctness
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-01 — Phase 19 complete, transitioned to Phase 20
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
 planner decision P-01. Requirements coverage 6/6, decision coverage 28/28.
 
@@ -331,7 +331,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-10-01T06:49:02.575Z
-Stopped at: Completed 19-08-PLAN.md
+Stopped at: Phase 19 complete, ready to plan Phase 20
 Resume file: None
 
 ## Operator Next Steps
