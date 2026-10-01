@@ -335,6 +335,10 @@ class ScheduleServiceShiftSnapshotTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(MONDAY);
+        // SOLV-07 (plan 20-06): ScheduleOutputService's agent-day grouping now reads
+        // getBusinessDate(), not getDate() -- this fixture is implicitly 00:00-anchored
+        // (schedule.setDayStart(LocalTime.MIDNIGHT) below), so businessDate == date.
+        ts.setBusinessDate(MONDAY);
         ts.setStartTime(LocalTime.of(8, 0));
         ts.setEndTime(LocalTime.of(9, 0));
 
@@ -398,6 +402,9 @@ class ScheduleServiceShiftSnapshotTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(MONDAY);
+        // SOLV-07 (plan 20-06): see the identical note above -- implicitly 00:00-anchored, so
+        // businessDate == date.
+        ts.setBusinessDate(MONDAY);
         ts.setStartTime(LocalTime.of(8, 0));
         ts.setEndTime(LocalTime.of(9, 0));
 
@@ -458,6 +465,9 @@ class ScheduleServiceShiftSnapshotTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(MONDAY);
+        // SOLV-07 (plan 20-06): see the identical note above -- implicitly 00:00-anchored, so
+        // businessDate == date.
+        ts.setBusinessDate(MONDAY);
         ts.setStartTime(LocalTime.of(8, 0));
         ts.setEndTime(LocalTime.of(9, 0));
 

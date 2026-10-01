@@ -59,7 +59,7 @@ public class ScheduleOutputService {
         for (StaffingRequirement sr : schedule.getStaffingRequirements()) {
             BigDecimal fteHours = BigDecimal.valueOf(sr.getRequiredFTEs()).multiply(incrementHours);
             predicted
-                    .computeIfAbsent(sr.getTimeslot().getDate(), k -> new LinkedHashMap<>())
+                    .computeIfAbsent(sr.getTimeslot().getBusinessDate(), k -> new LinkedHashMap<>())
                     .merge(sr.getSpecialization().getName(), fteHours, BigDecimal::add);
         }
 
@@ -68,7 +68,7 @@ public class ScheduleOutputService {
         for (AgentAssignment a : schedule.getAssignments()) {
             if (a.getAgent() == null) continue;
             actualCounts
-                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new LinkedHashMap<>())
+                    .computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new LinkedHashMap<>())
                     .merge(a.getRequiredSpecialization().getName(), 1, Integer::sum);
         }
 
@@ -161,7 +161,7 @@ public class ScheduleOutputService {
         // schedule's own timeslots.
         Map<LocalDate, List<Timeslot>> timeslotsByDate = new HashMap<>();
         for (Timeslot ts : schedule.getTimeslots()) {
-            timeslotsByDate.computeIfAbsent(ts.getDate(), k -> new ArrayList<>()).add(ts);
+            timeslotsByDate.computeIfAbsent(ts.getBusinessDate(), k -> new ArrayList<>()).add(ts);
         }
 
         // Group assigned assignments by (agentId, date)
@@ -170,7 +170,7 @@ public class ScheduleOutputService {
             if (a.getAgent() == null) continue;
             grouped
                     .computeIfAbsent(a.getAgent().getId(), k -> new LinkedHashMap<>())
-                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
+                    .computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new ArrayList<>())
                     .add(a);
         }
 
@@ -320,7 +320,7 @@ public class ScheduleOutputService {
             UUID agentId = a.getAgent().getId();
             grouped
                     .computeIfAbsent(agentId, k -> new HashMap<>())
-                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
+                    .computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new ArrayList<>())
                     .add(a);
         }
 
@@ -661,6 +661,12 @@ public class ScheduleOutputService {
                                 agentName = aa.getAgent().getName();
                             }
                             timeslotId = aa.getTimeslot().getId();
+                            // Deliberately calendar date, not business date (SOLV-07/D-10): a label
+                            // answers "when does this happen", which is a calendar question. On a
+                            // desk whose day starts at 21:00 a 02:00 slot belongs to business day D
+                            // but occurs on calendar day D+1, and the operator needs the calendar
+                            // date to find this row on a calendar. All labelling change, including
+                            // showing both dates, belongs to OVNT-07.
                             timeslotLabel = aa.getTimeslot().getDate() + " "
                                     + aa.getTimeslot().getStartTime() + "-"
                                     + aa.getTimeslot().getEndTime();
@@ -736,7 +742,7 @@ public class ScheduleOutputService {
             if (a.getAgent() == null) continue;
             grouped
                     .computeIfAbsent(a.getAgent().getId(), k -> new LinkedHashMap<>())
-                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>())
+                    .computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new ArrayList<>())
                     .add(a);
         }
 
@@ -756,6 +762,12 @@ public class ScheduleOutputService {
                 for (AgentAssignment out : outOfEnvelopeAssignments(descriptor, dateEntry.getValue(), window)) {
                     Agent agent = out.getAgent();
                     Timeslot ts = out.getTimeslot();
+                    // Deliberately calendar date, not business date (SOLV-07/D-10): a label answers
+                    // "when does this happen", which is a calendar question. On a desk whose day
+                    // starts at 21:00 a 02:00 slot belongs to business day D but occurs on calendar
+                    // day D+1, and the operator needs the calendar date to find this row on a
+                    // calendar. All labelling change, including showing both dates, belongs to
+                    // OVNT-07.
                     String timeslotLabel = ts.getDate() + " " + ts.getStartTime() + "-" + ts.getEndTime();
                     String description = ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME
                             + " violation" + (agent != null ? " for " + agent.getName() : "");

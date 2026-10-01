@@ -7,6 +7,7 @@ import com.wfm.dto.ScheduleDetailResponse.ConstraintViolationEntry;
 import com.wfm.dto.ScheduleDetailResponse.PreferenceReport;
 import com.wfm.dto.ScheduleDetailResponse.PreferenceReportEntry;
 import com.wfm.dto.ScheduleDetailResponse.ShiftEnvelopeDivergence;
+import com.wfm.dto.ScheduleDetailResponse.StaffingSummaryEntry;
 import com.wfm.dto.ScheduleDetailResponse.ViolationDetail;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
@@ -18,16 +19,19 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
+import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.ShiftTemplateRepository;
 import com.wfm.solver.ScheduleConstraintProvider;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -402,6 +406,11 @@ class ScheduleOutputServiceShiftReportingTest {
         Timeslot relocated = new Timeslot();
         relocated.setId(UUID.randomUUID());
         relocated.setDate(DAY);
+        // SOLV-07 (plan 20-06): ScheduleOutputService's grouping keys now read getBusinessDate(),
+        // not getDate() -- every hand-built Timeslot in this suite must carry one or its
+        // agent-day grouping silently falls apart (null key). This fixture is implicitly
+        // 00:00-anchored, so businessDate == date, behaviourally inert.
+        relocated.setBusinessDate(DAY);
         relocated.setStartTime(LocalTime.of(9, 0));
         relocated.setEndTime(LocalTime.of(10, 0));
         victim.setTimeslot(relocated);
@@ -434,6 +443,109 @@ class ScheduleOutputServiceShiftReportingTest {
         assertThat(violations).isEmpty();
     }
 
+    // ------------------------------------------------------------------
+    //  SOLV-07 (plan 20-06) — coverage reporting buckets a timeslot under the business day it
+    //  belongs to, not the calendar day. buildStaffingSummary's predicted/actual maps are the
+    //  coverage report (spec §8.1); this proves the six migrated key positions (:62, :71, :164,
+    //  :173, :323, :739) resolve the same business date a 21:00-anchored desk's solver already
+    //  resolves, and that a 00:00-anchored desk — every live desk today — is provably unchanged.
+    // ------------------------------------------------------------------
+
+    private static final LocalTime NIGHT_ANCHOR = LocalTime.of(21, 0);
+
+    @Test
+    void buildStaffingSummary_21_00AnchoredDesk_bucketsTheCrossMidnightBusinessDayOnce() {
+        Specialization spec = specialization("Chat");
+        Agent agent = agent("Night");
+
+        // Business day DAY spans two calendar dates at a 21:00 anchor: 22:00 on calendar DAY (at
+        // or after the anchor -> business date DAY) and 02:00 on calendar DAY+1 (before the
+        // anchor -> business date rolls back to DAY). Both derived through DayWindow.businessDateOf
+        // -- the shared day-window derivation -- rather than hand-computed.
+        Timeslot late = anchoredTimeslot(DAY, LocalTime.of(22, 0), NIGHT_ANCHOR);
+        Timeslot early = anchoredTimeslot(DAY.plusDays(1), LocalTime.of(2, 0), NIGHT_ANCHOR);
+
+        StaffingRequirement srLate = staffingRequirement(late, spec, 1);
+        StaffingRequirement srEarly = staffingRequirement(early, spec, 1);
+        AgentAssignment aLate = assignment(agent, late, spec);
+        AgentAssignment aEarly = assignment(agent, early, spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(NIGHT_ANCHOR);
+        schedule.setStaffingRequirements(new ArrayList<>(List.of(srLate, srEarly)));
+        schedule.setAssignments(new ArrayList<>(List.of(aLate, aEarly)));
+
+        List<StaffingSummaryEntry> entries = service.buildStaffingSummary(schedule);
+
+        List<LocalDate> dates = entries.stream()
+                .map(StaffingSummaryEntry::date)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        assertThat(dates)
+                .as("both timeslots belong to business day DAY and must key the report once, "
+                        + "not split across DAY and DAY+1")
+                .containsExactly(DAY);
+    }
+
+    @Test
+    void buildStaffingSummary_00_00AnchoredDesk_figuresUnchanged() {
+        Specialization spec = specialization("Chat");
+        Agent agent = agent("Day");
+
+        // At a 00:00 anchor business date equals calendar date for every time of day -- two
+        // ordinary calendar days must still report as two distinct coverage rows, unchanged from
+        // today's behaviour.
+        Timeslot day1 = anchoredTimeslot(DAY, LocalTime.of(8, 0), LocalTime.MIDNIGHT);
+        Timeslot day2 = anchoredTimeslot(DAY.plusDays(1), LocalTime.of(8, 0), LocalTime.MIDNIGHT);
+
+        StaffingRequirement sr1 = staffingRequirement(day1, spec, 1);
+        StaffingRequirement sr2 = staffingRequirement(day2, spec, 1);
+        AgentAssignment a1 = assignment(agent, day1, spec);
+        AgentAssignment a2 = assignment(agent, day2, spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(LocalTime.MIDNIGHT);
+        schedule.setStaffingRequirements(new ArrayList<>(List.of(sr1, sr2)));
+        schedule.setAssignments(new ArrayList<>(List.of(a1, a2)));
+
+        List<StaffingSummaryEntry> entries = service.buildStaffingSummary(schedule);
+
+        List<LocalDate> dates = entries.stream()
+                .map(StaffingSummaryEntry::date)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        assertThat(dates).containsExactly(DAY, DAY.plusDays(1));
+    }
+
+    /**
+     * A {@link Timeslot} whose calendar {@code date} and {@code businessDate} are derived
+     * independently through {@link DayWindow#businessDateOf} (the shared day-window derivation),
+     * never hand-computed -- so this fixture cannot silently agree with a bug in the production
+     * accessor it is exercising.
+     */
+    private Timeslot anchoredTimeslot(LocalDate calendarDate, LocalTime start, LocalTime anchor) {
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(calendarDate);
+        ts.setBusinessDate(DayWindow.businessDateOf(anchor, calendarDate, start));
+        ts.setStartTime(start);
+        ts.setEndTime(start.plusMinutes(INCREMENT));
+        return ts;
+    }
+
+    private StaffingRequirement staffingRequirement(Timeslot ts, Specialization spec, int requiredFTEs) {
+        StaffingRequirement sr = new StaffingRequirement();
+        sr.setId(UUID.randomUUID());
+        sr.setTimeslot(ts);
+        sr.setSpecialization(spec);
+        sr.setRequiredFTEs(requiredFTEs);
+        return sr;
+    }
+
     private record AgentDayFixture(String agentName, LocalDate date, List<LocalTime> heldSeatStarts) {}
 
     /**
@@ -458,6 +570,9 @@ class ScheduleOutputServiceShiftReportingTest {
                 Timeslot ts = new Timeslot();
                 ts.setId(UUID.randomUUID());
                 ts.setDate(day.date());
+                // SOLV-07 (plan 20-06): see the identical note in timeslot(LocalTime) below --
+                // this fixture is implicitly 00:00-anchored, so businessDate == date.
+                ts.setBusinessDate(day.date());
                 ts.setStartTime(start);
                 ts.setEndTime(start.plusMinutes(INCREMENT));
                 allAssignments.add(assignment(agent, ts, spec));
@@ -611,6 +726,14 @@ class ScheduleOutputServiceShiftReportingTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(DAY);
+        // SOLV-07 (plan 20-06): ScheduleOutputService's grouping keys now read getBusinessDate(),
+        // not getDate() -- every hand-built Timeslot this shared helper produces must carry one or
+        // agent-day grouping (buildAgentSchedule/buildPreferenceReport/buildAcceptedConstraintViolations)
+        // silently keys itself on null instead of DAY. This fixture is implicitly 00:00-anchored
+        // (every test in this class binds schedule.setDayStart(LocalTime.MIDNIGHT) or leaves it
+        // unset), so businessDate == date here is correct and behaviourally inert -- the same
+        // pattern plan 20-05 applied to its 18 fixture fixes.
+        ts.setBusinessDate(DAY);
         ts.setStartTime(start);
         ts.setEndTime(start.plusMinutes(INCREMENT));
         return ts;
