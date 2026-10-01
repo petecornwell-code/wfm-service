@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 19
 current_phase_name: DayWindow Re-anchoring
 status: executing
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-10-01T01:26:58.251Z"
+stopped_at: Completed 19-04-PLAN.md
+last_updated: "2026-10-01T02:37:12.768Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 19 execution started
-state_head: 3d4527494a6b83c4fff3f4b2d84d980993dce76a
+state_head: a2c76fa5d4867321264e2eeae4c78c43e8e3ce12
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 14
-  completed_plans: 9
+  completed_plans: 10
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 19 (DayWindow Re-anchoring) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-01 — Plan 19-02 complete (17641c5)
 pattern mapping complete; F-1 (a contradiction between locked decisions D-23 and D-27) resolved as
@@ -298,6 +298,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 19]: Phase 19 Plan 02: expectedDurationAfterMigration passes today's already-positive raw value through unchanged, returns 0 for a zero-length pair at a non-anchor instant, and wraps forward a full day only for a true reversal -- a three-way split needed to avoid confusing zero-length with whole-day at the equal-endpoint boundary
 - [Phase 19]: Phase 19 Plan 03: nine new DayWindow instance methods use an 'anchored' prefix (anchoredStartMinute, anchoredDurationMinutes, etc.), not the bare midnight-implicit names the plan text describes -- a public static and public instance method cannot share an identical name/parameter list in the same class, confirmed by direct javac compilation; the nine statics must stay public/unchanged through wave 19-07.
 - [Phase 19]: Phase 19 Plan 03: shiftEnvelopeCompliance falls back to MIDNIGHT when ScheduleConfig.dayStart() is null -- a Rule 1 fix for a regression this plan's own null-anchor binding introduced against pre-existing hand-built test Schedules; production never supplies null.
+- [Phase 19]: ShiftLibraryGenerationService's window is bound in resolveBreakConfig from the same Schedule load already run for break-duration config (P-02 rule 5), not a second DeskRepository lookup — Avoids a second repository dependency in a class the plan's own anchor-source table says has neither a DeskRepository nor a Schedule parameter of its own; future plans (19-06/19-07) should bind at this same BreakConfig.window() place
 
 ### Blockers/Concerns
 
@@ -320,8 +321,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T01:26:58.227Z
-Stopped at: Completed 19-03-PLAN.md
+Last session: 2026-10-01T02:37:12.748Z
+Stopped at: Completed 19-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -382,3 +383,4 @@ Resume file: None
 | Phase 19 P01 | 45min | 1 tasks | 8 files |
 | Phase 19 P02 | ~30min | 2 tasks | 1 files |
 | Phase 19 P03 | 40 min | 1 tasks | 5 files |
+| Phase 19 P04 | 100min | 2 tasks | 14 files |
