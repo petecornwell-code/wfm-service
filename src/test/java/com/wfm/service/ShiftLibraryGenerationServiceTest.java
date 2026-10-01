@@ -380,6 +380,71 @@ class ShiftLibraryGenerationServiceTest {
         assertThat(validationService.validate(deskId).uncoveredWindows()).isEmpty();
     }
 
+    // ---------- SOLV-07 (plan 20-06) — weekday attribution follows the business day ----------
+    //
+    // Weekday clustering, the distinct-window dedup identity, and per-weekday demand aggregation
+    // all key off a timeslot's BUSINESS date, not its calendar date. On a 21:00-anchored desk a
+    // 02:00 slot belonging to business-day Monday carries calendar weekday Tuesday; before this
+    // migration that demand was bucketed under Tuesday, the wrong weekday entirely.
+
+    @Test
+    void generateSuggestion_21_00AnchoredDesk_postMidnightDemandBucketsUnderTheBusinessDayItBelongsTo() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        LocalTime anchor = LocalTime.of(21, 0);
+        // Every demand timeslot this test creates sits in the grid's own early-morning hours.
+        TimeslotBoundsResponse earlyMorningGrid = new TimeslotBoundsResponse(
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(0, 0), LocalTime.of(9, 0), 60);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(earlyMorningGrid));
+
+        // Every slot sits on calendar TUESDAY at 00:00-09:00 -- all strictly BEFORE the 21:00
+        // anchor, so each one's business date rolls back to calendar MONDAY per
+        // DayWindow.businessDateOf. This is the exact defect shape D-13 names.
+        LocalDate tuesdayCalendar = WEEK_START.plusDays(1);
+        for (int hour = 0; hour < 9; hour++) {
+            saveAnchoredDemand(TENANT_A, deskId, spec, tuesdayCalendar, LocalTime.of(hour, 0),
+                    LocalTime.of(hour + 1, 0), anchor, 1);
+        }
+
+        // Contracted hours on MONDAY only. If this demand were (wrongly) bucketed under calendar
+        // weekday TUESDAY, no agent hours exist there and the draft could never legitimately cover
+        // it -- the mis-attribution would surface as an uncovered window, not merely a mislabeled one.
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("9.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows())
+                .as("business-day MONDAY's demand must be covered by MONDAY's own contracted hours")
+                .isEmpty();
+        assertThat(response.templates()).isNotEmpty();
+        assertThat(response.templates())
+                .as("every template clustered under the business day MONDAY, never calendar weekday TUESDAY")
+                .allSatisfy(t -> assertThat(t.validWeekdays()).containsExactly(DayOfWeek.MONDAY));
+    }
+
+    @Test
+    void generateSuggestion_00_00AnchoredDesk_weekdayAttributionUnchanged() {
+        // At a 00:00 anchor business date equals calendar date for every time of day -- every live
+        // desk today -- so weekday attribution must be provably unchanged from today's behaviour.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+
+        for (int hour = 8; hour < 21; hour++) {
+            saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("13.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates()).isNotEmpty();
+        assertThat(response.templates())
+                .allSatisfy(t -> assertThat(t.validWeekdays()).containsExactly(DayOfWeek.MONDAY));
+    }
+
     // ---------- Supply-aware expansion beyond minimal cover ----------
     //
     // greedyCover answers "smallest library that covers demand". On an OVER-SUPPLIED desk that is
@@ -916,6 +981,32 @@ class ShiftLibraryGenerationServiceTest {
         requirement.setTenantId(tenantId);
         requirement.setDeskId(deskId);
         requirement.setTimeslot(timeslot);
+        requirement.setSpecialization(specialization);
+        requirement.setRequiredFTEs(requiredFTEs);
+        return staffingRequirementRepository.save(requirement);
+    }
+
+    /**
+     * SOLV-07 (plan 20-06): like {@link #saveDemand}, but the timeslot's {@code businessDate} is
+     * derived independently through {@link com.wfm.util.DayWindow#businessDateOf} against an
+     * explicit anchor, rather than copied from the calendar {@code date} -- so a 21:00-anchored
+     * fixture cannot silently agree with a bug in the production accessor it is exercising.
+     */
+    private StaffingRequirement saveAnchoredDemand(long tenantId, UUID deskId, Specialization specialization,
+                                                     LocalDate calendarDate, LocalTime start, LocalTime end,
+                                                     LocalTime anchor, int requiredFTEs) {
+        Timeslot timeslot = new Timeslot();
+        timeslot.setTenantId(tenantId);
+        timeslot.setDeskId(deskId);
+        timeslot.setDate(calendarDate);
+        timeslot.setStartTime(start);
+        timeslot.setEndTime(end);
+        timeslot.setBusinessDate(com.wfm.util.DayWindow.businessDateOf(anchor, calendarDate, start));
+        Timeslot saved = timeslotRepository.save(timeslot);
+        StaffingRequirement requirement = new StaffingRequirement();
+        requirement.setTenantId(tenantId);
+        requirement.setDeskId(deskId);
+        requirement.setTimeslot(saved);
         requirement.setSpecialization(specialization);
         requirement.setRequiredFTEs(requiredFTEs);
         return staffingRequirementRepository.save(requirement);

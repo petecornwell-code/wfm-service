@@ -29,12 +29,22 @@ pipeline-level proof against a tracked synthetic offender under
 `src/test/resources/bday-join-guard-offender/`) specifically so an empty allowlist here stays
 honest rather than becoming decoration.
 
-**Today**, before plans 20-05/20-06/20-07 migrate the four guarded files, this guard is EXPECTED to
-be **RED**: fourteen key positions across `ScheduleConstraintProvider` (7) and `ScheduleOutputService`
-(6), plus one in `ShiftLibraryGenerationService`, are still on calendar date. It goes green only
-once the last of the four files is migrated, which is the honest end-of-migration signal for this
-phase. Do not add allowlist entries to make it green prematurely — an allowlist entry records a site
-that legitimately keeps calendar-date semantics, never a site this phase is going to migrate.
+**History.** Before plans 20-05/20-06 migrated `ScheduleConstraintProvider` and `ScheduleOutputService`/
+`ShiftLibraryGenerationService`, this guard was RED: fourteen key positions across
+`ScheduleConstraintProvider` (7) and `ScheduleOutputService` (6), plus one in
+`ShiftLibraryGenerationService`, were still on calendar date. Do not add allowlist entries to make it
+green prematurely — an allowlist entry records a site that legitimately keeps calendar-date
+semantics, never a site this phase is going to migrate.
+
+**Current state, as of plan 20-06 (completed).** All matched lines in all three of
+`ScheduleConstraintProvider`, `ScheduleOutputService` and `ShiftLibraryGenerationService` are now
+migrated, so this guard's headline set-equality test is GREEN. **This green does NOT mean SOLV-07 is
+fully delivered.** `StaffingRequirementService`'s D-15 destructive-delete defect (`:172-175`,
+`.map(Timeslot::getDate).min()/.max()`) is still live and UNFIXED — it contributes ZERO matched lines
+to this guard regardless of migration state, because neither `.min(` nor `.max(` is among the four
+scanned verbs (see "Known scope boundaries" below). Do not read this guard's green as proof that
+demand upload is safe; plan 20-07 closes that gap by direct code review and its own proof, not by
+this guard turning red and then green again.
 
 ## Known scope boundaries — deliberate, not gaps
 
@@ -42,7 +52,9 @@ Every site below is either genuinely out of this guard's four-verb scope by desi
 blind spot this guard's own textual technique cannot close. Recording them here means the next
 reader files each as a decision rather than rediscovering it as a missed migration.
 
-- **`ScheduleOutputService` lines 664 and 759** build an operator-facing timeslot label by string
+- **`ScheduleOutputService` lines 670 and 771** (line numbers as of plan 20-06; originally 664 and
+  759 before this plan's explanatory comments shifted them) build an operator-facing timeslot label
+  by string
   concatenation (`ts.getDate() + " " + startTime + "-" + endTime`, and the equivalent in
   `buildAcceptedConstraintViolations`). They keep the calendar date per D-10: a label answers "when
   does this happen", which is a calendar question — on a 21:00-anchored desk a 02:00 slot belongs to
@@ -56,11 +68,13 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   scans.
 
 - **`ShiftLibraryGenerationService` lines 226 and 616** are key positions in substance — a
-  `.distinct()` identity (`new ShiftLibraryValidationService.Window(sr.getTimeslot().getDate(), ...)`)
-  and a `Collectors.toCollection(TreeSet::new)` accumulation (`.map(sr -> sr.getTimeslot().getDate())`)
-  — but `.distinct()` and `TreeSet`-collection are not among the four scanned verbs, so this guard
-  structurally cannot discover them. They are migrated by explicit task instruction in plan 20-06;
-  this guard's green does not cover them, and that is deliberate, not an oversight.
+  `.distinct()` identity (`new ShiftLibraryValidationService.Window(sr.getTimeslot().getBusinessDate(),
+  ...)`) and a `Collectors.toCollection(TreeSet::new)` accumulation
+  (`.map(sr -> sr.getTimeslot().getBusinessDate())`) — but `.distinct()` and `TreeSet`-collection are
+  not among the four scanned verbs, so this guard structurally cannot discover them, migrated or not.
+  They were migrated by explicit task instruction in plan 20-06 (completed); this guard's green never
+  covered them and still does not — their correctness was verified by direct code review, not by this
+  guard turning green.
 
 - **`StaffingRequirementRepository`'s calendar-date range delete has two callers beyond the
   demand-upload path** — the Erlang C and Erlang X staffing calculators — whose from/to range
@@ -97,12 +111,13 @@ guard to catch a regression at these specific sites.
   direct code review, not by this guard's green.
 
 - **`ShiftLibraryGenerationService` line 180**
-  (`.filter(sr -> cluster.contains(sr.getTimeslot().getDate().getDayOfWeek()))`) is a weekday
-  derivation of the identical shape and identical defect as the migrated line 486, and was named by
-  D-13 as one of the phase's four `ShiftLibraryGenerationService` key positions — but `.filter(` and
-  `.contains(` are not among the four scanned verbs, so this guard cannot discover it either,
-  exactly like lines 226 and 616 above. It migrates in plan 20-06 by explicit task instruction, not
-  by this guard's enforcement.
+  (`.filter(sr -> cluster.contains(sr.getTimeslot().getBusinessDate().getDayOfWeek()))`) is a weekday
+  derivation of the identical shape and identical defect as the migrated line 486 (now line 497 after
+  this plan's comments), and was named by D-13 as one of the phase's four `ShiftLibraryGenerationService`
+  key positions — but `.filter(` and `.contains(` are not among the four scanned verbs, so this guard
+  cannot discover it either, exactly like lines 226 and 616 above. It was migrated in plan 20-06
+  (completed) by explicit task instruction, not by this guard's enforcement; verified by direct code
+  review (`grep -c 'getTimeslot().getDate()'` over the file prints 0).
 
 - **`StaffingRequirementService` lines 172-175** (the `minDate`/`maxDate` derivation feeding the
   destructive `deleteLiveByDeskAndDateRange` call, D-15's named site) uses `.map(Timeslot::getDate)`

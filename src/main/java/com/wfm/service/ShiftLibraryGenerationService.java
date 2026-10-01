@@ -176,8 +176,13 @@ public class ShiftLibraryGenerationService {
             if (clusterWindows.isEmpty()) {
                 continue;
             }
+            // SOLV-07/D-13: a weekday is the BUSINESS day's weekday, not the calendar day's -- on
+            // a 21:00-anchored desk a 02:00 slot belonging to business-day Monday carries calendar
+            // weekday Tuesday, so clustering by calendar weekday would bucket that demand under
+            // the wrong cluster entirely. A real instance of this defect class, not an inherited
+            // one; migrated here rather than allowlisted with a later owner.
             List<StaffingRequirement> clusterDemand = demand.stream()
-                    .filter(sr -> cluster.contains(sr.getTimeslot().getDate().getDayOfWeek()))
+                    .filter(sr -> cluster.contains(sr.getTimeslot().getBusinessDate().getDayOfWeek()))
                     .toList();
 
             List<Candidate> clusterCandidates =
@@ -221,9 +226,15 @@ public class ShiftLibraryGenerationService {
     }
 
     private List<ShiftLibraryValidationService.Window> distinctSortedWindows(List<StaffingRequirement> demand) {
+        // SOLV-07/D-13: a key position in substance (the .distinct() deduplication/sort identity
+        // below) but outside BusinessDateJoinGuardTest's four-verb scan -- `.distinct()` is not
+        // one of the scanned verbs, so the guard's green does not cover this site; migrated by
+        // this explicit instruction instead. Without this, a business day spanning two calendar
+        // dates would be split into two distinct windows rather than recognised as one.
         return demand.stream()
                 .map(sr -> new ShiftLibraryValidationService.Window(
-                        sr.getTimeslot().getDate(), sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime()))
+                        sr.getTimeslot().getBusinessDate(), sr.getTimeslot().getStartTime(),
+                        sr.getTimeslot().getEndTime()))
                 .distinct()
                 .sorted(Comparator.comparing(ShiftLibraryValidationService.Window::date)
                         .thenComparing(ShiftLibraryValidationService.Window::startTime))
@@ -483,7 +494,7 @@ public class ShiftLibraryGenerationService {
             List<StaffingRequirement> demand) {
         Map<DayOfWeek, Map<LocalTime, Integer>> byWeekday = new TreeMap<>();
         for (StaffingRequirement sr : demand) {
-            byWeekday.computeIfAbsent(sr.getTimeslot().getDate().getDayOfWeek(), k -> new TreeMap<>())
+            byWeekday.computeIfAbsent(sr.getTimeslot().getBusinessDate().getDayOfWeek(), k -> new TreeMap<>())
                     .merge(sr.getTimeslot().getStartTime(), sr.getRequiredFTEs(), Integer::sum);
         }
         return byWeekday;
@@ -612,8 +623,13 @@ public class ShiftLibraryGenerationService {
      */
     private BigDecimal supplyHours(List<StaffingRequirement> demand,
                                     Map<DayOfWeek, List<BigDecimal>> hoursByWeekday) {
+        // SOLV-07/D-13: a key position in substance (the demanded-dates set whose members are
+        // converted to weekdays below) but outside BusinessDateJoinGuardTest's four-verb scan --
+        // this is a Collectors.toCollection(TreeSet::new) accumulation, not one of the scanned
+        // verbs, so the guard's green does not cover this site; migrated by this explicit
+        // instruction instead.
         Set<LocalDate> demandedDates = demand.stream()
-                .map(sr -> sr.getTimeslot().getDate())
+                .map(sr -> sr.getTimeslot().getBusinessDate())
                 .collect(Collectors.toCollection(TreeSet::new));
         BigDecimal total = BigDecimal.ZERO;
         for (LocalDate date : demandedDates) {
