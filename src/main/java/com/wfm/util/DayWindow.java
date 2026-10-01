@@ -19,16 +19,20 @@ import java.time.LocalTime;
  *
  * <h2>The rule</h2>
  *
- * <p>{@code 00:00} is ambiguous in isolation and means different things by POSITION:
+ * <p>A time equal to the business day's START ANCHOR is ambiguous in isolation and means
+ * different things by POSITION (BDAY-04 generalises this from the {@code 00:00}-only wording it
+ * started as):
  *
  * <ul>
- *   <li>in a <strong>start</strong> position it is the start of the day, minute {@code 0};</li>
- *   <li>in an <strong>end</strong> position it is the end of the day, minute {@link #MINUTES_PER_DAY}.</li>
+ *   <li>in a <strong>start</strong> position it is the start of the business day, offset {@code 0};</li>
+ *   <li>in an <strong>end</strong> position it is the end of the business day, offset {@link #MINUTES_PER_DAY}.</li>
  * </ul>
  *
- * <p>Callers must therefore pick the function matching the position — {@link #startMinute} or
- * {@link #endMinute} — rather than converting a bare time and hoping. Every interval here is
- * half-open, {@code [start, end)}, which is what makes adjacent timeslots non-overlapping.
+ * <p>Callers must therefore pick the function matching the position — {@link #anchoredStartMinute}
+ * or {@link #anchoredEndMinute} — rather than converting a bare time and hoping. Every interval
+ * here is half-open, {@code [start, end)}, which is what makes adjacent timeslots non-overlapping.
+ * For every desk today the anchor is {@code 00:00}, so this collapses onto exactly the midnight
+ * rule above.
  *
  * <p>This class deliberately does NOT model a shift that runs PAST midnight into the next
  * calendar day (22:00&ndash;06:00). That is not a boundary problem but a data-model one: such a
@@ -57,12 +61,14 @@ import java.time.LocalTime;
  *
  * <p><b>Naming note (deviation from the BDAY-04 plan text):</b> the nine instance methods below
  * are named with an {@code anchored} prefix ({@link #anchoredStartMinute}, {@link
- * #anchoredDurationMinutes}, etc.) rather than reusing the nine midnight-implicit statics' bare
+ * #anchoredDurationMinutes}, etc.) rather than reusing the nine midnight-implicit forms' bare
  * names verbatim. A public static and a public instance method cannot share an identical name and
- * parameter list in the same class — confirmed by direct compilation during this plan — and the
- * nine midnight-implicit statics must stay public, unchanged, and under their current names through
- * wave 19-07 for the call sites later plans have not yet migrated. See {@code 19-03-SUMMARY.md} for
- * the full reasoning; plan 19-08 may rename these once the statics are demoted to private.
+ * parameter list in the same class — confirmed by direct compilation during plan 19-03 — and
+ * through wave 19-07 the nine midnight-implicit statics stayed public, unchanged, and under their
+ * current names for call sites not yet migrated. Plan 19-08 then demoted the nine to private
+ * (D-06, below) and kept the {@code anchored} prefix rather than reclaiming the bare names, to
+ * avoid churn with no remaining benefit. See {@code 19-03-SUMMARY.md} for the full naming
+ * reasoning.
  */
 public final class DayWindow {
 
@@ -192,11 +198,10 @@ public final class DayWindow {
      * Minute-of-day of a time in a START position, {@code 00:00} &rarr; {@code 0}.
      * Range {@code [0, 1440)}.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); kept private because
+     * {@link #startMinuteFromDayStart(LocalTime, LocalTime)} still delegates to it internally.
      */
-    @Deprecated
-    public static int startMinute(LocalTime start) {
+    private static int startMinute(LocalTime start) {
         requireNonNull(start, "start");
         return start.getHour() * 60 + start.getMinute();
     }
@@ -205,11 +210,10 @@ public final class DayWindow {
      * Minute-of-day of a time in an END position, {@code 00:00} &rarr; {@link #MINUTES_PER_DAY}.
      * Range {@code (0, 1440]}.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
      */
-    @Deprecated
-    public static int endMinute(LocalTime end) {
+    private static int endMinute(LocalTime end) {
         requireNonNull(end, "end");
         return end.equals(LocalTime.MIDNIGHT) ? MINUTES_PER_DAY : end.getHour() * 60 + end.getMinute();
     }
@@ -223,12 +227,11 @@ public final class DayWindow {
      *         javadoc). Failing here is deliberate: the alternative is a negative duration
      *         travelling silently into net-hours and coverage arithmetic.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredDurationMinutes(LocalTime, LocalTime)}, which does NOT throw on a
+     * backward interval (BDAY-04 criterion 2: it means "crosses the anchor" instead).
      */
-    @Deprecated
-    public static int durationMinutes(LocalTime start, LocalTime end) {
+    private static int durationMinutes(LocalTime start, LocalTime end) {
         int minutes = endMinute(end) - startMinute(start);
         if (minutes <= 0) {
             throw new IllegalArgumentException(
@@ -242,11 +245,9 @@ public final class DayWindow {
     /** True when {@code [start, end)} runs forward within one day — the non-throwing predicate
      *  counterpart of {@link #durationMinutes}, for validators that want to report rather than throw.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}. */
-    @Deprecated
-    public static boolean isForwardWithinDay(LocalTime start, LocalTime end) {
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredIsForwardWithinDay(LocalTime, LocalTime)}. */
+    private static boolean isForwardWithinDay(LocalTime start, LocalTime end) {
         return start != null && end != null && endMinute(end) > startMinute(start);
     }
 
@@ -254,24 +255,20 @@ public final class DayWindow {
      * True when the half-open intervals {@code [s1, e1)} and {@code [s2, e2)} overlap. Intervals
      * that merely touch (one's end equals the other's start) do NOT overlap.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredOverlaps(LocalTime, LocalTime, LocalTime, LocalTime)}.
      */
-    @Deprecated
-    public static boolean overlaps(LocalTime s1, LocalTime e1, LocalTime s2, LocalTime e2) {
+    private static boolean overlaps(LocalTime s1, LocalTime e1, LocalTime s2, LocalTime e2) {
         return startMinute(s1) < endMinute(e2) && endMinute(e1) > startMinute(s2);
     }
 
     /**
      * True when {@code [innerStart, innerEnd)} lies entirely within {@code [outerStart, outerEnd)}.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredContains(LocalTime, LocalTime, LocalTime, LocalTime)}.
      */
-    @Deprecated
-    public static boolean contains(LocalTime outerStart, LocalTime outerEnd,
+    private static boolean contains(LocalTime outerStart, LocalTime outerEnd,
                                    LocalTime innerStart, LocalTime innerEnd) {
         return startMinute(innerStart) >= startMinute(outerStart)
                 && endMinute(innerEnd) <= endMinute(outerEnd);
@@ -281,12 +278,10 @@ public final class DayWindow {
      * True when {@code start} falls strictly before the END boundary {@code end} — the
      * midnight-correct replacement for {@code start.isBefore(end)} in a generation or scan loop.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to the anchored pair
-     *         {@link #startMinuteFromDayStart(LocalTime, LocalTime)} /
-     *         {@link #endMinuteFromDayStart(LocalTime, LocalTime)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredStartsBefore(LocalTime, LocalTime)}.
      */
-    @Deprecated
-    public static boolean startsBefore(LocalTime start, LocalTime end) {
+    private static boolean startsBefore(LocalTime start, LocalTime end) {
         return startMinute(start) < endMinute(end);
     }
 
@@ -296,11 +291,10 @@ public final class DayWindow {
      *
      * @throws IllegalArgumentException outside {@code [0, 1440]}.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
-     *         {@link #timeAtDayStartOffset(LocalTime, int)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); kept private because
+     * {@link #timeAtDayStartOffset(LocalTime, int)} still delegates to it internally.
      */
-    @Deprecated
-    public static LocalTime toLocalTime(int minuteOfDay) {
+    private static LocalTime toLocalTime(int minuteOfDay) {
         if (minuteOfDay < 0 || minuteOfDay > MINUTES_PER_DAY) {
             throw new IllegalArgumentException(
                     "minuteOfDay must be within [0, " + MINUTES_PER_DAY + "] but was " + minuteOfDay);
@@ -319,11 +313,10 @@ public final class DayWindow {
      * an earlier time that then fails every ordering check downstream), this throws past the end
      * of the day.
      *
-     * @deprecated BDAY-04 removes this midnight-implicit form; callers move to
-     *         {@link #timeAtDayStartOffset(LocalTime, int)}.
+     * <p>Retired from public surface by BDAY-04 (D-06); no longer called internally — superseded
+     * by {@link #anchoredPlusWithinDay(LocalTime, int)}.
      */
-    @Deprecated
-    public static LocalTime plusWithinDay(LocalTime base, int minutes) {
+    private static LocalTime plusWithinDay(LocalTime base, int minutes) {
         return toLocalTime(startMinute(base) + minutes);
     }
 

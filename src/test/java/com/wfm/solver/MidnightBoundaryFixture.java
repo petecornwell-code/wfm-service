@@ -90,6 +90,14 @@ final class MidnightBoundaryFixture {
     private static final String RESOURCE = "midnight-boundary-scenarios.md";
     private static final String PREDICATE_HEADING = "### Boundary predicates";
 
+    /**
+     * The nine midnight-implicit {@link DayWindow} statics this fixture called directly are
+     * private as of BDAY-04 (plan 19-08, D-06); every call site below binds this midnight-anchored
+     * instance instead, per D-14. No asserted value changes -- at a {@code 00:00} anchor every
+     * {@code anchored*} instance method agrees exactly with its retired static counterpart.
+     */
+    private static final DayWindow MIDNIGHT_WINDOW = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
     /** Every constructed scenario, built once. */
     static final List<Schedule> ALL_SCENARIOS = buildAllScenarios();
 
@@ -196,12 +204,13 @@ final class MidnightBoundaryFixture {
         // returns 00:00, whose START minute is 0, so a LocalTime cursor would wrap around the
         // clock instead of terminating at the envelope's end-of-day boundary (BDAY-06).
         List<Timeslot> timeslots = new ArrayList<>();
-        for (int m = DayWindow.startMinute(envelopeStart); m < DayWindow.endMinute(envelopeEnd); m += INCREMENT_MINUTES) {
+        for (int m = MIDNIGHT_WINDOW.anchoredStartMinute(envelopeStart);
+                m < MIDNIGHT_WINDOW.anchoredEndMinute(envelopeEnd); m += INCREMENT_MINUTES) {
             timeslots.add(timeslot(ids, deskId, scheduleId, date,
-                    DayWindow.toLocalTime(m), DayWindow.toLocalTime(m + INCREMENT_MINUTES)));
+                    MIDNIGHT_WINDOW.anchoredToLocalTime(m), MIDNIGHT_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES)));
         }
 
-        BigDecimal contractedHours = template.getNetHours(60, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+        BigDecimal contractedHours = template.getNetHours(60, MIDNIGHT_WINDOW);
         AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), date, contractedHours);
 
         AgentShiftAssignment shiftRow = new AgentShiftAssignment();
@@ -284,9 +293,10 @@ final class MidnightBoundaryFixture {
         // An int minute-of-day cursor, never a LocalTime one -- see the same note in
         // breakBandFlushToEnvelopeEndScenario (BDAY-06).
         List<Timeslot> timeslots = new ArrayList<>();
-        for (int m = DayWindow.startMinute(start); m < DayWindow.endMinute(end); m += INCREMENT_MINUTES) {
+        for (int m = MIDNIGHT_WINDOW.anchoredStartMinute(start);
+                m < MIDNIGHT_WINDOW.anchoredEndMinute(end); m += INCREMENT_MINUTES) {
             timeslots.add(timeslot(ids, deskId, scheduleId, date,
-                    DayWindow.toLocalTime(m), DayWindow.toLocalTime(m + INCREMENT_MINUTES)));
+                    MIDNIGHT_WINDOW.anchoredToLocalTime(m), MIDNIGHT_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES)));
         }
 
         BigDecimal contractedHours = new BigDecimal("3.00");
@@ -336,7 +346,7 @@ final class MidnightBoundaryFixture {
         List<AgentAssignment> sorted = new ArrayList<>(schedule.getAssignments());
         sorted.sort(Comparator
                 .comparing((AgentAssignment a) -> a.getTimeslot().getDate())
-                .thenComparing((AgentAssignment a) -> DayWindow.startMinute(a.getTimeslot().getStartTime()))
+                .thenComparing((AgentAssignment a) -> MIDNIGHT_WINDOW.anchoredStartMinute(a.getTimeslot().getStartTime()))
                 .thenComparing(AgentAssignment::getId));
 
         Map<LocalDate, List<Agent>> eligibleByDate = new HashMap<>();
@@ -401,10 +411,11 @@ final class MidnightBoundaryFixture {
         return schedule.getShiftBandPairs().stream()
                 .filter(pair -> pair.band() != null)
                 .anyMatch(pair -> {
-                    LocalTime breakStart = DayWindow.plusWithinDay(
+                    LocalTime breakStart = MIDNIGHT_WINDOW.anchoredPlusWithinDay(
                             pair.template().getStartTime(), pair.band().getOffsetMinutes());
-                    LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, pair.band().getDurationMinutes());
-                    return DayWindow.endMinute(breakEnd) == DayWindow.endMinute(pair.template().getEndTime());
+                    LocalTime breakEnd = MIDNIGHT_WINDOW.anchoredPlusWithinDay(breakStart, pair.band().getDurationMinutes());
+                    return MIDNIGHT_WINDOW.anchoredEndMinute(breakEnd)
+                            == MIDNIGHT_WINDOW.anchoredEndMinute(pair.template().getEndTime());
                 });
     }
 

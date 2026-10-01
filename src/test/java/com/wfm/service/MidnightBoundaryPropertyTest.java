@@ -66,6 +66,14 @@ class MidnightBoundaryPropertyTest {
 
     private static final long TENANT = 1L;
 
+    /**
+     * The nine midnight-implicit {@link DayWindow} statics this class called directly are private
+     * as of BDAY-04 (plan 19-08, D-06); every call site below binds this midnight-anchored
+     * instance instead, per D-14. No asserted value changes -- at a {@code 00:00} anchor every
+     * {@code anchored*} instance method agrees exactly with its retired static counterpart.
+     */
+    private static final DayWindow MIDNIGHT_WINDOW = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT);
@@ -89,34 +97,34 @@ class MidnightBoundaryPropertyTest {
         @Test
         @DisplayName("its length is exactly 60 minutes")
         void lengthIsExactlySixtyMinutes() {
-            assertThat(DayWindow.durationMinutes(SLOT_START, SLOT_END)).isEqualTo(60);
+            assertThat(MIDNIGHT_WINDOW.anchoredDurationMinutes(SLOT_START, SLOT_END)).isEqualTo(60);
         }
 
         @Test
         @DisplayName("its end in an END position is minute 1440 while its start is minute 1380")
         void endIs1440StartIs1380() {
-            assertThat(DayWindow.endMinute(SLOT_END)).isEqualTo(1440);
-            assertThat(DayWindow.startMinute(SLOT_START)).isEqualTo(1380);
+            assertThat(MIDNIGHT_WINDOW.anchoredEndMinute(SLOT_END)).isEqualTo(1440);
+            assertThat(MIDNIGHT_WINDOW.anchoredStartMinute(SLOT_START)).isEqualTo(1380);
         }
 
         @Test
         @DisplayName("it does not overlap a 22:00-to-23:00 slot (touching, not overlapping)")
         void doesNotOverlapTheTouchingPriorSlot() {
-            assertThat(DayWindow.overlaps(SLOT_START, SLOT_END, LocalTime.of(22, 0), LocalTime.of(23, 0)))
+            assertThat(MIDNIGHT_WINDOW.anchoredOverlaps(SLOT_START, SLOT_END, LocalTime.of(22, 0), LocalTime.of(23, 0)))
                     .isFalse();
         }
 
         @Test
         @DisplayName("it does overlap a 22:30-to-23:30 slot")
         void overlapsAGenuinelyStraddlingSlot() {
-            assertThat(DayWindow.overlaps(SLOT_START, SLOT_END, LocalTime.of(22, 30), LocalTime.of(23, 30)))
+            assertThat(MIDNIGHT_WINDOW.anchoredOverlaps(SLOT_START, SLOT_END, LocalTime.of(22, 30), LocalTime.of(23, 30)))
                     .isTrue();
         }
 
         @Test
         @DisplayName("a 23:00 start is strictly before a 00:00 end")
         void startIsStrictlyBeforeTheEnd() {
-            assertThat(DayWindow.startsBefore(SLOT_START, SLOT_END)).isTrue();
+            assertThat(MIDNIGHT_WINDOW.anchoredStartsBefore(SLOT_START, SLOT_END)).isTrue();
         }
     }
 
@@ -130,7 +138,7 @@ class MidnightBoundaryPropertyTest {
         @Test
         @DisplayName("the envelope is exactly 540 minutes")
         void envelopeIsExactly540Minutes() {
-            assertThat(DayWindow.durationMinutes(ENVELOPE_START, ENVELOPE_END)).isEqualTo(540);
+            assertThat(MIDNIGHT_WINDOW.anchoredDurationMinutes(ENVELOPE_START, ENVELOPE_END)).isEqualTo(540);
         }
 
         @Test
@@ -213,12 +221,23 @@ class MidnightBoundaryPropertyTest {
                 to = "an interval whose end is earlier in the clock than its start means the "
                         + "shift crosses the day anchor into the next calendar date, not that the "
                         + "interval is malformed")
-        @DisplayName("today: DayWindow throws naming both times, and the shift-template save path refuses such a template")
+        @DisplayName("today: the shift-template save path refuses such a template (OVNT-01 still governs this); "
+                + "DayWindow's own backstop throw was already removed from public surface by BDAY-04 criterion 2 "
+                + "(this phase) -- see the comment below")
         void durationMinutesThrowsAndTheSavePathRefuses() {
-            assertThatThrownBy(() -> DayWindow.durationMinutes(LocalTime.of(22, 0), LocalTime.of(6, 0)))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("22:00")
-                    .hasMessageContaining("06:00");
+            // BDAY-04 criterion 2 (THIS phase, plan 19-08) already removed DayWindow's own
+            // crossing-interval throw from its public surface: the anchored instance method never
+            // throws for a backward interval, it wraps forward across the anchor instead (D-11).
+            // 19-CONTEXT.md D-11 established that this was always a backstop only -- the save-path
+            // refusal below (via isForwardWithinDay, exercised through the real service) is what
+            // actually governs template creation, and it is UNCHANGED here; relaxing IT for a
+            // genuinely spanning template is OVNT-01's job (Phase 21), which is what this test's
+            // @AssertsTodaysBehaviour marker still names. Positive proof that DayWindow's own
+            // crossing-the-anchor composition already yields a value rather than throwing:
+            assertThat(DayWindow.anchoredAt(LocalTime.MIDNIGHT)
+                    .anchoredDurationMinutes(LocalTime.of(22, 0), LocalTime.of(6, 0)))
+                    .as("22:00 -> 06:00 now wraps forward across the anchor (8 hours) instead of throwing")
+                    .isEqualTo(480);
 
             Desk desk = new Desk();
             desk.setTenantId(TENANT);

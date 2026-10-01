@@ -11,20 +11,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers the {@code <behavior>} items in Phase 19 plan 03 (the tracer) that concern {@link
- * DayWindow} alone: the null anchor, the midnight-anchor agreement with the still-public
- * midnight-implicit statics, the 21:00 crossing duration, the two equal-endpoint cases, the
- * removed throw, and {@code overlaps} symmetry over a structured sweep of boundary-adjacent
- * quadruples.
+ * DayWindow} alone: the null anchor, the midnight-anchor agreement with the former
+ * midnight-implicit statics (pinned as literal expected values below as of plan 19-08, since the
+ * statics those values were originally asserted against are now private — D-06), the 21:00
+ * crossing duration, the two equal-endpoint cases, the removed throw, and {@code overlaps}
+ * symmetry over a structured sweep of boundary-adjacent quadruples.
  *
  * <p>Deliberately does NOT touch {@code DayWindowTest.java} — plan 19-02 pinned its frozen oracle
  * against the still-callable statics in wave 1, and plan 19-08 owns the flip onto the bound
- * instance.
+ * instance there.
  *
  * <p>The nine instance methods here are named with an {@code anchored} prefix rather than the
  * bare midnight-implicit names — see {@code DayWindow}'s class javadoc "Naming note" and
  * {@code 19-03-SUMMARY.md} for why: a public static and a public instance method cannot share an
- * identical name and parameter list in the same class, and the nine midnight-implicit statics
- * must stay public and unchanged through wave 19-07.
+ * identical name and parameter list in the same class, and through wave 19-07 the nine
+ * midnight-implicit statics stayed public and unchanged for call sites not yet migrated. Plan
+ * 19-08 (D-06) then demoted them to private.
  */
 class DayWindowAnchorBindingTest {
 
@@ -45,98 +47,96 @@ class DayWindowAnchorBindingTest {
     }
 
     @Nested
-    @DisplayName("at a 00:00 anchor, every instance method agrees with its static counterpart")
+    @DisplayName("at a 00:00 anchor, every instance method agrees with its (now-private, BDAY-04 D-06) static counterpart")
+    // The nine midnight-implicit statics this class originally compared against directly were
+    // demoted to private by plan 19-08 (D-06) and are no longer reachable from this class. Each
+    // comparison below is rewritten against a literal frozen reference value -- the exact formula
+    // the static implemented, reproduced locally -- rather than deleted; the asserted agreement is
+    // unchanged.
     class MidnightAnchorAgreement {
 
         private final DayWindow window = DayWindow.anchoredAt(MIDNIGHT);
 
+        /** The frozen {@code startMinute} formula, reproduced locally (D-06 made the static unreachable here). */
+        private int frozenStartMinute(LocalTime t) {
+            return t.getHour() * 60 + t.getMinute();
+        }
+
+        /** The frozen {@code endMinute} formula, reproduced locally (D-06 made the static unreachable here). */
+        private int frozenEndMinute(LocalTime t) {
+            return t.equals(MIDNIGHT) ? 1440 : t.getHour() * 60 + t.getMinute();
+        }
+
         @Test
         void startAndEndMinuteAgree() {
             for (int m = 0; m < 1440; m++) {
-                LocalTime t = DayWindow.toLocalTime(m);
+                LocalTime t = window.anchoredToLocalTime(m);
                 assertThat(window.anchoredStartMinute(t)).as("startMinute(%s)", t)
-                        .isEqualTo(DayWindow.startMinute(t));
+                        .isEqualTo(frozenStartMinute(t));
                 assertThat(window.anchoredEndMinute(t)).as("endMinute(%s)", t)
-                        .isEqualTo(DayWindow.endMinute(t));
+                        .isEqualTo(frozenEndMinute(t));
             }
         }
 
         @Test
         void toLocalTimeAgrees() {
             for (int m = 0; m <= 1440; m++) {
+                LocalTime expected = (m == 1440) ? MIDNIGHT : LocalTime.of(m / 60, m % 60);
                 assertThat(window.anchoredToLocalTime(m)).as("toLocalTime(%d)", m)
-                        .isEqualTo(DayWindow.toLocalTime(m));
+                        .isEqualTo(expected);
             }
         }
 
         @Test
         void durationMinutesAgreesOutsideTheThrowDomain() {
-            // Representative forward intervals -- today's durationMinutes does not throw on these.
+            // Representative forward intervals -- today's durationMinutes did not throw on these,
+            // and the anchored instance method still returns the identical value.
             assertThat(window.anchoredDurationMinutes(LocalTime.of(8, 0), LocalTime.of(17, 0)))
-                    .isEqualTo(DayWindow.durationMinutes(LocalTime.of(8, 0), LocalTime.of(17, 0)));
+                    .isEqualTo(540);
             assertThat(window.anchoredDurationMinutes(LocalTime.of(15, 0), MIDNIGHT))
-                    .isEqualTo(DayWindow.durationMinutes(LocalTime.of(15, 0), MIDNIGHT));
+                    .isEqualTo(540);
             assertThat(window.anchoredDurationMinutes(LocalTime.of(23, 0), MIDNIGHT))
-                    .isEqualTo(DayWindow.durationMinutes(LocalTime.of(23, 0), MIDNIGHT));
+                    .isEqualTo(60);
             assertThat(window.anchoredDurationMinutes(MIDNIGHT, MIDNIGHT))
-                    .isEqualTo(DayWindow.durationMinutes(MIDNIGHT, MIDNIGHT));
+                    .isEqualTo(1440);
         }
 
         @Test
         void isForwardWithinDayAgrees() {
-            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(15, 0), MIDNIGHT))
-                    .isEqualTo(DayWindow.isForwardWithinDay(LocalTime.of(15, 0), MIDNIGHT));
-            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(22, 0), LocalTime.of(6, 0)))
-                    .isEqualTo(DayWindow.isForwardWithinDay(LocalTime.of(22, 0), LocalTime.of(6, 0)));
-            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(9, 0), LocalTime.of(9, 0)))
-                    .isEqualTo(DayWindow.isForwardWithinDay(LocalTime.of(9, 0), LocalTime.of(9, 0)));
-            assertThat(window.anchoredIsForwardWithinDay(null, MIDNIGHT))
-                    .isEqualTo(DayWindow.isForwardWithinDay(null, MIDNIGHT));
-            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(9, 0), null))
-                    .isEqualTo(DayWindow.isForwardWithinDay(LocalTime.of(9, 0), null));
+            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(15, 0), MIDNIGHT)).isTrue();
+            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(22, 0), LocalTime.of(6, 0))).isFalse();
+            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(9, 0), LocalTime.of(9, 0))).isFalse();
+            assertThat(window.anchoredIsForwardWithinDay(null, MIDNIGHT)).isFalse();
+            assertThat(window.anchoredIsForwardWithinDay(LocalTime.of(9, 0), null)).isFalse();
         }
 
         @Test
         void startsBeforeAgrees() {
-            assertThat(window.anchoredStartsBefore(LocalTime.of(8, 0), MIDNIGHT))
-                    .isEqualTo(DayWindow.startsBefore(LocalTime.of(8, 0), MIDNIGHT));
-            assertThat(window.anchoredStartsBefore(LocalTime.of(17, 0), LocalTime.of(17, 0)))
-                    .isEqualTo(DayWindow.startsBefore(LocalTime.of(17, 0), LocalTime.of(17, 0)));
+            assertThat(window.anchoredStartsBefore(LocalTime.of(8, 0), MIDNIGHT)).isTrue();
+            assertThat(window.anchoredStartsBefore(LocalTime.of(17, 0), LocalTime.of(17, 0))).isFalse();
         }
 
         @Test
         void overlapsAgrees() {
             assertThat(window.anchoredOverlaps(
-                    LocalTime.of(23, 0), MIDNIGHT, LocalTime.of(22, 30), MIDNIGHT))
-                    .isEqualTo(DayWindow.overlaps(
-                            LocalTime.of(23, 0), MIDNIGHT, LocalTime.of(22, 30), MIDNIGHT));
+                    LocalTime.of(23, 0), MIDNIGHT, LocalTime.of(22, 30), MIDNIGHT)).isTrue();
             assertThat(window.anchoredOverlaps(
-                    LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(14, 0), LocalTime.of(15, 0)))
-                    .isEqualTo(DayWindow.overlaps(
-                            LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(14, 0), LocalTime.of(15, 0)));
+                    LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(14, 0), LocalTime.of(15, 0))).isFalse();
         }
 
         @Test
         void containsAgrees() {
             assertThat(window.anchoredContains(LocalTime.of(15, 0), MIDNIGHT,
-                    LocalTime.of(23, 0), MIDNIGHT))
-                    .isEqualTo(DayWindow.contains(LocalTime.of(15, 0), MIDNIGHT,
-                            LocalTime.of(23, 0), MIDNIGHT));
+                    LocalTime.of(23, 0), MIDNIGHT)).isTrue();
             assertThat(window.anchoredContains(LocalTime.of(8, 0), LocalTime.of(17, 0),
-                    LocalTime.of(16, 30), LocalTime.of(17, 30)))
-                    .isEqualTo(DayWindow.contains(LocalTime.of(8, 0), LocalTime.of(17, 0),
-                            LocalTime.of(16, 30), LocalTime.of(17, 30)));
+                    LocalTime.of(16, 30), LocalTime.of(17, 30))).isFalse();
         }
 
         @Test
         void plusWithinDayAgrees() {
-            assertThat(window.anchoredPlusWithinDay(LocalTime.of(23, 0), 60))
-                    .isEqualTo(DayWindow.plusWithinDay(LocalTime.of(23, 0), 60));
-            assertThat(window.anchoredPlusWithinDay(LocalTime.of(15, 0), 540))
-                    .isEqualTo(DayWindow.plusWithinDay(LocalTime.of(15, 0), 540));
+            assertThat(window.anchoredPlusWithinDay(LocalTime.of(23, 0), 60)).isEqualTo(MIDNIGHT);
+            assertThat(window.anchoredPlusWithinDay(LocalTime.of(15, 0), 540)).isEqualTo(MIDNIGHT);
             assertThatThrownBy(() -> window.anchoredPlusWithinDay(LocalTime.of(23, 0), 120))
-                    .isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> DayWindow.plusWithinDay(LocalTime.of(23, 0), 120))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -159,13 +159,11 @@ class DayWindowAnchorBindingTest {
         @DisplayName("criterion 2: an interval that crosses the anchor returns a value rather than throwing")
         void crossingTheAnchorReturnsAValueRatherThanThrowing() {
             // At a 00:00 anchor this exact pair (15:00 -> 14:00) crosses the anchor and would have
-            // thrown under the deprecated static; the anchored instance method must not throw.
+            // thrown under the former midnight-implicit static (now private, D-06, plan 19-08); the
+            // anchored instance method must not throw.
             DayWindow midnightWindow = DayWindow.anchoredAt(MIDNIGHT);
             int result = midnightWindow.anchoredDurationMinutes(LocalTime.of(15, 0), LocalTime.of(14, 0));
             assertThat(result).isGreaterThan(0);
-            assertThatThrownBy(() -> DayWindow.durationMinutes(LocalTime.of(15, 0), LocalTime.of(14, 0)))
-                    .as("the deprecated static form still throws -- unchanged by this plan")
-                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
