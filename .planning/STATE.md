@@ -5,11 +5,11 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: planning
-stopped_at: Phase 19 complete, ready to plan Phase 20
-last_updated: "2026-10-01T07:21:24.388Z"
+stopped_at: Phase 20 context gathered
+last_updated: "2026-10-01T14:25:57.845Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 19 complete, transitioned to Phase 20
-state_head: 9aa9e681a9e4627ec0e65bfa99f9ce12377d2620
+state_head: 42cdcd0fb8be54540bf459cd79ecb6807a71649c
 progress:
   total_phases: 5
   completed_phases: 1
@@ -328,9 +328,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-01T06:49:02.575Z
-Stopped at: Phase 19 complete, ready to plan Phase 20
-Resume file: None
+Last session: 2026-10-01T14:25:57.786Z
+Stopped at: Phase 20 context gathered
+Resume file: .planning/phases/20-solver-business-date-correctness/20-CONTEXT.md
 
 ## Operator Next Steps
 
