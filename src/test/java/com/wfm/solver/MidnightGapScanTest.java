@@ -2,6 +2,7 @@ package com.wfm.solver;
 
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,10 @@ import static java.time.Duration.ofSeconds;
  */
 class MidnightGapScanTest {
 
+    /** BDAY-04/plan 19-07: the nine static helper calls below now take a trailing DayWindow —
+     *  this test is explicitly midnight-only, so every call passes this anchor, unchanged. */
+    private static final DayWindow MIDNIGHT = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
     /** A contiguous run of hourly seats starting at each given hour. */
     private static List<AgentAssignment> seatsAt(int... hours) {
         List<AgentAssignment> assignments = new ArrayList<>();
@@ -56,9 +61,9 @@ class MidnightGapScanTest {
         List<AgentAssignment> shift = seatsAt(15, 16, 17, 18, 19, 20, 21, 22, 23);
 
         assertTimeoutPreemptively(ofSeconds(5), () -> {
-            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60)).isEmpty();
-            assertThat(ScheduleConstraintProvider.countContiguousGaps(shift, 60)).isZero();
-            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60)).isNull();
+            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60, MIDNIGHT)).isEmpty();
+            assertThat(ScheduleConstraintProvider.countContiguousGaps(shift, 60, MIDNIGHT)).isZero();
+            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60, MIDNIGHT)).isNull();
         });
     }
 
@@ -69,11 +74,11 @@ class MidnightGapScanTest {
         List<AgentAssignment> shift = seatsAt(15, 16, 17, 18, 20, 21, 22, 23);
 
         assertTimeoutPreemptively(ofSeconds(5), () -> {
-            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60))
+            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60, MIDNIGHT))
                     .containsExactly(1);
-            assertThat(ScheduleConstraintProvider.countContiguousGaps(shift, 60)).isEqualTo(1);
-            assertThat(ScheduleConstraintProvider.totalGapSlots(shift, 60)).isEqualTo(1);
-            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60))
+            assertThat(ScheduleConstraintProvider.countContiguousGaps(shift, 60, MIDNIGHT)).isEqualTo(1);
+            assertThat(ScheduleConstraintProvider.totalGapSlots(shift, 60, MIDNIGHT)).isEqualTo(1);
+            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60, MIDNIGHT))
                     .isEqualTo(LocalTime.of(19, 0));
         });
     }
@@ -85,10 +90,10 @@ class MidnightGapScanTest {
         List<AgentAssignment> shift = seatsAt(15, 16, 18, 19, 22, 23);
 
         assertTimeoutPreemptively(ofSeconds(5), () -> {
-            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60))
+            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60, MIDNIGHT))
                     .containsExactly(1, 2);
-            assertThat(ScheduleConstraintProvider.totalGapSlots(shift, 60)).isEqualTo(3);
-            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60))
+            assertThat(ScheduleConstraintProvider.totalGapSlots(shift, 60, MIDNIGHT)).isEqualTo(3);
+            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60, MIDNIGHT))
                     .isEqualTo(LocalTime.of(17, 0));
         });
     }
@@ -100,8 +105,8 @@ class MidnightGapScanTest {
         List<AgentAssignment> shift = seatsAt(8, 9, 10, 11, 13, 14, 15, 16);
 
         assertTimeoutPreemptively(ofSeconds(5), () -> {
-            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60)).containsExactly(1);
-            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60))
+            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60, MIDNIGHT)).containsExactly(1);
+            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60, MIDNIGHT))
                     .isEqualTo(LocalTime.of(12, 0));
         });
     }
@@ -112,8 +117,8 @@ class MidnightGapScanTest {
         List<AgentAssignment> shift = seatsAt(23);
 
         assertTimeoutPreemptively(ofSeconds(5), () -> {
-            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60)).isEmpty();
-            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60)).isNull();
+            assertThat(ScheduleConstraintProvider.getGapLengths(shift, 60, MIDNIGHT)).isEmpty();
+            assertThat(ScheduleConstraintProvider.findBreakStart(shift, 60, MIDNIGHT)).isNull();
         });
     }
 
@@ -132,6 +137,6 @@ class MidnightGapScanTest {
         }
 
         assertTimeoutPreemptively(ofSeconds(5), () ->
-                assertThat(ScheduleConstraintProvider.getGapLengths(shift, 30)).isEmpty());
+                assertThat(ScheduleConstraintProvider.getGapLengths(shift, 30, MIDNIGHT)).isEmpty());
     }
 }

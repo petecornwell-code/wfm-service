@@ -44,6 +44,27 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      */
     public static final String SHIFT_START_MIX_CONSTRAINT_NAME = "Shift start mix";
 
+    /**
+     * A midnight anchor standing in for a desk's real day-start anchor at the constraints whose
+     * stream cannot carry {@link ScheduleConfig} as a joined tuple member. Those constraints bring
+     * {@code ScheduleConfig} into scope only via {@code .ifExists(ScheduleConfig.class,
+     * filtering(...))} to gate on scheduling mode — unlike {@code .join}, {@code ifExists} never
+     * adds its class to the output tuple, and every one of them is already a Quad (four-argument)
+     * stream by the time it reaches interval arithmetic, with Timefold 1.16.0 exposing no
+     * five-argument (Penta) stream to join a fifth tuple member into. Restructuring those streams to
+     * carry the real anchor is a solver problem-fact change — {@code SOLV-01}'s deliverable
+     * (BDAY-04/P-01), not this one.
+     *
+     * <p>Every desk's anchor is {@code 00:00} today — {@code DeskService}'s write path still
+     * refuses anything else — so this constant is byte-identical to today's production behaviour
+     * and stays so until {@code SOLV-01} replaces every call site below with the real anchor read
+     * from the joined {@code ScheduleConfig}. Named {@code PENDING}, not {@code MIDNIGHT} or
+     * {@code DEFAULT}, so a reader cannot mistake it for a deliberate choice: it is a placeholder
+     * with a removal owner, listed under {@code midnight-time-arithmetic.md}'s "Permitted midnight
+     * anchors" section.
+     */
+    private static final DayWindow PENDING_DESK_ANCHOR = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+
     // ------------------------------------------------------------------
     //  Shared grouping building blocks
     //
@@ -287,7 +308,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) {
                         // Agent's contracted hours don't require a break — penalise any gap
-                        return countContiguousGaps(assignments, dayConfig.incrementMinutes()) != 0;
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) != 0;
                     }
 
                     // Only enforce break rule once agent has enough slots to need one.
@@ -297,14 +318,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                             .intValue();
                     if (assignments.size() < breakThresholdSlots) {
                         // During construction: only penalise fragmented shifts (>1 gap)
-                        return countContiguousGaps(assignments, dayConfig.incrementMinutes()) > 1;
+                        return countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) > 1;
                     }
 
                     // Fully (or nearly fully) assigned: require exactly 1 gap of correct length
-                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes());
+                    int gaps = countContiguousGaps(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
                     if (gaps != 1) return true;
                     int expectedBreakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    return totalGapSlots(assignments, dayConfig.incrementMinutes()) != expectedBreakSlots;
+                    return totalGapSlots(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR) != expectedBreakSlots;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> {
                     // Penalise by TOTAL excess break slots, not just gap count.
@@ -314,7 +335,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                             .compareTo(dayConfig.breakMinShiftHours()) > 0;
                     int expectedBreakSlots = needsBreak
                             ? dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes() : 0;
-                    int actualBreakSlots = totalGapSlots(assignments, dayConfig.incrementMinutes());
+                    int actualBreakSlots = totalGapSlots(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
                     return Math.max(1, Math.abs(actualBreakSlots - expectedBreakSlots));
                 })
                 .asConstraint("Exactly one break");
@@ -345,7 +366,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     if (!needsBreak) return false;
 
                     int expectedSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    List<Integer> gapLengths = getGapLengths(assignments, dayConfig.incrementMinutes());
+                    List<Integer> gapLengths = getGapLengths(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
                     if (gapLengths.size() != 1) return false; // exactlyOneBreak handles the count
                     return gapLengths.get(0) != expectedSlots;
                 })
@@ -377,14 +398,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes());
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
                     if (breakStart == null) return false;
                     int breakSlots = dayConfig.breakDurationMinutes() / dayConfig.incrementMinutes();
-                    LocalTime breakEnd = DayWindow.plusWithinDay(
+                    LocalTime breakEnd = PENDING_DESK_ANCHOR.anchoredPlusWithinDay(
                             breakStart, breakSlots * dayConfig.incrementMinutes());
 
                     LocalTime shiftStart = getShiftStart(assignments);
-                    LocalTime shiftEnd = getShiftEnd(assignments);
+                    LocalTime shiftEnd = getShiftEnd(assignments, PENDING_DESK_ANCHOR);
                     if (shiftStart == null || shiftEnd == null) return false;
 
                     long blockedMinutes = dayConfig.breakBlockedHours()
@@ -392,11 +413,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     // Minute-of-day arithmetic: shiftEnd is an END boundary, so on a shift
                     // finishing at midnight it is 00:00 == minute 1440, and both the subtraction
                     // and the breakEnd comparison would otherwise read it as the day's start.
-                    LocalTime blockedStartEnd = DayWindow.plusWithinDay(shiftStart, (int) blockedMinutes);
-                    int blockedEndStartMinute = DayWindow.endMinute(shiftEnd) - (int) blockedMinutes;
+                    LocalTime blockedStartEnd = PENDING_DESK_ANCHOR.anchoredPlusWithinDay(shiftStart, (int) blockedMinutes);
+                    int blockedEndStartMinute = PENDING_DESK_ANCHOR.anchoredEndMinute(shiftEnd) - (int) blockedMinutes;
 
-                    return DayWindow.startMinute(breakStart) < DayWindow.startMinute(blockedStartEnd)
-                            || DayWindow.endMinute(breakEnd) > blockedEndStartMinute;
+                    return PENDING_DESK_ANCHOR.anchoredStartMinute(breakStart) < PENDING_DESK_ANCHOR.anchoredStartMinute(blockedStartEnd)
+                            || PENDING_DESK_ANCHOR.anchoredEndMinute(breakEnd) > blockedEndStartMinute;
                 })
                 .penalizeConfigurable((daId, date, assignments, dayConfig) -> 1)
                 .asConstraint("Break blocked window");
@@ -426,7 +447,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                     boolean needsBreak = effectiveHours.compareTo(dayConfig.breakMinShiftHours()) > 0;
                     if (!needsBreak) return false;
 
-                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes());
+                    LocalTime breakStart = findBreakStart(assignments, dayConfig.incrementMinutes(), PENDING_DESK_ANCHOR);
                     if (breakStart == null) return false;
 
                     return !isAligned(breakStart, dayConfig.breakStartAlignment());
@@ -588,8 +609,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .groupBy((sa, a) -> sa, toList((sa, a) -> a))
                 .ifExists(ScheduleConfig.class,
                         filtering((sa, seats, cfg) -> cfg.schedulingMode() == SchedulingMode.SHIFT))
-                .filter((sa, seats) -> countNonBreakHoles(seats, sa) > 0)
-                .penalizeConfigurable((sa, seats) -> countNonBreakHoles(seats, sa))
+                .filter((sa, seats) -> countNonBreakHoles(seats, sa, PENDING_DESK_ANCHOR) > 0)
+                .penalizeConfigurable((sa, seats) -> countNonBreakHoles(seats, sa, PENDING_DESK_ANCHOR))
                 .asConstraint("Shift work contiguity");
     }
 
@@ -601,7 +622,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * {@code AgentDayConfig}, which keeps {@link #shiftWorkContiguity} at an arity Timefold's
      * join API supports while still gating on {@link ScheduleConfig}.
      */
-    private int countNonBreakHoles(List<AgentAssignment> assignments, AgentShiftAssignment shift) {
+    private int countNonBreakHoles(List<AgentAssignment> assignments, AgentShiftAssignment shift, DayWindow window) {
         if (assignments == null || assignments.size() < 2) {
             return 0;
         }
@@ -610,36 +631,36 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             // No band, so no identifiable break window. Fall back to "at most one interior gap"
             // rather than exempting the day — see this constraint's javadoc on the arbitrage that
             // exemption opened up.
-            int increment = slotMinutes(assignments);
+            int increment = slotMinutes(assignments, window);
             if (increment <= 0) {
                 return 0;
             }
-            return Math.max(0, countContiguousGaps(assignments, increment) - 1);
+            return Math.max(0, countContiguousGaps(assignments, increment, window) - 1);
         }
 
         TreeSet<LocalTime> worked = new TreeSet<>();
         for (AgentAssignment a : assignments) {
             worked.add(a.getTimeslot().getStartTime());
         }
-        int incrementMinutes = slotMinutes(assignments);
+        int incrementMinutes = slotMinutes(assignments, window);
         if (incrementMinutes <= 0) {
             return 0;
         }
 
-        LocalTime breakStart = DayWindow.plusWithinDay(
+        LocalTime breakStart = window.anchoredPlusWithinDay(
                 pair.template().getStartTime(), pair.band().getOffsetMinutes());
-        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, pair.band().getDurationMinutes());
+        LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, pair.band().getDurationMinutes());
 
         int holes = 0;
-        int firstMinute = DayWindow.startMinute(worked.first());
-        int lastMinute = DayWindow.startMinute(worked.last());
+        int firstMinute = window.anchoredStartMinute(worked.first());
+        int lastMinute = window.anchoredStartMinute(worked.last());
         for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
-            LocalTime t = DayWindow.toLocalTime(minute);
+            LocalTime t = window.anchoredToLocalTime(minute);
             if (worked.contains(t)) {
                 continue;
             }
-            LocalTime slotEnd = DayWindow.toLocalTime(minute + incrementMinutes);
-            boolean isBreak = DayWindow.overlaps(t, slotEnd, breakStart, breakEnd);
+            LocalTime slotEnd = window.anchoredToLocalTime(minute + incrementMinutes);
+            boolean isBreak = window.anchoredOverlaps(t, slotEnd, breakStart, breakEnd);
             if (!isBreak) {
                 holes++;
             }
@@ -1096,8 +1117,8 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                                 cfg.schedulingMode() != SchedulingMode.SHIFT))
                 .filter((agentId, date, assignments, pref) -> {
                     if (pref.getPreferredBreakTime() == null) return false;
-                    int increment = deriveIncrement(assignments);
-                    LocalTime breakStart = findBreakStart(assignments, increment);
+                    int increment = deriveIncrement(assignments, PENDING_DESK_ANCHOR);
+                    LocalTime breakStart = findBreakStart(assignments, increment, PENDING_DESK_ANCHOR);
                     if (breakStart == null) return false;
                     return !breakStart.equals(pref.getPreferredBreakTime());
                 })
@@ -1242,23 +1263,23 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
      * Slot length in minutes, read off the timeslots themselves rather than carried in from
      * {@code AgentDayConfig} — see {@link #countNonBreakHoles} for why that arity matters.
      */
-    private int slotMinutes(List<AgentAssignment> assignments) {
+    private int slotMinutes(List<AgentAssignment> assignments, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return 0;
         Timeslot ts = assignments.get(0).getTimeslot();
         if (ts == null || ts.getStartTime() == null || ts.getEndTime() == null) return 0;
-        return DayWindow.durationMinutes(ts.getStartTime(), ts.getEndTime());
+        return window.anchoredDurationMinutes(ts.getStartTime(), ts.getEndTime());
     }
 
-    static int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes) {
-        return getGapLengths(assignments, incrementMinutes).size();
+    static int countContiguousGaps(List<AgentAssignment> assignments, int incrementMinutes, DayWindow window) {
+        return getGapLengths(assignments, incrementMinutes, window).size();
     }
 
-    static int totalGapSlots(List<AgentAssignment> assignments, int incrementMinutes) {
-        return getGapLengths(assignments, incrementMinutes).stream()
+    static int totalGapSlots(List<AgentAssignment> assignments, int incrementMinutes, DayWindow window) {
+        return getGapLengths(assignments, incrementMinutes, window).stream()
                 .mapToInt(Integer::intValue).sum();
     }
 
-    static List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes) {
+    static List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return List.of();
 
         TreeSet<LocalTime> assignedStarts = new TreeSet<>();
@@ -1271,13 +1292,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         // yields 00:00, whose START minute is 0 -- so a cursor-based loop wraps around the clock
         // instead of terminating, and a shift reaching midnight spins forever. The int cursor has
         // no such ambiguity: it simply passes shiftEndMinute (at most 1440) and stops.
-        int firstMinute = DayWindow.startMinute(assignedStarts.first());
-        int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
+        int firstMinute = window.anchoredStartMinute(assignedStarts.first());
+        int shiftEndMinute = window.anchoredStartMinute(assignedStarts.last()) + incrementMinutes;
 
         List<Integer> gapLengths = new ArrayList<>();
         int currentGap = 0;
         for (int minute = firstMinute; minute < shiftEndMinute; minute += incrementMinutes) {
-            LocalTime t = DayWindow.toLocalTime(minute);
+            LocalTime t = window.anchoredToLocalTime(minute);
             if (!assignedStarts.contains(t)) {
                 currentGap++;
             } else {
@@ -1293,7 +1314,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         return gapLengths;
     }
 
-    static LocalTime findBreakStart(List<AgentAssignment> assignments, int incrementMinutes) {
+    static LocalTime findBreakStart(List<AgentAssignment> assignments, int incrementMinutes, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return null;
 
         TreeSet<LocalTime> assignedStarts = new TreeSet<>();
@@ -1304,11 +1325,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
         // Minute-of-day cursor, for the same reason as getGapLengths above: a LocalTime cursor
         // stepped past 23:00 becomes 00:00 and wraps instead of terminating.
-        int firstMinute = DayWindow.startMinute(assignedStarts.first());
-        int shiftEndMinute = DayWindow.startMinute(assignedStarts.last()) + incrementMinutes;
+        int firstMinute = window.anchoredStartMinute(assignedStarts.first());
+        int shiftEndMinute = window.anchoredStartMinute(assignedStarts.last()) + incrementMinutes;
 
         for (int minute = firstMinute; minute < shiftEndMinute; minute += incrementMinutes) {
-            LocalTime t = DayWindow.toLocalTime(minute);
+            LocalTime t = window.anchoredToLocalTime(minute);
             if (!assignedStarts.contains(t)) {
                 return t;
             }
@@ -1323,14 +1344,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .min(LocalTime::compareTo).orElse(null);
     }
 
-    private LocalTime getShiftEnd(List<AgentAssignment> assignments) {
+    private LocalTime getShiftEnd(List<AgentAssignment> assignments, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return null;
         return assignments.stream()
                 .map(a -> a.getTimeslot().getEndTime())
-                // Compared by END minute-of-day: LocalTime::compareTo ranks a midnight end (00:00)
-                // as the EARLIEST value, so a shift finishing at midnight reported the end of its
-                // second-to-last slot as the shift end.
-                .max(Comparator.comparingInt(DayWindow::endMinute)).orElse(null);
+                // Compared by END minute-of-day: a plain LocalTime compare ranks a midnight end
+                // (00:00) as the EARLIEST value, so a shift finishing at midnight reported the end
+                // of its second-to-last slot as the shift end.
+                .max(Comparator.comparingInt(window::anchoredEndMinute)).orElse(null);
     }
 
     private boolean isAligned(LocalTime time, BreakAlignment alignment) {
@@ -1342,10 +1363,10 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         };
     }
 
-    private int deriveIncrement(List<AgentAssignment> assignments) {
+    private int deriveIncrement(List<AgentAssignment> assignments, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return 15;
         Timeslot t = assignments.get(0).getTimeslot();
-        return DayWindow.durationMinutes(t.getStartTime(), t.getEndTime());
+        return window.anchoredDurationMinutes(t.getStartTime(), t.getEndTime());
     }
 
     /**
