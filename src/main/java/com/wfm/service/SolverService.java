@@ -855,7 +855,12 @@ public class SolverService {
                         schedule.getBreakBlockedHours(),
                         schedule.getBreakStartAlignment(),
                         schedule.getOverallocationHardLimitPct(),
-                        schedule.getUnderallocationHardLimitPct()));
+                        schedule.getUnderallocationHardLimitPct(),
+                        // SOLV-03 Quad-arity carrier: AgentShiftAssignment already carries a
+                        // populated @Transient AgentDayConfig (set below at sa.setDayConfig(config)),
+                        // so any constraint leading with AgentShiftAssignment reaches the desk anchor
+                        // through sa.getDayConfig().dayStart() at zero join cost.
+                        schedule.getDayStart()));
             }
         }
 

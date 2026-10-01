@@ -3,6 +3,7 @@ package com.wfm.model;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 /**
@@ -10,6 +11,12 @@ import java.util.UUID;
  * Resolves the effective contracted hours for each agent on each day,
  * accounting for AgentExceptions. Also carries schedule-level break/increment
  * config so constraints can access everything from a single join.
+ *
+ * <p>{@code dayStart} (SOLV-03) is the Quad-arity constraint carrier for the desk's anchor:
+ * Timefold 1.16.0's public Constraint Streams API tops out at {@code QuadConstraintStream}, so
+ * the constraints that reach Quad arity before the desk anchor is needed cannot take a further
+ * {@code .join(ScheduleConfig.class)}. This record already duplicates seven other schedule-level
+ * scalars for exactly that reason, and {@code dayStart} is the next one.
  */
 public record AgentDayConfig(
         UUID agentId,
@@ -21,8 +28,34 @@ public record AgentDayConfig(
         BigDecimal breakBlockedHours,
         BreakAlignment breakStartAlignment,
         int overallocationHardLimitPct,
-        int underallocationHardLimitPct
+        int underallocationHardLimitPct,
+        LocalTime dayStart
 ) {
+
+    /**
+     * Delegating constructor preserving the pre-SOLV-03 10-argument shape, so every pre-existing
+     * test construction site compiles unchanged — supplies {@link LocalTime#MIDNIGHT} for the new
+     * 11th component. This midnight default exists for test fixtures only; the single production
+     * construction site ({@code SolverService#computeAgentDayConfigs}) passes the value
+     * explicitly. Deliberate carve-out from the D-07 allowlist, whose scope is
+     * {@code src/main/java}.
+     */
+    public AgentDayConfig(
+            UUID agentId,
+            LocalDate date,
+            BigDecimal effectiveHours,
+            int incrementMinutes,
+            int breakDurationMinutes,
+            BigDecimal breakMinShiftHours,
+            BigDecimal breakBlockedHours,
+            BreakAlignment breakStartAlignment,
+            int overallocationHardLimitPct,
+            int underallocationHardLimitPct
+    ) {
+        this(agentId, date, effectiveHours, incrementMinutes, breakDurationMinutes,
+                breakMinShiftHours, breakBlockedHours, breakStartAlignment,
+                overallocationHardLimitPct, underallocationHardLimitPct, LocalTime.MIDNIGHT);
+    }
 
     /**
      * The number of grid slots this agent-day is contracted to work — {@code effectiveHours}
