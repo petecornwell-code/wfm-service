@@ -98,6 +98,14 @@ final class MidnightBoundaryFixture {
      */
     private static final DayWindow MIDNIGHT_WINDOW = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
 
+    /**
+     * A non-midnight day-start anchor (SOLV-03, D-11), bound once so the three scenario builders
+     * below can run SOLV-03's break-band, contiguity and envelope assertions at an anchor the
+     * solver does not yet honour -- the join migration (plan 20-05) and the interval-anchor
+     * migration it carries are what make these go green.
+     */
+    private static final DayWindow NINE_PM_WINDOW = DayWindow.anchoredAt(LocalTime.of(21, 0));
+
     /** Every constructed scenario, built once. */
     static final List<Schedule> ALL_SCENARIOS = buildAllScenarios();
 
@@ -118,6 +126,9 @@ final class MidnightBoundaryFixture {
         scenarios.add(midnightCoverageScenario());
         scenarios.add(breakBandFlushToEnvelopeEndScenario());
         scenarios.add(ptoOnShiftStartingDateScenario());
+        scenarios.add(ninePmCoverageScenario());
+        scenarios.add(ninePmBreakBandFlushToEnvelopeEndScenario());
+        scenarios.add(ninePmOvernightContiguityScenario());
         return List.copyOf(scenarios);
     }
 
@@ -333,26 +344,281 @@ final class MidnightBoundaryFixture {
         return schedule;
     }
 
+    /**
+     * A desk whose operating window runs 19:00-21:00 at a 21:00 anchor -- two hourly timeslots,
+     * the second running 20:00 to 21:00, the final slot of the business day whose end is exactly
+     * the end-of-day position at THIS anchor (SOLV-03, mirroring {@link #midnightCoverageScenario}'s
+     * geometry at the new anchor). Both slots carry real demand of one seat. Two agents, each
+     * contracted to exactly one slot, so the deterministic pinning rule seats agent one on the
+     * 19:00 slot and agent two on the 20:00 slot with zero unintended hard violation, for the
+     * identical reason {@code midnightCoverageScenario}'s javadoc documents for its own geometry.
+     *
+     * <p>Also carries two extra, unstaffed timeslots -- 20:45-21:00 and 21:00-21:15 -- that exist
+     * only to pin {@link com.wfm.util.DayWindow#businessDateOf}'s adjacency rule at the anchor
+     * itself: equal-to-the-anchor in a START position belongs to the NEW business day, and
+     * equal-to-the-anchor in an END position closes the OLD one. Carrying no demand and no seat,
+     * they add nothing to any constraint's match count ({@code minimumStaffing} groups by {@link
+     * AgentAssignment}, never by a bare {@link Timeslot}).
+     */
+    static Schedule ninePmCoverageScenario() {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        Specialization spec = specialization(ids, deskId, "Support");
+
+        Agent agent1 = agent(ids, deskId, "A-1", "Agent-1", spec);
+        Agent agent2 = agent(ids, deskId, "A-2", "Agent-2", spec);
+        List<Agent> agents = List.of(agent1, agent2);
+
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate calendarDate = BASE_DATE;
+        LocalDate businessDate = DayWindow.businessDateOf(dayStart, calendarDate, LocalTime.of(19, 0));
+
+        Timeslot slot1900 = timeslot(ids, deskId, scheduleId, calendarDate, LocalTime.of(19, 0), LocalTime.of(20, 0), dayStart);
+        Timeslot slot2000 = timeslot(ids, deskId, scheduleId, calendarDate, LocalTime.of(20, 0), LocalTime.of(21, 0), dayStart);
+        // Adjacency-only timeslots (no demand, no seat) -- see javadoc above.
+        Timeslot slotFlushToAnchorEnd = timeslot(ids, deskId, scheduleId, calendarDate,
+                LocalTime.of(20, 45), LocalTime.of(21, 0), dayStart);
+        Timeslot slotFlushToAnchorStart = timeslot(ids, deskId, scheduleId, calendarDate,
+                LocalTime.of(21, 0), LocalTime.of(21, 15), dayStart);
+        List<Timeslot> timeslots = List.of(slot1900, slot2000, slotFlushToAnchorEnd, slotFlushToAnchorStart);
+
+        StaffingRequirement req1 = staffingRequirement(ids, deskId, scheduleId, slot1900, spec, 1);
+        StaffingRequirement req2 = staffingRequirement(ids, deskId, scheduleId, slot2000, spec, 1);
+
+        AgentAssignment seat1 = seat(ids, deskId, scheduleId, slot1900, spec);
+        AgentAssignment seat2 = seat(ids, deskId, scheduleId, slot2000, spec);
+        List<AgentAssignment> assignments = new ArrayList<>(List.of(seat1, seat2));
+
+        BigDecimal contractedHours = new BigDecimal("1.00");
+        List<AgentDayConfig> dayConfigs = List.of(
+                dayConfig(agent1.getId(), businessDate, contractedHours, dayStart),
+                dayConfig(agent2.getId(), businessDate, contractedHours, dayStart));
+
+        List<TimeslotDemandConfig> demandConfigs = List.of(
+                new TimeslotDemandConfig(slot1900, 1), new TimeslotDemandConfig(slot2000, 1));
+
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, businessDate, businessDate, dayStart);
+        schedule.setSpecializations(List.of(spec));
+        schedule.setAgents(agents);
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(List.of(req1, req2));
+        schedule.setAgentDayConfigs(dayConfigs);
+        schedule.setTimeslotDemandConfigs(demandConfigs);
+        schedule.setAssignments(assignments);
+
+        pinPlanningVariables(schedule, NINE_PM_WINDOW);
+        return schedule;
+    }
+
+    /**
+     * A shift template whose envelope runs 12:00-21:00 at a 21:00 anchor (540 minutes, an end
+     * position at the end of the business day, mirroring {@link #breakBandFlushToEnvelopeEndScenario}'s
+     * geometry) with a break band at offset 480 duration 60 -- the break runs 20:00-21:00,
+     * finishing EXACTLY flush to the envelope's own end, the boundary this scenario exists to pin
+     * at the new anchor. One agent, contracted to the envelope's net hours (8.00), demand covering
+     * every one of the eight non-break hourly slots -- the identical reasoning
+     * {@code breakBandFlushToEnvelopeEndScenario}'s javadoc gives for its own geometry.
+     */
+    static Schedule ninePmBreakBandFlushToEnvelopeEndScenario() {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        Specialization spec = specialization(ids, deskId, "Support");
+        Agent agentEntity = agent(ids, deskId, "A-1", "Agent-1", spec);
+
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate calendarDate = BASE_DATE;
+        LocalTime envelopeStart = LocalTime.of(12, 0);
+        LocalTime envelopeEnd = LocalTime.of(21, 0);
+        ShiftTemplate template = template(ids, deskId, "Late", envelopeStart, envelopeEnd);
+        ShiftTemplateBreakBand band = band(ids, template, 480, 60);
+        ShiftBandPair pair = new ShiftBandPair(template, band);
+        List<ShiftBandPair> pairs = List.of(pair);
+
+        LocalDate businessDate = DayWindow.businessDateOf(dayStart, calendarDate, envelopeStart);
+
+        // An int minute-of-day cursor, never a LocalTime one -- see the identical note in
+        // breakBandFlushToEnvelopeEndScenario (BDAY-06); here the cursor is day-start-relative
+        // rather than midnight-relative.
+        List<Timeslot> timeslots = new ArrayList<>();
+        for (int m = NINE_PM_WINDOW.anchoredStartMinute(envelopeStart);
+                m < NINE_PM_WINDOW.anchoredEndMinute(envelopeEnd); m += INCREMENT_MINUTES) {
+            timeslots.add(timeslot(ids, deskId, scheduleId, calendarDate,
+                    NINE_PM_WINDOW.anchoredToLocalTime(m), NINE_PM_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES),
+                    dayStart));
+        }
+
+        BigDecimal contractedHours = template.getNetHours(60, NINE_PM_WINDOW);
+        AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), businessDate, contractedHours, dayStart);
+
+        AgentShiftAssignment shiftRow = new AgentShiftAssignment();
+        shiftRow.setId(nextId(ids));
+        shiftRow.setTenantId(TENANT);
+        shiftRow.setDeskId(deskId);
+        shiftRow.setScheduleId(scheduleId);
+        shiftRow.setAgent(agentEntity);
+        shiftRow.setDate(businessDate);
+        shiftRow.setDayConfig(dayConfig);
+        shiftRow.setDeskShiftBandPairs(pairs);
+        // shiftBandPair pinned below by pinPlanningVariables.
+
+        LocalTime breakSlotStart = LocalTime.of(20, 0);
+        List<Timeslot> nonBreakSlots = timeslots.stream()
+                .filter(ts -> !ts.getStartTime().equals(breakSlotStart))
+                .toList();
+
+        List<StaffingRequirement> staffingReqs = new ArrayList<>();
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : nonBreakSlots) {
+            staffingReqs.add(staffingRequirement(ids, deskId, scheduleId, ts, spec, 1));
+            assignments.add(seat(ids, deskId, scheduleId, ts, spec));
+        }
+        List<TimeslotDemandConfig> demandConfigs = nonBreakSlots.stream()
+                .map(ts -> new TimeslotDemandConfig(ts, 1))
+                .toList();
+
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, businessDate, businessDate, dayStart);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setSpecializations(List.of(spec));
+        schedule.setAgents(List.of(agentEntity));
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setAgentDayConfigs(List.of(dayConfig));
+        schedule.setTimeslotDemandConfigs(demandConfigs);
+        schedule.setAssignments(assignments);
+        schedule.setShiftBandPairs(pairs);
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
+
+        pinPlanningVariables(schedule, NINE_PM_WINDOW);
+        return schedule;
+    }
+
+    /**
+     * A 21:00-anchored SHIFT-mode agent-day whose six-slot envelope (02:00-08:00) sits entirely in
+     * the EARLY-MORNING portion of its business day -- the calendar date AFTER the one the 21:00
+     * anchor itself falls on, {@link #BASE_DATE}'s business day spilling into {@code
+     * BASE_DATE.plusDays(1)}. Two one-hour gaps (04:00-05:00 and 06:00-07:00) sit strictly
+     * INTERIOR to the four worked seats, with no break band to explain either (a {@code null}
+     * band, {@code shiftWorkContiguity}'s "at most one interior gap is free" fallback), so a
+     * correctly migrated solver reads exactly ONE hole (two gaps, one free) -- this scenario is
+     * the falsifiable proof that {@code shiftWorkContiguity} must see this agent-day as ONE
+     * business day's worth of seats, not zero: today's solver still joins {@code
+     * AgentShiftAssignment}/{@code Timeslot} pairs on CALENDAR date (this agent-day's business
+     * date is {@link #BASE_DATE}, but every one of its six timeslots carries calendar date {@code
+     * BASE_DATE.plusDays(1)}), so NONE of the four worked seats ever joins this agent-day's row at
+     * all -- the row drops out of the constraint's grouping entirely, reading zero holes instead
+     * of one (SOLV-03's "silent non-join", not a wrong number but an ABSENT one).
+     *
+     * <p>Deliberately NOT a literal-midnight-crossing envelope (its clock times never touch
+     * {@code 00:00}): {@code shiftWorkContiguity}'s own hole-scan sorts assigned start times
+     * through a plain {@code TreeSet<LocalTime>} rather than an anchor-aware comparator, which
+     * would reorder a midnight-crossing span's slots back into their LITERAL-clock order --
+     * {@code 00:00} sorting before {@code 21:00} -- regardless of which {@link DayWindow} is
+     * eventually passed in. That reordering defect is real but belongs to a genuinely overnight
+     * SHIFT TEMPLATE (OVNT-01..07, Phase 21's territory per {@code 20-CONTEXT.md}'s "Not this
+     * phase" list), not to SOLV-03's join migration -- this scenario isolates the join defect
+     * alone, so its RED-today/GREEN-after-20-05 story stays true without depending on a fix this
+     * phase does not make.
+     */
+    static Schedule ninePmOvernightContiguityScenario() {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        Specialization spec = specialization(ids, deskId, "Support");
+        Agent agentEntity = agent(ids, deskId, "A-1", "Agent-1", spec);
+
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate businessDate = BASE_DATE;
+        LocalTime envelopeStart = LocalTime.of(2, 0);
+        LocalTime envelopeEnd = LocalTime.of(8, 0);
+        ShiftTemplate template = template(ids, deskId, "EarlyMorning", envelopeStart, envelopeEnd);
+        ShiftBandPair pair = new ShiftBandPair(template, null); // zero bands = no break (P-02)
+        List<ShiftBandPair> pairs = List.of(pair);
+
+        List<Timeslot> timeslots = new ArrayList<>();
+        for (int m = NINE_PM_WINDOW.anchoredStartMinute(envelopeStart);
+                m < NINE_PM_WINDOW.anchoredEndMinute(envelopeEnd); m += INCREMENT_MINUTES) {
+            LocalDate slotCalendarDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, m);
+            timeslots.add(timeslot(ids, deskId, scheduleId, slotCalendarDate,
+                    NINE_PM_WINDOW.anchoredToLocalTime(m), NINE_PM_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES),
+                    dayStart));
+        }
+
+        BigDecimal contractedHours = template.getNetHours(0, NINE_PM_WINDOW);
+        AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), businessDate, contractedHours, dayStart);
+
+        AgentShiftAssignment shiftRow = new AgentShiftAssignment();
+        shiftRow.setId(nextId(ids));
+        shiftRow.setTenantId(TENANT);
+        shiftRow.setDeskId(deskId);
+        shiftRow.setScheduleId(scheduleId);
+        shiftRow.setAgent(agentEntity);
+        shiftRow.setDate(businessDate);
+        shiftRow.setDayConfig(dayConfig);
+        shiftRow.setDeskShiftBandPairs(pairs);
+
+        Set<LocalTime> gapStarts = Set.of(LocalTime.of(4, 0), LocalTime.of(6, 0));
+        List<Timeslot> workedSlots = timeslots.stream()
+                .filter(ts -> !gapStarts.contains(ts.getStartTime()))
+                .toList();
+
+        List<StaffingRequirement> staffingReqs = new ArrayList<>();
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : workedSlots) {
+            staffingReqs.add(staffingRequirement(ids, deskId, scheduleId, ts, spec, 1));
+            assignments.add(seat(ids, deskId, scheduleId, ts, spec));
+        }
+        List<TimeslotDemandConfig> demandConfigs = workedSlots.stream()
+                .map(ts -> new TimeslotDemandConfig(ts, 1))
+                .toList();
+
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, businessDate, businessDate, dayStart);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setSpecializations(List.of(spec));
+        schedule.setAgents(List.of(agentEntity));
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setAgentDayConfigs(List.of(dayConfig));
+        schedule.setTimeslotDemandConfigs(demandConfigs);
+        schedule.setAssignments(assignments);
+        schedule.setShiftBandPairs(pairs);
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
+
+        pinPlanningVariables(schedule, NINE_PM_WINDOW);
+        return schedule;
+    }
+
     // ------------------------------------------------------------------
     //  The deterministic pinning rule, implemented once
     // ------------------------------------------------------------------
 
     private static void pinPlanningVariables(Schedule schedule) {
-        pinAgentAssignments(schedule);
+        pinPlanningVariables(schedule, MIDNIGHT_WINDOW);
+    }
+
+    /**
+     * SOLV-03 (D-11): the window parameter exists so the 21:00-anchored scenarios above can
+     * compute the deterministic pinning rule's start-minute key relative to their OWN anchor,
+     * never the midnight-implicit one -- the rule itself (date, then day-start-relative start
+     * minute, then id) stays substantively identical, never a second rule.
+     */
+    private static void pinPlanningVariables(Schedule schedule, DayWindow window) {
+        pinAgentAssignments(schedule, window);
         pinShiftAssignments(schedule);
     }
 
-    private static void pinAgentAssignments(Schedule schedule) {
+    private static void pinAgentAssignments(Schedule schedule, DayWindow window) {
         List<AgentAssignment> sorted = new ArrayList<>(schedule.getAssignments());
         sorted.sort(Comparator
-                .comparing((AgentAssignment a) -> a.getTimeslot().getDate())
-                .thenComparing((AgentAssignment a) -> MIDNIGHT_WINDOW.anchoredStartMinute(a.getTimeslot().getStartTime()))
+                .comparing((AgentAssignment a) -> a.getTimeslot().getBusinessDate())
+                .thenComparing((AgentAssignment a) -> window.anchoredStartMinute(a.getTimeslot().getStartTime()))
                 .thenComparing(AgentAssignment::getId));
 
         Map<LocalDate, List<Agent>> eligibleByDate = new HashMap<>();
         int i = 0;
         for (AgentAssignment a : sorted) {
-            LocalDate date = a.getTimeslot().getDate();
+            LocalDate date = a.getTimeslot().getBusinessDate();
             List<Agent> eligible = eligibleByDate.computeIfAbsent(date, d -> eligibleAgents(schedule, d));
             if (!eligible.isEmpty()) {
                 a.setAgent(eligible.get(i % eligible.size()));
@@ -596,6 +862,27 @@ final class MidnightBoundaryFixture {
         return ts;
     }
 
+    /**
+     * Anchor-bearing overload (SOLV-03, D-11): derives {@code businessDate} through {@link
+     * DayWindow#businessDateOf} rather than hand-computing it, so the fixture and production can
+     * never disagree about what business date a timeslot belongs to. At a {@code 00:00} anchor
+     * this agrees exactly with the 6-argument overload above, which keeps {@code
+     * setBusinessDate(date)} unchanged.
+     */
+    private static Timeslot timeslot(AtomicLong ids, UUID deskId, UUID scheduleId, LocalDate calendarDate,
+            LocalTime start, LocalTime end, LocalTime dayStart) {
+        Timeslot ts = new Timeslot();
+        ts.setId(nextId(ids));
+        ts.setTenantId(TENANT);
+        ts.setDeskId(deskId);
+        ts.setScheduleId(scheduleId);
+        ts.setDate(calendarDate);
+        ts.setStartTime(start);
+        ts.setEndTime(end);
+        ts.setBusinessDate(DayWindow.businessDateOf(dayStart, calendarDate, start));
+        return ts;
+    }
+
     private static StaffingRequirement staffingRequirement(AtomicLong ids, UUID deskId, UUID scheduleId,
             Timeslot ts, Specialization spec, int ftes) {
         StaffingRequirement sr = new StaffingRequirement();
@@ -623,6 +910,17 @@ final class MidnightBoundaryFixture {
     private static AgentDayConfig dayConfig(UUID agentId, LocalDate date, BigDecimal effectiveHours) {
         return new AgentDayConfig(agentId, date, effectiveHours, INCREMENT_MINUTES, 60,
                 new BigDecimal("4.00"), new BigDecimal("1.00"), BreakAlignment.ON_HOUR, 500, 0);
+    }
+
+    /**
+     * Anchor-bearing overload (SOLV-03, D-11): passes {@code dayStart} as {@link AgentDayConfig}'s
+     * eleventh argument (plan 20-01). Every {@link AgentDayConfig} belonging to a 21:00 scenario
+     * must carry this value -- falling through the 10-argument delegating constructor to midnight
+     * would make plan 20-05's migrated Quad-arity constraints read midnight instead.
+     */
+    private static AgentDayConfig dayConfig(UUID agentId, LocalDate date, BigDecimal effectiveHours, LocalTime dayStart) {
+        return new AgentDayConfig(agentId, date, effectiveHours, INCREMENT_MINUTES, 60,
+                new BigDecimal("4.00"), new BigDecimal("1.00"), BreakAlignment.ON_HOUR, 500, 0, dayStart);
     }
 
     private static ConstraintWeights defaultWeights(AtomicLong ids, UUID deskId) {
@@ -659,6 +957,19 @@ final class MidnightBoundaryFixture {
         schedule.setAgentExceptions(List.of());
         schedule.setShiftBandPairs(new ArrayList<>());
         schedule.setShiftAssignments(new ArrayList<>());
+        return schedule;
+    }
+
+    /**
+     * Day-start-bearing overload (SOLV-03, D-11): calls {@code schedule.setDayStart(dayStart)}.
+     * The 4-argument overload above never sets it, so {@code Schedule.getDayStart()} stays null
+     * and {@code ScheduleConfig.dayStart()} arrives null -- a 21:00 scenario that skips this
+     * overload is not a 21:00 scenario at all.
+     */
+    private static Schedule baseSchedule(AtomicLong ids, UUID deskId, UUID scheduleId,
+            LocalDate periodStart, LocalDate periodEnd, LocalTime dayStart) {
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, periodStart, periodEnd);
+        schedule.setDayStart(dayStart);
         return schedule;
     }
 }
