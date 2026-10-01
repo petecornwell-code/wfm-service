@@ -576,14 +576,10 @@ public class ShiftLibraryGenerationService {
             }
             LocalTime start = candidate.template().getStartTime();
             LocalTime end = candidate.template().getEndTime();
-            // BDAY-04 (plan 19-06, Rule 4 deviation -- see this plan's SUMMARY): kept on the
-            // deprecated static deliberately. MidnightTimeArithmeticGuardTest's comparison
-            // allowlist (src/test/resources/midnight-time-arithmetic.md, a file reserved for plan
-            // 19-07) keys this exact line's text, including the DayWindow.endMinute(...) calls;
-            // converting them to the instance form changes the line's text and desyncs the
-            // allowlist, which this plan cannot touch. The window-based form is otherwise
-            // equivalent and should be adopted once plan 19-07 or 19-08 re-keys the allowlist.
-            if (start.isBefore(earliestStart) || DayWindow.endMinute(end) > DayWindow.endMinute(latestEnd)) {
+            // BDAY-04 (plan 19-07): migrated off the deprecated static, together with the matching
+            // allowlist entry in midnight-time-arithmetic.md (D-07/Shape K) in the same commit --
+            // plan 19-06 deliberately deferred this one line because it could not touch that file.
+            if (start.isBefore(earliestStart) || window.anchoredEndMinute(end) > window.anchoredEndMinute(latestEnd)) {
                 continue; // never propose an envelope reaching outside the demanded range
             }
             chosenSpans.add(spanKey(candidate));

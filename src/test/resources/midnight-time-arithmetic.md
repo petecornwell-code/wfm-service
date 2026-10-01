@@ -81,16 +81,39 @@ it.
 
 Comment lines are stripped before matching, so prose mentioning these names is free.
 
+**The guard's blind spot (D-05).** This guard scans for `Duration.between(`, `ChronoUnit.MINUTES`,
+`.plusMinutes(`, `.minusMinutes(` and the three `LocalTime` comparison tokens above — and therefore
+cannot see `int` arithmetic or `int` comparisons AT ALL. `DayWindow.anchoredStartMinute(t)` and
+`DayWindow.anchoredEndMinute(t)` both return a plain `int`, so hand-composing an interval from them
+at a call site — `endMinuteFromDayStart(ds, e) - startMinuteFromDayStart(ds, s)` for a duration, or
+a four-call `&&` for an overlap — would pass every scan in this file while silently reimplementing
+half-open interval semantics outside `DayWindow`. The only correct place for interval semantics is
+inside `DayWindow` itself; this note exists so the next person who considers hand-composing learns
+the guard will not catch them, from the guard's own documentation.
+
+**Third family (D-07): permitted midnight anchors.** A `DayWindow.anchoredAt(LocalTime.MIDNIGHT)`
+binding is a third, independent thing this guard enforces, scanned and allowlisted exactly like the
+two families above — see "Permitted midnight anchors" below.
+
 ## When a new entry is legitimate
 
-Only when **both** endpoints are START positions, where `00:00` genuinely means the start of the
-day and the ambiguity does not arise. Every entry below is a start-to-start distance. If either
-endpoint is an interval END — a timeslot's `endTime`, a shift template's `endTime`, a break's end,
-a schedule's or desk's closing time — the line belongs in `DayWindow` instead, via
-`durationMinutes`, `overlaps`, `contains`, `startsBefore`, `endMinute` or `plusWithinDay`.
+**Raw arithmetic or comparison entries** are legitimate only when **both** endpoints are START
+positions, where `00:00` genuinely means the start of the day and the ambiguity does not arise.
+Every entry in those two sections is a start-to-start distance. If either endpoint is an interval
+END — a timeslot's `endTime`, a shift template's `endTime`, a break's end, a schedule's or desk's
+closing time — the line belongs in `DayWindow` instead, via `durationMinutes`, `overlaps`,
+`contains`, `startsBefore`, `endMinute` or `plusWithinDay`.
 
-Adding a line here **without** that being true silently reopens the defect this guard closes. Say
-why the endpoints are starts in the annotation, as the entries below do.
+Adding a line to either of those sections **without** that being true silently reopens the defect
+this guard closes. Say why the endpoints are starts in the annotation, as the entries below do.
+
+**A midnight-anchor entry** (the third section) is legitimate only when the call site genuinely
+cannot reach a desk's real day-start anchor — a standalone utility with no `Desk`/tenant context in
+scope, or a constraint stream Timefold's arity cap keeps `ScheduleConfig` out of. It is never
+legitimate merely because a desk's anchor currently happens to be `00:00` (D-07) — that is true of
+every desk today and proves nothing about reachability. Say why no desk anchor is reachable at that
+site in the annotation, as the entries below do, and name the requirement ID that owns removing it
+once the site becomes reachable.
 
 ## Allowlist
 
@@ -123,7 +146,7 @@ com.wfm.service.ScheduleExportService :: if (earliest == null || ad.startTime().
 com.wfm.service.ScheduleOutputService :: startOk = actStart != null && !actStart.isBefore(prefStart);
 com.wfm.service.ScheduleOutputService :: int sign = actualStartTime.isAfter(usualStartTime) ? 1
 com.wfm.service.ScheduleOutputService :: : actualStartTime.isBefore(usualStartTime) ? -1 : 0;
-com.wfm.service.ShiftLibraryGenerationService :: if (start.isBefore(earliestStart) || DayWindow.endMinute(end) > DayWindow.endMinute(latestEnd)) {
+com.wfm.service.ShiftLibraryGenerationService :: if (start.isBefore(earliestStart) || window.anchoredEndMinute(end) > window.anchoredEndMinute(latestEnd)) {
 com.wfm.service.ShiftLibraryGenerationService :: int startCompare = candidate.spanStart().compareTo(currentBest.spanStart());
 com.wfm.solver.AgentAssignmentDifficultyComparator :: int timeCompare = a.getTimeslot().getStartTime().compareTo(b.getTimeslot().getStartTime());
 com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
@@ -142,11 +165,46 @@ com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime
   (`actualStartTime`/`usualStartTime`). Every operand named here is a START time; no end is
   involved in any of the three.
 - **`ShiftLibraryGenerationService`, both lines** — the earliest-start clause that shares its line
-  with an already-correct `DayWindow.endMinute` end comparison (`start`/`earliestStart` are both
-  starts; only the end half needed `DayWindow`), and the span-start tie-break
-  (`candidate.spanStart()`/`currentBest.spanStart()`), whose `spanStart()` is built via
-  `DayWindow.toLocalTime` and is a START position by construction.
+  with an already-correct end comparison, now routed through the method's own bound `window`
+  (`start`/`earliestStart` are both starts; only the end half needed `DayWindow`), and the
+  span-start tie-break (`candidate.spanStart()`/`currentBest.spanStart()`), whose `spanStart()` is
+  built via `DayWindow.toLocalTime` and is a START position by construction.
 - **`AgentAssignmentDifficultyComparator`** — the start-time tie-break between two timeslots'
   `getStartTime()`. Both are START positions; the comparator never orders by end.
 - **`ScheduleConstraintProvider`** — the preferred-start comparison between a timeslot's START and
   an agent's preferred START time. No end is involved.
+
+### Permitted midnight anchors
+
+```
+com.wfm.util.FteSpreadsheetGenerator :: DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+com.wfm.solver.ScheduleConstraintProvider :: private static final DayWindow PENDING_DESK_ANCHOR = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+com.wfm.service.ShiftLibraryGenerationService :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+com.wfm.model.ShiftBandPair :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+```
+
+### Why each midnight anchor is permitted
+
+- **`FteSpreadsheetGenerator.generate`** — a standalone report-generation utility with its own
+  `main`, no `Desk` or tenant context reachable anywhere in the file (BDAY-04, plan 19-07). There is
+  no desk to bind; `SOLV-01` does not own this one, since no join re-point will ever make a desk
+  reachable here — it stays allowlisted for the life of this file's current shape.
+- **`ScheduleConstraintProvider.PENDING_DESK_ANCHOR`** — the single named constant seven
+  `ifExists(ScheduleConfig.class, filtering(...))`-gated constraints (`exactlyOneBreak`,
+  `breakDuration`, `breakBlockedWindow`, `breakStartAlignment`, `shiftWorkContiguity`,
+  `honourPreferredBreakTime`, reached through their shared interval-arithmetic helpers) pass instead
+  of the real desk anchor. Timefold 1.16.0 has no Penta (five-argument) constraint stream, so
+  `ScheduleConfig` cannot be joined into these already-Quad streams; `SOLV-01` owns replacing this
+  constant with the real anchor read from the joined `ScheduleConfig` when it re-points the joins
+  (BDAY-04/P-01).
+- **`ShiftLibraryGenerationService.resolveBreakConfig`** — the zero-schedule-yet fallback branch
+  (plan 19-06). This class holds neither a `DeskRepository` nor a `Schedule` parameter of its own;
+  when no `Schedule` has ever been created for the desk there is no anchor source to read at all, so
+  the binding falls back to midnight until the first `Schedule` exists, at which point the method's
+  normal path binds the real anchor from that `Schedule` instead.
+- **`ShiftBandPair.netHours`** (`@Deprecated`, transitional) — this record's remaining callers
+  (`AgentShiftAssignment`, `ShiftLibraryGenerationService`'s `Candidate`/`EmittedRow` report fields,
+  and their tests) do not yet reach a desk anchor (plan 19-04/19-05). Mirrors the transitional
+  `covers(Timeslot)` shape plan 19-05 retired once every production
+  `covers(Timeslot, DayWindow)` caller supplied a real anchor; callers of `netHours()` move to a
+  window-aware form as each is migrated, and this entry is removed once none remain.

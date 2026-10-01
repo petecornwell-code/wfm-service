@@ -57,6 +57,7 @@ class MidnightTimeArithmeticGuardTest {
     private static final String RESOURCE = "midnight-time-arithmetic.md";
     private static final String ALLOWLIST_HEADING = "### Permitted raw time arithmetic";
     private static final String COMPARISON_ALLOWLIST_HEADING = "### Permitted raw time comparisons";
+    private static final String MIDNIGHT_ANCHOR_ALLOWLIST_HEADING = "### Permitted midnight anchors";
 
     /**
      * The tokens that constitute raw interval arithmetic on a time. {@code ChronoUnit.MINUTES}
@@ -83,6 +84,18 @@ class MidnightTimeArithmeticGuardTest {
             ".isAfter(",
             ".isBefore(",
             ".compareTo(");
+
+    /**
+     * The token that constitutes a midnight {@link com.wfm.util.DayWindow} anchor binding (D-07):
+     * a call site that cannot reach a desk's real day-start anchor, so it binds midnight explicitly
+     * instead. Unlike {@link #COMPARISON_TOKENS}, this is unconditional — it matches the literal
+     * factory-with-midnight shape wherever it appears, since this single substring is already
+     * precise (it does not fire on the real-anchor-with-fallback shape
+     * {@code anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT)}, which is a genuine
+     * desk anchor, not a pending one).
+     */
+    private static final List<String> MIDNIGHT_ANCHOR_TOKENS = List.of(
+            "anchoredAt(LocalTime.MIDNIGHT)");
 
     /** DayWindow is the implementation of the rule, so it is the one file exempt from it. */
     private static final String IMPLEMENTATION_CLASS = "com.wfm.util.DayWindow";
@@ -150,6 +163,39 @@ class MidnightTimeArithmeticGuardTest {
                         (startsBefore / overlaps / contains / endMinute) unless BOTH endpoints \
                         are start times, in which case add the line to the allowlist WITH a note \
                         saying why: %s
+
+                        STALE, allowlisted but no longer present -- remove the entry: %s""",
+                        RESOURCE, notAllowlisted, staleEntries)
+                .containsExactlyInAnyOrderElementsOf(allowlist);
+    }
+
+    /**
+     * D-07's third family: every {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} binding under
+     * {@code src/main/java} must equal the "Permitted midnight anchors" allowlist exactly. A
+     * midnight anchor always compiles, is always correct on today's data (every desk's anchor is
+     * {@code 00:00} today), and is indistinguishable in a diff from a genuine desk anchor — the one
+     * substitution that would silently restore the pre-migration semantics on a live desk once a
+     * non-midnight anchor exists. Same set-equality contract as the two scans above: widening either
+     * direction turns this into decoration.
+     */
+    @Test
+    void midnightAnchorsInProductionCode_matchesTheMidnightAnchorAllowlistExactly() throws IOException {
+        Set<String> derived = scanProductionSources(SOURCE_ROOT, MidnightTimeArithmeticGuardTest::isMidnightAnchor);
+        Set<String> allowlist = parseMidnightAnchorAllowlist();
+
+        Set<String> notAllowlisted = new HashSet<>(derived);
+        notAllowlisted.removeAll(allowlist);
+        Set<String> staleEntries = new HashSet<>(allowlist);
+        staleEntries.removeAll(derived);
+
+        assertThat(derived)
+                .as("""
+                        DayWindow.anchoredAt(LocalTime.MIDNIGHT) bindings in src/main/java must \
+                        equal the midnight-anchor allowlist in %s exactly.
+
+                        NEW, not allowlisted -- either reach the desk's real anchor at this call \
+                        site, or add the line to the allowlist WITH a note saying why no desk \
+                        anchor is reachable here and which requirement owns its removal: %s
 
                         STALE, allowlisted but no longer present -- remove the entry: %s""",
                         RESOURCE, notAllowlisted, staleEntries)
@@ -224,10 +270,11 @@ class MidnightTimeArithmeticGuardTest {
         // An empty expected set would make the set-equality assertion above vacuously satisfiable
         // if production code ever stopped matching at all. parseAllowlist throws on empty, so
         // reaching this assertion is itself part of the proof. Same reasoning applies to the
-        // comparison allowlist -- an empty comparison section would make the second assertion
-        // above vacuous in exactly the same way.
+        // comparison and midnight-anchor allowlists -- an empty section would make the matching
+        // assertion above vacuous in exactly the same way.
         assertThat(parseAllowlist()).isNotEmpty();
         assertThat(parseComparisonAllowlist()).isNotEmpty();
+        assertThat(parseMidnightAnchorAllowlist()).isNotEmpty();
     }
 
     @Test
@@ -255,6 +302,51 @@ class MidnightTimeArithmeticGuardTest {
         assertThat(isRawArithmetic("int minutes = DayWindow.durationMinutes(start, end);")).isFalse();
         // A near-miss identifier must not trip the scan (ScheduleConfig holds one):
         assertThat(isRawArithmetic("schedulingMode, DEFAULT_CONSISTENCY_TOLERANCE_MINUTES);")).isFalse();
+    }
+
+    @Test
+    void theMidnightAnchorScanDetectsAFreshOccurrence() {
+        // Proves the matcher is live: the canonical pending-anchor shape is caught, a comment
+        // mentioning it is not, and a genuine desk anchor (with a defensive midnight FALLBACK, not
+        // a midnight anchor itself) does not trip the scan either -- it is a real anchor, not a
+        // pending one, so it has no business in this allowlist.
+        assertThat(isMidnightAnchor("DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);"))
+                .isTrue();
+        assertThat(isMidnightAnchor(
+                "private static final DayWindow PENDING_DESK_ANCHOR = DayWindow.anchoredAt(LocalTime.MIDNIGHT);"))
+                .isTrue();
+        assertThat(isMidnightAnchor("// DayWindow.anchoredAt(LocalTime.MIDNIGHT) is permitted here"))
+                .isFalse();
+        assertThat(isMidnightAnchor(
+                "DayWindow window = DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);"))
+                .isFalse();
+        assertThat(isMidnightAnchor("DayWindow window = DayWindow.anchoredAt(desk.getDayStart());"))
+                .isFalse();
+    }
+
+    /**
+     * {@link #theMidnightAnchorScanDetectsAFreshOccurrence} proves the matcher PREDICATE is live
+     * against synthetic strings; this proves the SET COMPARISON itself rejects both directions —
+     * an unlisted new occurrence, and an allowlisted entry whose line has gone. The exact assertion
+     * shape used here ({@code containsExactlyInAnyOrderElementsOf}) is the one the real test above
+     * uses; widening it to a subset/{@code containsAll} check would make both of these proofs pass
+     * even though the guard had become decoration.
+     */
+    @Test
+    @DisplayName("the midnight-anchor scan is set-equality, not a subset check")
+    void midnightAnchorScan_failsOnBothAnUnlistedOccurrenceAndAStaleEntry() {
+        String line = "com.wfm.example.Example :: DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);";
+
+        // NEW direction: one real occurrence, allowlist empty -- the unlisted occurrence must fail.
+        assertThatThrownBy(() -> assertThat(Set.of(line))
+                .containsExactlyInAnyOrderElementsOf(Set.of()))
+                .isInstanceOf(AssertionError.class);
+
+        // STALE direction: allowlist carries the entry, derived is empty (its line has gone) --
+        // must fail just as loudly, never silently tolerated.
+        assertThatThrownBy(() -> assertThat(Set.<String>of())
+                .containsExactlyInAnyOrderElementsOf(Set.of(line)))
+                .isInstanceOf(AssertionError.class);
     }
 
     @Test
@@ -317,8 +409,9 @@ class MidnightTimeArithmeticGuardTest {
     void missingAllowlistHeading_failsLoudly() {
         // The parser must never silently return an empty set for a malformed resource -- that is
         // the one way this guard could pass while enforcing nothing. Proven generically for an
-        // arbitrary heading, and specifically for both concrete allowlist headings this class
-        // parses, so neither the arithmetic nor the comparison assertion can go vacuous.
+        // arbitrary heading, and specifically for all three concrete allowlist headings this class
+        // parses, so none of the arithmetic, comparison or midnight-anchor assertions can go
+        // vacuous.
         assertThatThrownBy(() -> parseFencedBlock(readResource(), "### No Such Heading"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No Such Heading");
@@ -329,6 +422,10 @@ class MidnightTimeArithmeticGuardTest {
                         "# Empty resource\n\nno headings here", COMPARISON_ALLOWLIST_HEADING))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(COMPARISON_ALLOWLIST_HEADING);
+        assertThatThrownBy(() -> parseFencedBlock(
+                        "# Empty resource\n\nno headings here", MIDNIGHT_ANCHOR_ALLOWLIST_HEADING))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(MIDNIGHT_ANCHOR_ALLOWLIST_HEADING);
     }
 
     // --- scanning ---
@@ -370,6 +467,16 @@ class MidnightTimeArithmeticGuardTest {
             return false;
         }
         return RAW_ARITHMETIC_TOKENS.stream().anyMatch(code::contains);
+    }
+
+    /** True when this source line binds a {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} pending
+     *  anchor, once comments are discarded (D-07's third family). */
+    private static boolean isMidnightAnchor(String rawLine) {
+        String code = stripComment(rawLine);
+        if (code.isEmpty()) {
+            return false;
+        }
+        return MIDNIGHT_ANCHOR_TOKENS.stream().anyMatch(code::contains);
     }
 
     /**
@@ -486,6 +593,17 @@ class MidnightTimeArithmeticGuardTest {
             throw new IllegalStateException(
                     RESOURCE + " parsed to an EMPTY comparison allowlist under '"
                             + COMPARISON_ALLOWLIST_HEADING
+                            + "'. An empty expected set would make the guard vacuous.");
+        }
+        return entries;
+    }
+
+    private Set<String> parseMidnightAnchorAllowlist() throws IOException {
+        Set<String> entries = parseFencedBlock(readResource(), MIDNIGHT_ANCHOR_ALLOWLIST_HEADING);
+        if (entries.isEmpty()) {
+            throw new IllegalStateException(
+                    RESOURCE + " parsed to an EMPTY midnight-anchor allowlist under '"
+                            + MIDNIGHT_ANCHOR_ALLOWLIST_HEADING
                             + "'. An empty expected set would make the guard vacuous.");
         }
         return entries;
