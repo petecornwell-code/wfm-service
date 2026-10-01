@@ -17,8 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * BDAY-06's two-directional flip registry validator. Three scenarios, spread across {@code
- * com.wfm.solver.MidnightBoundaryRegressionTest} and {@code com.wfm.service.MidnightBoundaryPropertyTest},
+ * BDAY-06's two-directional flip registry validator. Four scenarios, spread across {@code
+ * com.wfm.solver.MidnightBoundaryRegressionTest}, {@code com.wfm.service.MidnightBoundaryPropertyTest}
+ * and (SOLV-04, plan 20-04) {@code com.wfm.solver.SlotModeOvernightContractedHoursTest},
  * assert TODAY's actual behaviour at a property this codebase cannot yet represent correctly.
  * Each is marked with {@link AssertsTodaysBehaviour} on its test method, and each mark is named in
  * {@code src/test/resources/midnight-boundary-scenarios.md}'s registry section. This test proves
@@ -26,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * can neither flip one of these assertions without removing its registry entry, nor leave a
  * registry entry behind after the method it described is deleted or rewritten.
  *
- * <p>Resolves both scenario classes by fully qualified name rather than importing them directly,
- * so this validator sits in neither of them and privileges neither. A rename of either class must
+ * <p>Resolves all three scenario classes by fully qualified name rather than importing them
+ * directly, so this validator sits in none of them and privileges none. A rename of any class must
  * fail this test loudly -- by an assertion on the resolve itself -- rather than silently reflecting
  * over zero methods and reporting every registry entry as missing.
  */
@@ -35,12 +36,15 @@ class MidnightBoundaryScenarioRegistryTest {
 
     private static final String REGRESSION_TEST_CLASS = "com.wfm.solver.MidnightBoundaryRegressionTest";
     private static final String PROPERTY_TEST_CLASS = "com.wfm.service.MidnightBoundaryPropertyTest";
+    private static final String SLOT_MODE_OVERNIGHT_TEST_CLASS =
+            "com.wfm.solver.SlotModeOvernightContractedHoursTest";
 
     private static final String RESOURCE = "midnight-boundary-scenarios.md";
     private static final String REGISTRY_HEADING = "### Scenarios asserting today's behaviour";
 
-    /** The exact number of scenarios whose property cannot exist today, per BDAY-06's planning. */
-    private static final int EXPECTED_REGISTRY_SIZE = 3;
+    /** The exact number of scenarios whose property cannot exist today, per BDAY-06's planning
+     *  (3) plus SOLV-04's constructed proof (plan 20-04, 1) -- 4 total. */
+    private static final int EXPECTED_REGISTRY_SIZE = 4;
 
     /**
      * The milestone's own requirement IDs a {@link AssertsTodaysBehaviour#flippedBy()} value may
@@ -68,6 +72,10 @@ class MidnightBoundaryScenarioRegistryTest {
                 .as("a rename of the plain-unit scenario class must fail loudly here, not "
                         + "silently empty the reflected method set")
                 .doesNotThrowAnyException();
+        assertThatCode(() -> Class.forName(SLOT_MODE_OVERNIGHT_TEST_CLASS))
+                .as("a rename of the SOLV-04 SLOT-mode scenario class must fail loudly here, not "
+                        + "silently empty the reflected method set")
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -82,17 +90,18 @@ class MidnightBoundaryScenarioRegistryTest {
 
         assertThat(marked)
                 .as("""
-                        @AssertsTodaysBehaviour-marked methods in %s and %s must equal the registry \
-                        in %s exactly.
+                        @AssertsTodaysBehaviour-marked methods in %s, %s and %s must equal the \
+                        registry in %s exactly.
 
                         NOT REGISTERED -- a marked method with no registry entry: %s
                         STALE -- a registry entry naming no marked method: %s""",
-                        REGRESSION_TEST_CLASS, PROPERTY_TEST_CLASS, RESOURCE, notRegistered, stale)
+                        REGRESSION_TEST_CLASS, PROPERTY_TEST_CLASS, SLOT_MODE_OVERNIGHT_TEST_CLASS,
+                        RESOURCE, notRegistered, stale)
                 .containsExactlyInAnyOrderElementsOf(registered);
     }
 
     @Test
-    void registryHoldsExactlyThreeEntries() throws Exception {
+    void registryHoldsExactlyFourEntries() throws Exception {
         assertThat(parseRegistry())
                 .as("the registry must hold exactly the number of scenarios whose property cannot "
                         + "exist today -- a fourth marked scenario must not be addable without a "
@@ -140,6 +149,7 @@ class MidnightBoundaryScenarioRegistryTest {
         List<Method> methods = new ArrayList<>();
         collectFromClassAndNested(Class.forName(REGRESSION_TEST_CLASS), methods);
         collectFromClassAndNested(Class.forName(PROPERTY_TEST_CLASS), methods);
+        collectFromClassAndNested(Class.forName(SLOT_MODE_OVERNIGHT_TEST_CLASS), methods);
         return methods;
     }
 

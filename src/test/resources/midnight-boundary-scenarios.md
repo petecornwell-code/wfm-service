@@ -59,7 +59,7 @@ envelope crossing the day anchor
 
 ## Scenarios asserting today's behaviour
 
-Three scenarios in this suite assert what this codebase does TODAY at a property whose correct
+Four scenarios in this suite assert what this codebase does TODAY at a property whose correct
 behaviour has not shipped yet. Each is marked `@AssertsTodaysBehaviour` on its test method
 (`com.wfm.support.AssertsTodaysBehaviour`); `MidnightBoundaryScenarioRegistryTest` asserts the
 marked-method set and the fenced registry below are set-equal in BOTH directions. A later phase
@@ -72,6 +72,7 @@ described was deleted or rewritten fails the build exactly as an unregistered ne
 | A day-off record's attribution to a shift's calendar date | OVNT-03 | Attribution follows the business day a midnight-spanning shift starts on, not each individually stamped calendar date |
 | Contracted hours consumed by the starting weekday only | OVNT-04 | The whole stretch of a midnight-spanning shift consumes only the starting weekday's contracted-hours row |
 | A shift starting before and ending after midnight | OVNT-01 | The interval means the shift crosses the day anchor into the next calendar date, not that the interval is malformed |
+| A SLOT-mode cross-midnight stretch charged to the wrong calendar dates | SOLV-04 | Both the contracted-hours-under and agent-not-working-that-day match counts read zero, because the join resolves business date, not calendar date |
 
 ### Scenarios asserting today's behaviour
 
@@ -79,4 +80,5 @@ described was deleted or rewritten fails the build exactly as an unregistered ne
 com.wfm.solver.MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly -> OVNT-03
 com.wfm.service.MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows -> OVNT-04
 com.wfm.service.MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses -> OVNT-01
+com.wfm.solver.SlotModeOvernightContractedHoursTest.TodaysBehaviour#todaysCalendarDateJoinMisattributesTheCrossMidnightStretch -> SOLV-04
 ```
