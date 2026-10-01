@@ -487,8 +487,20 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .join(AgentAssignment.class,
                         equal((sa, cfg) -> sa.getAgent().getId(), a -> a.getAgent().getId()),
                         equal((sa, cfg) -> sa.getDate(), a -> a.getTimeslot().getDate()))
-                .filter((sa, cfg, a) -> sa.getShiftBandPair() == null
-                        || !sa.getShiftBandPair().covers(a.getTimeslot()))
+                // BDAY-04/plan 19-03 (the tracer): the desk's real anchor reaches this constraint
+                // via the ScheduleConfig anchor field -- a DayWindow bound per match, not an
+                // implicit midnight. A null anchor (every Schedule built before this phase's
+                // additive 19-01 commit, and every hand-built test Schedule that never calls
+                // setDayStart) falls back to MIDNIGHT here, exactly as the pre-19-03
+                // midnight-implicit covers() always did -- production never supplies null
+                // (SolverService.buildSchedule always copies Desk.dayStart, which itself defaults
+                // to MIDNIGHT), so this is a defensive same-as-before default for unmigrated
+                // fixtures, not a behaviour change (Rule 2).
+                .filter((sa, cfg, a) -> {
+                    LocalTime dayStart = cfg.dayStart();
+                    DayWindow window = DayWindow.anchoredAt(dayStart != null ? dayStart : LocalTime.MIDNIGHT);
+                    return sa.getShiftBandPair() == null || !sa.getShiftBandPair().covers(a.getTimeslot(), window);
+                })
                 .penalizeConfigurable()
                 .asConstraint(SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME);
     }

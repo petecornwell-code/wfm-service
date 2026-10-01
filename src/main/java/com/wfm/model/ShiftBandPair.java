@@ -29,30 +29,65 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
      * {@code ScheduleConstraintProvider} already carries two rounding modes (HALF_UP and
      * CEILING) in other constraints; this predicate must not introduce a third.
      *
-     * <p>Delegates to {@link #covers(LocalTime, LocalTime, Integer, Integer, LocalTime, LocalTime)}
-     * with no behavioural change — see that method for the load-bearing single-implementation
-     * discipline (D-08 / Phase 15 plan 10, T-15-10-04).
+     * @deprecated BDAY-04, transitional (plan 19-05 removes this form): a midnight-implicit
+     *         one-argument form kept only so this plan breaks none of its ten existing callers.
+     *         Delegates to {@link #covers(Timeslot, DayWindow)} at a {@code DayWindow.anchoredAt(
+     *         LocalTime.MIDNIGHT)} anchor — correct everywhere this is still called, since none of
+     *         those callers reach a desk anchor yet. Callers move to the two-argument form that
+     *         supplies a real anchor as each is migrated (plan 19-05).
      */
+    @Deprecated
     public boolean covers(Timeslot ts) {
-        return covers(template.getStartTime(), template.getEndTime(),
-                band == null ? null : band.getOffsetMinutes(),
-                band == null ? null : band.getDurationMinutes(),
-                ts.getStartTime(), ts.getEndTime());
+        return covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
     }
 
     /**
-     * The static form of the coverage predicate above, taking the four scalars a descriptor
-     * carries directly rather than the live {@link ShiftTemplate}/{@link ShiftTemplateBreakBand}
-     * references this record wraps. {@link #covers(Timeslot)} delegates to this with no
-     * behavioural change — this IS the predicate, exactly once.
+     * The anchored form of the coverage predicate above (BDAY-04): identical envelope/break
+     * semantics, but every interval comparison runs through the supplied {@code window} instead of
+     * an implicit midnight anchor. Delegates to {@link #covers(LocalTime, LocalTime, Integer,
+     * Integer, LocalTime, LocalTime, DayWindow)} with no behavioural change — see that method for
+     * the load-bearing single-implementation discipline (D-08 / Phase 15 plan 10, T-15-10-04),
+     * which this anchor-aware form preserves exactly.
+     */
+    public boolean covers(Timeslot ts, DayWindow window) {
+        return covers(template.getStartTime(), template.getEndTime(),
+                band == null ? null : band.getOffsetMinutes(),
+                band == null ? null : band.getDurationMinutes(),
+                ts.getStartTime(), ts.getEndTime(), window);
+    }
+
+    /**
+     * The midnight-implicit static form of the coverage predicate, taking the four scalars a
+     * descriptor carries directly rather than the live {@link ShiftTemplate}/
+     * {@link ShiftTemplateBreakBand} references this record wraps.
+     *
+     * @deprecated BDAY-04, transitional (plan 19-05/19-06 remove this form's remaining callers):
+     *         kept only so this plan breaks none of its existing callers (the report layer,
+     *         {@code ScheduleOutputService}, and the guard test {@code MidnightWindowSeamTest}).
+     *         Delegates to {@link #covers(LocalTime, LocalTime, Integer, Integer, LocalTime,
+     *         LocalTime, DayWindow)} at a {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} anchor.
+     */
+    @Deprecated
+    public static boolean covers(LocalTime envelopeStart, LocalTime envelopeEnd,
+            Integer bandOffsetMinutes, Integer bandDurationMinutes,
+            LocalTime slotStart, LocalTime slotEnd) {
+        return covers(envelopeStart, envelopeEnd, bandOffsetMinutes, bandDurationMinutes,
+                slotStart, slotEnd, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+    }
+
+    /**
+     * The anchored static form of the coverage predicate (BDAY-04/D-09), taking the four scalars a
+     * descriptor carries directly plus the {@link DayWindow} every interval comparison is bound
+     * through. This IS the predicate, exactly once — every other form on this record delegates
+     * here with no behavioural change.
      *
      * <p>This is the second caller D-08's "one coverage validator/predicate, two callers"
      * discipline requires for envelope/break coverage (Phase 15 plan 10): the report layer
      * ({@code ScheduleOutputService}) holds only a {@code ShiftDescriptor}'s four scalars, never a
      * live template/band pair, so it calls this overload directly instead of re-deriving the
      * arithmetic. Any future change to what "covered" means — boundary semantics, break-window
-     * handling, a new edge case — must be made HERE, once, so the solver's {@link #covers(Timeslot)}
-     * and the report layer can never disagree about what an envelope covers.
+     * handling, a new edge case — must be made HERE, once, so the solver's {@link #covers(Timeslot,
+     * DayWindow)} and the report layer can never disagree about what an envelope covers.
      *
      * <p>{@code bandOffsetMinutes}/{@code bandDurationMinutes} are {@code null} together exactly
      * when the pair has no band ({@code band == null}), preserving the same "null or non-positive
@@ -60,19 +95,19 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
      */
     public static boolean covers(LocalTime envelopeStart, LocalTime envelopeEnd,
             Integer bandOffsetMinutes, Integer bandDurationMinutes,
-            LocalTime slotStart, LocalTime slotEnd) {
-        // DayWindow.contains, not slotEnd.isAfter(envelopeEnd): an envelope ending at midnight
-        // stores 00:00, so the raw comparison declared EVERY slot in it out of bounds except the
-        // final one -- silently making a midnight-ending shift unseatable.
-        if (!DayWindow.contains(envelopeStart, envelopeEnd, slotStart, slotEnd)) {
+            LocalTime slotStart, LocalTime slotEnd, DayWindow window) {
+        // window.anchoredContains, not slotEnd.isAfter(envelopeEnd): an envelope ending at the
+        // anchor stores the anchor's own time, so the raw comparison declared EVERY slot in it
+        // out of bounds except the final one -- silently making an anchor-ending shift unseatable.
+        if (!window.anchoredContains(envelopeStart, envelopeEnd, slotStart, slotEnd)) {
             return false;
         }
         if (bandOffsetMinutes == null || bandDurationMinutes == null || bandDurationMinutes <= 0) {
             return true;
         }
-        LocalTime breakStart = DayWindow.plusWithinDay(envelopeStart, bandOffsetMinutes);
-        LocalTime breakEnd = DayWindow.plusWithinDay(breakStart, bandDurationMinutes);
-        return !DayWindow.overlaps(slotStart, slotEnd, breakStart, breakEnd);
+        LocalTime breakStart = window.anchoredPlusWithinDay(envelopeStart, bandOffsetMinutes);
+        LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, bandDurationMinutes);
+        return !window.anchoredOverlaps(slotStart, slotEnd, breakStart, breakEnd);
     }
 
     /**

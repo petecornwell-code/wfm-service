@@ -46,13 +46,147 @@ import java.time.LocalTime;
  * They collapse onto their midnight-implicit counterparts above exactly when the anchor is
  * {@code 00:00} — {@code DayWindowTest} proves this exhaustively, across all 1440 minutes of the
  * day rather than at sampled points, not merely at a few spot checks.
+ *
+ * <h2>A bound instance (BDAY-04)</h2>
+ *
+ * <p>{@link #anchoredAt(LocalTime)} returns a {@code DayWindow} bound to one desk's anchor,
+ * exposing instance equivalents of every function above the BDAY-03 banner so a call site binds
+ * the anchor once per scope instead of repeating it as an argument at every call (D-04). The rule
+ * generalises rather than disappears: a time equal to the ANCHOR in an END position is the end of
+ * the business day, exactly as {@code 00:00} is today when the anchor is midnight.
+ *
+ * <p><b>Naming note (deviation from the BDAY-04 plan text):</b> the nine instance methods below
+ * are named with an {@code anchored} prefix ({@link #anchoredStartMinute}, {@link
+ * #anchoredDurationMinutes}, etc.) rather than reusing the nine midnight-implicit statics' bare
+ * names verbatim. A public static and a public instance method cannot share an identical name and
+ * parameter list in the same class — confirmed by direct compilation during this plan — and the
+ * nine midnight-implicit statics must stay public, unchanged, and under their current names through
+ * wave 19-07 for the call sites later plans have not yet migrated. See {@code 19-03-SUMMARY.md} for
+ * the full reasoning; plan 19-08 may rename these once the statics are demoted to private.
  */
 public final class DayWindow {
 
     /** Minutes in a day. The minute-of-day value of an end time of {@code 00:00}. */
     public static final int MINUTES_PER_DAY = 1440;
 
-    private DayWindow() {}
+    /** The day-start anchor this bound instance was constructed with (BDAY-04). */
+    private final LocalTime dayStart;
+
+    private DayWindow(LocalTime dayStart) {
+        this.dayStart = dayStart;
+    }
+
+    /**
+     * Binds a {@code DayWindow} to one desk's day-start anchor, exposing the instance methods
+     * below. Each instance method keeps the exact parameter list of its midnight-implicit static
+     * counterpart (D-04) — only the anchor itself moves from a repeated argument to this bound
+     * field.
+     *
+     * @throws IllegalArgumentException when {@code dayStart} is null — this never binds an
+     *         implicit midnight.
+     */
+    public static DayWindow anchoredAt(LocalTime dayStart) {
+        requireNonNull(dayStart, "dayStart");
+        return new DayWindow(dayStart);
+    }
+
+    /**
+     * Instance equivalent of {@link #startMinute(LocalTime)}, day-start-relative. Delegates to
+     * {@link #startMinuteFromDayStart(LocalTime, LocalTime)} against the bound anchor; at a
+     * {@code 00:00} anchor this equals {@link #startMinute(LocalTime)} exactly.
+     */
+    public int anchoredStartMinute(LocalTime t) {
+        return startMinuteFromDayStart(dayStart, t);
+    }
+
+    /**
+     * Instance equivalent of {@link #endMinute(LocalTime)}, day-start-relative. Delegates to
+     * {@link #endMinuteFromDayStart(LocalTime, LocalTime)} against the bound anchor; at a
+     * {@code 00:00} anchor this equals {@link #endMinute(LocalTime)} exactly.
+     */
+    public int anchoredEndMinute(LocalTime t) {
+        return endMinuteFromDayStart(dayStart, t);
+    }
+
+    /**
+     * Instance equivalent of {@link #durationMinutes(LocalTime, LocalTime)}, bound to this
+     * instance's anchor. Unlike the deprecated static, this does NOT throw when the interval does
+     * not run forward relative to the anchor — that condition now means "crosses the anchor"
+     * (BDAY-04 criterion 2) and yields the wrapped-forward duration instead. A pair equal to each
+     * other maps to {@code 0} minutes unless the pair equals the anchor itself, which maps to a
+     * full {@link #MINUTES_PER_DAY} — the same "equal to the anchor in an end position is the end
+     * of the business day" rule the rest of this class follows.
+     */
+    public int anchoredDurationMinutes(LocalTime start, LocalTime end) {
+        int startOffset = startMinuteFromDayStart(dayStart, start);
+        int endOffset = endMinuteFromDayStart(dayStart, end);
+        int raw = endOffset - startOffset;
+        if (raw > 0) {
+            return raw;
+        }
+        if (raw == 0) {
+            return 0;
+        }
+        return raw + MINUTES_PER_DAY;
+    }
+
+    /**
+     * Instance equivalent of {@link #isForwardWithinDay(LocalTime, LocalTime)}, bound to this
+     * instance's anchor — the non-throwing ordering predicate {@code ShiftTemplateService}'s
+     * save-path refusal relies on (D-11). Returns {@code false} on a null argument, exactly as the
+     * deprecated static does, rather than throwing.
+     */
+    public boolean anchoredIsForwardWithinDay(LocalTime start, LocalTime end) {
+        return start != null && end != null
+                && endMinuteFromDayStart(dayStart, end) > startMinuteFromDayStart(dayStart, start);
+    }
+
+    /**
+     * Instance equivalent of {@link #overlaps(LocalTime, LocalTime, LocalTime, LocalTime)}, bound
+     * to this instance's anchor. Symmetric in its two interval arguments, exactly like the
+     * deprecated static.
+     */
+    public boolean anchoredOverlaps(LocalTime s1, LocalTime e1, LocalTime s2, LocalTime e2) {
+        return startMinuteFromDayStart(dayStart, s1) < endMinuteFromDayStart(dayStart, e2)
+                && endMinuteFromDayStart(dayStart, e1) > startMinuteFromDayStart(dayStart, s2);
+    }
+
+    /**
+     * Instance equivalent of {@link #contains(LocalTime, LocalTime, LocalTime, LocalTime)}, bound
+     * to this instance's anchor.
+     */
+    public boolean anchoredContains(LocalTime outerStart, LocalTime outerEnd,
+                                     LocalTime innerStart, LocalTime innerEnd) {
+        return startMinuteFromDayStart(dayStart, innerStart) >= startMinuteFromDayStart(dayStart, outerStart)
+                && endMinuteFromDayStart(dayStart, innerEnd) <= endMinuteFromDayStart(dayStart, outerEnd);
+    }
+
+    /**
+     * Instance equivalent of {@link #startsBefore(LocalTime, LocalTime)}, bound to this instance's
+     * anchor.
+     */
+    public boolean anchoredStartsBefore(LocalTime start, LocalTime end) {
+        return startMinuteFromDayStart(dayStart, start) < endMinuteFromDayStart(dayStart, end);
+    }
+
+    /**
+     * Instance equivalent of {@link #toLocalTime(int)} — a day-start-relative offset back to a
+     * {@link LocalTime}. Delegates to {@link #timeAtDayStartOffset(LocalTime, int)} against the
+     * bound anchor; at a {@code 00:00} anchor this equals {@link #toLocalTime(int)} exactly.
+     *
+     * @throws IllegalArgumentException outside {@code [0, 1440]}.
+     */
+    public LocalTime anchoredToLocalTime(int minuteOfDay) {
+        return timeAtDayStartOffset(dayStart, minuteOfDay);
+    }
+
+    /**
+     * Instance equivalent of {@link #plusWithinDay(LocalTime, int)}, bound to this instance's
+     * anchor. Throws past the end of the business day, exactly like the deprecated static.
+     */
+    public LocalTime anchoredPlusWithinDay(LocalTime base, int minutes) {
+        return timeAtDayStartOffset(dayStart, startMinuteFromDayStart(dayStart, base) + minutes);
+    }
 
     /**
      * Minute-of-day of a time in a START position, {@code 00:00} &rarr; {@code 0}.
