@@ -785,7 +785,21 @@ commit at test-run time; the literal numbers ARE the recorded baseline.
 | A4 | `ShiftLibraryGenerationService:226,616` are genuine instances of D-13's defect class and not already-correct uses (e.g. if `Window.date()`/`demandedDates` turn out to be purely calendar-scoped display/reporting, not weekday-pattern-matching) | "ShiftLibraryGenerationService: four sites found, not two" | If assumed migration-worthy but actually benign, extra unnecessary work; if assumed benign but actually a defect (more likely given line 616's clear weekday chain two lines later), a known instance of the bug ships undetected, exactly the failure `MidnightTimeArithmeticGuardTest`'s javadoc warns about |
 | A5 | Timefold Solver 1.16.0's public Constraint Streams API genuinely has no 5-argument stream type, confirming the in-code javadoc rather than merely restating it | Standard Stack, Pattern 2 | `[CITED: docs.timefold.ai]` — low risk; this is a documented framework limit, cross-checked against an external source in this session, not training-data recall alone |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+**All three were closed downstream during planning on 2026-10-01 — recorded here so the heading does
+not read as outstanding work:**
+
+- **OQ1** (`honourPreferredBreakTime`'s mechanism) → **resolved as a deliberate deferral.** It is a
+  blocking `checkpoint:decision` at Task 1 of `20-05-PLAN.md`, with the implementing task explicitly
+  deferring to its outcome. Not silently picked, which was this question's actual risk.
+- **OQ2** (whether the join guard's receiver heuristic needs type-awareness) → **resolved in
+  `20-02-PLAN.md`** as documented accepted risk, with the observed three-shape name pattern taken as
+  sufficient and the reasoning recorded in the guard's own documentation.
+- **OQ3** (whether SOLV-04 also needs live-data demonstration) → **resolved: constructed fixture
+  only**, per 20-CONTEXT.md D-14 and the amended BDAY-07. Matches this milestone's own
+  v1.4-cancellation lesson, which the research itself cited in making the recommendation.
+
 
 1. **Does `honourPreferredBreakTime` need a new custom collector, or can its join order be
    restructured instead?**
