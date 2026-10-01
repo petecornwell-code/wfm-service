@@ -443,6 +443,10 @@ final class ShiftModeFixtures {
         ts.setDate(date);
         ts.setStartTime(start);
         ts.setEndTime(end);
+        // SOLV-05: this fixture is implicitly 00:00-anchored, where business date equals calendar
+        // date by construction -- required now that requireShiftEnvelopeSeatSupply keys its
+        // timeslot map by Timeslot::getBusinessDate rather than Timeslot::getDate.
+        ts.setBusinessDate(date);
         return ts;
     }
 
