@@ -9,6 +9,7 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftStartMixTarget;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -109,13 +110,19 @@ public class ShiftStartMixTargetService {
      *
      * @param shiftAssignments one row per working agent-day, already built and carrying each row's
      *                         eligible {@link ShiftBandPair} value range
+     * @param window BDAY-04 (plan 19-05): this class holds neither a {@code DeskRepository} nor a
+     *               {@code Schedule} parameter of its own (P-02 rule 5), so the bound window
+     *               propagates in from {@code SolverService.startSolve}, where the real desk
+     *               anchor is already bound, rather than this class resolving a second anchor
+     *               source.
      */
     public List<ShiftStartMixTarget> computeTargets(SchedulingMode schedulingMode,
                                                     List<AgentShiftAssignment> shiftAssignments,
                                                     List<ResolvedUsualShiftTarget> usualTargets,
                                                     List<StaffingRequirement> staffingRequirements,
                                                     List<Timeslot> timeslots,
-                                                    List<AgentAssignment> seats) {
+                                                    List<AgentAssignment> seats,
+                                                    DayWindow window) {
         if (schedulingMode != SchedulingMode.SHIFT || shiftAssignments == null || shiftAssignments.isEmpty()) {
             return List.of();
         }
@@ -192,7 +199,8 @@ public class ShiftStartMixTargetService {
             out.addAll(solveDate(date, e.getValue(), want,
                     reqByDate.getOrDefault(date, Map.of()),
                     slotsByDate.getOrDefault(date, List.of()),
-                    seatsByDate.getOrDefault(date, Map.of())));
+                    seatsByDate.getOrDefault(date, Map.of()),
+                    window));
         }
         return out;
     }
@@ -235,7 +243,8 @@ public class ShiftStartMixTargetService {
                                                 Map<LocalTime, Integer> want,
                                                 Map<LocalTime, Integer> reqByStart,
                                                 List<Timeslot> slots,
-                                                Map<LocalTime, Integer> seatsByStart) {
+                                                Map<LocalTime, Integer> seatsByStart,
+                                                DayWindow window) {
         int W = rows.size();
 
         // GUARD 1 — a date with timeslots but no demand. Uncovered is then identically zero
@@ -300,7 +309,7 @@ public class ShiftStartMixTargetService {
         for (int p = 0; p < P; p++) {
             List<Integer> c = new ArrayList<>();
             for (int s = 0; s < S; s++) {
-                if (pairs.get(p).covers(slots.get(s))) {
+                if (pairs.get(p).covers(slots.get(s), window)) {
                     c.add(s);
                 }
             }

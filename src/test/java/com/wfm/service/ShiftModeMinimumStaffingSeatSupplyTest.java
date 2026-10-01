@@ -8,6 +8,7 @@ import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -145,7 +146,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, d.window(), new ArrayList<>(d.demandSeats()),
                 d.demand(), List.of(d.english()),
-                SchedulingMode.SHIFT, List.of(d.pair()), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(d.pair()), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         List<AgentAssignment> atUncoveredHours = extra.stream()
                 .filter(a -> a.getTimeslot().getStartTime().isBefore(TEMPLATE_START))
@@ -190,7 +191,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, window, new ArrayList<>(demandSeats),
                 demand, List.of(english),
-                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         Timeslot finalNoon = noon;
         List<AgentAssignment> atNoon = extra.stream()
@@ -244,7 +245,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, window, new ArrayList<>(),
                 List.of(), List.of(english),
-                SchedulingMode.SHIFT, List.of(pair), Map.of(saturday, 3));
+                SchedulingMode.SHIFT, List.of(pair), Map.of(saturday, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         // Every hour the template's TIMES span is uncovered on a Saturday, so no seat may exist —
         // before the fix these hours were seeded purely on the clock and forced envelope breaches.
@@ -265,7 +266,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, operatingWindow(), new ArrayList<>(),
                 List.of(), List.of(english),
-                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(extra).as("a retired template reaches no hour").isEmpty();
     }
@@ -282,7 +283,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, d.window(), new ArrayList<>(d.demandSeats()),
                 d.demand(), List.of(d.english()),
-                SchedulingMode.SHIFT, List.of(d.pair()), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(d.pair()), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         Timeslot ten = d.window().stream()
                 .filter(ts -> ts.getStartTime().equals(LocalTime.of(10, 0)))
@@ -329,7 +330,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra1 = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, window, new ArrayList<>(demandSeats),
                 demand, List.of(chat, voice),
-                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         List<AgentAssignment> atBare1 = extra1.stream()
                 .filter(a -> a.getTimeslot().equals(bare))
@@ -346,7 +347,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> extra2 = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, window, new ArrayList<>(demandSeats),
                 demand, List.of(chat, voice),
-                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(pair), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         List<AgentAssignment> atBare2 = extra2.stream().filter(a -> a.getTimeslot().equals(bare)).toList();
         List<UUID> sequence2 = atBare2.stream().map(a -> a.getRequiredSpecialization().getId()).toList();
 
@@ -367,12 +368,12 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
         List<AgentAssignment> withoutShiftContext = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, d.window(), new ArrayList<>(d.demandSeats()),
                 d.demand(), List.of(d.english()),
-                SchedulingMode.SLOT, List.of(), Map.of());
+                SchedulingMode.SLOT, List.of(), Map.of(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         List<AgentAssignment> withShiftContext = SolverService.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, d.window(), new ArrayList<>(d.demandSeats()),
                 d.demand(), List.of(d.english()),
-                SchedulingMode.SLOT, List.of(d.pair()), Map.of(DAY, 99));
+                SchedulingMode.SLOT, List.of(d.pair()), Map.of(DAY, 99), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(withShiftContext).hasSameSizeAs(withoutShiftContext);
         for (int i = 0; i < withoutShiftContext.size(); i++) {
@@ -394,7 +395,7 @@ class ShiftModeMinimumStaffingSeatSupplyTest {
     void methodNowCarriesShiftModeParameters() throws Exception {
         Method method = SolverService.class.getDeclaredMethod("expandMinimumStaffingSeats",
                 long.class, UUID.class, UUID.class, List.class, List.class, List.class, List.class,
-                SchedulingMode.class, List.class, Map.class);
+                SchedulingMode.class, List.class, Map.class, DayWindow.class);
 
         assertThat(method.getParameterTypes())
                 .as("SchedulingMode must now be reachable from inside")

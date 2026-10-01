@@ -16,6 +16,7 @@ import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.service.SolverSeatExpansionAccess;
+import com.wfm.util.DayWindow;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -153,7 +154,7 @@ final class ShiftModeFixtures {
         List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, base.deskId(), base.scheduleId(), base.allTimeslots(), base.demandSeats(),
                 base.staffingReqs(), List.of(base.specBeforeBreak(), base.specAfterBreak()),
-                SchedulingMode.SHIFT, base.sharedPairs(), workingAgentDaysByDate);
+                SchedulingMode.SHIFT, base.sharedPairs(), workingAgentDaysByDate, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         restampIds(fillerSeats, base.ids());
 
         List<AgentAssignment> allAssignments = new ArrayList<>(base.demandSeats());
@@ -182,7 +183,7 @@ final class ShiftModeFixtures {
         List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, base.deskId(), base.scheduleId(), base.allTimeslots(), base.demandSeats(),
                 base.staffingReqs(), List.of(base.specBeforeBreak(), base.specAfterBreak()),
-                SchedulingMode.SLOT, List.of(), Map.of());
+                SchedulingMode.SLOT, List.of(), Map.of(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         restampIds(fillerSeats, base.ids());
 
         List<AgentAssignment> allAssignments = new ArrayList<>(base.demandSeats());

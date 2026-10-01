@@ -364,6 +364,10 @@ class ScheduleServiceShiftSnapshotTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(60);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(List.of(assignment)));
         schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
 
@@ -420,6 +424,10 @@ class ScheduleServiceShiftSnapshotTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(60);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(List.of(assignment)));
         schedule.setShiftAssignments(new ArrayList<>(List.of(shiftAssignment)));
 
@@ -461,6 +469,10 @@ class ScheduleServiceShiftSnapshotTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(60);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(List.of(assignment)));
         schedule.setShiftAssignments(new ArrayList<>()); // SLOT-mode desks always reach here empty
 
@@ -863,6 +875,10 @@ class ScheduleServiceShiftSnapshotTest {
         schedule.setTenantId(TENANT_A);
         schedule.setDeskId(deskId);
         schedule.setIncrementMinutes(60);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setStartTime(LocalTime.of(8, 0));
         schedule.setEndTime(LocalTime.of(17, 0));
         schedule.setPeriodStartDate(MONDAY);

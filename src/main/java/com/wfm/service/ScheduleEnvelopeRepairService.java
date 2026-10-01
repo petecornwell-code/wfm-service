@@ -7,6 +7,7 @@ import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.Schedule;
 import com.wfm.model.SchedulingMode;
 import com.wfm.model.ShiftBandPair;
+import com.wfm.util.DayWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -111,6 +112,10 @@ public class ScheduleEnvelopeRepairService {
             return NOTHING;
         }
 
+        // BDAY-04 (plan 19-05): one window per public method, bound from the Schedule this
+        // method already receives — same accessor style as ScheduleOutputService's.
+        DayWindow window = DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart());
+
         Map<AgentDay, ShiftBandPair> envelopes = new HashMap<>();
         for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
             if (sa.getAgent() != null && sa.getShiftBandPair() != null) {
@@ -141,7 +146,7 @@ public class ScheduleEnvelopeRepairService {
             ShiftBandPair pair = envelopes.get(key);
             // A null pair is a violation the constraint counts too, but it is not one this repair
             // can fix: with no envelope there is no legal slot to move the seat to.
-            if (pair != null && !pair.covers(a.getTimeslot())) {
+            if (pair != null && !pair.covers(a.getTimeslot(), window)) {
                 violations.add(a);
             }
         }
@@ -162,7 +167,7 @@ public class ScheduleEnvelopeRepairService {
         // re-score. This is the case that normally holds, and it costs one recalculation.
         List<Move> batch = new ArrayList<>();
         for (AgentAssignment v : violations) {
-            Candidates scan = candidatesFor(v, envelopes, freeByDate, occupied);
+            Candidates scan = candidatesFor(v, envelopes, freeByDate, occupied, window);
             if (scan.seats().isEmpty()) {
                 // Logged HERE and only here: pass 1 sees every violation exactly once, so this
                 // reports each unfixable one without pass 2 repeating it.
@@ -205,7 +210,7 @@ public class ScheduleEnvelopeRepairService {
                 log.info("Envelope repair — stopping at the {}-rescore budget", MAX_RESCORES);
                 break;
             }
-            List<AgentAssignment> candidates = candidatesFor(v, envelopes, freeByDate, occupied).seats();
+            List<AgentAssignment> candidates = candidatesFor(v, envelopes, freeByDate, occupied, window).seats();
             int tried = 0;
             for (AgentAssignment c : candidates) {
                 if (tried >= MAX_CANDIDATES_PER_VIOLATION || rescores >= MAX_RESCORES) {
@@ -266,7 +271,8 @@ public class ScheduleEnvelopeRepairService {
     private Candidates candidatesFor(AgentAssignment violation,
             Map<AgentDay, ShiftBandPair> envelopes,
             Map<LocalDate, List<AgentAssignment>> freeByDate,
-            Map<AgentDay, Set<UUID>> occupied) {
+            Map<AgentDay, Set<UUID>> occupied,
+            DayWindow window) {
         Agent agent = violation.getAgent();
         LocalDate date = violation.getTimeslot().getDate();
         AgentDay key = new AgentDay(agent.getId(), date);
@@ -285,7 +291,7 @@ public class ScheduleEnvelopeRepairService {
         List<AgentAssignment> out = new ArrayList<>();
         int notCovered = 0, alreadySeated = 0, wrongSpec = 0;
         for (AgentAssignment f : free) {
-            if (!pair.covers(f.getTimeslot())) {
+            if (!pair.covers(f.getTimeslot(), window)) {
                 notCovered++;
             } else if (taken.contains(f.getTimeslot().getId())) {
                 alreadySeated++;

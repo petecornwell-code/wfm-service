@@ -11,6 +11,7 @@ import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.Test;
 
 import java.time.DayOfWeek;
@@ -67,7 +68,8 @@ class ScheduleEnvelopeRepairServiceTest {
                                 && sa.getDate().equals(seat.getTimeslot().getDate()))
                         .map(AgentShiftAssignment::getShiftBandPair)
                         .findFirst().orElse(null);
-                if (pair == null || !pair.covers(seat.getTimeslot())) {
+                if (pair == null
+                        || !pair.covers(seat.getTimeslot(), DayWindow.anchoredAt(LocalTime.MIDNIGHT))) {
                     violations++;
                 }
             }
@@ -270,6 +272,10 @@ class ScheduleEnvelopeRepairServiceTest {
         schedule.setTenantId(TENANT);
         schedule.setDeskId(deskId);
         schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        // BDAY-04 (plan 19-05): repairVerified binds its window from
+        // schedule.getScheduleConfig().dayStart() — an explicit midnight anchor here, not a
+        // production fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAgents(new ArrayList<>(List.of(agent)));
         schedule.setTimeslots(timeslots);
         schedule.setAssignments(seats);
@@ -278,8 +284,8 @@ class ScheduleEnvelopeRepairServiceTest {
         // Guard the fixture itself: the shape under test must actually be the stuck shape.
         assertThat(breakSeat).isNotNull();
         assertThat(freeLegalSeat).isNotNull();
-        assertThat(pair.covers(breakSeat.getTimeslot())).isFalse();
-        assertThat(pair.covers(freeLegalSeat.getTimeslot())).isTrue();
+        assertThat(pair.covers(breakSeat.getTimeslot(), DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isFalse();
+        assertThat(pair.covers(freeLegalSeat.getTimeslot(), DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isTrue();
 
         return new Fixture(schedule, agent, breakSeat, freeLegalSeat);
     }

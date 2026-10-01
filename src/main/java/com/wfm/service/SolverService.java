@@ -165,6 +165,12 @@ public class SolverService {
         Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Desk not found: " + deskId));
 
+        // BDAY-04 (plan 19-05): one window, bound here from the already-loaded Desk and carried
+        // forward through every covers() call site below — never re-derived, never a second
+        // anchor source in this class (see expandMinimumStaffingSeats and
+        // requireShiftEnvelopeSeatSupply, both of which take this as a trailing parameter).
+        DayWindow window = DayWindow.anchoredAt(desk.getDayStart());
+
         // 3. Build Schedule from request with defaults, inheriting from Desk if needed
         Schedule schedule = buildSchedule(tenantId, deskId, request, desk);
 
@@ -389,7 +395,7 @@ public class SolverService {
         List<AgentAssignment> minStaffingSeats = expandMinimumStaffingSeats(
                 tenantId, deskId, schedule.getId(), timeslots, assignments,
                 staffingRequirements, specializations,
-                desk.getSchedulingMode(), shiftBandPairs, workingAgentDaysByDate);
+                desk.getSchedulingMode(), shiftBandPairs, workingAgentDaysByDate, window);
         if (!minStaffingSeats.isEmpty()) {
             assignments.addAll(minStaffingSeats);
             log.debug("Minimum-staffing seats: {} added for timeslots with no demand-derived seat",
@@ -419,7 +425,7 @@ public class SolverService {
         List<ShiftStartMixTarget> shiftStartMixTargets = shiftStartMixMode == ShiftStartMixMode.OFF
                 ? List.of()
                 : shiftStartMixTargetService.computeTargets(desk.getSchedulingMode(), shiftAssignments,
-                        resolvedUsualShiftTargets, staffingRequirements, timeslots, assignments);
+                        resolvedUsualShiftTargets, staffingRequirements, timeslots, assignments, window);
 
         // ENFORCE is the rung that actually binds: narrowing each row's value range to its
         // allocated start time, so the CH cannot build a different mix. Pricing the mix with a
@@ -443,7 +449,7 @@ public class SolverService {
 
         requireShiftEnvelopeSeatSupply(desk.getSchedulingMode(), shiftAssignments, shiftBandPairs,
                 timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings(),
-                weights);
+                weights, window);
 
         log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedAgents.size(), timeslots.size(),
@@ -1387,6 +1393,10 @@ public class SolverService {
      * the solver-package callers that predate this parameter and a caller with no resolved
      * weights fall back to exactly today's wording, unchanged, pinned by literal equality
      * (Behavior: default/null weights).
+     *
+     * <p>{@code window} (BDAY-04, plan 19-05) is the one {@link DayWindow} this call's caller
+     * bound from the real desk anchor — threaded straight through to {@link
+     * #coveredTimeslotsOnDate} and {@link #forcedAgentDaysByTimeslotId}, never re-derived here.
      */
     static void requireShiftEnvelopeSeatSupply(
             SchedulingMode schedulingMode,
@@ -1396,7 +1406,8 @@ public class SolverService {
             List<AgentAssignment> assignments,
             int overallocationHardLimitPct,
             List<String> warnings,
-            ConstraintWeights weights) {
+            ConstraintWeights weights,
+            DayWindow window) {
 
         if (schedulingMode != SchedulingMode.SHIFT
                 || shiftAssignments == null || shiftAssignments.isEmpty()) {
@@ -1434,7 +1445,7 @@ public class SolverService {
             List<AgentShiftAssignment> rows = entry.getValue();
             List<Timeslot> dateTimeslots = timeslotsByDate.getOrDefault(date, List.of());
 
-            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(date, dateTimeslots, pairs);
+            List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(date, dateTimeslots, pairs, window);
             int librarySupplySlots = coveredTimeslots.stream()
                     .mapToInt(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L).intValue())
                     .sum();
@@ -1504,7 +1515,7 @@ public class SolverService {
             // own right (plan 15-11). Consolidated to the single WORST timeslot per date (largest
             // forced-minus-seats deficit), mirroring the trailing advisory's own "tightest"
             // precedent, rather than one entry per offending hour.
-            Map<UUID, Long> forcedByTimeslotId = forcedAgentDaysByTimeslotId(rows, dateTimeslots);
+            Map<UUID, Long> forcedByTimeslotId = forcedAgentDaysByTimeslotId(rows, dateTimeslots, window);
             Timeslot worstForcedTimeslot = null;
             long worstDeficit = 0;
             long worstForcedCount = 0;
@@ -1613,7 +1624,7 @@ public class SolverService {
         // Non-blocking advisory: the covered timeslot with the fewest seats, per rostered date.
         for (LocalDate date : rowsByDate.keySet()) {
             List<Timeslot> coveredTimeslots = coveredTimeslotsOnDate(
-                    date, timeslotsByDate.getOrDefault(date, List.of()), pairs);
+                    date, timeslotsByDate.getOrDefault(date, List.of()), pairs, window);
             coveredTimeslots.stream()
                     .min(Comparator.comparingLong(ts -> seatsByTimeslotId.getOrDefault(ts.getId(), 0L)))
                     .ifPresent(tightest -> {
@@ -1648,11 +1659,11 @@ public class SolverService {
      * makes that particular disagreement unrepeatable (G-15-21).
      */
     private static List<Timeslot> coveredTimeslotsOnDate(
-            LocalDate date, List<Timeslot> dateTimeslots, List<ShiftBandPair> pairs) {
+            LocalDate date, List<Timeslot> dateTimeslots, List<ShiftBandPair> pairs, DayWindow window) {
         return dateTimeslots.stream()
                 .filter(ts -> pairs.stream()
                         .filter(p -> p.template().isEffectiveOn(date) && p.template().appliesOn(date))
-                        .anyMatch(p -> p.covers(ts)))
+                        .anyMatch(p -> p.covers(ts, window)))
                 .toList();
     }
 
@@ -1697,7 +1708,7 @@ public class SolverService {
      * numbers from two runs, not merely observe that the gate does or does not throw.
      */
     static Map<UUID, Long> forcedAgentDaysByTimeslotId(
-            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots) {
+            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots, DayWindow window) {
         Map<UUID, Long> forcedCounts = new LinkedHashMap<>();
         for (AgentShiftAssignment row : rows) {
             List<ShiftBandPair> eligible = row.getEligibleShiftBandPairs();
@@ -1706,12 +1717,12 @@ public class SolverService {
             }
             int expectedSlots = row.getDayConfig().expectedWorkSlots();
             boolean allZeroSlack = eligible.stream()
-                    .allMatch(p -> coveredSlotCountOnDate(p, dateTimeslots) == expectedSlots);
+                    .allMatch(p -> coveredSlotCountOnDate(p, dateTimeslots, window) == expectedSlots);
             if (!allZeroSlack) {
                 continue; // at least one eligible pair gives this agent-day a legal skip
             }
             for (Timeslot ts : dateTimeslots) {
-                if (eligible.stream().allMatch(p -> p.covers(ts))) {
+                if (eligible.stream().allMatch(p -> p.covers(ts, window))) {
                     forcedCounts.merge(ts.getId(), 1L, Long::sum);
                 }
             }
@@ -1720,8 +1731,8 @@ public class SolverService {
     }
 
     /** How many of {@code dateTimeslots} {@code pair} covers — its own covered-slot count on this date. */
-    private static int coveredSlotCountOnDate(ShiftBandPair pair, List<Timeslot> dateTimeslots) {
-        return (int) dateTimeslots.stream().filter(pair::covers).count();
+    private static int coveredSlotCountOnDate(ShiftBandPair pair, List<Timeslot> dateTimeslots, DayWindow window) {
+        return (int) dateTimeslots.stream().filter(ts -> pair.covers(ts, window)).count();
     }
 
     private static BigDecimal slotsToHours(int slots, int incrementMinutes) {
@@ -1850,7 +1861,8 @@ public class SolverService {
             List<Specialization> specializations,
             SchedulingMode schedulingMode,
             List<ShiftBandPair> shiftBandPairs,
-            Map<LocalDate, Integer> workingAgentDaysByDate) {
+            Map<LocalDate, Integer> workingAgentDaysByDate,
+            DayWindow window) {
 
         if (timeslots == null || timeslots.isEmpty()) {
             return List.of();
@@ -1888,13 +1900,14 @@ public class SolverService {
                 continue; // a TimeslotDemandConfig row already governs this hour
             }
             // "Reaches this hour" must be answered for THIS TIMESLOT'S DATE, not by clock times
-            // alone. ShiftBandPair.covers(Timeslot) compares only envelope/break TIMES — it is
-            // deliberately calendar-blind, because the constraint that uses it is already scoped to
-            // an assignment's own eligible pair. Applied to the DESK-WIDE pair list, though, that
-            // blindness manufactures seats on hours the library genuinely does not reach: on a
-            // Saturday 08:00 the weekday-only "Early" (08:00-17:00, Mon-Fri) reports covered purely
-            // on times, so a filler seat appears on an hour no WEEKEND template touches. Any agent
-            // seated there breaches their envelope by construction.
+            // alone. ShiftBandPair.covers(Timeslot, DayWindow) compares only envelope/break TIMES
+            // against the window supplied here — it is deliberately calendar-blind, because the
+            // constraint that uses it is already scoped to an assignment's own eligible pair.
+            // Applied to the DESK-WIDE pair list, though, that blindness manufactures seats on
+            // hours the library genuinely does not reach: on a Saturday 08:00 the weekday-only
+            // "Early" (08:00-17:00, Mon-Fri) reports covered purely on times, so a filler seat
+            // appears on an hour no WEEKEND template touches. Any agent seated there breaches
+            // their envelope by construction.
             //
             // Observed live after weekday enforcement landed: 9 of 12 residual violations sat on
             // weekend 08:00/09:00/20:00 — all zero-demand hours, all reachable only by a weekday
@@ -1903,7 +1916,7 @@ public class SolverService {
             LocalDate tsDate = ts.getDate();
             boolean covered = shiftBandPairs.stream()
                     .filter(pair -> pair.template().isEffectiveOn(tsDate) && pair.template().appliesOn(tsDate))
-                    .anyMatch(pair -> pair.covers(ts));
+                    .anyMatch(pair -> pair.covers(ts, window));
             if (!covered) {
                 continue; // OR-1: the library does not reach this hour -- no seat
             }

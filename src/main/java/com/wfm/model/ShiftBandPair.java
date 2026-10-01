@@ -29,50 +29,20 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
      * {@code ScheduleConstraintProvider} already carries two rounding modes (HALF_UP and
      * CEILING) in other constraints; this predicate must not introduce a third.
      *
-     * @deprecated BDAY-04, transitional (plan 19-05 removes this form): a midnight-implicit
-     *         one-argument form kept only so this plan breaks none of its ten existing callers.
-     *         Delegates to {@link #covers(Timeslot, DayWindow)} at a {@code DayWindow.anchoredAt(
-     *         LocalTime.MIDNIGHT)} anchor — correct everywhere this is still called, since none of
-     *         those callers reach a desk anchor yet. Callers move to the two-argument form that
-     *         supplies a real anchor as each is migrated (plan 19-05).
-     */
-    @Deprecated
-    public boolean covers(Timeslot ts) {
-        return covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
-    }
-
-    /**
-     * The anchored form of the coverage predicate above (BDAY-04): identical envelope/break
-     * semantics, but every interval comparison runs through the supplied {@code window} instead of
-     * an implicit midnight anchor. Delegates to {@link #covers(LocalTime, LocalTime, Integer,
-     * Integer, LocalTime, LocalTime, DayWindow)} with no behavioural change — see that method for
-     * the load-bearing single-implementation discipline (D-08 / Phase 15 plan 10, T-15-10-04),
-     * which this anchor-aware form preserves exactly.
+     * <p>BDAY-04 (plan 19-05): the transitional midnight-implicit one-argument form plan 19-03
+     * kept in place is gone — every caller now supplies the real {@code window} its own anchor
+     * source resolves to (see each caller's own binding site), so omitting the anchor is a
+     * compile failure rather than a silently midnight-anchored answer. Delegates to
+     * {@link #covers(LocalTime, LocalTime, Integer, Integer, LocalTime, LocalTime, DayWindow)}
+     * with no behavioural change — see that method for the load-bearing single-implementation
+     * discipline (D-08 / Phase 15 plan 10, T-15-10-04), which this anchor-aware form preserves
+     * exactly.
      */
     public boolean covers(Timeslot ts, DayWindow window) {
         return covers(template.getStartTime(), template.getEndTime(),
                 band == null ? null : band.getOffsetMinutes(),
                 band == null ? null : band.getDurationMinutes(),
                 ts.getStartTime(), ts.getEndTime(), window);
-    }
-
-    /**
-     * The midnight-implicit static form of the coverage predicate, taking the four scalars a
-     * descriptor carries directly rather than the live {@link ShiftTemplate}/
-     * {@link ShiftTemplateBreakBand} references this record wraps.
-     *
-     * @deprecated BDAY-04, transitional (plan 19-05/19-06 remove this form's remaining callers):
-     *         kept only so this plan breaks none of its existing callers (the report layer,
-     *         {@code ScheduleOutputService}, and the guard test {@code MidnightWindowSeamTest}).
-     *         Delegates to {@link #covers(LocalTime, LocalTime, Integer, Integer, LocalTime,
-     *         LocalTime, DayWindow)} at a {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} anchor.
-     */
-    @Deprecated
-    public static boolean covers(LocalTime envelopeStart, LocalTime envelopeEnd,
-            Integer bandOffsetMinutes, Integer bandDurationMinutes,
-            LocalTime slotStart, LocalTime slotEnd) {
-        return covers(envelopeStart, envelopeEnd, bandOffsetMinutes, bandDurationMinutes,
-                slotStart, slotEnd, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
     }
 
     /**
@@ -148,9 +118,10 @@ public record ShiftBandPair(ShiftTemplate template, ShiftTemplateBreakBand band)
      *         {@code ShiftLibraryGenerationService}'s {@code Candidate}/{@code EmittedRow} report
      *         fields, and their tests) do not yet reach a desk anchor, so this binds
      *         {@code DayWindow.anchoredAt(LocalTime.MIDNIGHT)} rather than breaking them --
-     *         correct everywhere this is still called, mirroring the transitional shape plan 19-03
-     *         already established for {@link #covers(Timeslot)} above. Callers move to a
-     *         window-aware form as each is migrated.
+     *         correct everywhere this is still called, mirroring the transitional
+     *         {@code covers(Timeslot)} shape plan 19-05 retired once every production
+     *         {@link #covers(Timeslot, DayWindow)} caller supplied a real anchor. Callers of this
+     *         method move to a window-aware form as each is migrated.
      */
     @Deprecated
     public BigDecimal netHours() {

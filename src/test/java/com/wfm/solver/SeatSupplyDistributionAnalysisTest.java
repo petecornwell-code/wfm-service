@@ -22,6 +22,7 @@ import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.Timeslot;
 import com.wfm.service.SolverSeatSupplyGateAccess;
+import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -308,7 +309,7 @@ class SeatSupplyDistributionAnalysisTest {
                 SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                         s.getSchedulingMode(), s.getShiftAssignments(), s.getShiftBandPairs(),
                         s.getTimeslots(), s.getAssignments(), s.getOverallocationHardLimitPct(),
-                        new ArrayList<>(), null))
+                        new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("THE FIX: the shipped gate now refuses this desk -- it PASSED it in plan 15-19")
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
@@ -364,7 +365,7 @@ class SeatSupplyDistributionAnalysisTest {
                 SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                         s.getSchedulingMode(), s.getShiftAssignments(), s.getShiftBandPairs(),
                         s.getTimeslots(), s.getAssignments(), s.getOverallocationHardLimitPct(),
-                        warnings, null))
+                        warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("the control must pass the shipped gate cleanly")
                 .doesNotThrowAnyException();
     }
@@ -540,7 +541,7 @@ class SeatSupplyDistributionAnalysisTest {
                 SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                         s.getSchedulingMode(), s.getShiftAssignments(), s.getShiftBandPairs(),
                         s.getTimeslots(), s.getAssignments(), s.getOverallocationHardLimitPct(),
-                        warnings, null))
+                        warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .doesNotThrowAnyException();
 
         assertThat(warnings)
@@ -589,7 +590,7 @@ class SeatSupplyDistributionAnalysisTest {
         return slice.timeslots().stream()
                 .filter(ts -> slice.pairs().stream()
                         .filter(p -> p.template().isEffectiveOn(slice.date()) && p.template().appliesOn(slice.date()))
-                        .anyMatch(p -> p.covers(ts)))
+                        .anyMatch(p -> p.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT))))
                 .toList();
     }
 
@@ -653,7 +654,7 @@ class SeatSupplyDistributionAnalysisTest {
      */
     private static RuleVerdict r2ForcedOccupancy(DateSlice slice) {
         Map<UUID, Long> forcedByTimeslotId =
-                SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(slice.rows(), slice.timeslots());
+                SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(slice.rows(), slice.timeslots(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         StringBuilder detail = new StringBuilder();
         boolean refuses = false;
         for (Timeslot ts : slice.timeslots()) {
@@ -687,7 +688,7 @@ class SeatSupplyDistributionAnalysisTest {
         List<String> warnings = new ArrayList<>();
         try {
             SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(SchedulingMode.SHIFT,
-                    slice.rows(), slice.pairs(), slice.timeslots(), assignments, 100, warnings, null);
+                    slice.rows(), slice.pairs(), slice.timeslots(), assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
             return new RuleVerdict(false, "shipped gate passed");
         } catch (PreSolveValidationException ex) {
             return new RuleVerdict(true, "shipped gate refused: " + ex.getMessage());
@@ -727,7 +728,7 @@ class SeatSupplyDistributionAnalysisTest {
         // is the proof that production's own implementation matches the hand-built construction,
         // not merely that this class's former copy of the rule agreed with itself.
         Map<UUID, Long> forcedByTimeslotId = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
-                s.getShiftAssignments(), dateTimeslots);
+                s.getShiftAssignments(), dateTimeslots, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         long forcedAt0800 = forcedByTimeslotId.getOrDefault(at0800.getId(), 0L);
         long forcedAt1300 = forcedByTimeslotId.getOrDefault(at1300.getId(), 0L);
         long forcedAt1800 = forcedByTimeslotId.getOrDefault(at1800.getId(), 0L);
@@ -977,9 +978,9 @@ class SeatSupplyDistributionAnalysisTest {
                 .filter(ts -> ts.getStartTime().equals(LocalTime.of(8, 0))).findFirst().orElseThrow();
 
         Map<UUID, Long> threeBandForced = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
-                threeBandSlice.rows(), threeBandSlice.timeslots());
+                threeBandSlice.rows(), threeBandSlice.timeslots(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         Map<UUID, Long> fiveBandForced = SolverSeatSupplyGateAccess.forcedAgentDaysByTimeslotId(
-                fiveBandSlice.rows(), fiveBandSlice.timeslots());
+                fiveBandSlice.rows(), fiveBandSlice.timeslots(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         long forcedWithThreeBands = threeBandForced.getOrDefault(eight.getId(), 0L);
         long forcedWithFiveBands = fiveBandForced.getOrDefault(eight.getId(), 0L);
 

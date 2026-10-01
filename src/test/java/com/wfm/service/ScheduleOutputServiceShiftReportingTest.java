@@ -227,6 +227,10 @@ class ScheduleOutputServiceShiftReportingTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(INCREMENT);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(List.of(a1, a2)));
         schedule.setShiftAssignments(new ArrayList<>(List.of(unassignedShiftRow)));
         schedule.setTimeslots(new ArrayList<>(List.of(ts1, ts2)));
@@ -258,6 +262,10 @@ class ScheduleOutputServiceShiftReportingTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(INCREMENT);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(List.of(a1, a2)));
         // A slot-scheduled desk carries no shift assignments at all.
         schedule.setShiftAssignments(new ArrayList<>());
@@ -471,6 +479,10 @@ class ScheduleOutputServiceShiftReportingTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(INCREMENT);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(allAssignments));
         schedule.setShiftAssignments(new ArrayList<>(allShiftRows));
         schedule.setTimeslots(new ArrayList<>());
@@ -525,6 +537,10 @@ class ScheduleOutputServiceShiftReportingTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(INCREMENT);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(heldSeats));
         schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
         schedule.setTimeslots(new ArrayList<>(allTimeslots));
@@ -554,6 +570,10 @@ class ScheduleOutputServiceShiftReportingTest {
 
         Schedule schedule = new Schedule();
         schedule.setIncrementMinutes(INCREMENT);
+        // BDAY-04 (plan 19-05): buildAgentSchedule/buildConstraintViolations now bind a DayWindow
+        // from this Schedule's own dayStart — an explicit midnight anchor here, not a production
+        // fallback, mirroring every other migrated test caller's convention.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         schedule.setAssignments(new ArrayList<>(heldSeats));
         schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
         schedule.setTimeslots(new ArrayList<>(allTimeslots));

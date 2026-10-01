@@ -18,6 +18,7 @@ import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
 import com.wfm.service.SolverSeatExpansionAccess;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -180,14 +181,14 @@ class ZeroDemandTimeslotCeilingTest {
         ShiftBandPair onlyPairOnTheDesk = new ShiftBandPair(late, null);
         Timeslot bare = timeslot(LocalTime.of(8, 0)); // before the desk's only shift starts at 12:00
 
-        assertThat(onlyPairOnTheDesk.covers(bare))
+        assertThat(onlyPairOnTheDesk.covers(bare, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("sanity: this desk's only shift must not reach 08:00")
                 .isFalse();
 
         List<AgentAssignment> extra = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(),
                 List.of(), List.of(english),
-                SchedulingMode.SHIFT, List.of(onlyPairOnTheDesk), Map.of(DAY, 3));
+                SchedulingMode.SHIFT, List.of(onlyPairOnTheDesk), Map.of(DAY, 3), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(extra)
                 .as("no live pair covers 08:00 -- OR-1 means no seat is manufactured, so this hour "
@@ -205,7 +206,7 @@ class ZeroDemandTimeslotCeilingTest {
         List<AgentAssignment> extra = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, DESK, SCHEDULE, List.of(bare), new ArrayList<>(),
                 List.of(), List.of(english),
-                SchedulingMode.SLOT, List.of(), Map.of());
+                SchedulingMode.SLOT, List.of(), Map.of(), DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(extra)
                 .as("a SLOT desk still tops up every zero-demand hour unconditionally, exactly as before")

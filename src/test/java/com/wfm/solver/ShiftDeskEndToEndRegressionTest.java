@@ -29,6 +29,7 @@ import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
 import com.wfm.service.SolverSeatExpansionAccess;
 import com.wfm.service.SolverSeatSupplyGateAccess;
+import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -134,7 +135,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), warnings, null))
+                schedule.getOverallocationHardLimitPct(), warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("this desk is built with ample seat supply -- the gate must pass it, not refuse it")
                 .doesNotThrowAnyException();
 
@@ -192,7 +193,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("a desk whose thin forecast cannot supply the roster's contracted hours must be "
                         + "REFUSED before solving -- never left to converge on an irreducible "
                         + "envelope penalty the way the live desk did")
@@ -230,7 +231,7 @@ class ShiftDeskEndToEndRegressionTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("the healthy control must never be refused")
                 .doesNotThrowAnyException();
 
@@ -299,7 +300,8 @@ class ShiftDeskEndToEndRegressionTest {
             allTimeslots.addAll(dayTimeslots);
 
             for (Timeslot ts : dayTimeslots) {
-                boolean covered = sharedPairs.stream().anyMatch(p -> p.covers(ts));
+                boolean covered = sharedPairs.stream()
+                        .anyMatch(p -> p.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT)));
                 if (!covered) {
                     continue; // truly outside every envelope -- OR-1: no seat, ever
                 }
@@ -337,7 +339,7 @@ class ShiftDeskEndToEndRegressionTest {
 
         List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, deskId, scheduleId, allTimeslots, demandSeats, staffingReqs, List.of(spec),
-                SchedulingMode.SHIFT, sharedPairs, workingAgentDaysByDate);
+                SchedulingMode.SHIFT, sharedPairs, workingAgentDaysByDate, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         for (AgentAssignment fillerSeat : fillerSeats) {
             fillerSeat.setId(nextId(ids));
         }

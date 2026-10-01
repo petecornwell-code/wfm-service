@@ -126,7 +126,7 @@ class MidnightWindowSeamTest {
         /** The 15:00-00:00 envelope with a one-hour break four hours in (19:00-20:00). */
         private boolean covers(LocalTime slotStart, LocalTime slotEnd) {
             return ShiftBandPair.covers(LocalTime.of(15, 0), LocalTime.MIDNIGHT, 240, 60,
-                    slotStart, slotEnd);
+                    slotStart, slotEnd, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         }
 
         @Test

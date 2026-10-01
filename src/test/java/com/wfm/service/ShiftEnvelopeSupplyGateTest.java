@@ -15,6 +15,7 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -228,7 +229,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -261,7 +262,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 130, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 130, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -302,7 +303,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -330,7 +331,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -369,7 +370,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -404,7 +405,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
+                    SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -432,7 +433,7 @@ class ShiftEnvelopeSupplyGateTest {
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> {
             SolverService.requireShiftEnvelopeSeatSupply(
-                    SchedulingMode.SLOT, rows, List.of(pair), window, assignments, 100, warnings, null);
+                    SchedulingMode.SLOT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
             throw new RuntimeException("SENTINEL: gate returned normally");
         }).hasMessage("SENTINEL: gate returned normally");
     }
@@ -458,7 +459,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
                     List<ErrorDetail> details = ((PreSolveValidationException) ex).getDetails();
@@ -509,7 +510,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null);
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(warnings)
                 .as("a warning is recorded naming the tightest covered timeslot and its seat count")
@@ -558,7 +559,7 @@ class ShiftEnvelopeSupplyGateTest {
         // seats at 10/11/12/13/15 count. librarySupplySlots = 5, a shortfall of 3 against 8.
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("THE FIX: a weekday-only template's clock-time coverage no longer inflates "
                         + "weekend supply -- before this fix the identical fixture passed the gate")
                 .isInstanceOf(PreSolveValidationException.class)
@@ -605,7 +606,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null);
+                SchedulingMode.SHIFT, rows, f.pairs(), f.window(), assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(warnings)
                 .as("a genuinely tight covered hour exists, so the advisory must fire")
@@ -655,7 +656,7 @@ class ShiftEnvelopeSupplyGateTest {
                 new java.util.concurrent.atomic.AtomicReference<>();
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, weights))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, weights, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> captured.set(((PreSolveValidationException) ex).getDetails()));
         return captured.get();
@@ -775,7 +776,7 @@ class ShiftEnvelopeSupplyGateTest {
                 new java.util.concurrent.atomic.AtomicReference<>();
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, pairs, window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, pairs, window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> captured.set(((PreSolveValidationException) ex).getDetails()));
         return captured.get();
@@ -799,9 +800,9 @@ class ShiftEnvelopeSupplyGateTest {
         Timeslot eight = window.stream().filter(ts -> ts.getStartTime().equals(LocalTime.of(8, 0)))
                 .findFirst().orElseThrow();
         Map<UUID, Long> threeBandForced = SolverService.forcedAgentDaysByTimeslotId(
-                List.of(shiftRow(a1, dc1, threeBands)), window);
+                List.of(shiftRow(a1, dc1, threeBands)), window, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         Map<UUID, Long> fiveBandForced = SolverService.forcedAgentDaysByTimeslotId(
-                List.of(shiftRow(a1, dc1, fiveBands)), window);
+                List.of(shiftRow(a1, dc1, fiveBands)), window, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         long forcedWithThreeBands = threeBandForced.getOrDefault(eight.getId(), 0L);
         long forcedWithFiveBands = fiveBandForced.getOrDefault(eight.getId(), 0L);
@@ -872,7 +873,7 @@ class ShiftEnvelopeSupplyGateTest {
 
         List<String> warnings = new ArrayList<>();
         assertThatThrownBy(() -> SolverService.requireShiftEnvelopeSeatSupply(
-                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null))
+                SchedulingMode.SHIFT, rows, List.of(pair), window, assignments, 100, warnings, null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("THE FIX: a day-wide-abundant desk with one genuinely thin hour is no longer "
                         + "waved through -- before this plan only the day-wide sum was checked")
                 .isInstanceOf(PreSolveValidationException.class)

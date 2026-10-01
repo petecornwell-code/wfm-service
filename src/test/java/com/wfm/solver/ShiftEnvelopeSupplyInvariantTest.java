@@ -29,6 +29,7 @@ import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
 import com.wfm.service.SolverSeatExpansionAccess;
 import com.wfm.service.SolverSeatSupplyGateAccess;
+import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -109,7 +110,7 @@ class ShiftEnvelopeSupplyInvariantTest {
                 .intValue();
 
         long coveredSlots = gridFor(LocalTime.of(8, 0), LocalTime.of(21, 0), ids, deskId, nextId(ids), DATE)
-                .stream().filter(pair::covers).count();
+                .stream().filter(ts -> pair.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).count();
 
         assertThat(coveredSlots)
                 .as("THE INVARIANT: contracted slots == covered slots exactly, so the agent must occupy "
@@ -152,7 +153,7 @@ class ShiftEnvelopeSupplyInvariantTest {
                     for (LocalTime x = open; x.isBefore(LocalTime.of(23, 0)); x = x.plusMinutes(increment)) {
                         grid.add(timeslot(ids, deskId, deskId, DATE, x, x.plusMinutes(increment)));
                     }
-                    long covered = grid.stream().filter(pair::covers).count();
+                    long covered = grid.stream().filter(ts -> pair.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).count();
 
                     String label = increment + "m grid, " + envelopeHours + "h envelope, "
                             + breakMinutes + "m break -> contract " + contract;
@@ -186,7 +187,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatCode(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("the shift-mode seat-supply gate must pass this desk, not refuse it")
                 .doesNotThrowAnyException();
 
@@ -237,7 +238,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("THE FIX: the silent degrade-to-null-pair is now a named refusal BEFORE any solve")
                 .isInstanceOf(PreSolveValidationException.class)
                 .satisfies(ex -> {
@@ -275,7 +276,7 @@ class ShiftEnvelopeSupplyInvariantTest {
                 .as("seat supply is abundant everywhere the envelope reaches inside the grid")
                 .isTrue();
 
-        long legalSlotsPerAgentDay = schedule.getTimeslots().stream().filter(pair::covers).count();
+        long legalSlotsPerAgentDay = schedule.getTimeslots().stream().filter(ts -> pair.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).count();
         int contractedSlotsPerAgentDay = 16; // 8.00h / 30m
         assertThat(legalSlotsPerAgentDay)
                 .as("the desk closes at 20:00 but the template runs to 21:00 -- two slots of the "
@@ -286,7 +287,7 @@ class ShiftEnvelopeSupplyInvariantTest {
         assertThatThrownBy(() -> SolverSeatSupplyGateAccess.requireShiftEnvelopeSeatSupply(
                 schedule.getSchedulingMode(), schedule.getShiftAssignments(), schedule.getShiftBandPairs(),
                 schedule.getTimeslots(), schedule.getAssignments(),
-                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null))
+                schedule.getOverallocationHardLimitPct(), new ArrayList<>(), null, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                 .as("THE FIX: an envelope-capacity shortfall is now caught BEFORE solving, not merely "
                         + "an irreducible penalty discovered by running the solver")
                 .isInstanceOf(PreSolveValidationException.class)
@@ -542,7 +543,7 @@ class ShiftEnvelopeSupplyInvariantTest {
                 .collect(Collectors.groupingBy(AgentShiftAssignment::getDate, Collectors.summingInt(r -> 1)));
         List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, deskId, scheduleId, grid, demandSeats, reqs, List.of(spec),
-                SchedulingMode.SHIFT, pairs, workingAgentDaysByDate);
+                SchedulingMode.SHIFT, pairs, workingAgentDaysByDate, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         List<AgentAssignment> allSeats = new ArrayList<>(demandSeats);
         allSeats.addAll(fillerSeats);
@@ -643,7 +644,7 @@ class ShiftEnvelopeSupplyInvariantTest {
             List<Timeslot> legal = pair == null ? List.of()
                     : solved.getTimeslots().stream()
                             .filter(ts -> ts.getDate().equals(sa.getDate()))
-                            .filter(pair::covers)
+                            .filter(ts -> pair.covers(ts, DayWindow.anchoredAt(LocalTime.MIDNIGHT)))
                             .toList();
             long illegalHeld = held.stream().filter(ts -> !legal.contains(ts)).count();
             long legalSurrendered = legal.stream().filter(ts -> !held.contains(ts)).count();

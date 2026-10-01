@@ -6,6 +6,7 @@ import com.wfm.model.ConstraintWeights;
 import com.wfm.model.SchedulingMode;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 
 import java.util.List;
 import java.util.Map;
@@ -32,10 +33,11 @@ public final class SolverSeatSupplyGateAccess {
             List<AgentAssignment> assignments,
             int overallocationHardLimitPct,
             List<String> warnings,
-            ConstraintWeights weights) {
+            ConstraintWeights weights,
+            DayWindow window) {
         SolverService.requireShiftEnvelopeSeatSupply(schedulingMode, shiftAssignments,
                 shiftBandPairs, timeslots, assignments, overallocationHardLimitPct, warnings,
-                weights);
+                weights, window);
     }
 
     /**
@@ -49,7 +51,7 @@ public final class SolverSeatSupplyGateAccess {
      * class this bridge method closes off.
      */
     public static Map<UUID, Long> forcedAgentDaysByTimeslotId(
-            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots) {
-        return SolverService.forcedAgentDaysByTimeslotId(rows, dateTimeslots);
+            List<AgentShiftAssignment> rows, List<Timeslot> dateTimeslots, DayWindow window) {
+        return SolverService.forcedAgentDaysByTimeslotId(rows, dateTimeslots, window);
     }
 }

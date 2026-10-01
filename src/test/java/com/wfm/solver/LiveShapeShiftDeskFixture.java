@@ -19,6 +19,7 @@ import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.model.TimeslotDemandConfig;
 import com.wfm.service.SolverSeatExpansionAccess;
+import com.wfm.util.DayWindow;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -276,7 +277,7 @@ final class LiveShapeShiftDeskFixture {
 
         List<AgentAssignment> fillerSeats = SolverSeatExpansionAccess.expandMinimumStaffingSeats(
                 TENANT, deskId, scheduleId, allTimeslots, demandSeats, staffingReqs, List.of(spec),
-                SchedulingMode.SHIFT, sharedPairs, workingAgentDaysByDate);
+                SchedulingMode.SHIFT, sharedPairs, workingAgentDaysByDate, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         for (AgentAssignment fillerSeat : fillerSeats) {
             fillerSeat.setId(nextId(ids));
         }

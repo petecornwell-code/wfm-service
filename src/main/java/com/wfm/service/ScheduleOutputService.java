@@ -142,6 +142,9 @@ public class ScheduleOutputService {
     public List<AgentScheduleEntry> buildAgentSchedule(Schedule schedule) {
         BigDecimal incrementHours = BigDecimal.valueOf(schedule.getIncrementMinutes())
                 .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
+        // BDAY-04 (plan 19-05): one window per public method, bound from the Schedule this
+        // method already receives — same accessor style as consistencyToleranceMinutes() above.
+        DayWindow window = DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart());
 
         // Shift descriptor lookup by (agentId, date) — the ONE place this response's shift
         // descriptor is built, covering both the in-memory path (reading the transient
@@ -213,7 +216,7 @@ public class ScheduleOutputService {
                     shiftEnd = shiftDescriptor.endTime();
                     breaks = bandBreaks(shiftDescriptor);
                     List<Timeslot> dayTimeslots = timeslotsByDate.getOrDefault(date, List.of());
-                    divergence = computeDivergence(shiftDescriptor, dayAssignments, dayTimeslots);
+                    divergence = computeDivergence(shiftDescriptor, dayAssignments, dayTimeslots, window);
                 } else {
                     // No descriptor: a slot desk, or a shift-mode agent-day the solver left
                     // unassigned. Keep today's behaviour exactly — seat-derived span, gap-derived
@@ -600,7 +603,10 @@ public class ScheduleOutputService {
         }
 
         if (isAcceptedSnapshot) {
-            return buildAcceptedConstraintViolations(schedule);
+            // BDAY-04 (plan 19-05): one window per public method, bound from the Schedule this
+            // method already receives.
+            return buildAcceptedConstraintViolations(schedule,
+                    DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart()));
         }
 
         // Secondary safety net for the LIVE-SOLVER path only (demoted from being the
@@ -711,7 +717,7 @@ public class ScheduleOutputService {
      * "skip a zero total" behaviour) — a clean accepted schedule therefore reports an empty list
      * because it was computed, not because the path was disabled.
      */
-    private List<ConstraintViolationEntry> buildAcceptedConstraintViolations(Schedule schedule) {
+    private List<ConstraintViolationEntry> buildAcceptedConstraintViolations(Schedule schedule, DayWindow window) {
         Map<UUID, Map<LocalDate, ShiftDescriptor>> shiftDescriptorsByAgentDate =
                 buildShiftDescriptorsByAgentDate(schedule);
         if (shiftDescriptorsByAgentDate.isEmpty()) {
@@ -742,7 +748,7 @@ public class ScheduleOutputService {
                 // buildAgentSchedule's own fallback branch, which reports no divergence either.
                 if (descriptor == null) continue;
 
-                for (AgentAssignment out : outOfEnvelopeAssignments(descriptor, dateEntry.getValue())) {
+                for (AgentAssignment out : outOfEnvelopeAssignments(descriptor, dateEntry.getValue(), window)) {
                     Agent agent = out.getAgent();
                     Timeslot ts = out.getTimeslot();
                     String timeslotLabel = ts.getDate() + " " + ts.getStartTime() + "-" + ts.getEndTime();
@@ -825,7 +831,7 @@ public class ScheduleOutputService {
      * (D-08's one-predicate/two-callers discipline: this is the one walk, both callers use it).
      */
     private List<AgentAssignment> outOfEnvelopeAssignments(ShiftDescriptor descriptor,
-            List<AgentAssignment> dayAssignments) {
+            List<AgentAssignment> dayAssignments, DayWindow window) {
         LocalTime envelopeStart = descriptor.startTime();
         LocalTime envelopeEnd = descriptor.endTime();
         Integer bandOffset = descriptor.bandOffsetMinutes();
@@ -835,7 +841,7 @@ public class ScheduleOutputService {
         for (AgentAssignment a : dayAssignments) {
             Timeslot ts = a.getTimeslot();
             boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
-                    ts.getStartTime(), ts.getEndTime());
+                    ts.getStartTime(), ts.getEndTime(), window);
             if (!legal) {
                 outOfEnvelope.add(a);
             }
@@ -852,7 +858,7 @@ public class ScheduleOutputService {
      * when both lists are empty so a clean agent-day carries no noise.
      */
     private ShiftEnvelopeDivergence computeDivergence(ShiftDescriptor descriptor,
-            List<AgentAssignment> dayAssignments, List<Timeslot> dayTimeslots) {
+            List<AgentAssignment> dayAssignments, List<Timeslot> dayTimeslots, DayWindow window) {
         LocalTime envelopeStart = descriptor.startTime();
         LocalTime envelopeEnd = descriptor.endTime();
         Integer bandOffset = descriptor.bandOffsetMinutes();
@@ -860,7 +866,7 @@ public class ScheduleOutputService {
 
         List<LocalTime> outOfEnvelopeSeats = new ArrayList<>();
         Set<UUID> heldTimeslotIds = new HashSet<>();
-        for (AgentAssignment a : outOfEnvelopeAssignments(descriptor, dayAssignments)) {
+        for (AgentAssignment a : outOfEnvelopeAssignments(descriptor, dayAssignments, window)) {
             outOfEnvelopeSeats.add(a.getTimeslot().getStartTime());
         }
         for (AgentAssignment a : dayAssignments) {
@@ -871,7 +877,7 @@ public class ScheduleOutputService {
         for (Timeslot ts : dayTimeslots) {
             if (heldTimeslotIds.contains(ts.getId())) continue;
             boolean legal = ShiftBandPair.covers(envelopeStart, envelopeEnd, bandOffset, bandDuration,
-                    ts.getStartTime(), ts.getEndTime());
+                    ts.getStartTime(), ts.getEndTime(), window);
             if (legal) {
                 unworkedLegalSlots.add(ts.getStartTime());
             }

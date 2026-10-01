@@ -6,6 +6,7 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -33,10 +34,11 @@ public final class SolverSeatExpansionAccess {
             List<Specialization> specializations,
             SchedulingMode schedulingMode,
             List<ShiftBandPair> shiftBandPairs,
-            Map<LocalDate, Integer> workingAgentDaysByDate) {
+            Map<LocalDate, Integer> workingAgentDaysByDate,
+            DayWindow window) {
         return SolverService.expandMinimumStaffingSeats(
                 tenantId, deskId, scheduleId, timeslots, existingAssignments,
                 staffingRequirements, specializations,
-                schedulingMode, shiftBandPairs, workingAgentDaysByDate);
+                schedulingMode, shiftBandPairs, workingAgentDaysByDate, window);
     }
 }

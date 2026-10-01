@@ -14,6 +14,7 @@ import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -65,7 +66,7 @@ class ShiftStartMixTargetServiceTest {
     void beatsTheSolversOwnMixOnCoverageAndConsistencyAtOnce() {
         Fixture f = saferide();
         List<ShiftStartMixTarget> targets = service.computeTargets(SchedulingMode.SHIFT,
-                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats);
+                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 
         assertThat(targets).hasSize(7);
         int[] mix = mix(targets);
@@ -103,7 +104,7 @@ class ShiftStartMixTargetServiceTest {
             allLate.add(new ResolvedUsualShiftTarget(row.getAgent().getId(), DAY, LocalTime.of(12, 0)));
         }
         int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, allLate,
-                f.requirements, f.timeslots, f.seats));
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT)));
 
         assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
         // A consistency-first mix would put all 57 on 12:00 and uncover 182 agent-slots.
@@ -117,7 +118,7 @@ class ShiftStartMixTargetServiceTest {
         // to compare an over-count against.
         Fixture f = saferide();
         List<ShiftStartMixTarget> targets = service.computeTargets(SchedulingMode.SHIFT,
-                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats);
+                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
         assertThat(targets).allSatisfy(t -> assertThat(t.targetCount()).isGreaterThanOrEqualTo(0));
         assertThat(targets).extracting(ShiftStartMixTarget::startTime)
                 .containsExactlyInAnyOrder(LocalTime.of(6, 0), LocalTime.of(7, 0), LocalTime.of(8, 0),
@@ -129,16 +130,16 @@ class ShiftStartMixTargetServiceTest {
         // Two solves of one problem must produce identical targets, or a solve is not debuggable.
         Fixture f = saferide();
         assertThat(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, f.seats)))
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))))
                 .isEqualTo(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                        f.requirements, f.timeslots, f.seats)));
+                        f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))));
     }
 
     @Test
     void emitsNothingForASlotModeDesk() {
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SLOT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, f.seats)).isEmpty();
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEmpty();
     }
 
     @Test
@@ -148,14 +149,14 @@ class ShiftStartMixTargetServiceTest {
         Fixture f = saferide();
         f.rows.get(0).getAgent().setContractedHoursPerDay(new BigDecimal("6.0"));
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, f.seats)).isEmpty();
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEmpty();
     }
 
     @Test
     void emitsNothingForADateWithNoUsualShiftTargets() {
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, List.of(),
-                f.requirements, f.timeslots, f.seats)).isEmpty();
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEmpty();
     }
 
     @Test
@@ -166,7 +167,7 @@ class ShiftStartMixTargetServiceTest {
         // timeslots are generated across the operating window independently of it.
         Fixture f = saferide();
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                List.of(), f.timeslots, f.seats)).isEmpty();
+                List.of(), f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEmpty();
     }
 
     @Test
@@ -184,7 +185,7 @@ class ShiftStartMixTargetServiceTest {
                 .isNotEqualTo(f.rows.get(1).getEligibleShiftBandPairs());
 
         assertThat(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, f.seats)).isEmpty();
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))).isEmpty();
     }
 
     @Test
@@ -194,9 +195,9 @@ class ShiftStartMixTargetServiceTest {
         List<ResolvedUsualShiftTarget> withGhost = new ArrayList<>(f.usualTargets);
         withGhost.add(new ResolvedUsualShiftTarget(UUID.randomUUID(), DAY, LocalTime.of(12, 0)));
         assertThat(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, withGhost,
-                f.requirements, f.timeslots, f.seats)))
+                f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))))
                 .isEqualTo(mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                        f.requirements, f.timeslots, f.seats)));
+                        f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))));
     }
 
     // ---------- scoring helpers, deliberately independent of the service's own arithmetic ----------
@@ -368,7 +369,7 @@ class ShiftStartMixTargetServiceTest {
         }
 
         int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, scarce));
+                f.requirements, f.timeslots, scarce, DayWindow.anchoredAt(LocalTime.MIDNIGHT)));
 
         assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
         assertThat(mix[0])
@@ -382,7 +383,7 @@ class ShiftStartMixTargetServiceTest {
         // well-formed target rather than diverging or emitting nothing.
         Fixture f = saferide();
         int[] mix = mix(service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
-                f.requirements, f.timeslots, List.of()));
+                f.requirements, f.timeslots, List.of(), DayWindow.anchoredAt(LocalTime.MIDNIGHT)));
         assertThat(sum(mix)).isEqualTo(WORKING_AGENT_DAYS);
     }
 
