@@ -54,6 +54,15 @@ public class AgentShiftAssignment {
     @JoinColumn(name = "agent_id", nullable = false)
     private Agent agent;
 
+    /**
+     * This field IS the business date (SOLV-07) — derived, never a calendar-date snapshot. It is
+     * sourced only from {@link AgentDayConfig#date()}, which is itself derived only from the
+     * schedule's period walk ({@code SolverService.computeAgentDayConfigs}); the accept-time
+     * snapshot row copies an already-derived value forward from another {@code
+     * AgentShiftAssignment} rather than computing a fresh one. {@code
+     * AgentDayDerivationGuardTest} enforces both links of that chain structurally, in both
+     * directions — see D-05/D-06.
+     */
     @Column(nullable = false)
     private LocalDate date;
 
