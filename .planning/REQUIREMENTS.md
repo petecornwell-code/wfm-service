@@ -117,7 +117,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 ### Overnight Shifts (OVNT)
 
 - [x] **OVNT-01**: Operator can save a shift template whose end time is earlier in the clock than its start time, and its net hours are correct
-- [ ] **OVNT-02**: A shift that spans midnight is reported against the business day it starts on, everywhere it is displayed
+- [x] **OVNT-02**: A shift that spans midnight is reported against the business day it starts on, everywhere it is displayed
 - [ ] **OVNT-03**: A day-off or PTO marking on the business day an overnight shift starts prevents that shift being assigned
 - [ ] **OVNT-04**: An overnight shift consumes the contracted hours of the weekday it starts on, not split across two
 - [ ] **OVNT-05**: Shift library validation refuses an overnight template whose envelope does not fit inside its desk's business day
@@ -213,7 +213,7 @@ Populated during roadmap creation.
 | BDAY-07 | Phase 20 | Complete |
 | BDAY-08 | Phase 18 | Complete |
 | OVNT-01 | Phase 21 | Complete |
-| OVNT-02 | Phase 21 | Pending |
+| OVNT-02 | Phase 21 | Complete |
 | OVNT-03 | Phase 21 | Pending |
 | OVNT-04 | Phase 21 | Pending |
 | OVNT-05 | Phase 21 | Pending |

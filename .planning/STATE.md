@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-10-02T22:32:32.897Z"
+stopped_at: Completed 21-04-PLAN.md
+last_updated: "2026-10-02T23:22:19.689Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 16ee1d560273efeb98cfa8fd109129f4685b0bd9
+state_head: 487fa5c10b66640aadd6dfca265a2ddcb8812c7a
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 29
+  completed_plans: 30
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -330,6 +330,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: DeskService.dayStartLocksByDeskId resolves the per-desk ACCEPTED-schedule lock in one batch query for the whole tenant, keeping the first (latest createdAt) row per deskId -- reused by every DeskController response path rather than adding a second per-desk finder shape
 - [Phase 21]: Task 1's three new behavior tests exercise construction site 2 (buildAcceptedConstraintViolations) via the existing acceptedScheduleWithEnvelope + relocated-Timeslot fixture pattern; site 1 (live explain() path) is covered structurally by the compiler-forced widened constructor and an unmodified pre-existing live-path test.
 - [Phase 21]: unfilledSeatsByDateAndSlot's result map key changed from the label's parsed calendar date to businessDate.toString(), matching writeAgentAllocation's lookup key (AgentScheduleEntry.date(), always the business date) -- the actual fix for the post-midnight shortfall attribution bug.
+- [Phase 21]: migrate-now: calculateErlangC and calculateErlangX re-pointed to deleteLiveByDeskAndBusinessDateRange (OVNT-02), closing the gap plan 21-02 made reachable rather than deferring it; bday-join-guard.md updated to record the migration
 
 ### Blockers/Concerns
 
@@ -353,8 +354,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T22:32:32.861Z
-Stopped at: Completed 21-03-PLAN.md
+Last session: 2026-10-02T23:22:19.652Z
+Stopped at: Completed 21-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -435,3 +436,4 @@ Resume file: None
 | Phase 21 P01 | unspecified | 2 tasks | 6 files |
 | Phase 21 P02 | 35 min | 3 tasks | 7 files |
 | Phase 21 P03 | 40min | 2 tasks | 5 files |
+| Phase 21 P04 | ~25min | 2 tasks | 4 files |
