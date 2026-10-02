@@ -79,8 +79,10 @@ class ScheduleAllocationExportTest {
                 new ScheduleSummary.ScoreDto(0, -2000),
                 List.of(
                         new ViolationDetail(null, null, UUID.randomUUID(),
+                                DAY_ONE, DAY_ONE, LocalTime.of(21, 0), LocalTime.of(22, 0),
                                 "2026-09-21 21:00-22:00", "unfilled"),
                         new ViolationDetail(null, null, UUID.randomUUID(),
+                                DAY_ONE, DAY_ONE, LocalTime.of(21, 0), LocalTime.of(22, 0),
                                 "2026-09-21 21:00-22:00", "unfilled")))));
         return d;
     }

@@ -444,6 +444,74 @@ class ScheduleOutputServiceShiftReportingTest {
     }
 
     // ------------------------------------------------------------------
+    //  Plan 21-03 Task 1 (OVNT-02/OVNT-07, D-14) — ViolationDetail carries structured
+    //  businessDate/calendarDate/startTime/endTime alongside the unchanged timeslotLabel.
+    //  Exercised through the accepted path (buildAcceptedConstraintViolations), reusing the
+    //  relocateSeat trap the existing red-proof test above documents: a NEW synthetic Timeslot on
+    //  one assignment only, never mutating a Timeslot other seats might share.
+    // ------------------------------------------------------------------
+
+    /**
+     * Relocates the first assignment of a clean {@link #acceptedScheduleWithEnvelope} fixture to
+     * a single hand-built {@link Timeslot} outside the NAMED_ROW envelope (11:00-20:00), which
+     * produces exactly one HARD violation naming that timeslot — the fixture this plan's three
+     * behavior tests all share.
+     */
+    private ViolationDetail singleRelocatedViolation(LocalTime dayStart, LocalDate calendarDate,
+            LocalDate businessDate, LocalTime start, LocalTime end) {
+        Schedule schedule = acceptedScheduleWithEnvelope(NAMED_ROW_ENVELOPE_START, NAMED_ROW_ENVELOPE_END,
+                NAMED_ROW_BAND_OFFSET_MINUTES, NAMED_ROW_BAND_DURATION_MINUTES,
+                new AgentDayFixture("Armaz Dugashvili", DAY, NAMED_ROW_HELD_SEATS));
+        schedule.setConstraintWeights(new ConstraintWeights());
+        schedule.setDayStart(dayStart);
+
+        AgentAssignment victim = schedule.getAssignments().get(0);
+        Timeslot relocated = new Timeslot();
+        relocated.setId(UUID.randomUUID());
+        relocated.setDate(calendarDate);
+        relocated.setBusinessDate(businessDate);
+        relocated.setStartTime(start);
+        relocated.setEndTime(end);
+        victim.setTimeslot(relocated);
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, true);
+        assertThat(violations).hasSize(1);
+        assertThat(violations.get(0).violations()).hasSize(1);
+        return violations.get(0).violations().get(0);
+    }
+
+    @Test
+    void buildConstraintViolations_21_00AnchoredDesk_violationCarriesDistinctBusinessAndCalendarDates() {
+        // A 02:00-03:00 slot on a 21:00-anchored desk: business date DAY, calendar date DAY+1.
+        ViolationDetail detail = singleRelocatedViolation(LocalTime.of(21, 0),
+                DAY.plusDays(1), DAY, LocalTime.of(2, 0), LocalTime.of(3, 0));
+
+        assertThat(detail.businessDate()).isEqualTo(DAY);
+        assertThat(detail.calendarDate()).isEqualTo(DAY.plusDays(1));
+        assertThat(detail.startTime()).isEqualTo(LocalTime.of(2, 0));
+        assertThat(detail.endTime()).isEqualTo(LocalTime.of(3, 0));
+    }
+
+    @Test
+    void buildConstraintViolations_00_00AnchoredDesk_businessAndCalendarDatesAreEqual() {
+        ViolationDetail detail = singleRelocatedViolation(LocalTime.MIDNIGHT,
+                DAY, DAY, LocalTime.of(9, 0), LocalTime.of(10, 0));
+
+        assertThat(detail.businessDate()).isEqualTo(detail.calendarDate());
+        assertThat(detail.businessDate()).isEqualTo(DAY);
+    }
+
+    @Test
+    void buildConstraintViolations_anchoredDesk_labelTextStaysCalendarDateSpaceStartHyphenEnd() {
+        // The no-change control (D-14): the label is byte-identical to today's shape even though
+        // its business date and calendar date now diverge.
+        ViolationDetail detail = singleRelocatedViolation(LocalTime.of(21, 0),
+                DAY.plusDays(1), DAY, LocalTime.of(2, 0), LocalTime.of(3, 0));
+
+        assertThat(detail.timeslotLabel()).isEqualTo(DAY.plusDays(1) + " 02:00-03:00");
+    }
+
+    // ------------------------------------------------------------------
     //  SOLV-07 (plan 20-06) — coverage reporting buckets a timeslot under the business day it
     //  belongs to, not the calendar day. buildStaffingSummary's predicted/actual maps are the
     //  coverage report (spec §8.1); this proves the six migrated key positions (:62, :71, :164,
