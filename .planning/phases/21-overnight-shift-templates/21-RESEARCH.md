@@ -707,7 +707,10 @@ in new test code; use the `anchored*` instance methods via `DayWindow.anchoredAt
 
 **If this table is empty:** N/A — three assumptions recorded above, all low-to-moderate risk.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three questions below were disposed of at Phase 21 plan time (2026-10-02). Each carries its
+resolution and the artifact that now owns it; none is still open.
 
 1. **Should this phase also migrate the two Erlang calendar-date range-delete callers
    (`StaffingRequirementService.calculateErlangC`/`calculateErlangX`)?**
@@ -729,6 +732,12 @@ in new test code; use the `anchored*` instance methods via `DayWindow.anchoredAt
      explicitly documenting it as a new, intentionally-accepted gap in this phase's own deferred-items
      list.
 
+   - **RESOLVED (plan time, 2026-10-02): IN SCOPE.** Routed to `21-04-PLAN.md`, which carries a
+     `<task type="checkpoint:decision" gate="blocking-human">` naming both call sites
+     (`StaffingRequirementService.calculateErlangC` line 238, `calculateErlangX` line 338) and the
+     calendar-vs-business options with their consequences. The decision is the operator's at
+     execution time, not deferred to a later phase — which is what the recommendation asked for.
+
 2. **Is 16 hours the right maximum-span value for D-08?**
    - What we know: 19-CONTEXT D-11 rejected putting a max-span bound inside `DayWindow`; D-08 proposes
      16h as "well clear of any real contracted day here (~8-9h) and far below the 22-24h values that
@@ -739,6 +748,12 @@ in new test code; use the `anchored*` instance methods via `DayWindow.anchoredAt
      the 16h value is a constant") and flag it for confirmation if any live desk is found during
      implementation with a legitimate shift approaching that length.
 
+   - **RESOLVED (plan time, 2026-10-02): ship 16h.** Taken as recommended. `21-01-PLAN.md` Task 2
+     declares `private static final int MAX_SPAN_MINUTES = 16 * 60;` on `ShiftTemplateService`,
+     inclusive of exactly 16h and exclusive above it, with the refusal message naming the measured
+     span. CONTEXT.md D-08 records the value as adjustable (reversibility `reversible`, one
+     constant), so a live desk found with a longer legitimate shift changes one number.
+
 3. **Does `ScheduleSummary` need `dayStart`, or only `ScheduleDetailResponse`?**
    - What we know: `ScheduleDetailResponse` already carries it (`[VERIFIED]`, see Recommended Project
      Structure note above); `ScheduleSummary` does not yet. The grid page polls `ScheduleSummary` on
@@ -747,6 +762,12 @@ in new test code; use the `anchored*` instance methods via `DayWindow.anchoredAt
      fast-poll phase, or can wait for the detail payload.
    - Recommendation: Left as Claude's Discretion per CONTEXT.md — the planner should decide based on
      whether D-17's header text needs to render before the first detail-payload fetch completes.
+
+   - **RESOLVED (plan time, 2026-10-02): both payloads carry it.** `21-09-PLAN.md` adds `dayStart`
+     to `src/main/java/com/wfm/dto/ScheduleSummary.java` and `dayStart?: string` to the frontend
+     `ScheduleSummary` interface; `ScheduleDetail extends ScheduleSummary`, so the detail payload
+     inherits it rather than declaring it twice. D-17's header disclosure therefore renders on the
+     fast poll without waiting for the first detail fetch.
 
 ## Environment Availability
 
