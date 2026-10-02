@@ -370,11 +370,33 @@ class ScheduleServiceShiftSnapshotTest {
     @Test
     void acceptSchedule_21_00Anchor_derivesBusinessDateRatherThanTrustingTheStoredColumn() {
         // Test C (falsification control). Every timeslot's STORED businessDate column is set
-        // equal to its OWN calendar date (the post-midnight rows carry MONDAY.plusDays(1)), but
-        // the business day actually being accepted is still MONDAY. This must pass both before
-        // and after the production change: it is what proves Test A's 24 comes from deriving the
-        // business date, not from a widened fetch returning everything unfiltered, and not from
-        // trusting the stored column.
+        // equal to its OWN calendar date (the post-midnight rows carry MONDAY.plusDays(1)) --
+        // deliberately DISAGREEING with the DERIVED business date, which DayWindow.businessDateOf
+        // computes as MONDAY for all 24 rows regardless of anything stored (a time before the
+        // 21:00 anchor always belongs to the previous calendar date's business day -- the same
+        // rule TimeslotGeneratorService's generator already writes by). If the loader instead
+        // trusted the stored column, filtering business date in [MONDAY, MONDAY] would admit only
+        // the 3 rows whose STORED value happens to read MONDAY; it actually returns all 24,
+        // which can only be explained by deriving rather than reading the column. Deliberately
+        // NOT a before/after no-op: the pre-fix finder filters on calendar `date`, never reads
+        // businessDate at all, so it returns the same 3 here as it does in Test A, for the same
+        // calendar-truncation reason -- this test's RED/GREEN transition is 3/24, identical in
+        // shape to Test A's, and that identity is itself the point: no fixture built on this
+        // cross-midnight calendar split can disagree with Test A's count AND be a no-op, because
+        // correctness here is a pure function of (anchor, calendarDate, startTime) that never
+        // consults the stored column either way.
+        //
+        // PLAN DEVIATION (Rule 1 -- spec defect in the authoring plan, not production code): the
+        // plan's <behavior> text asserted this same fixture should return 3 ("the loader must
+        // return only the 3 rows whose DERIVED business date is MONDAY") and should pass both
+        // before and after the production change. Both claims contradict DayWindow.businessDateOf's
+        // own documented semantics, which this plan elsewhere cites as authoritative and which the
+        // whole fix depends on: for every one of the 21 post-midnight rows, startMinute(startTime)
+        // < startMinute(21:00), so businessDateOf unconditionally returns calendarDate.minusDays(1)
+        // = MONDAY, independent of the stored businessDate column -- there is no way for only 3 of
+        // these 24 specific rows to derive to MONDAY. Corrected the assertion to the mathematically
+        // consistent value (24) so this test proves what the surrounding prose intends (derivation
+        // governs over the stored column) rather than asserting a count DayWindow cannot produce.
         UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
 
         saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
@@ -394,10 +416,11 @@ class ScheduleServiceShiftSnapshotTest {
                 .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
         assertThat(snapshot)
                 .as("the loader must DERIVE the business date from (calendarDate, startTime), "
-                        + "never trust the stored businessDate column -- the 21 post-midnight "
-                        + "rows' stored value disagrees with their derived value, so only the 3 "
-                        + "calendar-Monday rows survive")
-                .hasSize(3);
+                        + "never trust the stored businessDate column -- only 3 of these 24 rows' "
+                        + "STORED value reads MONDAY, yet all 24 have a DERIVED business date of "
+                        + "MONDAY and must all survive, proving derivation (not the stored column, "
+                        + "and not an unfiltered widened fetch) governs the result")
+                .hasSize(24);
     }
 
     @Test

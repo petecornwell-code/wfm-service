@@ -309,10 +309,15 @@ public class ScheduleService {
         Schedule saved = schedule;
 
         // Snapshot live timeslots → new IDs with schedule_id set
+        // SOLV-01 (20-REVIEW.md CR-01, site 3): schedule.getPeriodStartDate()/getPeriodEndDate()
+        // are BUSINESS dates (18-CONTEXT.md D-22), so this load goes through
+        // BusinessDayPeriodLoader rather than a calendar-date-filtering finder call directly,
+        // which would silently truncate a re-anchored desk's last business day's post-midnight
+        // rows out of this PERMANENT accepted snapshot.
         Map<UUID, UUID> timeslotRemap = new HashMap<>();
-        List<Timeslot> liveTimeslots = timeslotRepository
-                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
-                        tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        List<Timeslot> liveTimeslots = BusinessDayPeriodLoader.loadLiveTimeslots(
+                timeslotRepository, tenantId, deskId,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate(), schedule.getDayStart());
 
         for (Timeslot live : liveTimeslots) {
             Timeslot snapshot = new Timeslot();
@@ -331,9 +336,14 @@ public class ScheduleService {
         }
 
         // Snapshot live staffing requirements → remap to snapshot timeslots
-        List<StaffingRequirement> liveRequirements = staffingRequirementRepository
-                .findLiveByDeskAndDateRange(tenantId, deskId,
-                        schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        // SOLV-01 (20-REVIEW.md CR-01, site 4): same business-date-vs-calendar-date mismatch as
+        // the timeslot snapshot above, fixed with it through BusinessDayPeriodLoader. Must land
+        // in the same commit as site 3 -- the remap loop below skips any requirement whose
+        // timeslot is absent from timeslotRemap, so site 3 alone would persist post-midnight
+        // snapshot timeslots with no demand rows attached.
+        List<StaffingRequirement> liveRequirements = BusinessDayPeriodLoader.loadLiveStaffingRequirements(
+                staffingRequirementRepository, tenantId, deskId,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate(), schedule.getDayStart());
 
         for (StaffingRequirement live : liveRequirements) {
             UUID snapshotTimeslotId = timeslotRemap.get(live.getTimeslot().getId());
