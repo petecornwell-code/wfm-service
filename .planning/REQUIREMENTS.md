@@ -126,7 +126,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 
 ### Solver Correctness (SOLV)
 
-- [ ] **SOLV-01**: Every constraint that groups an agent's day joins on business date, so an overnight shift's post-midnight timeslots are included
+- [x] **SOLV-01**: Every constraint that groups an agent's day joins on business date, so an overnight shift's post-midnight timeslots are included
 - [x] **SOLV-02**: A test fails if any constraint joins on a timeslot's calendar date where business date is meant
 - [x] **SOLV-03**: Break bands, contiguity and envelope compliance hold across the midnight boundary
 - [x] **SOLV-04**: SLOT mode counts an overnight stretch against a single business day rather than under-allocating both calendar days
@@ -219,7 +219,7 @@ Populated during roadmap creation.
 | OVNT-05 | Phase 21 | Pending |
 | OVNT-06 | Phase 21 | Pending |
 | OVNT-07 | Phase 21 | Pending |
-| SOLV-01 | Phase 20 | Pending |
+| SOLV-01 | Phase 20 | Complete |
 | SOLV-02 | Phase 20 | Complete |
 | SOLV-03 | Phase 20 | Complete |
 | SOLV-04 | Phase 20 | Complete |

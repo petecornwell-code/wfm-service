@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
-status: executing
-stopped_at: Completed 20-07-PLAN.md
-last_updated: "2026-10-02T00:26:09.387Z"
+status: verifying
+stopped_at: Completed 20-08-PLAN.md -- Phase 20 complete (8/8 plans)
+last_updated: "2026-10-02T00:46:22.200Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: e692a4e54a2e43e679496cfda1d92d0d0389f92c
+state_head: 1d34d5f8da5c0c89f48a11193750cd5f61b81c59
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 20
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 Phase: 20 (Solver Business-Date Correctness) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-01 — Phase 20 execution started
 
 ## Milestone v1.3 Outcome
@@ -315,6 +315,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: ScheduleOutputService and ShiftLibraryGenerationService migrated to business-date key positions; BusinessDateJoinGuardTest went fully GREEN as an unplanned early side effect (StaffingRequirementService's D-15 defect remains unfixed, structurally invisible to the guard) — Documented explicitly in bday-join-guard.md so the green is not mistaken for SOLV-07 completion before plan 20-07
 - [Phase 20]: A second repository method (deleteLiveByDeskAndBusinessDateRange) was added rather than re-pointing the shared calendar-date delete, because the Erlang C and Erlang X calculators still legitimately pass operator-supplied calendar-date bounds from their request payloads -- re-pointing would have silently re-scoped both endpoints.
 - [Phase 20]: The transactional-integrity test case asserts the real-but-weaker boundary property (@Transactional on saveRequirements) rather than a constructed insert-time failure, since the delete range always covers the same payload's own timeslots and no payload shape can reach the insert loop with a colliding row.
+- [Phase 20]: Opened DeskService.setDayStart's accepted range from midnight-only to any 15-minute boundary (SOLV-01), landed as the phase's deliberately-last commit, after a disclosure-copy fix and RED tests proved the generation-time tiling refusal is reachable through the real save-then-generate path.
 
 ### Blockers/Concerns
 
@@ -337,8 +338,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T00:26:09.357Z
-Stopped at: Completed 20-07-PLAN.md
+Last session: 2026-10-02T00:46:22.171Z
+Stopped at: Completed 20-08-PLAN.md -- Phase 20 complete (8/8 plans)
 Resume file: None
 
 ## Operator Next Steps
@@ -411,3 +412,4 @@ Resume file: None
 | Phase 20-solver-business-date-correctness P05 | 3h 10min | 2 tasks | 24 files |
 | Phase 20 P06 | 23min | 2 tasks | 6 files |
 | Phase 20 P07 | 38min | 2 tasks | 4 files |
+| Phase 20 P08 | 30 min | 3 tasks | 4 files |
