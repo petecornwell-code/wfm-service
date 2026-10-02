@@ -4,16 +4,16 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
-status: verifying
+status: executing
 stopped_at: Completed 20-11-PLAN.md
-last_updated: "2026-10-02T04:11:45.325Z"
+last_updated: "2026-10-02T12:31:24.721Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: 19ca9480081389343fde49be0f89dd8af43fa5b7
+state_head: 5a45f5ef3d1add16013a3d3987838a3f2513bc58
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 25
+  total_plans: 26
   completed_plans: 25
   percent: 20
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 ## Current Position
 
-Phase: 20 (Solver Business-Date Correctness) — EXECUTING
+Phase: 20 (Solver Business-Date Correctness) — READY TO EXECUTE
 Plan: 11 of 11 (gap closure 20-09..20-11; 8 complete)
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-10-01 — Phase 20 execution started
 
 ## Milestone v1.3 Outcome
