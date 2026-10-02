@@ -8,15 +8,19 @@ import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
 import com.wfm.model.Desk;
+import com.wfm.model.Schedule;
+import com.wfm.model.ScheduleStatus;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ScheduleRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
+import com.wfm.util.DayWindow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +77,9 @@ class ShiftLibraryGenerationServiceTest {
 
     @Autowired
     private DeskRepository deskRepository;
+
+    @Autowired
+    private ScheduleRepository scheduleRepository;
 
     @MockitoBean
     private TimeslotGeneratorService timeslotGeneratorService;
@@ -443,6 +450,116 @@ class ShiftLibraryGenerationServiceTest {
         assertThat(response.templates()).isNotEmpty();
         assertThat(response.templates())
                 .allSatisfy(t -> assertThat(t.validWeekdays()).containsExactly(DayOfWeek.MONDAY));
+    }
+
+    // ---------- Operating-window filter and anchored sweep range (OVNT-05/D-10, P-03, Task 3) ----------
+
+    @Test
+    void generateSuggestion_21_00AnchoredDesk_neverProposesAnEnvelopeReachingPastTheOperatingWindow() {
+        // D-10: a 3h candidate sweeping from the earliest anchored demand (22:00) would, pre-fix,
+        // include starts (04:00, 05:00) whose 3h envelope runs past the window's 06:00 end.
+        UUID deskId = saveDesk(TENANT_A);
+        saveSchedule(deskId, LocalTime.of(21, 0));
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        TimeslotBoundsResponse grid = new TimeslotBoundsResponse(
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(22, 0), LocalTime.of(6, 0), 60);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(grid));
+        LocalTime anchor = LocalTime.of(21, 0);
+        // Hourly demand at every start from 22:00 through 05:00 -- spans the whole operating window.
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(22, 0), LocalTime.of(23, 0), anchor, 1);
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(23, 0), LocalTime.MIDNIGHT, anchor, 1);
+        LocalDate nextCalendarDay = WEEK_START.plusDays(1);
+        for (int hour = 0; hour < 6; hour++) {
+            saveAnchoredDemand(TENANT_A, deskId, spec, nextCalendarDay,
+                    LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), anchor, 1);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        // Below the default 4.00h break-min-shift threshold -- a plain break-less 3h candidate.
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("3.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.templates()).isNotEmpty();
+        DayWindow window = DayWindow.anchoredAt(LocalTime.of(21, 0));
+        assertThat(response.templates()).as("every proposed envelope must stay inside 22:00–06:00")
+                .allSatisfy(t -> assertThat(window.anchoredContains(
+                                LocalTime.of(22, 0), LocalTime.of(6, 0), t.startTime(), t.endTime()))
+                        .as("template %s–%s must not reach outside the window", t.startTime(), t.endTime())
+                        .isTrue());
+    }
+
+    @Test
+    void generateSuggestion_21_00AnchoredDesk_sweepReachesTheRealEarliestAnchoredDemand() {
+        // P-03: the old Comparator.naturalOrder() derivation picked clock-min/clock-max (00:00 and
+        // 23:00), whose ANCHORED offsets invert at this anchor and make the sweep run zero times.
+        UUID deskId = saveDesk(TENANT_A);
+        saveSchedule(deskId, LocalTime.of(21, 0));
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        TimeslotBoundsResponse grid = new TimeslotBoundsResponse(
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(22, 0), LocalTime.of(6, 0), 60);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(grid));
+        LocalTime anchor = LocalTime.of(21, 0);
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(22, 0), LocalTime.of(23, 0), anchor, 1);
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(23, 0), LocalTime.MIDNIGHT, anchor, 1);
+        LocalDate nextCalendarDay = WEEK_START.plusDays(1);
+        for (int hour = 0; hour < 6; hour++) {
+            saveAnchoredDemand(TENANT_A, deskId, spec, nextCalendarDay,
+                    LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), anchor, 1);
+        }
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("3.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.templates())
+                .as("the sweep must not run zero times -- a non-empty suggestion, with a candidate "
+                        + "starting at the real earliest anchored demand, 22:00")
+                .isNotEmpty();
+        assertThat(response.templates()).anySatisfy(t -> assertThat(t.startTime()).isEqualTo(LocalTime.of(22, 0)));
+    }
+
+    @Test
+    void generateSuggestion_00_00AnchoredDesk_sweepBoundsUnchanged_noOpControl() {
+        // At a 00:00 anchor, anchoredStartMinute(t) == t's own clock minute for every t, so
+        // switching the sweep-bound comparators from Comparator.naturalOrder() to
+        // Comparator.comparingInt(window::anchoredStartMinute) must change nothing here.
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(9, 0), LocalTime.of(10, 0), 1);
+        saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(14, 0), LocalTime.of(15, 0), 1);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, WEEK_START.getDayOfWeek(), new BigDecimal("2.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates())
+                .as("the earliest generated envelope must start exactly at the earliest demanded "
+                        + "hour -- clock order and anchored order are the same sequence at a 00:00 anchor")
+                .anySatisfy(t -> assertThat(t.startTime()).isEqualTo(LocalTime.of(9, 0)));
+    }
+
+    @Test
+    void generateSuggestion_anchoredDesk_demandEntirelyInsideWindow_unaffectedByTheNewFilter() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveSchedule(deskId, LocalTime.of(21, 0));
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        TimeslotBoundsResponse grid = new TimeslotBoundsResponse(
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(22, 0), LocalTime.of(6, 0), 60);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(grid));
+        LocalTime anchor = LocalTime.of(21, 0);
+        // Both demand windows sit strictly inside 22:00-06:00 -- nothing here should ever escape.
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(23, 0), LocalTime.MIDNIGHT, anchor, 1);
+        saveAnchoredDemand(TENANT_A, deskId, spec, WEEK_START.plusDays(1),
+                LocalTime.of(2, 0), LocalTime.of(3, 0), anchor, 1);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("3.00"));
+
+        ShiftLibrarySuggestionResponse response = generationService.generateSuggestion(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.templates()).isNotEmpty();
     }
 
     // ---------- Supply-aware expansion beyond minimal cover ----------
@@ -953,6 +1070,27 @@ class ShiftLibraryGenerationServiceTest {
         desk.setTenantId(tenantId);
         desk.setName("Desk " + UUID.randomUUID());
         return deskRepository.save(desk).getId();
+    }
+
+    /**
+     * OVNT-05 (Task 3, P-03): {@code resolveBreakConfig} binds this class's window from the desk's
+     * most-recently-created {@link Schedule}, not from {@code Desk.dayStart} directly (this class
+     * holds no {@code DeskRepository} of its own) -- so an anchored test fixture here needs a
+     * persisted {@code Schedule} carrying the anchor, mirroring {@code
+     * DeskServiceSchedulingModeTest#saveSchedule}'s minimal-fields shape.
+     */
+    private Schedule saveSchedule(UUID deskId, LocalTime dayStart) {
+        Schedule schedule = new Schedule();
+        schedule.setTenantId(TENANT_A);
+        schedule.setDeskId(deskId);
+        schedule.setIncrementMinutes(60);
+        schedule.setStartTime(LocalTime.of(8, 0));
+        schedule.setEndTime(LocalTime.of(17, 0));
+        schedule.setPeriodStartDate(WEEK_START);
+        schedule.setPeriodEndDate(WEEK_START.plusDays(6));
+        schedule.setDayStart(dayStart);
+        schedule.setStatus(ScheduleStatus.COMPLETED);
+        return scheduleRepository.save(schedule);
     }
 
     private Specialization saveSpecialization(long tenantId, UUID deskId, String name) {
