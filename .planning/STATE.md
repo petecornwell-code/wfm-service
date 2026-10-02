@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
-status: executing
-stopped_at: Completed 20-11-PLAN.md
-last_updated: "2026-10-02T12:31:24.721Z"
-last_activity: 2026-10-01
+status: verifying
+stopped_at: Completed 20-12-PLAN.md
+last_updated: "2026-10-02T13:16:26.610Z"
+last_activity: 2026-10-02
 last_activity_desc: Phase 20 execution started
-state_head: 5a45f5ef3d1add16013a3d3987838a3f2513bc58
+state_head: 4a1edf06ede0711529d4bda2b0c43e73592ee4f2
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
   percent: 20
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 ## Current Position
 
-Phase: 20 (Solver Business-Date Correctness) — READY TO EXECUTE
-Plan: 11 of 11 (gap closure 20-09..20-11; 8 complete)
-Status: Ready to execute
-Last activity: 2026-10-01 — Phase 20 execution started
+Phase: 20 (Solver Business-Date Correctness) — ALL PLANS COMPLETE
+Plan: 12 of 12 (gap closure 20-12; 12 complete)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-02 — Phase 20 execution complete
 
 ## Milestone v1.3 Outcome
 
@@ -321,6 +321,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: Re-keyed expandMinimumStaffingSeats' two date-sensitive reads from calendar date to business date, closing GAP 2 (CR-02) of 20-VERIFICATION.md — Mirrors the already-fixed sibling function requireShiftEnvelopeSeatSupply; proven on a 21:00-anchored desk separating weekday-eligibility and count-lookup failure modes, each against a named non-zero count, with a midnight-anchored control
 - [Phase 20]: runPreSolveValidation converted private instance -> package-private static (ShiftLibraryValidationService as leading param), mirroring appendBandCapacityErrors, as its own behaviour-free commit before the RED test and the production fix — Direct unit-testability without a Spring context; the same conversion this file already established for appendBandCapacityErrors
 - [Phase 20]: SolverService's complete Timeslot-date-read audit (4 sites) recorded in bday-join-guard.md's Known scope boundaries section rather than only in a planning document — The guard parses that file at test time, so the audit lives beside the contract it qualifies and survives independent of planning-doc lifecycle
+- [Phase 20]: Test C's plan-specified assertion (hasSize(3)) contradicted DayWindow.businessDateOf's own documented semantics; corrected to hasSize(24) so the test proves derivation governs over the stored column (plan 20-12).
 
 ### Blockers/Concerns
 
@@ -343,8 +344,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T04:11:45.294Z
-Stopped at: Completed 20-11-PLAN.md
+Last session: 2026-10-02T13:16:26.568Z
+Stopped at: Completed 20-12-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -421,3 +422,4 @@ Resume file: None
 | Phase 20 P09 | 25min | 2 tasks | 4 files |
 | Phase 20 P10 | 35min | 2 tasks | 5 files |
 | Phase 20 P11 | 95min | 2 tasks | 3 files |
+| Phase 20 P12 | 30min | 3 tasks | 6 files |
