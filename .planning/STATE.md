@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: executing
-stopped_at: Planned 20-09..20-11 -- Phase 20 gap closure ready (8/11 plans complete)
-last_updated: "2026-10-02T02:10:42.177Z"
+stopped_at: Completed 20-09-PLAN.md
+last_updated: "2026-10-02T03:01:39.602Z"
 last_activity: 2026-10-01
-last_activity_desc: Phase 20 gap-closure planning complete
-state_head: 10aa2db95f2d80ca7472f01097ef377b02cbb774
+last_activity_desc: Phase 20 execution started
+state_head: 816c7746b794953cd91c882fddb7b2cd40c0285f
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 25
-  completed_plans: 22
+  completed_plans: 23
   percent: 20
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 ## Current Position
 
-Phase: 20 (Solver Business-Date Correctness) — READY TO EXECUTE
-Plan: 8 of 11 (20-09..20-11 are gap closure, not yet executed)
+Phase: 20 (Solver Business-Date Correctness) — EXECUTING
+Plan: 10 of 11 (gap closure 20-09..20-11; 8 complete)
 Status: Ready to execute
-Last activity: 2026-10-01 — Phase 20 gap-closure planning complete
+Last activity: 2026-10-01 — Phase 20 execution started
 
 ## Milestone v1.3 Outcome
 
@@ -316,6 +316,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: A second repository method (deleteLiveByDeskAndBusinessDateRange) was added rather than re-pointing the shared calendar-date delete, because the Erlang C and Erlang X calculators still legitimately pass operator-supplied calendar-date bounds from their request payloads -- re-pointing would have silently re-scoped both endpoints.
 - [Phase 20]: The transactional-integrity test case asserts the real-but-weaker boundary property (@Transactional on saveRequirements) rather than a constructed insert-time failure, since the delete range always covers the same payload's own timeslots and no payload shape can reach the insert loop with a colliding row.
 - [Phase 20]: Opened DeskService.setDayStart's accepted range from midnight-only to any 15-minute boundary (SOLV-01), landed as the phase's deliberately-last commit, after a disclosure-copy fix and RED tests proved the generation-time tiling refusal is reachable through the real save-then-generate path.
+- [Phase 20]: Resolved the desk via DeskService.getDesk (tenant-scoped) rather than DeskRepository.findById in TimeslotController.generateTimeslots, per threat T-20-09-01 — A bare findById would let a caller generate against another tenant's desk anchor; getDesk's tenant-scoped EntityNotFoundException matches FteUploadService's existing shape
+- [Phase 20]: DeskService.setDayStart's sub-minute precision refusal is ordered before the 15-minute modulus check — A value failing both conditions (e.g. 06:07:01) must be refused for its real defect; the modulus discards seconds and would otherwise name the wrong reason
 
 ### Blockers/Concerns
 
@@ -338,8 +340,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T00:46:22.171Z
-Stopped at: Completed 20-08-PLAN.md -- Phase 20 complete (8/8 plans)
+Last session: 2026-10-02T03:01:39.568Z
+Stopped at: Completed 20-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -413,3 +415,4 @@ Resume file: None
 | Phase 20 P06 | 23min | 2 tasks | 6 files |
 | Phase 20 P07 | 38min | 2 tasks | 4 files |
 | Phase 20 P08 | 30 min | 3 tasks | 4 files |
+| Phase 20 P09 | 25min | 2 tasks | 4 files |
