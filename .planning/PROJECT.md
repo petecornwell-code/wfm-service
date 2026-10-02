@@ -371,6 +371,7 @@ templates (OVNT), solver business-date correctness (SOLV), minimum rest (REST).
 - **Two wall-clock-bounded solver tests should terminate on step count** — `BreakAwareConstructionTest` and `MultiDayConstraintDiagnosticTest` time-box the local-search phase, so they measure hardware and suite contention alongside solver quality and flake under parallel load. `BreakAwareConstructionTest`'s margin against its `-500` assertion fell from 500 to 180 points after Phase 15's mode-gating. Widening that tolerance is explicitly **not** the fix — the threshold is what surfaced two real defects (a dropped `difficultyComparatorClass` and a constraint tax costing ~35–40% of local-search throughput).
 - **Nyquist validation debt — now five phases across two milestones** → 999.9. Phases 10, 13, **14 and 15** have `VALIDATION.md` at `status: draft` (seeded by plan-phase, never reconciled by validate-phase, so their `nyquist_compliant: false` is not authoritative). **Phases 16 and 18 are genuine PARTIALs** — `status: validated` *and* `nyquist_compliant: false`. Only Phase 17 is COMPLIANT. Phase 18 was validated at its own close (2026-09-30) with zero gaps: all six BDAY requirements have automated tests, and its single manual-only item (the `day_start` disclosure copy, D-28) is a knowingly accepted exception that has now been UAT-verified against the deployed environment. The v1.3 audit flagged the accumulation as having drifted "from an oversight into a pattern".
 - **Phase 9 never had a security review** — no `09-SECURITY.md` exists → 999.9
+- **No real-DB test proves business-date *exclusion* at a non-midnight anchor** — emerged at Phase 20 (code review WR-01, recorded as an advisory in `20-VERIFICATION.md`). `BusinessDayPeriodLoader` widens the calendar fetch by one day and narrows on the derived business date; the *exclusion* half of that filter is proven only at the unit/mocked level (`BusinessDayPeriodLoaderTest` Test 3) and, through the real `acceptSchedule`/JPA path, only at a `00:00` anchor (`ScheduleServiceShiftSnapshotTest` Test D) — where calendar and business date coincide and the assertion cannot discriminate. Tests A/B/C's fixtures contain exactly the rows the widened fetch returns, so they would stay green if the filter were deleted outright. The production code is correct by direct read and the four CR-01 sites are fixed; what is missing is a 21:00-anchored accept-path test carrying an out-of-range decoy row. Cheap to add, and it is the test that would catch a future regression in the widen/narrow pair
 
 ### Out of Scope
 
@@ -473,7 +474,13 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-30 at v1.5 milestone start (Overnight Shifts & Business Dates). v1.4, which
+*Last updated: 2026-10-02 after Phase 20 (Solver Business-Date Correctness) — all eight requirements
+(SOLV-01..07, BDAY-07) satisfied, verified 8/8 must-haves after two gap-closure rounds; 12/12 plans.
+Round 2 (plan 20-12) found four repository-level truncation sites that fed business-date period bounds
+into calendar-date finders, and closed them behind one shared `BusinessDayPeriodLoader`; the
+accept-path case was silently corrupting re-anchored desks' persisted snapshots. SOLV/BDAY stay in
+`REQUIREMENTS.md` rather than moving to Validated above until v1.5 closes (Phases 21–22 outstanding).
+Previous update: 2026-09-30 at v1.5 milestone start (Overnight Shifts & Business Dates). v1.4, which
 attempted the same capability, was cancelled the same day before shipping — all 32 commits unwound,
 one salvaged (the `ScheduleExportService` roster-cell end-tracking fix), state preserved at tag
 `rescue/phase-18-unwind-20260930`. v1.5 keeps v1.4's settled decisions (desk-level day start,
