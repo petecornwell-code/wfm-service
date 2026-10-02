@@ -106,10 +106,12 @@ export default function DeskManagement() {
                       shift while a row is being edited. */}
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
                   {/* Read-only in both branches for the same reason Scheduling Mode is above — the
-                      backend refuses anything but 00:00 (BDAY-01), so an editable control here would
-                      offer the operator a value the system will reject. SOLV-01 is what widens the
-                      accepted range and is expected to make this cell editable. */}
-                  <td>{desk.dayStart} (only 00:00 is supported until overnight scheduling lands)</td>
+                      backend (SOLV-01) accepts any 15-minute boundary, but an editable control
+                      here needs a time picker plus error surfacing for two distinct refusals (the
+                      15-minute-boundary refusal and the unconditional refusal when an accepted
+                      schedule exists), which is operator-facing work belonging with the
+                      overnight-template phase. */}
+                  <td>{desk.dayStart} (15-minute boundaries accepted)</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button className="primary" onClick={handleUpdate}>Save</button>
                     <button onClick={() => setEditingId(null)}>Cancel</button>
@@ -121,7 +123,13 @@ export default function DeskManagement() {
                   <td>{desk.description || '—'}</td>
                   <td>{desk.defaultContractedHoursPerDay}</td>
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
-                  <td>{desk.dayStart} (only 00:00 is supported until overnight scheduling lands)</td>
+                  {/* Read-only in both branches for the same reason Scheduling Mode is above — the
+                      backend (SOLV-01) accepts any 15-minute boundary, but an editable control
+                      here needs a time picker plus error surfacing for two distinct refusals (the
+                      15-minute-boundary refusal and the unconditional refusal when an accepted
+                      schedule exists), which is operator-facing work belonging with the
+                      overnight-template phase. */}
+                  <td>{desk.dayStart} (15-minute boundaries accepted)</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button onClick={() => startEdit(desk)}>Edit</button>
                     <button className="danger" onClick={() => handleDelete(desk.id)}>Delete</button>
