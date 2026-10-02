@@ -301,7 +301,31 @@ the pre-existing v1.3 "it will still save" envelope-vs-operating-window gap for 
 specifically (OVNT-05) — do not let the old advisory-only behaviour persist here. If Phase 20 decides
 `agent_shift_assignment` needs its own `business_date` column, this is the phase that populates and
 reads it for overnight shift assignment.
-**Plans**: TBD
+**Plans**: 12 plans
+Plans:
+
+**Wave 1**
+- [ ] 21-01-PLAN.md — Tracer: an overnight template saves on a 21:00-anchored desk; the refusal on a 00:00 desk names the anchor; a 16-hour span cap (D-02, D-08, OVNT-01 registry flip)
+- [ ] 21-02-PLAN.md — Desk day-start reachability, backend: the stranded-template refusal, the non-blocking tiling advisory, the permanent-lock disclosure fields (D-03, D-04, D-05)
+- [ ] 21-03-PLAN.md — Additive-first: structured business/calendar date and times on the violation DTO, and the export's parser moved onto them (D-14, first half)
+- [ ] 21-04-PLAN.md — Scope decision + outcome: which date system the two Erlang calculators' clear-before-insert range means (checkpoint, surfaced by 20-CONTEXT and this phase's research)
+
+**Wave 2**
+- [ ] 21-05-PLAN.md — OVNT-05: one operating-window containment predicate shared by the save path, the library report, the mode gate and candidate generation (D-06, D-07, D-09, D-10, P-03)
+- [ ] 21-06-PLAN.md — The genuinely midnight-crossing fixture, the solver's anchored scan ranges, and the last two registry flips (D-18, D-19, P-02)
+- [ ] 21-07-PLAN.md — Excel: the spelled-out overnight roster cell with its vertical legend, and anchored allocation columns and rows (D-12, D-13, P-01)
+- [ ] 21-08-PLAN.md — The editable day-start control, its locked render, and every refusal surfaced as the server's own message (D-01, D-04, D-05)
+- [ ] 21-09-PLAN.md — Contracts: the schedule's anchor on both payloads, and a new branded-offset frontend day-window module with no consumers yet (D-15, first half)
+
+**Wave 3**
+- [ ] 21-10-PLAN.md — The grid converted onto anchored time: all seven defect sites in both render branches, business-day span disclosure, structured unfilled-seat attribution (D-15, D-16, D-17)
+
+**Wave 4**
+- [ ] 21-11-PLAN.md — OVNT-07's label text, now that nothing parses it, plus the ROADMAP and REQUIREMENTS amendments for the void continuation-indicator premise (D-11, D-14, second half)
+
+**Wave 5**
+- [ ] 21-12-PLAN.md — Scope decision + outcome: nine build-allowlisted raw time comparisons whose "both operands are start times" justification does not hold at a non-midnight anchor (checkpoint, P-04)
+
 **UI hint**: yes
 
 ### Phase 22: Minimum Rest
