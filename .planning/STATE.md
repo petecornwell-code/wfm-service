@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
-status: executing
-stopped_at: Completed 20-10-PLAN.md
-last_updated: "2026-10-02T03:28:01.085Z"
+status: verifying
+stopped_at: Completed 20-11-PLAN.md
+last_updated: "2026-10-02T04:11:45.325Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: 747426677c504d3f7b17e3b73524542b4b98ab6d
+state_head: 19ca9480081389343fde49be0f89dd8af43fa5b7
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
   percent: 20
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 Phase: 20 (Solver Business-Date Correctness) — EXECUTING
 Plan: 11 of 11 (gap closure 20-09..20-11; 8 complete)
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-01 — Phase 20 execution started
 
 ## Milestone v1.3 Outcome
@@ -319,6 +319,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: Resolved the desk via DeskService.getDesk (tenant-scoped) rather than DeskRepository.findById in TimeslotController.generateTimeslots, per threat T-20-09-01 — A bare findById would let a caller generate against another tenant's desk anchor; getDesk's tenant-scoped EntityNotFoundException matches FteUploadService's existing shape
 - [Phase 20]: DeskService.setDayStart's sub-minute precision refusal is ordered before the 15-minute modulus check — A value failing both conditions (e.g. 06:07:01) must be refused for its real defect; the modulus discards seconds and would otherwise name the wrong reason
 - [Phase 20]: Re-keyed expandMinimumStaffingSeats' two date-sensitive reads from calendar date to business date, closing GAP 2 (CR-02) of 20-VERIFICATION.md — Mirrors the already-fixed sibling function requireShiftEnvelopeSeatSupply; proven on a 21:00-anchored desk separating weekday-eligibility and count-lookup failure modes, each against a named non-zero count, with a midnight-anchored control
+- [Phase 20]: runPreSolveValidation converted private instance -> package-private static (ShiftLibraryValidationService as leading param), mirroring appendBandCapacityErrors, as its own behaviour-free commit before the RED test and the production fix — Direct unit-testability without a Spring context; the same conversion this file already established for appendBandCapacityErrors
+- [Phase 20]: SolverService's complete Timeslot-date-read audit (4 sites) recorded in bday-join-guard.md's Known scope boundaries section rather than only in a planning document — The guard parses that file at test time, so the audit lives beside the contract it qualifies and survives independent of planning-doc lifecycle
 
 ### Blockers/Concerns
 
@@ -341,8 +343,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T03:28:01.051Z
-Stopped at: Completed 20-10-PLAN.md
+Last session: 2026-10-02T04:11:45.294Z
+Stopped at: Completed 20-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -418,3 +420,4 @@ Resume file: None
 | Phase 20 P08 | 30 min | 3 tasks | 4 files |
 | Phase 20 P09 | 25min | 2 tasks | 4 files |
 | Phase 20 P10 | 35min | 2 tasks | 5 files |
+| Phase 20 P11 | 95min | 2 tasks | 3 files |
