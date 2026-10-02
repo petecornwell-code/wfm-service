@@ -1128,6 +1128,10 @@ public class SolverService {
             // the business day's last timeslot can sit on the calendar date AFTER the one its
             // first timeslot carries, which made this selection stop one calendar day early and
             // compare against the wrong row.
+            // IN-01: selecting the last stream element matching the business date is equivalent to
+            // "the chronologically last timeslot of that business day" ONLY because timeslots
+            // arrives ordered by business date, then minutes-from-day-start -- a guarantee
+            // BusinessDayPeriodLoader.loadLiveTimeslots now provides explicitly, not incidentally.
             Timeslot lastOnDay = timeslots.stream()
                     .filter(t -> t.getBusinessDate().equals(first.getBusinessDate()))
                     .reduce((a, b) -> b).orElse(first);

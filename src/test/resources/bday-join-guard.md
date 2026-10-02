@@ -101,6 +101,42 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   measurement taken before it is adopted (18-CONTEXT.md D-03 measured the naive token scan at 100+
   entries). That is a later-phase guard-design item, not a gap in this one.
 
+- **`TimeslotRepository`'s `...AndDateBetween...` derived-query method name and
+  `StaffingRequirementRepository`'s `t.date BETWEEN :from AND :to` JPQL literal are a THIRD shape
+  this guard cannot see, continuing the `SolverService` audit immediately above.** Both finders
+  are fed BUSINESS-date arguments (`schedule.getPeriodStartDate()`/`getPeriodEndDate()`,
+  `18-CONTEXT.md` D-22) at four call sites -- `SolverService.startSolve`'s two problem-fact loads
+  and `ScheduleService.acceptSchedule`'s two snapshot loads -- while both finders filter
+  `Timeslot`'s CALENDAR `date` column. This guard's predicate requires one of the four verb tokens
+  (`join(`/`equal(`/`groupBy(`/`computeIfAbsent(`) AND a `Timeslot`-receiver `.getDate()` call on
+  the SAME line; a Spring Data derived-query method name encodes the date column in an identifier
+  with no `.getDate()` call and no verb token at all, and a JPQL string literal
+  (`t.date BETWEEN :from AND :to`) has neither either. This is a THIRD shape alongside the
+  `.min(`/`.max(` and `.distinct()`/`TreeSet` shapes this file already documents -- and it is why
+  these four sites survived plan 20-11's otherwise complete `SolverService` audit, which
+  enumerated `Timeslot`-receiver reads inside that file and therefore could not reach a defect
+  expressed as a repository method name one call frame away.
+
+  Correctness at all four sites was established by a single shared fix, `BusinessDayPeriodLoader`
+  (mirroring `TimeslotGeneratorService`'s BDAY-03 widen-then-derive read-back rather than adding a
+  stored-column finder), and two proving test classes -- `ScheduleServiceShiftSnapshotTest`'s
+  21:00 accept-path cases and `BusinessDayPeriodLoaderTest` -- each anchored at 21:00 with a
+  midnight-anchored control. **This guard was green throughout and never turned red for any of
+  these four sites** -- its silence here was a blind spot, not a clean bill of health.
+
+  `TimeslotGeneratorService.listTimeslots` and `StaffingRequirementService`'s paginated
+  `findLiveByDeskAndDateRangeAfterCursor`/`findLiveByDeskAndDateRange(..., Pageable)` overloads
+  are deliberately left on calendar date -- both are operator-facing, fed request-payload calendar
+  dates, the same D-10 reason already recorded above for the two Erlang calculator paths.
+
+  What would change this decision: a guard that reaches this shape needs to scan repository
+  interfaces for derived-query identifiers containing `Date` and for `@Query` string literals
+  naming `t.date`, with its own allowlist-cost measurement taken first -- the paginated
+  operator-facing overloads, `TimeslotGeneratorService.listTimeslots` and both Erlang calculator
+  paths all legitimately keep calendar-date semantics and would each need an entry. That is a
+  later-phase guard-design item, consistent with how plan 20-11 dispositioned the same question
+  for `SolverService`'s absence from `TARGET_FILES`.
+
 - **`ScheduleOutputService` lines 670 and 771** (line numbers as of plan 20-06; originally 664 and
   759 before this plan's explanatory comments shifted them) build an operator-facing timeslot label
   by string
