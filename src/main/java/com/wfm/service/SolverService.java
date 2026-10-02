@@ -1094,8 +1094,14 @@ public class SolverService {
         }
 
         // 2. Timeslots must exist for every day of the schedule period
+        // SOLV-01: schedule.getPeriodStartDate()/getPeriodEndDate() are BUSINESS dates
+        // (18-CONTEXT.md D-22), so the set this loop checks membership against must be keyed the
+        // same way. On a re-anchored desk a business day's timeslots can sit entirely on the
+        // following calendar date, which made a calendar-date-keyed set miss that day and refuse a
+        // desk whose timeslots legitimately existed -- the same false-refusal shape
+        // requireShiftEnvelopeSeatSupply's own comment below describes.
         Set<LocalDate> timeslotDates = timeslots.stream()
-                .map(Timeslot::getDate).collect(Collectors.toSet());
+                .map(Timeslot::getBusinessDate).collect(Collectors.toSet());
         for (LocalDate d = schedule.getPeriodStartDate(); !d.isAfter(schedule.getPeriodEndDate()); d = d.plusDays(1)) {
             if (!timeslotDates.contains(d)) {
                 errors.add(new ErrorDetail("timeslots",
@@ -1112,8 +1118,13 @@ public class SolverService {
                                 + " does not match timeslot start " + first.getStartTime(),
                         schedule.getStartTime().toString()));
             }
+            // SOLV-01: the schedule's endTime describes the end of a BUSINESS day, so "the last
+            // timeslot on this day" must be selected by business date too. On a re-anchored desk
+            // the business day's last timeslot can sit on the calendar date AFTER the one its
+            // first timeslot carries, which made this selection stop one calendar day early and
+            // compare against the wrong row.
             Timeslot lastOnDay = timeslots.stream()
-                    .filter(t -> t.getDate().equals(first.getDate()))
+                    .filter(t -> t.getBusinessDate().equals(first.getBusinessDate()))
                     .reduce((a, b) -> b).orElse(first);
             if (!lastOnDay.getEndTime().equals(schedule.getEndTime())) {
                 errors.add(new ErrorDetail("endTime",
