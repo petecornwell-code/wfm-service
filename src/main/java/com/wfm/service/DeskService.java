@@ -208,12 +208,12 @@ public class DeskService {
      * Sets a desk's business-day start time (BDAY-01), mirroring {@link #switchSchedulingMode}'s
      * shape: null check, gate, tenant-scoped lookup, equal-value no-op, then write.
      *
-     * <p>Today only {@code 00:00} is accepted; SOLV-01 widens the accepted range to 15-minute
-     * boundaries. {@link com.wfm.util.DayWindow} has already been re-anchored to take an explicit
-     * day-start anchor, but the solver's joins are not yet business-date-keyed, so nothing in this
-     * codebase honours a non-default day start until SOLV-01 lands. This is the one validation
-     * line SOLV-01 deletes -- kept as one visible, reviewable condition rather than folded into a
-     * range check.
+     * <p>SOLV-01 widens the accepted range from {@code 00:00} only to any 15-minute boundary,
+     * refused at save time by name below. A day start that is not a whole multiple of the
+     * per-call generation increment is refused separately, later, at generation time -- see
+     * {@link TimeslotGeneratorService#requireDayStartTiles} -- naming the day start, the
+     * increment and why they cannot tile. The two refusals are necessarily distinct: the
+     * generation increment is not desk state, so tiling cannot be validated here.
      *
      * <p>The equal-value early return precedes every business-rule refusal: re-asserting the
      * value a desk already holds is not a transition.
@@ -233,8 +233,15 @@ public class DeskService {
         if (dayStart == null) {
             throw new IllegalArgumentException("Day start is required");
         }
-        if (!dayStart.equals(LocalTime.MIDNIGHT)) {
-            throw new IllegalArgumentException("Day start other than 00:00 is not yet supported");
+        // SOLV-01: increment-INDEPENDENT by design -- a fixed 15-minute modulus, not the per-call
+        // generation increment. The generation increment arrives per call, inferred from the
+        // uploaded spreadsheet; it is not desk state, so tiling against it cannot be validated
+        // here. That separate, increment-dependent refusal lives at generation time -- see
+        // TimeslotGeneratorService.requireDayStartTiles.
+        int dayStartMinuteOfDay = dayStart.getHour() * 60 + dayStart.getMinute();
+        if (dayStartMinuteOfDay % 15 != 0) {
+            throw new IllegalArgumentException(
+                    "Desk day start " + dayStart + " is not a 15-minute boundary");
         }
 
         long tenantId = TenantContext.getTenantId();
