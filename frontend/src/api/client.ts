@@ -328,7 +328,7 @@ export const exceptions = {
 }
 
 // --- Types ---
-export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number; schedulingMode: 'SLOT' | 'SHIFT'; dayStart: string }
+export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number; schedulingMode: 'SLOT' | 'SHIFT'; dayStart: string; dayStartLockedByScheduleId?: string; dayStartLockedPeriodStart?: string; dayStartLockedPeriodEnd?: string; dayStartTilingWarning?: string }
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
 export interface Agent { id: string; name: string; email: string; department: string; jobTitle: string; active: boolean; lastRefreshedAt: string }
 export interface DayHoursEntry { hasRow: boolean; hours: number | null; dayOffType: 'MANDATORY' | 'PTO' | null; effectiveHours: number }
