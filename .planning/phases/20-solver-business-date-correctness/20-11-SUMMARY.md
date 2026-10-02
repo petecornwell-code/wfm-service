@@ -179,3 +179,12 @@ None - no external service configuration required.
 ---
 *Phase: 20-solver-business-date-correctness*
 *Completed: 2026-10-02*
+
+## Self-Check: PASSED
+
+- FOUND: `src/main/java/com/wfm/service/SolverService.java`
+- FOUND: `src/test/java/com/wfm/service/PreSolveValidationBusinessDateTest.java`
+- FOUND: `src/test/resources/bday-join-guard.md`
+- FOUND: `.planning/phases/20-solver-business-date-correctness/20-11-SUMMARY.md`
+- FOUND commits: `4531844`, `c07abdd`, `92d463c`, `0d6bee9`
+- Re-ran all plan-level `<verification>` commands: `./gradlew test` green (full suite, 1205 tests, 0 failures, 0 errors, 4 skipped); `first.getBusinessDate()` count 1 and `Timeslot::getDate` (code lines only) count 0 in `SolverService.java`; `runPreSolveValidation` declared `static` (grep count 1); `PreSolveValidationBusinessDateTest` reports 5 passing tests; `BusinessDateJoinGuardTest` passes 6/6; `grep -c 'SolverService'`/`'expandMinimumStaffingSeats'`/`'runPreSolveValidation'` over `bday-join-guard.md` each print &ge;1; `git show --name-only --format=` for the visibility commit (`4531844`) names only `SolverService.java`, for the RED commit (`c07abdd`) names only the test file, and for the docs commit (`0d6bee9`) names only `bday-join-guard.md`.
