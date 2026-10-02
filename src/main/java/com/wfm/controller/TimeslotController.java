@@ -3,14 +3,15 @@ package com.wfm.controller;
 import com.wfm.dto.GenerateTimeslotsRequest;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.dto.TimeslotResponse;
+import com.wfm.model.Desk;
 import com.wfm.model.Timeslot;
+import com.wfm.service.DeskService;
 import com.wfm.service.TimeslotGeneratorService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,9 +20,11 @@ import java.util.UUID;
 public class TimeslotController {
 
     private final TimeslotGeneratorService timeslotGeneratorService;
+    private final DeskService deskService;
 
-    public TimeslotController(TimeslotGeneratorService timeslotGeneratorService) {
+    public TimeslotController(TimeslotGeneratorService timeslotGeneratorService, DeskService deskService) {
         this.timeslotGeneratorService = timeslotGeneratorService;
+        this.deskService = deskService;
     }
 
     @GetMapping
@@ -42,13 +45,16 @@ public class TimeslotController {
     @PostMapping("/generate")
     public ResponseEntity<List<TimeslotResponse>> generateTimeslots(@PathVariable UUID deskId,
                                                                       @RequestBody GenerateTimeslotsRequest request) {
-        // BDAY-01: DeskService.setDayStart's 00:00-only gate makes any other anchor unreachable
-        // through this endpoint this phase; Phase 19 re-anchors this to the desk's own value.
+        // SOLV-01: the endpoint anchors on the desk's OWN stored day start, resolved tenant-scoped
+        // BEFORE generation -- never a hardcoded literal -- which is what makes the generation-time
+        // tiling refusal (TimeslotGeneratorService.requireDayStartTiles) reachable from this live
+        // REST entry point for the first time.
+        Desk desk = deskService.getDesk(deskId);
         List<Timeslot> generated = timeslotGeneratorService.generateTimeslots(
                 deskId,
                 request.periodStartDate(),
                 request.periodEndDate(),
-                LocalTime.MIDNIGHT,
+                desk.getDayStart(),
                 request.startTime(),
                 request.endTime(),
                 request.incrementMinutes()
