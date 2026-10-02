@@ -36,15 +36,21 @@ honest rather than becoming decoration.
 green prematurely — an allowlist entry records a site that legitimately keeps calendar-date
 semantics, never a site this phase is going to migrate.
 
-**Current state, as of plan 20-06 (completed).** All matched lines in all three of
-`ScheduleConstraintProvider`, `ScheduleOutputService` and `ShiftLibraryGenerationService` are now
-migrated, so this guard's headline set-equality test is GREEN. **This green does NOT mean SOLV-07 is
-fully delivered.** `StaffingRequirementService`'s D-15 destructive-delete defect (`:172-175`,
-`.map(Timeslot::getDate).min()/.max()`) is still live and UNFIXED — it contributes ZERO matched lines
-to this guard regardless of migration state, because neither `.min(` nor `.max(` is among the four
-scanned verbs (see "Known scope boundaries" below). Do not read this guard's green as proof that
-demand upload is safe; plan 20-07 closes that gap by direct code review and its own proof, not by
-this guard turning red and then green again.
+**Current state, as of plan 20-07 (completed).** All matched lines in all three of
+`ScheduleConstraintProvider`, `ScheduleOutputService` and `ShiftLibraryGenerationService` are
+migrated, so this guard's headline set-equality test is GREEN -- it went green at plan 20-06,
+one plan ahead of this guard's own original prediction. **That green never meant SOLV-07 was fully
+delivered, and still does not prove it today.** `StaffingRequirementService`'s D-15
+destructive-delete defect (`:172-184`) contributes ZERO matched lines to this guard regardless of
+migration state, because its range derivation uses `.map(Timeslot::getBusinessDate).min()/.max()`
+and neither `.min(` nor `.max(` is among the four scanned verbs (see "Known scope boundaries"
+below). Plan 20-07 fixed that defect — the demand-upload replace path now derives its range from
+`getBusinessDate()` and calls a business-date-filtering delete
+(`deleteLiveByDeskAndBusinessDateRange`) — but it did so by direct code review and its own
+survivor-observing test (`StaffingRequirementBusinessDateDeleteTest`), not because this guard
+turned red and then green again. This guard's green has never been, and still is not, evidence
+about this file; treat its silence on `StaffingRequirementService` as a structural blind spot, not
+as a clean bill of health.
 
 ## Known scope boundaries — deliberate, not gaps
 
@@ -62,10 +68,10 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   on their calendar. Concatenation is not one of the four scanned verbs, so these are out of scope
   by construction and need no allowlist entry. All labelling change belongs to OVNT-07 (Phase 21).
 
-- **`StaffingRequirementService` line 378** (`t.getDate()`, populating
-  `StaffingRequirementResponse.Item`'s `date` field) keeps the calendar date for the same D-10
-  display reason — it is a response-DTO read, not a join/group key, and uses no verb this guard
-  scans.
+- **`StaffingRequirementService` line 388** (`t.getDate()`, populating
+  `StaffingRequirementResponse.Item`'s `date` field; line number as of plan 20-07) keeps the
+  calendar date for the same D-10 display reason, now with an explanatory comment stating so in
+  production — it is a response-DTO read, not a join/group key, and uses no verb this guard scans.
 
 - **`ShiftLibraryGenerationService` lines 226 and 616** are key positions in substance — a
   `.distinct()` identity (`new ShiftLibraryValidationService.Window(sr.getTimeslot().getBusinessDate(),
@@ -119,12 +125,18 @@ guard to catch a regression at these specific sites.
   (completed) by explicit task instruction, not by this guard's enforcement; verified by direct code
   review (`grep -c 'getTimeslot().getDate()'` over the file prints 0).
 
-- **`StaffingRequirementService` lines 172-175** (the `minDate`/`maxDate` derivation feeding the
-  destructive `deleteLiveByDeskAndDateRange` call, D-15's named site) uses `.map(Timeslot::getDate)`
-  chained to `.min(...)`/`.max(...)` — neither `.min(` nor `.max(` is among the four scanned verbs,
-  so despite `StaffingRequirementService` being one of the four files this guard's file list names,
-  this specific site (the whole reason the file was added, D-15) is structurally unreachable by the
-  scan. This means `StaffingRequirementService` currently contributes ZERO matched lines to this
-  guard regardless of migration state — its presence in the four-file scope keeps the door open for
-  any FUTURE key position in this file that genuinely uses one of the four verbs, but today's actual
-  demand-upload defect must be verified by plan 20-07's own direct proof, not by this guard.
+- **`StaffingRequirementService` lines 178-184** (the `minDate`/`maxDate` derivation feeding the
+  destructive delete call, D-15's named site; lines 172-175 before plan 20-07's edit) uses
+  `.map(Timeslot::getBusinessDate)` chained to `.min(...)`/`.max(...)` — neither `.min(` nor
+  `.max(` is among the four scanned verbs, so despite `StaffingRequirementService` being one of
+  the four files this guard's file list names, this specific site (the whole reason the file was
+  added, D-15) is structurally unreachable by the scan, migrated or not. This means
+  `StaffingRequirementService` contributes ZERO matched lines to this guard regardless of
+  migration state — its presence in the four-file scope keeps the door open for any FUTURE key
+  position in this file that genuinely uses one of the four verbs. **Plan 20-07 migrated this
+  site**: the range is now derived from `getBusinessDate()` and passed only to
+  `deleteLiveByDeskAndBusinessDateRange`, a new repository method whose query filters the
+  timeslot's `businessDate` column rather than its `date` column. Verified by
+  `StaffingRequirementBusinessDateDeleteTest`'s observed-survivor assertions at a 21:00 and a
+  00:00 anchor and by direct code review, not by this guard — it still cannot see this site and
+  never will, so a future regression here would also go unnoticed by this guard.

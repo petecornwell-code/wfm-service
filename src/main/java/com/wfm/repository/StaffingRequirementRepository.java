@@ -72,12 +72,31 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
            "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL")
     List<StaffingRequirement> findAllLiveByDesk(long tenantId, UUID deskId);
 
+    // Calendar-date twin. SOLV-07/D-15: its two remaining callers (calculateErlangC and
+    // calculateErlangX in StaffingRequirementService) supply operator-facing calendar dates
+    // straight from the request payload, so this method's query is left unchanged rather than
+    // re-pointed to the business date -- doing so would silently re-scope both of those
+    // operator-facing endpoints. Migrating them belongs with the overnight-labelling work
+    // (Phase 21, OVNT-01), not with this correctness phase.
     @Modifying
     @Query("DELETE FROM StaffingRequirement sr WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId " +
            "AND sr.scheduleId IS NULL AND sr.timeslot.id IN " +
            "(SELECT t.id FROM Timeslot t WHERE t.tenantId = :tenantId AND t.deskId = :deskId " +
            "AND t.scheduleId IS NULL AND t.date BETWEEN :from AND :to)")
     void deleteLiveByDeskAndDateRange(long tenantId, UUID deskId, LocalDate from, LocalDate to);
+
+    // Business-date twin of deleteLiveByDeskAndDateRange (SOLV-07/D-15). The two methods differ
+    // in exactly one place -- this one filters the timeslot's business date, the other its
+    // calendar date -- so a caller must pass bounds already in the matching date system: passing
+    // calendar-date bounds here, or business-date bounds to the sibling method, silently deletes
+    // the wrong span of live operator demand. The demand-upload replace path
+    // (StaffingRequirementService.saveRequirements) is this method's only caller.
+    @Modifying
+    @Query("DELETE FROM StaffingRequirement sr WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId " +
+           "AND sr.scheduleId IS NULL AND sr.timeslot.id IN " +
+           "(SELECT t.id FROM Timeslot t WHERE t.tenantId = :tenantId AND t.deskId = :deskId " +
+           "AND t.scheduleId IS NULL AND t.businessDate BETWEEN :from AND :to)")
+    void deleteLiveByDeskAndBusinessDateRange(long tenantId, UUID deskId, LocalDate from, LocalDate to);
 
     @Modifying
     @Query("DELETE FROM StaffingRequirement sr WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId " +

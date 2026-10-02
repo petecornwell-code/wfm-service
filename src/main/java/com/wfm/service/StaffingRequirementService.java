@@ -168,14 +168,20 @@ public class StaffingRequirementService {
             }
         }
 
-        // Derive the replacement date range from the timeslots in the payload
+        // SOLV-07/D-15: the range derivation and the delete's filter are ONE decision, and both
+        // halves move together in this edit. This delete is destructive against live operator
+        // demand -- on a re-anchored desk, a range derived from the calendar date but filtered on
+        // the business date (or vice versa) silently destroys the wrong business day's
+        // requirements. Deriving the range from getBusinessDate() and passing it only to the
+        // business-date-filtering delete method below (which filters the same column) makes that
+        // half-migration structurally impossible rather than merely discouraged.
         LocalDate minDate = timeslotMap.values().stream()
-                .map(Timeslot::getDate).min(LocalDate::compareTo).orElseThrow();
+                .map(Timeslot::getBusinessDate).min(LocalDate::compareTo).orElseThrow();
         LocalDate maxDate = timeslotMap.values().stream()
-                .map(Timeslot::getDate).max(LocalDate::compareTo).orElseThrow();
+                .map(Timeslot::getBusinessDate).max(LocalDate::compareTo).orElseThrow();
 
-        // Delete existing live requirements in this date range
-        staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, minDate, maxDate);
+        // Delete existing live requirements in this business-date range
+        staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, minDate, maxDate);
 
         // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
         // processes inserts before deletes in the same flush, which would hit the
@@ -371,6 +377,10 @@ public class StaffingRequirementService {
     private StaffingRequirementResponse.Item toResponseItem(StaffingRequirement sr) {
         Timeslot t = sr.getTimeslot();
         Specialization s = sr.getSpecialization();
+        // SOLV-07/D-10: deliberately the calendar date, not the business date. A response field
+        // an operator reads answers "when does this happen", which on a re-anchored desk is a
+        // calendar question -- the same deliberate display decision the timeslot labels in
+        // ScheduleOutputService carry. Any future labelling change belongs to OVNT-07 (Phase 21).
         return new StaffingRequirementResponse.Item(
                 sr.getId(),
                 t.getId(),
