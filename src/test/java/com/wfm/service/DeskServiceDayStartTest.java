@@ -176,6 +176,62 @@ class DeskServiceDayStartTest {
         assertThat(response.dayStart()).isEqualTo(LocalTime.of(21, 0));
     }
 
+    // --- Sub-minute precision refusal (SOLV-01/SOLV-03): the modulus below discards seconds and
+    // nanoseconds, so a value carrying either must be refused BY NAME, separately, before it ---
+
+    @Test
+    void setDayStart_060000_accepted_positiveControl() {
+        Desk desk = saveDesk(TENANT_A);
+        LocalTime value = LocalTime.of(6, 0, 0);
+
+        Desk result = deskService.setDayStart(desk.getId(), value);
+
+        assertThat(result.getDayStart()).isEqualTo(value);
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(value);
+    }
+
+    @Test
+    void setDayStart_060001_refusedNamingRejectedValue_persistsNothing() {
+        Desk desk = saveDesk(TENANT_A);
+        LocalTime rejected = LocalTime.of(6, 0, 1);
+
+        assertThatThrownBy(() -> deskService.setDayStart(desk.getId(), rejected))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(rejected.toString());
+
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.MIDNIGHT);
+    }
+
+    @Test
+    void setDayStart_nanosecondComponent_refusedNamingRejectedValue_persistsNothing() {
+        Desk desk = saveDesk(TENANT_A);
+        LocalTime rejected = LocalTime.of(21, 15, 0, 500);
+
+        assertThatThrownBy(() -> deskService.setDayStart(desk.getId(), rejected))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(rejected.toString());
+
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.MIDNIGHT);
+    }
+
+    @Test
+    void setDayStart_060701_refusedNamingSubMinuteReason_notBoundaryReason_persistsNothing() {
+        Desk desk = saveDesk(TENANT_A);
+        LocalTime rejected = LocalTime.of(6, 7, 1);
+
+        assertThatThrownBy(() -> deskService.setDayStart(desk.getId(), rejected))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(rejected.toString())
+                .hasMessageContaining("seconds or sub-second precision")
+                .hasMessageNotContaining("15-minute boundary");
+
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.MIDNIGHT);
+    }
+
     // --- Accepted-schedule refusal (unconditional, no bypass) ---
 
     @Test
