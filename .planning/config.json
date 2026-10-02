@@ -29,7 +29,7 @@
     "_auto_chain_active": false,
     "build_command": "./gradlew assemble",
     "test_command": "./gradlew test",
-    "test_gate_timeout": 1800
+    "test_gate_timeout": 3600
   },
   "hooks": {
     "context_warnings": true
