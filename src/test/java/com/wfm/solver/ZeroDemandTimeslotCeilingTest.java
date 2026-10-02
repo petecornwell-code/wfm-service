@@ -86,6 +86,10 @@ class ZeroDemandTimeslotCeilingTest {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
         ts.setDate(DAY);
+        // This fixture is midnight-anchored, where calendar date and business date coincide --
+        // set explicitly so the SHIFT-mode eligibility filter (which reads the business date) has
+        // a non-null value to read rather than accidentally passing on a null that would NPE.
+        ts.setBusinessDate(DAY);
         ts.setStartTime(start);
         ts.setEndTime(start.plusHours(1));
         return ts;
