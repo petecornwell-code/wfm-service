@@ -3,6 +3,7 @@ package com.wfm.service;
 import com.wfm.config.TenantContext;
 import com.wfm.controller.ShiftLibraryValidationController;
 import com.wfm.dto.ShiftLibraryValidationResponse;
+import com.wfm.dto.ShiftTemplateRequest;
 import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.PreSolveValidationException;
 import com.wfm.model.Agent;
@@ -52,12 +53,18 @@ import static org.mockito.Mockito.when;
  * under H2, so it is supplied here as a {@code @MockitoBean} and stubbed per test.
  */
 @DataJpaTest
-@Import({ShiftLibraryValidationService.class, ShiftLibraryGenerationService.class, ShiftLibraryValidationController.class})
+@Import({ShiftLibraryValidationService.class, ShiftLibraryGenerationService.class, ShiftLibraryValidationController.class,
+        ShiftTemplateService.class})
 @ActiveProfiles("test")
 class ShiftLibraryValidationServiceTest {
 
     @Autowired
     private ShiftLibraryValidationService service;
+
+    // OVNT-05 Task 2, Test 6 (agreement): the real save path, imported alongside the report/gate
+    // pair so the same desk/envelope can be driven through both without a second test class.
+    @Autowired
+    private ShiftTemplateService shiftTemplateService;
 
     @Autowired
     private ShiftLibraryValidationController controller;
@@ -441,6 +448,125 @@ class ShiftLibraryValidationServiceTest {
         ShiftLibraryValidationResponse response = service.validate(deskId);
 
         assertThat(response.misalignedTemplates()).isEmpty();
+    }
+
+    // ---------- Operating-window escapes (OVNT-05/D-06/D-07, Task 2) ----------
+
+    @Test
+    void requireShiftModeReady_overnightTemplateOutsideOperatingWindow_throwsNamingTemplate() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(22, 0), LocalTime.of(7, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(23, 0), LocalTime.of(23, 30), 1, null);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(22, 0), LocalTime.of(6, 0), 60)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+        assertThat(response.operatingWindowFindings()).singleElement().satisfies(f -> {
+            assertThat(f.blocking()).isTrue();
+            assertThat(f.templateName()).isEqualTo("Overnight");
+        });
+
+        assertThatThrownBy(() -> service.requireShiftModeReady(deskId))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException psve = (PreSolveValidationException) ex;
+                    assertThat(psve.getDetails()).anySatisfy(d -> {
+                        assertThat(d.field()).isEqualTo("operatingWindow");
+                        assertThat(d.value()).contains("Overnight");
+                    });
+                });
+    }
+
+    @Test
+    void validate_sameDayTemplateOutsideOperatingWindow_reportsNonBlockingFinding_requireShiftModeReadyDoesNotThrowForIt() {
+        UUID deskId = saveDesk(TENANT_A);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Early", LocalTime.of(8, 0), LocalTime.of(19, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+        saveDemand(TENANT_A, deskId, spec, LocalDate.of(2026, 1, 5),
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1, null);
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        saveAgentDayHours(TENANT_A, agent, DayOfWeek.MONDAY, new BigDecimal("11.00"));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(18, 0), 60)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+        assertThat(response.operatingWindowFindings()).singleElement().satisfies(f -> {
+            assertThat(f.blocking()).isFalse();
+            assertThat(f.templateName()).isEqualTo("Early");
+        });
+
+        assertThatCode(() -> service.requireShiftModeReady(deskId)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void validate_templateFullyInsideOperatingWindow_reportsNoFinding() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "Inside", LocalTime.of(9, 0), LocalTime.of(17, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(18, 0), 60)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.operatingWindowFindings()).isEmpty();
+    }
+
+    @Test
+    void validate_boundsAbsent_operatingWindowFindingsEmpty() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        saveTemplate(deskId, "Overnight", LocalTime.of(22, 0), LocalTime.of(7, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+        // getLiveBounds stubbed to Optional.empty() in setUp() by default.
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.operatingWindowFindings()).isEmpty();
+    }
+
+    @Test
+    void validate_retiredTemplateOutsideOperatingWindow_excludedFromOperatingWindowFindings() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "Retired", LocalTime.of(20, 0), LocalTime.of(22, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2020, 1, 1), LocalDate.of(2020, 12, 31));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(18, 0), 60)));
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.operatingWindowFindings()).isEmpty();
+    }
+
+    @Test
+    void requireShiftModeReady_and_createShiftTemplate_agreeOnTheSameOvernightEscape() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(22, 0), LocalTime.of(6, 0), 60)));
+        LocalTime start = LocalTime.of(22, 0);
+        LocalTime end = LocalTime.of(7, 0);
+
+        // The save path refuses this exact envelope.
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", start, end,
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+        assertThatThrownBy(() -> shiftTemplateService.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        // The identical pair, stored directly (as if it predated the check), is reported blocking --
+        // the agreement property the shared predicate exists to guarantee.
+        saveTemplate(deskId, "Overnight", start, end, 0, 0, Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 5), null);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.operatingWindowFindings()).singleElement()
+                .satisfies(f -> assertThat(f.blocking()).isTrue());
     }
 
     // ---------- Hours match (D-06/D-07) ----------
@@ -959,6 +1085,15 @@ class ShiftLibraryValidationServiceTest {
         Desk desk = new Desk();
         desk.setTenantId(tenantId);
         desk.setName("Desk " + UUID.randomUUID());
+        return deskRepository.save(desk).getId();
+    }
+
+    // OVNT-05 (Task 2): mirrors ShiftTemplateServiceTest's helper of the same name.
+    private UUID saveDeskWithDayStart(long tenantId, LocalTime dayStart) {
+        Desk desk = new Desk();
+        desk.setTenantId(tenantId);
+        desk.setName("Desk " + UUID.randomUUID());
+        desk.setDayStart(dayStart);
         return deskRepository.save(desk).getId();
     }
 
