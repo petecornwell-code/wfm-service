@@ -5,12 +5,14 @@ import com.wfm.dto.DeskRequest;
 import com.wfm.dto.DeskResponse;
 import com.wfm.dto.SchedulingModeRequest;
 import com.wfm.model.Desk;
+import com.wfm.model.Schedule;
 import com.wfm.service.DeskService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -25,26 +27,29 @@ public class DeskController {
 
     @GetMapping
     public List<DeskResponse> listDesks() {
-        return deskService.listDesks().stream().map(this::toResponse).toList();
+        Map<UUID, Schedule> locksByDeskId = deskService.dayStartLocksByDeskId();
+        return deskService.listDesks().stream()
+                .map(desk -> toResponse(desk, locksByDeskId.get(desk.getId()), null))
+                .toList();
     }
 
     @PostMapping
     public ResponseEntity<DeskResponse> createDesk(@RequestBody DeskRequest request) {
         Desk created = deskService.createDesk(request.name(), request.description(),
                 request.defaultContractedHoursPerDay());
-        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(created, lockFor(created.getId()), null));
     }
 
     @GetMapping("/{deskId}")
     public DeskResponse getDesk(@PathVariable UUID deskId) {
-        return toResponse(deskService.getDesk(deskId));
+        return toResponse(deskService.getDesk(deskId), lockFor(deskId), null);
     }
 
     @PutMapping("/{deskId}")
     public DeskResponse updateDesk(@PathVariable UUID deskId, @RequestBody DeskRequest request) {
         Desk updated = deskService.updateDesk(deskId, request.name(), request.description(),
                 request.defaultContractedHoursPerDay());
-        return toResponse(updated);
+        return toResponse(updated, lockFor(deskId), null);
     }
 
     @DeleteMapping("/{deskId}")
@@ -55,16 +60,30 @@ public class DeskController {
 
     @PutMapping("/{deskId}/scheduling-mode")
     public DeskResponse switchSchedulingMode(@PathVariable UUID deskId, @RequestBody SchedulingModeRequest request) {
-        return toResponse(deskService.switchSchedulingMode(deskId, request.mode()));
+        Desk updated = deskService.switchSchedulingMode(deskId, request.mode());
+        return toResponse(updated, lockFor(deskId), null);
     }
 
     @PutMapping("/{deskId}/day-start")
     public DeskResponse setDayStart(@PathVariable UUID deskId, @RequestBody DayStartRequest request) {
-        return toResponse(deskService.setDayStart(deskId, request.dayStart()));
+        Desk updated = deskService.setDayStart(deskId, request.dayStart());
+        // lockFor(deskId) is necessarily null on this success path: setDayStart's own
+        // unconditional ACCEPTED-schedule refusal would already have thrown otherwise.
+        String tilingWarning = deskService.dayStartTilingWarning(deskId, request.dayStart()).orElse(null);
+        return toResponse(updated, lockFor(deskId), tilingWarning);
     }
 
-    private DeskResponse toResponse(Desk desk) {
+    /** One per-desk lookup through the same batch finder {@link #listDesks} uses -- never a second finder shape. */
+    private Schedule lockFor(UUID deskId) {
+        return deskService.dayStartLocksByDeskId().get(deskId);
+    }
+
+    private DeskResponse toResponse(Desk desk, Schedule lock, String tilingWarning) {
         return new DeskResponse(desk.getId(), desk.getName(), desk.getDescription(),
-                desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode(), desk.getDayStart());
+                desk.getDefaultContractedHoursPerDay(), desk.getSchedulingMode(), desk.getDayStart(),
+                lock != null ? lock.getId() : null,
+                lock != null ? lock.getPeriodStartDate() : null,
+                lock != null ? lock.getPeriodEndDate() : null,
+                tilingWarning);
     }
 }

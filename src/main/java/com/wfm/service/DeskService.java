@@ -19,7 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -356,5 +358,25 @@ public class DeskService {
         return Optional.of("Day start " + dayStart + " will not tile cleanly with this desk's existing "
                 + incrementMinutes + "-minute timeslots — regenerating will leave a partial slot at the "
                 + "boundary. The desk still saved.");
+    }
+
+    /**
+     * The per-desk ACCEPTED-schedule lock, resolved in one query for the whole tenant (OVNT-01,
+     * D-04) -- callers needing a single desk's lock still go through this map rather than a
+     * second, per-desk finder shape. Keeps the FIRST schedule encountered per {@code deskId},
+     * which, given {@link ScheduleRepository#findByTenantIdAndStatusOrderByCreatedAtDesc}'s
+     * descending {@code createdAt} order, is the exact same row {@link #setDayStart}'s own
+     * per-desk finder would name in its refusal -- the disclosure and the refusal can never name
+     * different schedules for the same desk.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, Schedule> dayStartLocksByDeskId() {
+        long tenantId = TenantContext.getTenantId();
+        Map<UUID, Schedule> locks = new LinkedHashMap<>();
+        for (Schedule schedule : scheduleRepository
+                .findByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, ScheduleStatus.ACCEPTED)) {
+            locks.putIfAbsent(schedule.getDeskId(), schedule);
+        }
+        return locks;
     }
 }
