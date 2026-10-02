@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.dto.TimeslotBoundsResponse;
 import com.wfm.exception.ConflictException;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.ConstraintWeights;
@@ -8,16 +9,20 @@ import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
 import com.wfm.model.SchedulingMode;
+import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.*;
 import com.wfm.util.BigDecimals;
+import com.wfm.util.DayWindow;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class DeskService {
@@ -34,6 +39,8 @@ public class DeskService {
     private final AgentAssignmentRepository agentAssignmentRepository;
     private final InMemoryScheduleStore inMemoryScheduleStore;
     private final ShiftLibraryValidationService shiftLibraryValidationService;
+    private final ShiftTemplateRepository shiftTemplateRepository;
+    private final TimeslotGeneratorService timeslotGeneratorService;
 
     public DeskService(DeskRepository deskRepository,
                        ConstraintWeightsRepository constraintWeightsRepository,
@@ -46,7 +53,9 @@ public class DeskService {
                        AgentExceptionRepository agentExceptionRepository,
                        AgentAssignmentRepository agentAssignmentRepository,
                        InMemoryScheduleStore inMemoryScheduleStore,
-                       ShiftLibraryValidationService shiftLibraryValidationService) {
+                       ShiftLibraryValidationService shiftLibraryValidationService,
+                       ShiftTemplateRepository shiftTemplateRepository,
+                       TimeslotGeneratorService timeslotGeneratorService) {
         this.deskRepository = deskRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.scheduleRepository = scheduleRepository;
@@ -59,6 +68,8 @@ public class DeskService {
         this.agentAssignmentRepository = agentAssignmentRepository;
         this.inMemoryScheduleStore = inMemoryScheduleStore;
         this.shiftLibraryValidationService = shiftLibraryValidationService;
+        this.shiftTemplateRepository = shiftTemplateRepository;
+        this.timeslotGeneratorService = timeslotGeneratorService;
     }
 
     public List<Desk> listDesks() {
@@ -236,6 +247,18 @@ public class DeskService {
      * surface area. MIGR-04 is where a documented, tested reversal belongs. The refusal reads the
      * ordered finder below so its message is deterministic when more than one ACCEPTED schedule
      * exists on the desk.
+     *
+     * <p>A fifth refusal, ordered after the ACCEPTED-schedule check and before the write itself,
+     * rejects a proposed anchor that would strand an already-stored shift template (OVNT-01,
+     * D-03). Templates are validated only on save: on a {@code 00:00} desk a stored {@code
+     * 14:00}-{@code 23:00} template is valid, but at a {@code 21:00} anchor its offsets become
+     * {@code 1020 -> 120}, which {@link DayWindow#anchoredIsForwardWithinDay} rejects -- while
+     * {@link DayWindow#anchoredDurationMinutes} still returns a plausible positive number by
+     * wrapping, so nothing visibly breaks until the row cannot be re-saved. The refusal shares
+     * {@code ShiftTemplateService.validate}'s own forward-interval predicate rather than a
+     * hand-written comparison, so the two can never disagree about which templates survive a
+     * given anchor. The ACCEPTED-schedule refusal stays first: it is permanent and unconditional,
+     * so a desk failing both is told about the one cause it cannot work around.
      */
     @Transactional
     public Desk setDayStart(UUID deskId, LocalTime dayStart) {
@@ -278,7 +301,60 @@ public class DeskService {
                     + ", " + blocking.getPeriodStartDate() + " to " + blocking.getPeriodEndDate() + ")");
         }
 
+        // OVNT-01/D-03: shares ShiftTemplateService.validate's own anchoredIsForwardWithinDay
+        // predicate -- never a hand-written comparison -- so the save path and this refusal can
+        // never disagree about which templates survive the proposed anchor.
+        DayWindow proposed = DayWindow.anchoredAt(dayStart);
+        List<ShiftTemplate> stranded = shiftTemplateRepository.findByTenantIdAndDeskId(tenantId, deskId)
+                .stream()
+                .filter(t -> !proposed.anchoredIsForwardWithinDay(t.getStartTime(), t.getEndTime()))
+                .toList();
+        if (!stranded.isEmpty()) {
+            String names = stranded.stream()
+                    .map(t -> t.getName() + " (" + t.getEffectiveFrom() + ")")
+                    .collect(Collectors.joining(", "));
+            throw new ConflictException("Changing day start to " + dayStart + " would strand "
+                    + stranded.size() + " stored shift template(s) that would no longer run forward "
+                    + "within the business day: " + names);
+        }
+
         desk.setDayStart(dayStart);
         return deskRepository.save(desk);
+    }
+
+    /**
+     * Whether a proposed day start will tile cleanly against this desk's already-generated live
+     * timeslots (OVNT-01, D-05). Read-only and purely advisory -- the caller invokes this AFTER a
+     * successful {@link #setDayStart}, never from inside it, which is what makes "the desk still
+     * saved" true by construction rather than by discipline. A desk with no live timeslots at all
+     * has no increment to compare against and returns empty rather than refusing -- the same
+     * "absence is not a failed check" rule {@link #setDayStart}'s own 15-minute modulus follows
+     * for a desk with nothing generated yet.
+     *
+     * <p>The generation increment is read from the desk's own already-generated timeslots through
+     * {@link TimeslotGeneratorService#getLiveBounds}, never a hand-written comparison or the fixed
+     * 15-minute modulus {@link #setDayStart} applies -- the increment is not desk state (see that
+     * method's javadoc), so it cannot be known any earlier than this.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> dayStartTilingWarning(UUID deskId, LocalTime dayStart) {
+        long tenantId = TenantContext.getTenantId();
+        deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+
+        Optional<TimeslotBoundsResponse> bounds = timeslotGeneratorService.getLiveBounds(deskId);
+        if (bounds.isEmpty()) {
+            return Optional.empty();
+        }
+
+        int incrementMinutes = bounds.get().incrementMinutes();
+        int dayStartMinuteOfDay = dayStart.getHour() * 60 + dayStart.getMinute();
+        if (dayStartMinuteOfDay % incrementMinutes == 0) {
+            return Optional.empty();
+        }
+
+        return Optional.of("Day start " + dayStart + " will not tile cleanly with this desk's existing "
+                + incrementMinutes + "-minute timeslots — regenerating will leave a partial slot at the "
+                + "boundary. The desk still saved.");
     }
 }

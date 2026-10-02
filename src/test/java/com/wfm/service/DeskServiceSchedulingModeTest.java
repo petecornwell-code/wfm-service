@@ -54,7 +54,7 @@ import static org.mockito.Mockito.verify;
  * Uses H2 via @DataJpaTest, mirroring JobTitleConfigServiceTest's shape.
  */
 @DataJpaTest
-@Import({DeskService.class, InMemoryScheduleStore.class, DeskController.class})
+@Import({DeskService.class, InMemoryScheduleStore.class, DeskController.class, TimeslotGeneratorService.class})
 @ActiveProfiles("test")
 class DeskServiceSchedulingModeTest {
 

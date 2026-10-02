@@ -81,7 +81,7 @@ import static org.mockito.Mockito.mock;
  * paired with an independently-seeded real DB row to prove the two never interact.
  */
 @DataJpaTest
-@Import({DeskService.class, InMemoryScheduleStore.class})
+@Import({DeskService.class, InMemoryScheduleStore.class, TimeslotGeneratorService.class})
 @ActiveProfiles("test")
 class UsualShiftWritePathTest {
 
