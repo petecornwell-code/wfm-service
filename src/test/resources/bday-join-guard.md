@@ -127,15 +127,19 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   `TimeslotGeneratorService.listTimeslots` and `StaffingRequirementService`'s paginated
   `findLiveByDeskAndDateRangeAfterCursor`/`findLiveByDeskAndDateRange(..., Pageable)` overloads
   are deliberately left on calendar date -- both are operator-facing, fed request-payload calendar
-  dates, the same D-10 reason already recorded above for the two Erlang calculator paths.
+  dates, the same D-10 reason already recorded above. **Plan 21-04 (OVNT-02) migrated the two
+  Erlang calculator paths off this calendar-date JPQL-literal shape entirely** -- they no longer
+  call `deleteLiveByDeskAndDateRange` at all, so they are no longer an instance of this shape and
+  are removed from this list; see the "`StaffingRequirementRepository`'s calendar-date range
+  delete's Erlang C and Erlang X callers" bullet later in this section for the migration itself.
 
   What would change this decision: a guard that reaches this shape needs to scan repository
   interfaces for derived-query identifiers containing `Date` and for `@Query` string literals
   naming `t.date`, with its own allowlist-cost measurement taken first -- the paginated
-  operator-facing overloads, `TimeslotGeneratorService.listTimeslots` and both Erlang calculator
-  paths all legitimately keep calendar-date semantics and would each need an entry. That is a
-  later-phase guard-design item, consistent with how plan 20-11 dispositioned the same question
-  for `SolverService`'s absence from `TARGET_FILES`.
+  operator-facing overloads and `TimeslotGeneratorService.listTimeslots` legitimately keep
+  calendar-date semantics and would each need an entry. That is a later-phase guard-design item,
+  consistent with how plan 20-11 dispositioned the same question for `SolverService`'s absence
+  from `TARGET_FILES`.
 
 - **`ScheduleOutputService` lines 670 and 771** (line numbers as of plan 20-06; originally 664 and
   759 before this plan's explanatory comments shifted them) build an operator-facing timeslot label
@@ -161,13 +165,20 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   covered them and still does not — their correctness was verified by direct code review, not by this
   guard turning green.
 
-- **`StaffingRequirementRepository`'s calendar-date range delete has two callers beyond the
-  demand-upload path** — the Erlang C and Erlang X staffing calculators — whose from/to range
-  arrives from the request payload as calendar dates. Those two keep calendar-date semantics in
-  this phase: SOLV-07's named surface is demand upload, coverage reporting and the solver, and no
-  desk carries a non-midnight anchor until this phase's final commit, so both Erlang paths are
-  unreachable instances of the same latent defect today, not live ones. A Phase 21 owner should
-  pick them up alongside OVNT-01.
+- **`StaffingRequirementRepository`'s calendar-date range delete's Erlang C and Erlang X callers
+  were migrated to the business-date twin in plan 21-04 (OVNT-02, the `migrate-now` decision).**
+  Before plan 21-02 made a non-midnight-anchored desk reachable, both calculators' from/to range
+  arrived from the request payload as calendar dates and the delete it fed was filtered on
+  calendar date too, so the two readings produced identical rows on every desk that existed —
+  "unreachable instances of the same latent defect today, not live ones," as this bullet put it
+  until this plan. 21-02 ended that unreachability in the same phase it was created, so the
+  operator decided at this plan's checkpoint to close the gap immediately rather than defer it:
+  both calculators now derive their clear range from the business date, matching the demand-save
+  path's existing use of `deleteLiveByDeskAndBusinessDateRange`, so all three write paths agree on
+  one date system. The two remaining callers of the calendar-date twin —
+  `TimeslotGeneratorService`'s generation path and `FteUploadService`'s FTE upload path — were
+  deliberately left unchanged and keep calendar-date semantics; see this file's "Known scope
+  boundaries" entry above and the repository comment at `StaffingRequirementRepository` for why.
 
 - **The three candidate tokens D-09 rejected** — `.getDayOfWeek()`, `.plusDays(`, and
   `ChronoUnit.DAYS` — are not scanned, because they fire overwhelmingly on types with no competing

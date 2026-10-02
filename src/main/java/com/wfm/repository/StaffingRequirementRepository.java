@@ -72,12 +72,17 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
            "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL")
     List<StaffingRequirement> findAllLiveByDesk(long tenantId, UUID deskId);
 
-    // Calendar-date twin. SOLV-07/D-15: its two remaining callers (calculateErlangC and
-    // calculateErlangX in StaffingRequirementService) supply operator-facing calendar dates
-    // straight from the request payload, so this method's query is left unchanged rather than
-    // re-pointed to the business date -- doing so would silently re-scope both of those
-    // operator-facing endpoints. Migrating them belongs with the overnight-labelling work
-    // (Phase 21, OVNT-01), not with this correctness phase.
+    // Calendar-date twin. OVNT-02 (phase 21, migrate-now decision): calculateErlangC and
+    // calculateErlangX were migrated off this method onto deleteLiveByDeskAndBusinessDateRange
+    // below, because their inserts are keyed by explicit timeslotId while the clear is by range,
+    // and the two disagree on a desk whose day start is not midnight. This method's two remaining
+    // callers are TimeslotGeneratorService's generation path and FteUploadService's FTE upload
+    // path, both of which keep calendar-date semantics deliberately: neither is keyed by explicit
+    // timeslot id against a payload the way the Erlang calculators are, and both operate on
+    // operator-facing calendar dates where a calendar-scoped clear is the semantics the operator
+    // expects (the same SOLV-07/D-10 "a label/date answers a calendar question" reasoning this
+    // codebase already applies elsewhere). Re-pointing either of these two remaining callers is a
+    // new decision, not an extension of this one.
     @Modifying
     @Query("DELETE FROM StaffingRequirement sr WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId " +
            "AND sr.scheduleId IS NULL AND sr.timeslot.id IN " +

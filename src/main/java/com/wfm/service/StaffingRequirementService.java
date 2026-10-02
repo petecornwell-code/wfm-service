@@ -235,7 +235,15 @@ public class StaffingRequirementService {
             loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
         }
 
-        staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, from, to);
+        // OVNT-02 (migrate-now): the inserts below are keyed by explicit timeslotId while this
+        // clear is by range, so the clear must use the SAME date system the rows are attributed
+        // under -- the business date, not the calendar date -- or the two disagree on a desk
+        // whose day start is not midnight (a post-midnight slot of business day D carries
+        // calendar date D+1, so a calendar-scoped clear of [D, D] would miss it and a
+        // calendar-scoped clear of [D, D] would also reach the prior business day's tail on
+        // calendar date D). The demand-save path above already uses the business-date twin for
+        // exactly this reason; this call now matches it.
+        staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, from, to);
 
         // Same flush-before-insert reason as calculateErlangX: Hibernate's ActionQueue would
         // otherwise run the inserts first and hit the unique constraint on the live index.
@@ -334,8 +342,12 @@ public class StaffingRequirementService {
             loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
         }
 
-        // Delete existing live requirements in the specified date range
-        staffingRequirementRepository.deleteLiveByDeskAndDateRange(tenantId, deskId, from, to);
+        // OVNT-02 (migrate-now): delete existing live requirements in the specified business-date
+        // range -- the inserts below are keyed by explicit timeslotId while this clear is by
+        // range, so the clear must use the SAME date system the rows are attributed under, or the
+        // two disagree on a desk whose day start is not midnight. See calculateErlangC's call site
+        // for the full reasoning; the two calculators must not drift apart on this.
+        staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, from, to);
 
         // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
         // processes inserts before deletes in the same flush, which would hit the
