@@ -20,6 +20,7 @@ import com.wfm.model.ShiftBandPair;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
 import com.wfm.model.Specialization;
+import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.AgentShiftAssignmentRepository;
@@ -27,6 +28,7 @@ import com.wfm.repository.ConstraintWeightsRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateBreakBandRepository;
 import com.wfm.repository.SpecializationRepository;
+import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -99,6 +101,11 @@ class ScheduleServiceShiftSnapshotTest {
 
     @Autowired
     private TimeslotRepository timeslotRepository;
+
+    // SOLV-01 (20-REVIEW.md CR-01 site 4) — needed to save fixture demand rows and to read back
+    // the accept-time staffing-requirement snapshot the new tests below assert against.
+    @Autowired
+    private StaffingRequirementRepository staffingRequirementRepository;
 
     @Autowired
     private ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
@@ -280,6 +287,157 @@ class ScheduleServiceShiftSnapshotTest {
                 .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
         assertThat(persistedAssignments).hasSize(1);
         assertThat(persistedAssignments.get(0).getAgent().getId()).isEqualTo(agent.getId());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // SOLV-01 (20-REVIEW.md CR-01, third and fourth confirmed sites) — acceptSchedule's two
+    // snapshot loads (:312-315 timeslots, :333-336 staffing requirements) filter on CALENDAR
+    // date using BUSINESS-date period bounds. On a 21:00-anchored desk, business-Monday's 24
+    // timeslots split 3 rows on calendar MONDAY (21:00/22:00/23:00) and 21 rows on calendar
+    // MONDAY.plusDays(1) (00:00 through 20:00) -- all 24 carrying businessDate = MONDAY. A
+    // calendar-DateBetween(MONDAY, MONDAY) finder admits only the first 3; the 21 post-midnight
+    // rows were never fetched, so the ACCEPTED snapshot permanently omitted them. Tests A and B
+    // below proved this RED before BusinessDayPeriodLoader existed (see 20-12-SUMMARY.md for the
+    // observed truncated counts); Test C proves the fix derives the business date rather than
+    // trusting the stored column; Test D proves the fix is a no-op at a midnight anchor.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    void acceptSchedule_21_00Anchor_snapshotsAllTwentyFourTimeslotsOfTheLastBusinessDay() {
+        // Test A (site 3). RED (observed before BusinessDayPeriodLoader existed): 3 persisted
+        // snapshot rows against an expectation of 24.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(23, 0)));
+        saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY, postMidnightHourlyStarts());
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setStartTime(LocalTime.of(21, 0));
+        schedule.setEndTime(LocalTime.of(21, 0));
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<Timeslot> snapshot = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot)
+                .as("site 3: all 24 of business-Monday's timeslots must be snapshotted, not just "
+                        + "the 3 that happen to share Monday's calendar date")
+                .hasSize(24);
+    }
+
+    @Test
+    void acceptSchedule_21_00Anchor_snapshotsAllTwentyFourStaffingRequirementsOfTheLastBusinessDay() {
+        // Test B (site 4). RED (observed before BusinessDayPeriodLoader existed): 3 persisted
+        // snapshot requirements against an expectation of 24. Must be fixed in the same commit
+        // as site 3 -- acceptSchedule's remap loop (:339-340) skips any requirement whose
+        // timeslot id is absent from timeslotRemap, so site 3 alone would persist 24 snapshot
+        // timeslots with no demand rows attached.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+
+        List<Timeslot> earlyRows = saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(23, 0)));
+        List<Timeslot> postMidnightRows = saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY,
+                postMidnightHourlyStarts());
+
+        List<Timeslot> allLiveTimeslots = new ArrayList<>(earlyRows);
+        allLiveTimeslots.addAll(postMidnightRows);
+        for (Timeslot ts : allLiveTimeslots) {
+            saveStaffingRequirement(deskId, ts, spec);
+        }
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setStartTime(LocalTime.of(21, 0));
+        schedule.setEndTime(LocalTime.of(21, 0));
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<StaffingRequirement> snapshot = staffingRequirementRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot)
+                .as("site 4: all 24 staffing requirements for business-Monday's timeslots must be "
+                        + "snapshotted, not just the 3 whose timeslot shares Monday's calendar date")
+                .hasSize(24);
+    }
+
+    @Test
+    void acceptSchedule_21_00Anchor_derivesBusinessDateRatherThanTrustingTheStoredColumn() {
+        // Test C (falsification control). Every timeslot's STORED businessDate column is set
+        // equal to its OWN calendar date (the post-midnight rows carry MONDAY.plusDays(1)), but
+        // the business day actually being accepted is still MONDAY. This must pass both before
+        // and after the production change: it is what proves Test A's 24 comes from deriving the
+        // business date, not from a widened fetch returning everything unfiltered, and not from
+        // trusting the stored column.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(23, 0)));
+        saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY.plusDays(1), postMidnightHourlyStarts());
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setStartTime(LocalTime.of(21, 0));
+        schedule.setEndTime(LocalTime.of(21, 0));
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<Timeslot> snapshot = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot)
+                .as("the loader must DERIVE the business date from (calendarDate, startTime), "
+                        + "never trust the stored businessDate column -- the 21 post-midnight "
+                        + "rows' stored value disagrees with their derived value, so only the 3 "
+                        + "calendar-Monday rows survive")
+                .hasSize(3);
+    }
+
+    @Test
+    void acceptSchedule_midnightAnchor_snapshotIsUnchangedAndDecoyDayIsExcluded() {
+        // Test D (midnight-anchored no-op control). The widened fetch's extra calendar day must
+        // filter out completely at a 00:00 anchor, leaving the snapshot exactly the MONDAY rows
+        // with the decoy Tuesday row absent -- this must pass both before and after the
+        // production change. buildInMemorySchedule already anchors at LocalTime.MIDNIGHT (P-04);
+        // set explicitly here for this test's own clarity, not a behavior change.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(8, 0), LocalTime.of(9, 0), LocalTime.of(10, 0)));
+        saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY.plusDays(1),
+                List.of(LocalTime.of(8, 0)));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.MIDNIGHT);
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<Timeslot> snapshot = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot).hasSize(3);
+        assertThat(snapshot.stream().map(Timeslot::getStartTime).sorted().toList())
+                .as("the decoy Tuesday row must be excluded, leaving exactly the 3 Monday rows -- "
+                        + "ordering itself is pinned structurally at the loader level by "
+                        + "BusinessDayPeriodLoaderTest, not re-derived from this unordered DB read")
+                .containsExactly(LocalTime.of(8, 0), LocalTime.of(9, 0), LocalTime.of(10, 0));
+    }
+
+    /** The 21 post-midnight hourly starts (00:00 through 20:00) completing a 21:00-anchored business day. */
+    private static List<LocalTime> postMidnightHourlyStarts() {
+        List<LocalTime> starts = new ArrayList<>();
+        for (int hour = 0; hour <= 20; hour++) {
+            starts.add(LocalTime.of(hour, 0));
+        }
+        return starts;
     }
 
     @Test
@@ -711,6 +869,36 @@ class ScheduleServiceShiftSnapshotTest {
             saved.add(timeslotRepository.save(ts));
         }
         return saved;
+    }
+
+    // SOLV-01 (20-REVIEW.md CR-01) — the 21:00-anchored fixtures below need an EXPLICIT
+    // businessDate independent of calendarDate (saveTimeslots above hardcodes businessDate ==
+    // date, correct only at a midnight anchor). Four existing tests depend on saveTimeslots
+    // unmodified, so this is a new helper rather than a parameter added to it.
+    private List<Timeslot> saveAnchoredTimeslots(UUID deskId, LocalDate calendarDate, LocalDate businessDate,
+            List<LocalTime> starts) {
+        List<Timeslot> saved = new ArrayList<>();
+        for (LocalTime start : starts) {
+            Timeslot ts = new Timeslot();
+            ts.setTenantId(TENANT_A);
+            ts.setDeskId(deskId);
+            ts.setDate(calendarDate);
+            ts.setStartTime(start);
+            ts.setEndTime(start.plusHours(1));
+            ts.setBusinessDate(businessDate);
+            saved.add(timeslotRepository.save(ts));
+        }
+        return saved;
+    }
+
+    private StaffingRequirement saveStaffingRequirement(UUID deskId, Timeslot timeslot, Specialization spec) {
+        StaffingRequirement sr = new StaffingRequirement();
+        sr.setTenantId(TENANT_A);
+        sr.setDeskId(deskId);
+        sr.setTimeslot(timeslot);
+        sr.setSpecialization(spec);
+        sr.setRequiredFTEs(1);
+        return staffingRequirementRepository.save(sr);
     }
 
     private List<AgentAssignment> heldSeatAssignments(Agent agent, Specialization spec, UUID deskId,
