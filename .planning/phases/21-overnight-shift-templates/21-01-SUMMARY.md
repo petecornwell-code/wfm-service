@@ -205,3 +205,8 @@ None - no external service configuration required.
 ---
 *Phase: 21-overnight-shift-templates*
 *Completed: 2026-10-02*
+
+## Self-Check: PASSED
+
+All 6 modified source/test files and the SUMMARY.md confirmed present on disk; all 5 plan commits
+(`17d9bbb`, `5eebf62`, `f553194`, `2b96aa4`, `9da2185`) confirmed present in `git log --oneline --all`.
