@@ -177,12 +177,17 @@ public class SolverService {
         // 4. Load all problem facts from database
         List<Agent> allAgents = agentRepository.findByTenantIdAndDeskId(tenantId, deskId);
         List<Specialization> specializations = specializationRepository.findByTenantIdAndDeskId(tenantId, deskId);
-        List<Timeslot> timeslots = timeslotRepository
-                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
-                        tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-        List<StaffingRequirement> staffingRequirements = staffingRequirementRepository
-                .findLiveByDeskAndDateRange(tenantId, deskId,
-                        schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        // SOLV-01 (20-REVIEW.md CR-01, sites 1-2): schedule.getPeriodStartDate()/getPeriodEndDate()
+        // are BUSINESS dates (18-CONTEXT.md D-22), so both problem-fact loads go through
+        // BusinessDayPeriodLoader rather than a calendar-date-filtering finder call directly,
+        // which would silently truncate a re-anchored desk's last business day's post-midnight
+        // rows before runPreSolveValidation or expandMinimumStaffingSeats ever see them.
+        List<Timeslot> timeslots = BusinessDayPeriodLoader.loadLiveTimeslots(
+                timeslotRepository, tenantId, deskId,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate(), desk.getDayStart());
+        List<StaffingRequirement> staffingRequirements = BusinessDayPeriodLoader.loadLiveStaffingRequirements(
+                staffingRequirementRepository, tenantId, deskId,
+                schedule.getPeriodStartDate(), schedule.getPeriodEndDate(), desk.getDayStart());
 
         // Filter agents: active, non-schedulable jobTitle excluded, primary specialization required
         List<Agent> eligibleAgents = filterEligible(allAgents, tenantId, agentEligibilityService);
