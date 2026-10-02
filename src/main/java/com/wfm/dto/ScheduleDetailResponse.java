@@ -212,10 +212,28 @@ public class ScheduleDetailResponse {
             List<ViolationDetail> violations
     ) {}
 
+    /**
+     * {@code businessDate}, {@code calendarDate}, {@code startTime} and {@code endTime} are the
+     * structured data channel {@code timeslotLabel} used to be the only way to recover (OVNT-07,
+     * D-14) — two independent parsers ({@code ScheduleExportService.unfilledSeatsByDateAndSlot}
+     * and the allocation grid in {@code ScheduleResults.tsx}) used to split the label string on
+     * its first space instead of reading a typed field. {@code businessDate} is the attribution
+     * key every consumer should group by — the same business date the solver itself joins on.
+     * {@code calendarDate} is the display value an operator needs to find this row on a wall
+     * calendar; on a desk whose day starts after midnight the two differ for any timeslot before
+     * the anchor. {@code timeslotLabel} itself is deliberately UNCHANGED by this widening — it
+     * still reads the calendar date, a space, then the start and end times — and stays that way
+     * until OVNT-10 rewrites it, once every reader of this record has moved onto these four typed
+     * fields.
+     */
     public record ViolationDetail(
             UUID agentId,
             String agentName,
             UUID timeslotId,
+            LocalDate businessDate,
+            LocalDate calendarDate,
+            LocalTime startTime,
+            LocalTime endTime,
             String timeslotLabel,
             String description
     ) {}

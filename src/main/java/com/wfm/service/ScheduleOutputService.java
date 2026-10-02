@@ -651,6 +651,13 @@ public class ScheduleOutputService {
                     UUID agentId = null;
                     String agentName = null;
                     UUID timeslotId = null;
+                    // OVNT-02/D-14: the structured attribution channel the label used to be the
+                    // only way to recover. businessDate is the key every consumer should group
+                    // by; calendarDate is what the label below displays.
+                    LocalDate businessDate = null;
+                    LocalDate calendarDate = null;
+                    LocalTime slotStartTime = null;
+                    LocalTime slotEndTime = null;
                     String timeslotLabel = null;
                     String specName = null;
 
@@ -660,16 +667,21 @@ public class ScheduleOutputService {
                                 agentId = aa.getAgent().getId();
                                 agentName = aa.getAgent().getName();
                             }
-                            timeslotId = aa.getTimeslot().getId();
+                            Timeslot ts = aa.getTimeslot();
+                            timeslotId = ts.getId();
+                            businessDate = ts.getBusinessDate();
+                            calendarDate = ts.getDate();
+                            slotStartTime = ts.getStartTime();
+                            slotEndTime = ts.getEndTime();
                             // Deliberately calendar date, not business date (SOLV-07/D-10): a label
                             // answers "when does this happen", which is a calendar question. On a
                             // desk whose day starts at 21:00 a 02:00 slot belongs to business day D
                             // but occurs on calendar day D+1, and the operator needs the calendar
                             // date to find this row on a calendar. All labelling change, including
                             // showing both dates, belongs to OVNT-07.
-                            timeslotLabel = aa.getTimeslot().getDate() + " "
-                                    + aa.getTimeslot().getStartTime() + "-"
-                                    + aa.getTimeslot().getEndTime();
+                            timeslotLabel = ts.getDate() + " "
+                                    + ts.getStartTime() + "-"
+                                    + ts.getEndTime();
                             if (aa.getRequiredSpecialization() != null) {
                                 specName = aa.getRequiredSpecialization().getName();
                             }
@@ -683,7 +695,8 @@ public class ScheduleOutputService {
                         description = constraintName + " violation" + (agentName != null ? " for " + agentName : "");
                     }
 
-                    violations.add(new ViolationDetail(agentId, agentName, timeslotId, timeslotLabel, description));
+                    violations.add(new ViolationDetail(agentId, agentName, timeslotId, businessDate,
+                            calendarDate, slotStartTime, slotEndTime, timeslotLabel, description));
                 }
 
                 int violationCount = violations.size();
@@ -769,10 +782,19 @@ public class ScheduleOutputService {
                     // calendar. All labelling change, including showing both dates, belongs to
                     // OVNT-07.
                     String timeslotLabel = ts.getDate() + " " + ts.getStartTime() + "-" + ts.getEndTime();
+                    // OVNT-02/D-14: the structured attribution channel the label above used to be
+                    // the only way to recover. businessDate is the key every consumer should group
+                    // by; calendarDate is what the label displays.
+                    LocalDate violationBusinessDate = ts.getBusinessDate();
+                    LocalDate violationCalendarDate = ts.getDate();
+                    LocalTime violationStartTime = ts.getStartTime();
+                    LocalTime violationEndTime = ts.getEndTime();
                     String description = ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME
                             + " violation" + (agent != null ? " for " + agent.getName() : "");
                     violations.add(new ViolationDetail(
-                            agentId, agent != null ? agent.getName() : null, ts.getId(), timeslotLabel,
+                            agentId, agent != null ? agent.getName() : null, ts.getId(),
+                            violationBusinessDate, violationCalendarDate,
+                            violationStartTime, violationEndTime, timeslotLabel,
                             description));
                 }
             }
