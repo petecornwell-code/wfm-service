@@ -289,7 +289,7 @@ public class SolverService {
         List<AgentPreference> resolvedPreferences = resolvePreferences(allPreferences, schedule, agentDaysOffMap);
 
         // 7. Run pre-solve validation (12 checks from spec §7.11)
-        runPreSolveValidation(schedule, allAgents, timeslots, staffingRequirements,
+        runPreSolveValidation(shiftLibraryValidationService, schedule, allAgents, timeslots, staffingRequirements,
                 eligibleAgents, allDaysOff, exceptions, agentDayHours, resolvedPreferences, window);
 
         // 8. Build lookup map for exceptions
@@ -1067,7 +1067,14 @@ public class SolverService {
 
     // --- Pre-solve validation (12 checks from spec §7.11) ---
 
-    private void runPreSolveValidation(Schedule schedule,
+    /**
+     * (SOLV-01) Package-private, not {@code private} (like {@link #appendBandCapacityErrors}
+     * below, for the identical reason) -- directly unit-testable with a mocked {@link
+     * ShiftLibraryValidationService} and no Spring context, despite depending on an injected
+     * collaborator rather than being pure.
+     */
+    static void runPreSolveValidation(ShiftLibraryValidationService shiftLibraryValidationService,
+                                       Schedule schedule,
                                        List<Agent> allAgents,
                                        List<Timeslot> timeslots,
                                        List<StaffingRequirement> staffingRequirements,
@@ -1806,7 +1813,7 @@ public class SolverService {
         return scheduleDefaultHours;
     }
 
-    private boolean isAligned(LocalTime time, BreakAlignment alignment) {
+    private static boolean isAligned(LocalTime time, BreakAlignment alignment) {
         int minute = time.getMinute();
         return switch (alignment) {
             case ON_HOUR -> minute == 0;
