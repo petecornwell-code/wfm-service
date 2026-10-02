@@ -1,199 +1,126 @@
 ---
 phase: 20-solver-business-date-correctness
-reviewed: 2026-10-02T04:21:13Z
+reviewed: 2026-10-02T00:00:00Z
 depth: standard
-files_reviewed: 11
+files_reviewed: 6
 files_reviewed_list:
-  - src/test/java/com/wfm/controller/TimeslotControllerDeskAnchorTest.java
-  - src/main/java/com/wfm/controller/TimeslotController.java
-  - src/main/java/com/wfm/service/DeskService.java
-  - src/test/java/com/wfm/service/DeskServiceDayStartTest.java
-  - src/test/java/com/wfm/service/MinimumStaffingSeatsBusinessDateTest.java
+  - src/main/java/com/wfm/service/BusinessDayPeriodLoader.java
+  - src/test/java/com/wfm/service/BusinessDayPeriodLoaderTest.java
+  - src/main/java/com/wfm/service/ScheduleService.java
   - src/main/java/com/wfm/service/SolverService.java
-  - src/test/java/com/wfm/service/ShiftModeMinimumStaffingSeatSupplyTest.java
-  - src/test/java/com/wfm/solver/ZeroDemandTimeslotCeilingTest.java
-  - src/test/java/com/wfm/solver/MidnightBoundaryRegressionTest.java
-  - src/test/java/com/wfm/service/PreSolveValidationBusinessDateTest.java
+  - src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java
   - src/test/resources/bday-join-guard.md
 findings:
-  critical: 1
+  critical: 0
   warning: 1
-  info: 1
-  total: 3
+  info: 0
+  total: 1
 status: issues_found
 ---
 
 # Phase 20: Code Review Report
 
-**Reviewed:** 2026-10-02T04:21:13Z
+**Reviewed:** 2026-10-02T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 11
+**Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-This incremental review covers plans 20-09/20-10/20-11, which close three gaps left by
-`20-VERIFICATION.md`: the sub-minute-precision refusal on `DeskService.setDayStart`, the
-weekday-eligibility/count-lookup fix in `SolverService.expandMinimumStaffingSeats`, and the
-period-coverage/end-time fix in `SolverService.runPreSolveValidation`. All three changes are
-narrow, well-targeted, and match their own extensive in-code documentation; every new test does
-what its javadoc claims, the anchor-vs-midnight control pattern is applied consistently, and the
-production code paths they touch (`DeskService.setDayStart`, `TimeslotController.generateTimeslots`,
-`SolverService.runPreSolveValidation`, `SolverService.expandMinimumStaffingSeats`) now correctly
-read `Timeslot.getBusinessDate()` where the project's own `bday-join-guard.md` says they should.
+This is a gap-closure round fixing CR-01 and WR-01 from the previous `20-REVIEW.md` round (commit
+`a302a46`): four call sites (`SolverService.startSolve`'s two problem-fact loads,
+`ScheduleService.acceptSchedule`'s two snapshot loads) fed BUSINESS-date period bounds into
+repository finders that filter the CALENDAR `date` column, silently truncating a non-midnight-
+anchored desk's last business day. The fix is a new shared loader, `BusinessDayPeriodLoader`,
+applying a widen-the-calendar-upper-bound-by-one-day-then-filter-on-derived-business-date strategy
+mirroring `TimeslotGeneratorService`'s existing BDAY-03 read-back.
 
-The diff itself is clean. The problem is what sits immediately upstream of it, still unfixed:
-`SolverService.startSolve` loads the `timeslots` and `staffingRequirements` problem facts that
-`runPreSolveValidation` and `expandMinimumStaffingSeats` both consume via two repository calls that
-filter on **calendar** date using the schedule's **business-date** period bounds. For any desk with
-a non-midnight day start — which this phase's own plan 20-08/20-09 work makes a legitimately
-configurable, supported state — those two queries silently drop the last business day's
-post-midnight-rollover rows before either fixed method ever sees them. This is the identical defect
-class the whole phase exists to eliminate, in the same file, one call away from the lines this
-review's diff touches, and it is not mentioned anywhere in `bday-join-guard.md`'s otherwise
-exhaustive "known scope boundaries" and "measured blind spots" sections — it falls outside even
-that guard's widened textual scope because it is a derived repository-method name, not a
-`Timeslot`-receiver `.getDate()` call or a join-key verb. Filed below as CR-01.
+Verified independently against `DayWindow.businessDateOf`'s actual implementation (`businessDate =
+calendarDate` if `timeOfDay >= dayStart`, else `calendarDate.minusDays(1)`) rather than assumed: the
+derivation can only ever shift a row's business date backward by at most one day relative to its
+calendar date, for every possible anchor value (confirmed via `calendarDateAtDayStartOffset`'s own
+`daysForward = (startMinute(dayStart) + minutesFromDayStart) / 1440` arithmetic, which is bounded to
+`{0, 1}` for any `dayStart` and any `minutesFromDayStart` in `[0, 1440)`). This means:
 
-## Critical Issues
+- Widening the calendar **upper** bound by exactly one day is both necessary and sufficient to catch
+  every row that could belong to `periodEnd`'s business day — there is no anchor value for which more
+  than one extra calendar day could ever be needed.
+- The calendar **lower** bound never needs widening: a row contributing to `periodStart`'s business
+  date can only live on calendar date `periodStart` or `periodStart + 1`, both already inside the
+  un-widened range. The two-sided filter's `isBefore(periodStart)` check still does real work, though
+  — it correctly excludes rows physically stored on calendar date `periodStart` whose time-of-day is
+  before the anchor and therefore derive to `periodStart - 1` (exercised by `BusinessDayPeriodLoaderTest`
+  Test 3's `headRow`).
 
-### CR-01: Problem-fact repository fetches in `startSolve` filter on calendar date using business-date period bounds, silently truncating the last business day of any non-midnight-anchored solve
+The ordering contract (`loadLiveTimeslots` sorts explicitly; `loadLiveStaffingRequirements`
+deliberately does not, per P-02) was checked against every consumer. `SolverService`'s `lastOnDay`
+reduce (IN-01, carried over from the prior round) is safe: `timeslots` flows from `loadLiveTimeslots`
+straight into `runPreSolveValidation` and `schedule.setTimeslots(new ArrayList<>(timeslots))` with no
+intervening re-sort or re-order, so the "last stream element matching this business date is the
+chronologically last timeslot of the day" assumption the reduce depends on continues to hold. Every
+other `staffingRequirements` consumer in `SolverService` builds maps/sums (`groupingBy`, `.sum()`),
+none of which are order-sensitive, consistent with the no-sort contract.
 
-**File:** `src/main/java/com/wfm/service/SolverService.java:180-185`
+The JOIN-FETCH safety claim was independently verified against the repository source: the 4-argument
+`findLiveByDeskAndDateRange(long, UUID, LocalDate, LocalDate)` overload the loader actually calls
+(distinct from the 5-argument, `Pageable`-taking overload of the same name) does carry `JOIN FETCH
+sr.timeslot t JOIN FETCH sr.specialization s`, and `StaffingRequirement.timeslot` is in fact
+`@ManyToOne(fetch = FetchType.LAZY)` — so this fetch join is load-bearing, not decorative, and the
+loader correctly resolves to the fetch-joined overload by argument count.
 
-**Issue:** `startSolve` builds `schedule` from the raw request (`buildSchedule`, :635-660;
-`schedule.getPeriodStartDate()`/`getPeriodEndDate()` are set verbatim from
-`request.periodStartDate()`/`periodEndDate()` with no adjustment), then loads the solve's two
-`Timeslot`-keyed problem facts with these two calls:
+A repo-wide grep confirms all four sites migrated and no other production call site now feeds a
+business-date bound into either calendar-date finder; the three remaining direct uses
+(`TimeslotGeneratorService`'s own generation/read-back, `StaffingRequirementService.listRequirements`)
+are legitimately calendar-date-scoped operator-facing paths, not business-date-fed, and are already
+recorded as deliberate in `bday-join-guard.md`.
 
-```java
-List<Timeslot> timeslots = timeslotRepository
-        .findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc(
-                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-List<StaffingRequirement> staffingRequirements = staffingRequirementRepository
-        .findLiveByDeskAndDateRange(tenantId, deskId,
-                schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-```
-
-Both derived-query methods filter on `Timeslot.date` — the **calendar** date column
-(`TimeslotRepository.findByTenantIdAndDeskIdAndScheduleIdIsNullAndDateBetweenOrderByDateAscStartTimeAsc`
-binds Spring Data's `DateBetween` token to the entity's `date` field;
-`StaffingRequirementRepository.findLiveByDeskAndDateRange`'s JPQL is explicitly
-`t.date BETWEEN :from AND :to`). But the bounds passed in, `schedule.getPeriodStartDate()` and
-`getPeriodEndDate()`, are **business** dates — this is not a guess, it is asserted by this very
-phase's own new comment two call sites later, in the method this review's diff touches
-(`SolverService.java:1097-1102`): *"schedule.getPeriodStartDate()/getPeriodEndDate() are BUSINESS
-dates (18-CONTEXT.md D-22)."* `18-03-PLAN.md` P-12 independently documents the identical defect
-shape in `TimeslotGeneratorService.generateTimeslots`'s closing read-back and fixed it there by
-widening the calendar query to `periodEnd.plusDays(1)` and filtering/sorting in memory by derived
-business date. No equivalent fix exists for these two call sites.
-
-Concretely: for a desk anchored at 21:00 with a one-day schedule (`periodStartDate ==
-periodEndDate == businessMonday`), business-Monday's 24 timeslots split into 3 rows carrying
-calendar date `businessMonday` (21:00-23:59) and 21 rows carrying calendar date
-`businessMonday.plusDays(1)` (00:00-20:59). The `DateBetween(businessMonday, businessMonday)`
-filter admits only the first 3; the 21 post-midnight rows are never fetched. The same truncation
-hits exactly the last business day of any multi-day period on a non-midnight-anchored desk (every
-earlier day's post-midnight tail still falls inside the period's calendar range, so only the final
-day is affected) — and it hits `staffingRequirements` identically, via the same `t.date BETWEEN`
-pattern.
-
-This silently defeats the very fix this phase just finished making correct:
-- `runPreSolveValidation`'s check 2 (period coverage) can still pass falsely, because the
-  truncated set still contains *some* row whose `getBusinessDate()` equals the last business day —
-  just not the 21 missing hours' worth. The check has no way to see what the query already dropped.
-- `runPreSolveValidation`'s check 3 (end-time match) will very likely now raise where the fixture
-  tests (which build `timeslots` in memory, bypassing this query entirely) show it should not: the
-  real `lastOnDay` for the business day is one of the excluded rows, so the method compares against
-  whatever calendar-truncated row happens to survive instead.
-- `expandMinimumStaffingSeats` (and the solver itself) simply never sees the missing hours as
-  problem facts at all — no timeslot, no staffing requirement, no constraint violation, no warning.
-  The schedule silently solves as if the desk's final business day were only 3 hours long.
-
-None of the new tests in this diff exercise this path, because
-`MinimumStaffingSeatsBusinessDateTest` and `PreSolveValidationBusinessDateTest` both call
-`SolverService.runPreSolveValidation`/`expandMinimumStaffingSeats` directly with a hand-built
-`timeslots` list, never through `startSolve` and the real repository query — so the fixes they
-prove are real, but they are proven downstream of a problem-fact load that, in production, has
-already lost the data.
-
-**Fix:** Add business-date-filtering twins of both repository methods, following the precedent
-already set by `StaffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange` (added in plan
-20-07 for the identical reason), and point both `startSolve` call sites at them:
-
-```java
-// TimeslotRepository
-List<Timeslot> findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateBetweenOrderByBusinessDateAscStartTimeAsc(
-        long tenantId, UUID deskId, LocalDate from, LocalDate to);
-
-// StaffingRequirementRepository
-@Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t JOIN FETCH sr.specialization s " +
-       "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL " +
-       "AND t.businessDate BETWEEN :from AND :to")
-List<StaffingRequirement> findLiveByDeskAndBusinessDateRange(
-        long tenantId, UUID deskId, LocalDate from, LocalDate to);
-```
-
-```java
-// SolverService.startSolve
-List<Timeslot> timeslots = timeslotRepository
-        .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateBetweenOrderByBusinessDateAscStartTimeAsc(
-                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-List<StaffingRequirement> staffingRequirements = staffingRequirementRepository
-        .findLiveByDeskAndBusinessDateRange(tenantId, deskId,
-                schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
-```
-
-At a midnight anchor `date == businessDate` for every row, so this is a no-op for every desk that
-does not use SOLV-01's widened range — the same invariance property every other fix in this phase
-is held to. A regression test exercising `startSolve` itself (not the two already-fixed methods in
-isolation) at a 21:00 anchor, asserting the full 24-timeslot set and all staffing requirements for
-the schedule's last business day are present in what gets passed to the solver, would close this
-gap and would have caught it RED before this fix.
+One coverage gap remains, filed below as a Warning: no test exercising the real `ScheduleService.
+acceptSchedule` path at a 21:00 anchor would fail if `BusinessDayPeriodLoader`'s derived-business-date
+filter were deleted entirely (i.e. if the loader just returned the widened fetch unfiltered).
 
 ## Warnings
 
-### WR-01: `bday-join-guard.md`'s audited scope does not, and structurally cannot, cover repository derived-query method names
+### WR-01: No end-to-end (real accept-path) test proves the derived-business-date filter actually excludes an out-of-range row at a non-midnight anchor
 
-**File:** `src/test/resources/bday-join-guard.md`
+**File:** `src/test/java/com/wfm/service/ScheduleServiceShiftSnapshotTest.java:305-424`
 
-**Issue:** The guard (and the plan 20-11 manual audit layered on top of it) is scoped to
-`Timeslot`-receiver `.getDate()` calls and the four join-key verbs. CR-01's defect is a Spring Data
-derived-query method name (`...DateBetween...`) and a JPQL literal (`t.date BETWEEN`) fed
-business-date-typed arguments — a third shape, alongside the `.min()`/`.max()` and
-`.distinct()`/`TreeSet` shapes the file already documents as blind spots. The file's own "Known
-scope boundaries" section is commendably thorough about blind spots it already knows about, but
-this one is absent, which means the next reader has no signal that repository-level range queries
-are a candidate for the same defect class.
+**Issue:** Tests A, B and C (`acceptSchedule_21_00Anchor_snapshotsAllTwentyFourTimeslotsOfTheLastBusinessDay`,
+`...snapshotsAllTwentyFourStaffingRequirementsOfTheLastBusinessDay`, and
+`...derivesBusinessDateRatherThanTrustingTheStoredColumn`) each persist exactly the 24 rows whose
+calendar dates fall in `[MONDAY, MONDAY.plusDays(1)]` — i.e., exactly the widened fetch's own calendar
+range, with no row outside it. If `BusinessDayPeriodLoader.loadLiveTimeslots`/
+`loadLiveStaffingRequirements` were changed to skip the business-date filter entirely and return the
+widened fetch verbatim, all three tests would still pass unchanged (same 24 rows either way), because
+none of their fixtures include a row inside the widened calendar range but outside the business-date
+range.
 
-**Fix:** Add a "Known scope boundaries" entry naming `TimeslotRepository`'s and
-`StaffingRequirementRepository`'s plain (non-business-date) `...DateBetween...` finder methods as a
-structurally-invisible-to-this-guard shape, once CR-01 is fixed, so a future regression here is at
-least documented as a named risk rather than rediscovered.
+The only test in this file with an excluded decoy row is Test D
+(`acceptSchedule_midnightAnchor_snapshotIsUnchangedAndDecoyDayIsExcluded`), but it runs at a
+`LocalTime.MIDNIGHT` anchor, where derived business date and calendar date are always identical — so
+it cannot distinguish "the filter correctly derives and excludes a business-date-out-of-range row"
+from "the filter (or an un-widened calendar fetch) excludes a calendar-date-out-of-range row"; both
+produce the same result at midnight.
 
-## Info
+The scenario IS proven correct at the unit level — `BusinessDayPeriodLoaderTest`'s Test 3
+(`loadLiveTimeslots_filtersBothBelowAndAboveTheRequestedRange`) builds exactly this case (a row inside
+the widened calendar range but outside the derived business-date range, at a 21:00 anchor) against a
+mocked repository and asserts it is excluded. But that test exercises the loader directly with a
+hand-stubbed repository return value, not the real JPA/H2 round-trip through
+`ScheduleService.acceptSchedule`. A defect in how the loader is wired to the real repository call (as
+opposed to the loader's own filtering logic, which Test 3 already covers) would go undetected by this
+file's test suite.
 
-### IN-01: `runPreSolveValidation`'s check 3 "last timeslot of the business day" selection is correct only because the caller's sort order happens to coincide with business-day order
-
-**File:** `src/main/java/com/wfm/service/SolverService.java:1126-1128`
-
-**Issue:** `lastOnDay` is selected via `timeslots.stream().filter(t ->
-t.getBusinessDate().equals(first.getBusinessDate())).reduce((a, b) -> b).orElse(first)` — this
-relies on `timeslots` already being ordered such that the last stream element matching the business
-date is also the chronologically last one. That holds today only because the list arrives sorted
-`OrderByDateAscStartTimeAsc` (calendar date, then start time) and a business day's calendar-date
-tail is always chronologically later than its calendar-date head for any anchor value currently
-reachable in this codebase (0 <= anchor <= 24h). It is correct, but silently depends on an ordering
-guarantee from a caller two frames away that nothing in this method asserts or documents.
-
-**Fix:** No action required now; if `timeslots` is ever built from a different source (e.g. once
-CR-01's business-date-ordered finder lands), re-verify that "sorted by business date, then start
-time" still makes the last-matching-element-in-stream-order selection equivalent to "chronologically
-last timeslot of the day" — it does, but a one-line comment at :1126 stating the ordering dependency
-would save the next reader from re-deriving it.
+**Fix:** Add a fifth test to `ScheduleServiceShiftSnapshotTest`, anchored at 21:00, that persists one
+extra live timeslot (and matching staffing requirement) whose calendar date falls inside
+`[periodStart, periodEnd.plusDays(1)]` but whose derived business date falls outside
+`[periodStart, periodEnd]` — e.g. a row on calendar `MONDAY` at `20:00` (before the 21:00 anchor,
+deriving to `MONDAY.minusDays(1)`), mirroring `BusinessDayPeriodLoaderTest`'s `headRow` fixture — and
+assert the accepted snapshot excludes it. This closes the gap between "the loader's filter logic is
+correct" (already proven) and "the loader is correctly wired into the real accept path" (not yet
+proven end-to-end).
 
 ---
 
-_Reviewed: 2026-10-02T04:21:13Z_
+_Reviewed: 2026-10-02T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
