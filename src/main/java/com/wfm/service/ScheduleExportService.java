@@ -813,10 +813,16 @@ public class ScheduleExportService {
     }
 
     /**
-     * Unfilled seats per date and slot, read from the "Unassigned assignment" constraint
-     * violations exactly as the UI does — {@code timeslotLabel} is {@code "YYYY-MM-DD HH:MM-HH:MM"}.
-     * A label that does not parse is skipped rather than throwing: this sheet is a report, and
-     * losing one shortfall marker is a far better outcome than failing the whole export.
+     * Unfilled seats per BUSINESS date and slot, read from the "Unassigned assignment" constraint
+     * violations' structured {@code businessDate}/{@code startTime} fields (OVNT-02/D-14) — no
+     * longer parsed from {@code timeslotLabel}. The label carries the CALENDAR date (SOLV-07/D-10:
+     * a label answers "when does this happen"), but {@link #writeAgentAllocation} looks this map
+     * up by the agent-day's own date, which {@code AgentScheduleEntry.date()} always sets to the
+     * BUSINESS date. Keying by the label's calendar date meant a post-midnight shortfall on an
+     * anchored (non-midnight day-start) desk was stored under a key no sheet ever requested —
+     * silently rendering nowhere. A violation missing either structured field is skipped rather
+     * than throwing: this sheet is a report, and losing one shortfall marker is a far better
+     * outcome than failing the whole export.
      */
     private Map<String, Map<LocalTime, Integer>> unfilledSeatsByDateAndSlot(
             ScheduleDetailResponse detail) {
@@ -829,21 +835,11 @@ public class ScheduleExportService {
                 continue;
             }
             for (ViolationDetail v : cv.violations()) {
-                String label = v.timeslotLabel();
-                if (label == null) continue;
-                int space = label.indexOf(' ');
-                if (space < 0) continue;
-                String datePart = label.substring(0, space);
-                String timePart = label.substring(space + 1).trim();
-                int dash = timePart.indexOf('-');
-                if (dash > 0) timePart = timePart.substring(0, dash).trim();
-                try {
-                    LocalTime slot = LocalTime.parse(timePart.length() == 5 ? timePart + ":00" : timePart);
-                    result.computeIfAbsent(datePart, d -> new HashMap<>())
-                            .merge(slot, 1, Integer::sum);
-                } catch (RuntimeException ignored) {
-                    // Unparseable label — skip this marker, keep the sheet.
-                }
+                LocalDate businessDate = v.businessDate();
+                LocalTime slot = v.startTime();
+                if (businessDate == null || slot == null) continue;
+                result.computeIfAbsent(businessDate.toString(), d -> new HashMap<>())
+                        .merge(slot, 1, Integer::sum);
             }
         }
         return result;
