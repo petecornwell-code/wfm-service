@@ -5,11 +5,11 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Phase 21 UI-SPEC approved
-last_updated: "2026-10-02T18:47:47.573Z"
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-10-02T21:43:01.846Z"
 last_activity: 2026-10-02
-last_activity_desc: Phase 20 complete, transitioned to Phase 21
-state_head: d857dd4610c9919078c58fe1b729c5189a671e09
+last_activity_desc: Phase 21 execution started
+state_head: 2b96aa49f46eebff745934076bf36336e11f9e6a
 progress:
   total_phases: 5
   completed_phases: 3
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 ## Current Position
 
-Phase: 21 (Overnight Shift Templates) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-10-02 — Phase 20 complete, transitioned to Phase 21
+Phase: 21 (Overnight Shift Templates) — EXECUTING
+Plan: 2 of 12
+Status: Executing Phase 21 (21-01 complete)
+Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
 ## Milestone v1.3 Outcome
 
@@ -324,6 +324,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: Test C's plan-specified assertion (hasSize(3)) contradicted DayWindow.businessDateOf's own documented semantics; corrected to hasSize(24) so the test proves derivation governs over the stored column (plan 20-12).
 - [Phase 20]: The four business-date-bounds-into-calendar-date-finder sites (CR-01) were closed behind ONE shared package-private `BusinessDayPeriodLoader` rather than four inlined copies of the widen/filter/sort logic — a future reader cannot fix one site and leave the other three on calendar date, and the defect class is grep-able by class name. It widens the calendar upper bound by `plusDays(1)` then narrows on the DERIVED business date via `DayWindow.businessDateOf`, deliberately NOT on `Timeslot`'s stored `business_date` column: this mirrors `TimeslotGeneratorService`'s BDAY-03 read-back and overrides 20-REVIEW.md CR-01's own suggested fix, which proposed stored-column repository twins (plan 20-12)
 - [Phase 20]: `loadLiveTimeslots` imposes an explicit business-day-chronological sort while `loadLiveStaffingRequirements` deliberately does not sort at all (P-02) — the underlying unpaginated `findLiveByDeskAndDateRange` declares no `ORDER BY`, so imposing one would change returned order at a `00:00` anchor and break the no-op invariant the midnight control proves (plan 20-12)
+- [Phase 21]: [Phase 21] 21-01: D-02's refusal message is reproduced verbatim from the UI-SPEC Copywriting Contract, interpolating the bound window's own dayStart() accessor (added to DayWindow) rather than re-loading the desk; D-08's 16-hour MAX_SPAN_MINUTES cap lives in ShiftTemplateService.validate, not DayWindow, per 19-CONTEXT D-11's prohibition on interval arithmetic holding a shift-length opinion
+- [Phase 21]: [Phase 21] 21-01: MidnightBoundaryPropertyTest's ShiftCrossingMidnight.save-path assertion flipped from refuse to accept an anchored overnight envelope, its @AssertsTodaysBehaviour(flippedBy="OVNT-01") marker removed, and the matching row deleted from midnight-boundary-scenarios.md's fenced registry (now 2 entries, not 3) in the same change -- MidnightBoundaryScenarioRegistryTest.EXPECTED_REGISTRY_SIZE updated 3->2 as an unplanned but required consequence (Rule 3)
 
 ### Blockers/Concerns
 
@@ -347,9 +349,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T17:06:53.294Z
-Stopped at: Phase 21 UI-SPEC approved
-Resume file: .planning/phases/21-overnight-shift-templates/21-UI-SPEC.md
+Last session: 2026-10-02T21:43:01.808Z
+Stopped at: Completed 21-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -426,3 +428,4 @@ Resume file: .planning/phases/21-overnight-shift-templates/21-UI-SPEC.md
 | Phase 20 P10 | 35min | 2 tasks | 5 files |
 | Phase 20 P11 | 95min | 2 tasks | 3 files |
 | Phase 20 P12 | 30min | 3 tasks | 6 files |
+| Phase 21 P01 | unspecified | 2 tasks | 6 files |
