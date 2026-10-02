@@ -396,6 +396,42 @@ class ShiftTemplateServiceTest {
         assertThat(service.listShiftTemplates(deskId)).filteredOn(t -> "Overnight".equals(t.getName())).hasSize(1);
     }
 
+    // ---------- Maximum anchored span (OVNT-01/D-08) ----------
+
+    @Test
+    void create_twentyTwoHourAnchoredSpan_refusedNamingSpanAndCap() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("TooLong", LocalTime.of(22, 0), LocalTime.of(20, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("22")
+                .hasMessageContaining("16");
+    }
+
+    @Test
+    void create_sixteenHourAnchoredSpan_acceptedAtInclusiveBoundary() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("ExactlySixteen", LocalTime.of(22, 0), LocalTime.of(14, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
+    @Test
+    void create_ordinarySameDayTemplateOnMidnightDesk_stillAccepted() {
+        UUID deskId = saveDesk(TENANT_A);
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Ordinary", LocalTime.of(8, 0), LocalTime.of(17, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
     // ---------- Grid check (D-02) ----------
 
     @Test
