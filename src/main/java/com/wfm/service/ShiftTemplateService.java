@@ -42,6 +42,14 @@ import java.util.UUID;
 @Service
 public class ShiftTemplateService {
 
+    // OVNT-01/D-08: before this milestone the midnight-anchored refusal caught 15:00-14:00 as a
+    // 23-hour fat-finger for free, because that pair was never forward. On an anchored desk
+    // 22:00-20:00 is now forward (offsets 60 -> 1380) and would otherwise save cleanly as a
+    // 22-hour shift, which no real contracted day here approaches (~8-9h) and which would later
+    // make Phase 22's minimum-rest constraint structurally unsatisfiable. Lives here, not in
+    // DayWindow, which owns interval arithmetic and must hold no opinion about shift length.
+    private static final int MAX_SPAN_MINUTES = 16 * 60;
+
     private final ShiftTemplateRepository shiftTemplateRepository;
     private final ShiftTemplateBreakBandRepository shiftTemplateBreakBandRepository;
     private final TimeslotGeneratorService timeslotGeneratorService;
@@ -262,6 +270,15 @@ public class ShiftTemplateService {
         }
 
         long envelopeMinutes = window.anchoredDurationMinutes(request.startTime(), request.endTime());
+
+        // OVNT-01/D-08: refused before validateBands so the first failure an operator sees is the
+        // most basic one -- an envelope this long is wrong regardless of what its bands look like.
+        if (envelopeMinutes > MAX_SPAN_MINUTES) {
+            throw new IllegalArgumentException("Shift template spans " + (envelopeMinutes / 60.0)
+                    + " hours, which exceeds this desk's maximum shift length of "
+                    + (MAX_SPAN_MINUTES / 60) + " hours.");
+        }
+
         validateBands(request.bands(), envelopeMinutes);
 
         if (request.validWeekdays() == null || request.validWeekdays().isEmpty()) {
