@@ -179,3 +179,13 @@ None - no external service configuration required.
 ---
 *Phase: 20-solver-business-date-correctness*
 *Completed: 2026-10-02*
+
+## Self-Check: PASSED
+
+- FOUND: `src/main/java/com/wfm/controller/TimeslotController.java`
+- FOUND: `src/test/java/com/wfm/controller/TimeslotControllerDeskAnchorTest.java`
+- FOUND: `src/main/java/com/wfm/service/DeskService.java`
+- FOUND: `src/test/java/com/wfm/service/DeskServiceDayStartTest.java`
+- FOUND: `.planning/phases/20-solver-business-date-correctness/20-09-SUMMARY.md`
+- FOUND commits: `f78c0fe`, `d53522c`, `2935463`, `a1314c7`, `27c98a1`
+- Re-ran all plan-level `<verification>` commands: `./gradlew test` green (full suite); `desk.getDayStart()` count 1; `LocalTime` count 0 in `TimeslotController.java`; `TimeslotControllerDeskAnchorTest` reports 4 passing tests with no direct generator call; `getSecond`/`getNano` each present in `DeskService.java`; `is not a 15-minute boundary` present exactly once.
