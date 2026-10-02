@@ -432,6 +432,105 @@ class ShiftTemplateServiceTest {
         assertThat(created.getId()).isNotNull();
     }
 
+    // ---------- Operating-window containment (OVNT-05/D-06/D-07) ----------
+
+    @Test
+    void create_overnightEnvelopeOutsideOperatingWindow_refusedNamingEnvelopeAndWindow() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(22, 0), LocalTime.of(6, 0), 60)));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(7, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("22:00")
+                .hasMessageContaining("07:00")
+                .hasMessageContaining("06:00");
+    }
+
+    @Test
+    void create_overnightEnvelopeInsideOperatingWindow_accepted() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(22, 0), LocalTime.of(6, 0), 60)));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(23, 0), LocalTime.of(5, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
+    @Test
+    void create_overnightEnvelopeFlushWithOperatingWindow_accepted() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(22, 0), LocalTime.of(6, 0), 60)));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
+    @Test
+    void create_sameDayEnvelopeOutsideOperatingWindow_stillSavesAtSavePath() {
+        UUID deskId = saveDesk(TENANT_A);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
+                new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        LocalTime.of(8, 0), LocalTime.of(18, 0), 60)));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Early", LocalTime.of(7, 0), LocalTime.of(19, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
+    @Test
+    void create_overnightEnvelopeWithNoLiveBounds_accepted() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        // getLiveBounds stubbed to Optional.empty() in setUp() by default -- no window to be
+        // contained by, so the containment check must not run at all.
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getId()).isNotNull();
+    }
+
+    @Test
+    void isWithinOperatingWindow_directly_trueFlushBothEdgesFalsePastEitherEdge() {
+        DayWindow window = DayWindow.anchoredAt(LocalTime.of(21, 0));
+        TimeslotBoundsResponse bounds = new TimeslotBoundsResponse(
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                LocalTime.of(22, 0), LocalTime.of(6, 0), 60);
+
+        assertThat(ShiftTemplateService.isWithinOperatingWindow(bounds, LocalTime.of(22, 0), LocalTime.of(6, 0), window))
+                .as("flush to both edges").isTrue();
+        assertThat(ShiftTemplateService.isWithinOperatingWindow(bounds, LocalTime.of(22, 0), LocalTime.of(6, 1), window))
+                .as("one minute past the end").isFalse();
+        assertThat(ShiftTemplateService.isWithinOperatingWindow(bounds, LocalTime.of(21, 59), LocalTime.of(6, 0), window))
+                .as("one minute before the start").isFalse();
+
+        DayWindow midnightWindow = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+        TimeslotBoundsResponse midnightBounds = new TimeslotBoundsResponse(
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                LocalTime.of(8, 0), LocalTime.of(18, 0), 60);
+        assertThat(ShiftTemplateService.isWithinOperatingWindow(
+                midnightBounds, LocalTime.of(8, 0), LocalTime.of(18, 0), midnightWindow))
+                .as("00:00 anchor, flush pair is true today too").isTrue();
+        assertThat(ShiftTemplateService.isWithinOperatingWindow(
+                midnightBounds, LocalTime.of(7, 0), LocalTime.of(18, 0), midnightWindow))
+                .as("00:00 anchor, before the start is false").isFalse();
+    }
+
     // ---------- Grid check (D-02) ----------
 
     @Test
