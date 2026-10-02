@@ -215,6 +215,15 @@ public class DeskService {
      * increment and why they cannot tile. The two refusals are necessarily distinct: the
      * generation increment is not desk state, so tiling cannot be validated here.
      *
+     * <p>A third refusal, ordered before the 15-minute check, rejects any value carrying a
+     * nonzero second or sub-second component (SOLV-01): downstream minute-of-day arithmetic --
+     * {@link com.wfm.util.DayWindow}'s anchored accessors, the constraint provider's anchor
+     * resolution, and {@link TimeslotGeneratorService#requireDayStartTiles}'s own tiling check --
+     * is built from the hour and the minute and silently discards a stray sub-minute component,
+     * while this method's own equal-value early return (below) and any future equality
+     * comparison do not; a stored value carrying one would therefore behave differently
+     * depending on which code path read it back.
+     *
      * <p>The equal-value early return precedes every business-rule refusal: re-asserting the
      * value a desk already holds is not a transition.
      *
@@ -232,6 +241,15 @@ public class DeskService {
     public Desk setDayStart(UUID deskId, LocalTime dayStart) {
         if (dayStart == null) {
             throw new IllegalArgumentException("Day start is required");
+        }
+        // SOLV-01: ordered BEFORE the 15-minute modulus check, deliberately. The modulus below
+        // builds its minute-of-day from the hour and the minute only, so a value such as
+        // 06:07:01 would pass it unexamined -- its sub-minute component is silently discarded by
+        // that arithmetic. Reporting a boundary failure for a value whose actual problem is
+        // sub-minute precision would name the wrong reason.
+        if (dayStart.getSecond() != 0 || dayStart.getNano() != 0) {
+            throw new IllegalArgumentException(
+                    "Desk day start " + dayStart + " must not carry seconds or sub-second precision");
         }
         // SOLV-01: increment-INDEPENDENT by design -- a fixed 15-minute modulus, not the per-call
         // generation increment. The generation increment arrives per call, inferred from the
