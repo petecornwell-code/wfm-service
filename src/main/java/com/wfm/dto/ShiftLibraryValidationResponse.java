@@ -20,7 +20,8 @@ public record ShiftLibraryValidationResponse(
         List<String> unsatisfiableWeekdays,
         List<CapacityAdvisory> capacityAdvisories,
         List<BreakConcentrationAdvisory> breakConcentrationAdvisories,
-        List<PeakShortfallAdvisory> peakShortfallAdvisories
+        List<PeakShortfallAdvisory> peakShortfallAdvisories,
+        List<OperatingWindowFinding> operatingWindowFindings
 ) {
     /** SHLB-06 advisory (D-06/D-07): never blocking, except folded into unsatisfiableWeekdays. */
     public record HoursAdvisory(
@@ -104,6 +105,26 @@ public record ShiftLibraryValidationResponse(
             int requiredFTEs,
             long reachableAgents,
             long shortfall,
+            String message
+    ) {}
+
+    /**
+     * OVNT-05/D-06/D-07: a stored template whose envelope escapes the desk's real generated
+     * operating window, {@code [bounds.startTime(), bounds.endTime()]}. {@code blocking} is true
+     * exactly when the template crosses calendar midnight ({@code
+     * ShiftTemplateService.crossesCalendarMidnight}) -- that is what the mode gate ({@code
+     * requireShiftModeReady}) refuses on. A non-blocking finding (a same-day escape) is reported
+     * here and never thrown; {@code dev} is the live system with real tenant data, and a blocking
+     * check for the same-day case could strand an already-stored row (D-07).
+     */
+    public record OperatingWindowFinding(
+            UUID templateId,
+            String templateName,
+            LocalTime templateStart,
+            LocalTime templateEnd,
+            LocalTime windowStart,
+            LocalTime windowEnd,
+            boolean blocking,
             String message
     ) {}
 }

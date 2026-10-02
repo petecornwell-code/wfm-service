@@ -111,6 +111,8 @@ public class ShiftLibraryValidationService {
 
         List<String> uncoveredWindows = findUncoveredWindows(templates, bandsByTemplateId, demand, dayWindow);
         List<String> misalignedTemplates = findMisalignedTemplates(deskId, templates, bandsByTemplateId, dayWindow);
+        List<ShiftLibraryValidationResponse.OperatingWindowFinding> operatingWindowFindings =
+                findOperatingWindowEscapes(deskId, templates, dayWindow);
 
         Map<DayOfWeek, List<BigDecimal>> hoursByWeekday = loadHoursByWeekday(tenantId, deskId);
         List<HoursAdvisory> hoursAdvisories =
@@ -126,7 +128,7 @@ public class ShiftLibraryValidationService {
 
         return new ShiftLibraryValidationResponse(hasLiveDemand, uncoveredWindows, misalignedTemplates,
                 hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories,
-                peakShortfallAdvisories);
+                peakShortfallAdvisories, operatingWindowFindings);
     }
 
     /**
@@ -173,6 +175,14 @@ public class ShiftLibraryValidationService {
             addGridDetails(deskId, response, errors);
             if (!response.unsatisfiableWeekdays().isEmpty()) {
                 errors.add(new ErrorDetail("contractedHours", contractedHoursMessage(response), null));
+            }
+            // OVNT-05/D-07: only the BLOCKING findings (overnight escapes) refuse the mode switch.
+            // A non-blocking (same-day) finding is reported by validate() above and adds nothing
+            // here -- the whole of D-07's advisory/blocking split on this surface.
+            for (ShiftLibraryValidationResponse.OperatingWindowFinding finding : response.operatingWindowFindings()) {
+                if (finding.blocking()) {
+                    errors.add(new ErrorDetail("operatingWindow", finding.message(), finding.templateName()));
+                }
             }
         }
 
@@ -310,6 +320,48 @@ public class ShiftLibraryValidationService {
             }
         }
         return true;
+    }
+
+    // --- Operating-window escapes (OVNT-05/D-06/D-07) ---
+
+    /**
+     * Structurally built on {@link #findMisalignedTemplates}: the same {@code getLiveBounds}
+     * empty-case skip, the same retired-row skip. The containment/crossing tests are the SHARED
+     * {@code ShiftTemplateService} statics the save path itself calls -- this class writes no
+     * containment arithmetic of its own, so the report and the save path can never drift apart
+     * (OVNT-05's "the report and the refusal can never disagree").
+     */
+    private List<ShiftLibraryValidationResponse.OperatingWindowFinding> findOperatingWindowEscapes(
+            UUID deskId, List<ShiftTemplate> templates, DayWindow dayWindow) {
+        List<ShiftLibraryValidationResponse.OperatingWindowFinding> findings = new ArrayList<>();
+        Optional<TimeslotBoundsResponse> liveBoundsOpt = timeslotGeneratorService.getLiveBounds(deskId);
+        if (liveBoundsOpt.isEmpty()) {
+            return findings;
+        }
+        // Named liveBounds, never "bounds" -- this method must never read this record's end time
+        // directly (that is the shared predicate's job alone); it is a parameter-passing site only.
+        TimeslotBoundsResponse liveBounds = liveBoundsOpt.get();
+        LocalDate today = LocalDate.now();
+        for (ShiftTemplate template : templates) {
+            if (template.getEffectiveTo() != null && template.getEffectiveTo().isBefore(today)) {
+                continue; // retired — cannot be scheduled again, matching findMisalignedTemplates
+            }
+            LocalTime start = template.getStartTime();
+            LocalTime end = template.getEndTime();
+            if (ShiftTemplateService.isWithinOperatingWindow(liveBounds, start, end, dayWindow)) {
+                continue;
+            }
+            boolean blocking = ShiftTemplateService.crossesCalendarMidnight(start, end);
+            LocalTime windowStart = liveBounds.startTime();
+            LocalTime windowEnd = liveBounds.endTime();
+            String message = "Shift template '" + template.getName() + "' (" + template.getEffectiveFrom()
+                    + ") " + start + "–" + end + " reaches outside this desk's operating window "
+                    + windowStart + "–" + windowEnd + ".";
+            findings.add(new ShiftLibraryValidationResponse.OperatingWindowFinding(
+                    template.getId(), template.getName(), start, end,
+                    windowStart, windowEnd, blocking, message));
+        }
+        return findings;
     }
 
     // --- Hours match (D-06/D-07) ---
