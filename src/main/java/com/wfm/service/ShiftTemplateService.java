@@ -294,6 +294,24 @@ public class ShiftTemplateService {
         }
 
         validateGridAlignment(deskId, request, window);
+
+        // OVNT-05/D-06/D-07: blocking only for an envelope that crosses calendar midnight -- no
+        // live desk holds an overnight template today, so this carries zero regression risk. A
+        // same-day escape is advisory only (ShiftLibraryValidationService's findOperatingWindowEscapes);
+        // `dev` is the live system with real tenant data, and a blocking check here could strand an
+        // already-stored row. Skipped entirely when the desk has no live timeslots -- there is no
+        // window to be contained by.
+        Optional<TimeslotBoundsResponse> operatingWindowBounds = timeslotGeneratorService.getLiveBounds(deskId);
+        if (operatingWindowBounds.isPresent()) {
+            TimeslotBoundsResponse bounds = operatingWindowBounds.get();
+            if (crossesCalendarMidnight(request.startTime(), request.endTime())
+                    && !isWithinOperatingWindow(bounds, request.startTime(), request.endTime(), window)) {
+                throw new IllegalArgumentException("Shift template " + request.startTime() + "–"
+                        + request.endTime() + " reaches outside this desk's operating window "
+                        + bounds.startTime() + "–" + bounds.endTime() + ".");
+            }
+        }
+
         validateIdentityAndNonOverlap(tenantId, deskId, request, excludeId);
     }
 
@@ -404,6 +422,36 @@ public class ShiftTemplateService {
         // a genuine midnight END would come back as minute 0 and be rejected as misaligned.
         long diffMinutes = window.anchoredEndMinute(candidate) - window.anchoredStartMinute(gridStart);
         return diffMinutes >= 0 && diffMinutes % incrementMinutes == 0;
+    }
+
+    /**
+     * OVNT-05/D-06: true when the submitted envelope lies entirely inside the desk's real
+     * generated operating window, {@code [bounds.startTime(), bounds.endTime()]} -- the check
+     * with teeth that OVNT-05's literal wording ("fits inside its business day") never performed,
+     * because once {@code anchoredIsForwardWithinDay} passes, every interval fits the business
+     * day by construction. This is the first caller in either validation service to read {@link
+     * TimeslotBoundsResponse#endTime()}, which had zero call sites before this plan. Delegates to
+     * the existing {@link DayWindow#anchoredContains} primitive rather than re-deriving the offset
+     * comparison. The bounds' end time is read in an END position and the template's start in a
+     * START position; containment is inclusive at both edges, so an envelope exactly filling the
+     * window is legal.
+     */
+    static boolean isWithinOperatingWindow(TimeslotBoundsResponse bounds, LocalTime startTime, LocalTime endTime,
+                                            DayWindow window) {
+        return window.anchoredContains(bounds.startTime(), bounds.endTime(), startTime, endTime);
+    }
+
+    /**
+     * OVNT-05/D-07: true when {@code [startTime, endTime)} crosses calendar midnight -- the split
+     * key between a blocking overnight escape (this method true) and a non-blocking same-day one
+     * (false). Expressed through a {@code 00:00}-anchored window rather than a direct time
+     * comparison: a direct comparison would both mis-read an end of {@code 00:00} (the smallest
+     * {@link LocalTime} value) and trip this codebase's raw-time-comparison guard. At a {@code
+     * 00:00} desk anchor this is exactly the condition the forward-interval refusal above already
+     * rejects, so no same-day template on any desk can ever be classified as overnight here.
+     */
+    static boolean crossesCalendarMidnight(LocalTime startTime, LocalTime endTime) {
+        return !DayWindow.anchoredAt(LocalTime.MIDNIGHT).anchoredIsForwardWithinDay(startTime, endTime);
     }
 
     /**

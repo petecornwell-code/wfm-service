@@ -115,6 +115,18 @@ every desk today and proves nothing about reachability. Say why no desk anchor i
 site in the annotation, as the entries below do, and name the requirement ID that owns removing it
 once the site becomes reachable.
 
+**A second, narrower kind of legitimate entry (OVNT-05/D-07): deliberately testing against CALENDAR
+midnight, not reachability.** `ShiftTemplateService.crossesCalendarMidnight` is bound to this
+desk's own `window` elsewhere in the same method, so the desk's real anchor is trivially reachable
+here — this entry is not an unreachability exception. It is permitted because the question it asks
+is independent of any desk's anchor by design: "does this pair cross calendar midnight at all,"
+which is the fixed split key between a blocking overnight escape and a non-blocking same-day one
+(OVNT-05/D-07), not a per-desk business-day question. Binding to the desk's own anchor instead
+would make the predicate answer "does this cross THIS DESK's business-day boundary" — true of every
+overnight template on its own anchored desk, which is the opposite of what the split needs. At a
+`00:00` desk anchor the two questions happen to coincide, which is exactly why this reduces to the
+existing forward-interval refusal there and classifies no same-day template as overnight.
+
 ## Allowlist
 
 Format: fully-qualified class name, ` :: `, then the code line with leading and trailing
@@ -180,6 +192,7 @@ com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime
 com.wfm.util.FteSpreadsheetGenerator :: DayWindow window = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
 com.wfm.service.ShiftLibraryGenerationService :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
 com.wfm.model.ShiftBandPair :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+com.wfm.service.ShiftTemplateService :: return !DayWindow.anchoredAt(LocalTime.MIDNIGHT).anchoredIsForwardWithinDay(startTime, endTime);
 ```
 
 ### Why each midnight anchor is permitted
@@ -199,3 +212,10 @@ com.wfm.model.ShiftBandPair :: DayWindow.anchoredAt(LocalTime.MIDNIGHT));
   `covers(Timeslot)` shape plan 19-05 retired once every production
   `covers(Timeslot, DayWindow)` caller supplied a real anchor; callers of `netHours()` move to a
   window-aware form as each is migrated, and this entry is removed once none remain.
+- **`ShiftTemplateService.crossesCalendarMidnight`** (OVNT-05/D-07) — not an unreachability
+  exception; this method deliberately asks "does this pair cross CALENDAR midnight," the fixed
+  split key between a blocking overnight escape and a non-blocking same-day one, independent of
+  this desk's own anchor (which the same class already binds elsewhere, as `window`). Binding to
+  the desk's own anchor here would answer a different question ("does this cross THIS DESK's
+  business-day boundary" — true of every overnight template on its own anchored desk) and break the
+  split. Not removable by any future reachability fix, because reachability is not why it is here.

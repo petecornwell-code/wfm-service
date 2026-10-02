@@ -480,11 +480,13 @@ class ShiftTemplateServiceTest {
 
     @Test
     void create_sameDayEnvelopeOutsideOperatingWindow_stillSavesAtSavePath() {
+        // Grid-aligned (both ends are whole-hour multiples from the 08:00 grid start) but reaching
+        // one hour past the window's 18:00 end -- a same-day escape, never blocked at the save path.
         UUID deskId = saveDesk(TENANT_A);
         when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(
                 new TimeslotBoundsResponse(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
                         LocalTime.of(8, 0), LocalTime.of(18, 0), 60)));
-        ShiftTemplateRequest req = new ShiftTemplateRequest("Early", LocalTime.of(7, 0), LocalTime.of(19, 0),
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Early", LocalTime.of(8, 0), LocalTime.of(19, 0),
                 List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
         ShiftTemplate created = service.createShiftTemplate(deskId, req);
