@@ -353,6 +353,46 @@ class ShiftTemplateServiceTest {
                 .hasMessage("Shift template effective to date cannot be before its effective from date");
     }
 
+    // ---------- Overnight envelopes on an anchored desk (OVNT-01) ----------
+
+    @Test
+    void create_overnightEnvelopeOnAnchoredDesk_acceptedWithCorrectNetHours() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+        assertThat(created.getNetHours(0, DayWindow.anchoredAt(LocalTime.of(21, 0))))
+                .isEqualByComparingTo(new BigDecimal("8.00"));
+    }
+
+    @Test
+    void create_overnightEnvelopeOnMidnightDesk_refusedNamingDeskDayStart() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.MIDNIGHT);
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("00:00")
+                .hasMessageContaining("22:00")
+                .hasMessageContaining("06:00")
+                .hasMessageContaining("would span two business days");
+    }
+
+    @Test
+    void create_duplicateOvernightTemplate_refusedByExistingIdentityRule() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
+                List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
+        service.createShiftTemplate(deskId, req);
+
+        assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
+                .isInstanceOf(ConflictException.class);
+        assertThat(service.listShiftTemplates(deskId)).filteredOn(t -> "Overnight".equals(t.getName())).hasSize(1);
+    }
+
     // ---------- Grid check (D-02) ----------
 
     @Test
@@ -688,6 +728,16 @@ class ShiftTemplateServiceTest {
         Desk desk = new Desk();
         desk.setTenantId(tenantId);
         desk.setName("Desk " + UUID.randomUUID());
+        return deskRepository.save(desk).getId();
+    }
+
+    // OVNT-01: desk.setDayStart(...) directly before save, matching how MidnightBoundaryPropertyTest
+    // constructs its anchored desks -- DeskService is not @Import-ed into this test's Spring context.
+    private UUID saveDeskWithDayStart(long tenantId, LocalTime dayStart) {
+        Desk desk = new Desk();
+        desk.setTenantId(tenantId);
+        desk.setName("Desk " + UUID.randomUUID());
+        desk.setDayStart(dayStart);
         return deskRepository.save(desk).getId();
     }
 }
