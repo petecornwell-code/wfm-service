@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 20
 current_phase_name: Solver Business-Date Correctness
 status: executing
-stopped_at: Completed 20-09-PLAN.md
-last_updated: "2026-10-02T03:01:39.602Z"
+stopped_at: Completed 20-10-PLAN.md
+last_updated: "2026-10-02T03:28:01.085Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 20 execution started
-state_head: 816c7746b794953cd91c882fddb7b2cd40c0285f
+state_head: 747426677c504d3f7b17e3b73524542b4b98ab6d
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
   percent: 20
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 ## Current Position
 
 Phase: 20 (Solver Business-Date Correctness) — EXECUTING
-Plan: 10 of 11 (gap closure 20-09..20-11; 8 complete)
+Plan: 11 of 11 (gap closure 20-09..20-11; 8 complete)
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 20 execution started
 
@@ -318,6 +318,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: Opened DeskService.setDayStart's accepted range from midnight-only to any 15-minute boundary (SOLV-01), landed as the phase's deliberately-last commit, after a disclosure-copy fix and RED tests proved the generation-time tiling refusal is reachable through the real save-then-generate path.
 - [Phase 20]: Resolved the desk via DeskService.getDesk (tenant-scoped) rather than DeskRepository.findById in TimeslotController.generateTimeslots, per threat T-20-09-01 — A bare findById would let a caller generate against another tenant's desk anchor; getDesk's tenant-scoped EntityNotFoundException matches FteUploadService's existing shape
 - [Phase 20]: DeskService.setDayStart's sub-minute precision refusal is ordered before the 15-minute modulus check — A value failing both conditions (e.g. 06:07:01) must be refused for its real defect; the modulus discards seconds and would otherwise name the wrong reason
+- [Phase 20]: Re-keyed expandMinimumStaffingSeats' two date-sensitive reads from calendar date to business date, closing GAP 2 (CR-02) of 20-VERIFICATION.md — Mirrors the already-fixed sibling function requireShiftEnvelopeSeatSupply; proven on a 21:00-anchored desk separating weekday-eligibility and count-lookup failure modes, each against a named non-zero count, with a midnight-anchored control
 
 ### Blockers/Concerns
 
@@ -340,8 +341,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T03:01:39.568Z
-Stopped at: Completed 20-09-PLAN.md
+Last session: 2026-10-02T03:28:01.051Z
+Stopped at: Completed 20-10-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -416,3 +417,4 @@ Resume file: None
 | Phase 20 P07 | 38min | 2 tasks | 4 files |
 | Phase 20 P08 | 30 min | 3 tasks | 4 files |
 | Phase 20 P09 | 25min | 2 tasks | 4 files |
+| Phase 20 P10 | 35min | 2 tasks | 5 files |
