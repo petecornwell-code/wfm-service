@@ -5,11 +5,11 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: planning
-stopped_at: Phase 21 context gathered
-last_updated: "2026-10-02T16:33:53.749Z"
+stopped_at: Phase 21 UI-SPEC approved
+last_updated: "2026-10-02T17:06:53.383Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 20 complete, transitioned to Phase 21
-state_head: 7fbacf1841c16081ead2a7759c752b3d83ae2de3
+state_head: bd699a575e00a706f878d318ce7eab25ba5bc046
 progress:
   total_phases: 5
   completed_phases: 3
@@ -347,9 +347,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T16:33:53.681Z
-Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-overnight-shift-templates/21-CONTEXT.md
+Last session: 2026-10-02T17:06:53.294Z
+Stopped at: Phase 21 UI-SPEC approved
+Resume file: .planning/phases/21-overnight-shift-templates/21-UI-SPEC.md
 
 ## Operator Next Steps
 
