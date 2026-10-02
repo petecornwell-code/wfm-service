@@ -50,6 +50,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.never;
@@ -452,6 +453,131 @@ class ScheduleServiceShiftSnapshotTest {
                         + "ordering itself is pinned structurally at the loader level by "
                         + "BusinessDayPeriodLoaderTest, not re-derived from this unordered DB read")
                 .containsExactly(LocalTime.of(8, 0), LocalTime.of(9, 0), LocalTime.of(10, 0));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Tests E and F close 20-REVIEW.md WR-01 (round 2): Tests A-D above prove INCLUSION at a 21:00
+    // anchor and EXCLUSION only at a 00:00 anchor, where business date and calendar date coincide
+    // and the assertion cannot discriminate between a derived-business-date filter and no filter
+    // at all. Tests A/B/C's fixtures hold exactly the rows the widened calendar fetch returns, so
+    // every one of them would stay green if BusinessDayPeriodLoader's filter were deleted outright
+    // and the widened fetch returned unchanged. These two tests are the pair that goes RED in that
+    // case, through the real acceptSchedule/JPA path at an anchor where the two dates genuinely
+    // differ.
+    //
+    // Both decoys sit INSIDE the widened calendar window [periodStart, periodEnd.plusDays(1)] =
+    // [MONDAY, TUESDAY], so the repository finder really does return them and only the derived
+    // filter can remove them -- which is what makes them a test of the filter rather than of the
+    // fetch bounds. At dayStart 21:00, businessDateOf is
+    // `startMinute(timeOfDay) >= startMinute(dayStart) ? calendarDate : calendarDate.minusDays(1)`:
+    //
+    //   calendar MONDAY   @ 08:00 -> 480 >= 1260 false -> SUNDAY   -- BELOW [MONDAY, MONDAY]
+    //   calendar TUESDAY  @ 21:00 -> 1260 >= 1260 true -> TUESDAY  -- ABOVE [MONDAY, MONDAY]
+    //
+    // one decoy per side, mirroring BusinessDayPeriodLoaderTest Test 3's two-sided unit coverage at
+    // the integration level. Each decoy's STORED businessDate is set to its own correctly-derived
+    // value, exactly as TimeslotGeneratorService's generator would write it -- these tests are
+    // about the filter running, not about derived-vs-stored precedence, which is Test C's job.
+    //
+    // Absence is asserted on the (calendarDate, startTime) PAIR, never on startTime alone: 08:00
+    // and 21:00 each also occur on a legitimately in-range row (calendar TUESDAY 08:00 derives to
+    // MONDAY; calendar MONDAY 21:00 derives to MONDAY), so a start-time-only assertion would fail
+    // against correct behaviour.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    void acceptSchedule_21_00Anchor_excludesRowsWhoseDerivedBusinessDateFallsOutsideThePeriod() {
+        // Test E (site 3, exclusion half). 26 live rows are inside the widened calendar fetch; the
+        // 24 whose DERIVED business date is MONDAY must be snapshotted and the 2 decoys must not.
+        // Deleting the filter in BusinessDayPeriodLoader.loadLiveTimeslots makes this 26, not 24.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+
+        saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(23, 0)));
+        saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY, postMidnightHourlyStarts());
+        // Decoy below: calendar MONDAY before the 21:00 anchor -> business SUNDAY.
+        saveAnchoredTimeslots(deskId, MONDAY, MONDAY.minusDays(1), List.of(LocalTime.of(8, 0)));
+        // Decoy above: calendar TUESDAY at/after the 21:00 anchor -> business TUESDAY.
+        saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY.plusDays(1), List.of(LocalTime.of(21, 0)));
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setStartTime(LocalTime.of(21, 0));
+        schedule.setEndTime(LocalTime.of(21, 0));
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<Timeslot> snapshot = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot)
+                .as("exactly business-Monday's 24 rows survive: the 2 decoys are inside the widened "
+                        + "calendar fetch [MONDAY, TUESDAY] and can only be removed by the derived "
+                        + "business-date filter, so 26 here means the filter is not running")
+                .hasSize(24);
+        assertThat(snapshot)
+                .extracting(Timeslot::getDate, Timeslot::getStartTime)
+                .as("both out-of-period decoys must be absent -- SUNDAY's (calendar MONDAY 08:00) "
+                        + "below the period and TUESDAY's (calendar TUESDAY 21:00) above it")
+                .doesNotContain(
+                        tuple(MONDAY, LocalTime.of(8, 0)),
+                        tuple(MONDAY.plusDays(1), LocalTime.of(21, 0)))
+                .as("the in-range rows sharing those start times must still be present, which is "
+                        + "why absence is asserted on the (date, startTime) pair and not on the "
+                        + "start time alone")
+                .contains(
+                        tuple(MONDAY.plusDays(1), LocalTime.of(8, 0)),
+                        tuple(MONDAY, LocalTime.of(21, 0)));
+    }
+
+    @Test
+    void acceptSchedule_21_00Anchor_excludesStaffingRequirementsOfOutOfPeriodTimeslots() {
+        // Test F (site 4, exclusion half). Same fixture as Test E with one requirement against
+        // every one of the 26 live rows. Deleting the filter in
+        // BusinessDayPeriodLoader.loadLiveStaffingRequirements makes this 26, not 24.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+
+        List<Timeslot> inPeriod = new ArrayList<>(saveAnchoredTimeslots(deskId, MONDAY, MONDAY,
+                List.of(LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(23, 0))));
+        inPeriod.addAll(saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY, postMidnightHourlyStarts()));
+        List<Timeslot> decoys = new ArrayList<>(
+                saveAnchoredTimeslots(deskId, MONDAY, MONDAY.minusDays(1), List.of(LocalTime.of(8, 0))));
+        decoys.addAll(saveAnchoredTimeslots(deskId, MONDAY.plusDays(1), MONDAY.plusDays(1),
+                List.of(LocalTime.of(21, 0))));
+
+        List<Timeslot> allLive = new ArrayList<>(inPeriod);
+        allLive.addAll(decoys);
+        for (Timeslot ts : allLive) {
+            saveStaffingRequirement(deskId, ts, spec);
+        }
+
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, inMemoryScheduleId);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setStartTime(LocalTime.of(21, 0));
+        schedule.setEndTime(LocalTime.of(21, 0));
+        inMemoryStore.put(schedule);
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        List<StaffingRequirement> snapshot = staffingRequirementRepository
+                .findByTenantIdAndDeskIdAndScheduleId(TENANT_A, deskId, saved.getId());
+        assertThat(snapshot)
+                .as("exactly the 24 requirements belonging to business-Monday's timeslots survive; "
+                        + "26 means loadLiveStaffingRequirements' derived filter is not running")
+                .hasSize(24);
+        assertThat(snapshot)
+                .extracting(sr -> sr.getTimeslot().getDate(), sr -> sr.getTimeslot().getStartTime())
+                .as("neither decoy's requirement may be snapshotted, while the in-range rows "
+                        + "sharing their start times must be")
+                .doesNotContain(
+                        tuple(MONDAY, LocalTime.of(8, 0)),
+                        tuple(MONDAY.plusDays(1), LocalTime.of(21, 0)))
+                .contains(
+                        tuple(MONDAY.plusDays(1), LocalTime.of(8, 0)),
+                        tuple(MONDAY, LocalTime.of(21, 0)));
     }
 
     /** The 21 post-midnight hourly starts (00:00 through 20:00) completing a 21:00-anchored business day. */
