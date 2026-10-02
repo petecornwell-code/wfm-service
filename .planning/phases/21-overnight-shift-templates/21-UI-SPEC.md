@@ -31,6 +31,31 @@ created: "2026-10-02"
 
 ---
 
+## Visual Hierarchy
+
+**No new focal point is declared, and that is deliberate.** Every surface this phase touches is an
+inline edit to an existing layout, not a new screen: the day-start control replaces a read-only
+table cell inside `DeskManagement.tsx`'s existing per-row edit mode; D-17's disclosure extends an
+`<h4>` that already heads each allocation-grid date section; D-12's and D-13's changes are Excel
+cells and column order. None of them introduces a screen, a panel, or a decision point that would
+compete for first attention, so the existing focal point of each page is unchanged and
+intentionally so.
+
+Two consequences the planner should hold to, since they follow from that and not from taste:
+
+- **Nothing in this phase joins the accent list.** The day-start control is saved by the row's
+  existing blue Save button; the control itself, its disabled explanation and the header disclosure
+  are all muted or amber. A new blue element here would read as a new primary action where there
+  is none.
+- **The disclosure text must stay subordinate to the data it annotates.** D-17's parenthetical and
+  D-04's locked explanation are both factual asides at 13px muted grey — they sit below or beside
+  the value, never above it, so the grid's existing agent/slot reading order survives.
+
+*(Added post-verification to close the checker's Dimension 2 FLAG, which was the absence of this
+statement rather than a disagreement with it.)*
+
+---
+
 ## Spacing Scale
 
 Declared values, reconciled against what `frontend/src/index.css` and the page files actually use (not the template default — this project's real scale includes 12px, which the template's default list omits):
@@ -105,21 +130,151 @@ Accent reserved for: primary action buttons, input focus rings, active nav link 
 
 ## UI Considerations
 
-Applicable state considerations resolved: 9 covered, 2 backstop, 0 unresolved.
+Produced by `ui-consideration-probe.cjs` at step 9.5, **after** checker approval — not during
+authoring. Replaces the section written inline by the researcher, which predated the probe's
+taxonomy. 11 surfaces classified, **67 applicable considerations: 35 resolved (explicit),
+10 resolved (backstop), 22 dismissed with reason, 0 unresolved.** Every one of the 67
+`(surface, category)` pairs the probe proposed is assigned exactly once — reconciled
+programmatically against the probe's own output, not by totalling the rows. The backstop table
+carries one **additional** row with no taxonomy category (the legend's freeze-pane check), which
+is why its row count is 11 rather than 10.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Day-start control's D-05 tiling-warning check | ✅ covered | A desk with zero generated timeslots has nothing to compare against; the check silently does not fire — no banner, no copy. See Copywriting Contract row "D-05 tiling warning — empty case." |
-| loading | Day-start control, in-flight save | ✅ covered | Reuses the existing per-row `editingId`/Save-button pattern already in `DeskManagement.tsx` — the Save button disables for the duration of the request (`DeskAgents.tsx`'s `disabled={savingCell}` precedent). No spinner: this codebase reserves the spinner (`ScheduleResults.tsx:246`) for actual multi-second solver runs, not sub-second field saves. |
-| error | Day-start control, all 3 UI-reachable save refusals + the race-path refusal | ✅ covered | All four route through `Toast('error', getErrorMessage(err))`, the file's existing error channel — see Copywriting Contract rows above. |
-| error | Day-start control, disabled-but-stale race | ✅ covered | D-04's disabled render is the primary guard; the server's own refusal is the backstop if the page was stale. Same Toast row. |
-| populated | Day-start control, normal value display (read mode and edit mode) | ✅ covered | Read mode keeps today's plain-text cell format (`{desk.dayStart}`); edit mode becomes `<input type="time" step="900" value={...}>`. No new states beyond disabled/enabled. |
-| long-text / overflow | Excel Roster cell, overnight shift text | ✅ covered | D-12 is the locked, pre-selected resolution: column width rises from `16*256` to `22*256` POI units (19-character string `"Sun 22:00-Mon 06:00"` plus 3 chars padding), same-day cells byte-identical, no truncation needed at that width. |
-| long-text / overflow | Allocation-grid `<h4>` header, span-disclosure text added | 🧪 backstop | The added parenthetical is short and fixed-format (`" (business day: Sun 21:00–Mon 21:00)"`, ~37 chars) and this codebase has no responsive breakpoint logic to test against — held out as a manual visual check at a 21:00-anchored desk rather than an automated assertion, since there is no frontend test runner (D-15) to wire a real one. |
-| zero-one-many | Allocation grid, overnight shifts within a business-day section | ✅ covered | D-16's anchored ordering is unconditional across both render branches regardless of how many (zero, one, or many) overnight shifts exist on a given business day — there is no separate "overnight shift present" branch to get this wrong in. |
-| partial | Day-start control mid-typing (a 4-digit partial time before the picker commits) | ✅ covered | Native `<input type="time">` only ever emits a complete `HH:MM` value or an empty string to `onChange` — there is no partial/malformed intermediate state to design for; this is a browser-native guarantee, not application code. |
-| nav / loading | Allocation grid's two-speed polling (summary every 2s, detail every 30s) | ✅ covered | Pre-existing, unchanged by this phase (`ScheduleResults.tsx`'s documented two-speed polling comment). Flagged here only to confirm this phase's new fields (`dayStart` on `ScheduleDetailResponse`/`ScheduleSummary`, D-15) ride the existing polling cadence rather than adding a new fetch. |
-| error | D-14's structured violation DTO fields vs. the two label-parsing consumers | 🧪 backstop | Out of this UI-SPEC's assigned scope (not one of the four copy items the phase brief named), but flagged because it shares the same surface: if the DTO fields land without both parsers (`ScheduleExportService:832-837`, `ScheduleResults.tsx:391`) being re-pointed in the same commit, unfilled-seat counts silently misattribute. No frontend test runner exists to assert this automatically — held out as a manual cross-check (export one overnight-shift schedule, confirm unfilled counts land on the correct date in both the UI and the Excel export) rather than an automated test. |
+**Classifier note, recorded because it affects what this section can be trusted to cover.** Three
+surfaces — the D-05 warning toast, the refusal toasts and the D-02 validation message — classified
+to **zero** element kinds on the first pass. The cue map has no pattern for `message` or
+`notification` under `static-content`, and `submits` fails the `submit` word boundary under
+`form`. They were re-run with authored `elements` overrides (`static-content`, and
+`form` + `static-content` for D-02's message), which is the documented route for a zero-cue
+element. Without that override all three would have contributed nothing while the other eight
+surfaces classified normally — so no `unclassified` signal would have fired for them.
+
+The probe's closed taxonomy covers content/robustness **shape**. Toast dismissal timing, stacking
+and ordering are the open UX subset and are prose-owned — recorded under "Message behaviour" below
+rather than forced into a taxonomy row.
+
+### Resolved — explicit
+
+| Surface | Category | Truth |
+|---|---|---|
+| Day-start control | empty | A desk always holds a `dayStart` (`NOT NULL`, defaults `00:00`), so read mode is never blank. In edit mode an operator can clear the native input, which emits `""`; the request then carries no value and the backend's existing `"Day start is required"` refusal fires. |
+| Day-start control | loading | The row's existing Save button disables for the request duration — the `disabled={savingCell}` precedent in `DeskAgents.tsx`. No spinner: this codebase reserves the spinner for multi-second solver runs, not sub-second field saves. |
+| Day-start control | error | Every refusal routes through `Toast('error', getErrorMessage(err))`, the file's established channel. **The row stays in edit mode on failure**, so the operator's entered value is not discarded. |
+| Day-start control | partial | Native `<input type="time">` emits only a complete `HH:MM` or an empty string — there is no malformed intermediate value to design for. A browser guarantee, not application code. |
+| Day-start control | populated | Read mode keeps today's plain-text cell (`{desk.dayStart}`); edit mode renders `<input type="time" step="900">`. No states beyond enabled/disabled. |
+| Disabled/locked control | empty | **If the blocking schedule's id or period is absent from the `Desk` response, the explanation renders as the bare `"Locked — accepted schedule blocks day start."` with no parenthetical** — never `"undefined"` or a dangling `"( – )"`. This matters because the DTO does not carry those fields today (see the Copywriting Contract's D-04 row). |
+| Disabled/locked control | error | The server's own unconditional refusal is the backstop when the disabled render is stale; both halves of D-04 are wired, so a race surfaces as a Toast rather than a silent no-op. |
+| Disabled/locked control | partial | If only one of id/period is present, render only the half that exists. Never emit a separator with nothing on one side of it. |
+| Excel roster cell | empty | Already covered by the existing legend's `(blank)` entry — "not scheduled, no leave recorded". Unchanged by this phase. |
+| Excel roster cell | long-text | D-12, locked: the 19-character `"Sun 22:00-Mon 06:00"` against a column width raised from `16*256` to `22*256` POI units. No truncation at that width. |
+| Excel roster cell | overflow | Same as long-text — the width rise is the resolution. Same-day cells stay byte-identical. |
+| Excel roster cell | partial | `shiftCode` already falls back to the span actually worked when no envelope exists, and returns `null` for an agent-day with neither, which reads as blank. Unchanged. |
+| Excel roster cell | populated | D-12's selected rendering **is** the populated state; it is reproduced verbatim in CONTEXT.md D-12. |
+| Excel roster legend | populated | **The operator's selected preview shows a VERTICAL legend — one code/meaning pair per row.** `writeRoster` currently writes all pairs horizontally across a single row (cells 1–8). Adopting the preview therefore restructures the legend from horizontal to vertical; it is not an append to the existing row. Flagged for the planner: the preview is the contract, so the layout change is in scope, not incidental. |
+| Excel roster legend | overflow | Vertical layout removes the horizontal-growth problem entirely — a seventh entry extends downward into empty rows rather than rightward under the date columns. |
+| Excel allocation sheet | empty | Unchanged: a sheet is written per date from the data present, exactly as today. |
+| Excel allocation sheet | overflow | D-13 changes column **order**, never column **count** — the sheet already writes 24+ slot columns, so nothing about its extent changes. |
+| Excel allocation sheet | partial | A slot with no assignment renders as it does today. Unchanged. |
+| Excel allocation sheet | populated | One contiguous run of filled cells for an overnight shift, which is D-13's whole purpose. Byte-identical output at a `00:00` anchor. |
+| Excel allocation sheet | zero-one-many | Column ordering is derived from the desk anchor alone, so it is independent of how many overnight shifts exist on a date — there is no "overnight present" branch to get wrong. |
+| Grid section heading | empty | Suppressed entirely at a `00:00` anchor: renders the bare `{date}`, byte-identical to today. |
+| Grid section heading | loading | **The heading reads `dayStart` from the schedule payload (D-15). If that field is absent — an older schedule fetched from cache, or a summary polled before the field ships — render the bare date rather than a half-built parenthetical.** |
+| Grid section heading | partial | Same degradation rule: the parenthetical is all-or-nothing. |
+| Grid section heading | populated | `"{date} (business day: {startAbbrev} {dayStart}–{endAbbrev} {dayStart})"`, per the Copywriting Contract. |
+| Allocation grid | empty | Existing `"No agent allocation data available."` is unchanged. |
+| Allocation grid | loading | The new `dayStart` field rides the existing two-speed polling cadence (summary 2s / detail 30s). **No new fetch is introduced** — which also keeps the 4 MB detail payload off any new polling path. |
+| Allocation grid | partial | Per-cell unfilled-seat, break and divergence marks are unchanged by the re-ordering. |
+| Allocation grid | populated | Anchored ordering renders an overnight shift as one contiguous run of columns. Provably identical output at a `00:00` anchor. |
+| Allocation grid | zero-one-many | D-16 applies the ordering unconditionally across both the SLOT and SHIFT branches, so zero, one and many overnight shifts take the same code path. |
+| D-02 validation message | error | This surface **is** the error state; its copy is locked in the Copywriting Contract and names the desk's day start as the cause. |
+| Library validation / mode gate | empty | **A desk with no generated timeslots has no operating window, so D-06's containment check cannot run and must not refuse.** The same shape as D-05's empty case: absence of a window is not a failed containment test. Getting this wrong would block template creation on every brand-new desk. |
+| Library validation / mode gate | error | Blocking refusal raises `PreSolveValidationException` at the mode gate and `IllegalArgumentException` → Toast on the save path, both from D-09's one shared predicate. |
+| Library validation / mode gate | long-text | The advisory names the template and its window bounds, following the existing advisory string shape in `ShiftLibraryValidationService`. |
+| Library validation / mode gate | partial | D-07's split is the resolution: blocking for overnight, non-blocking advisory for same-day. |
+| D-05 warning toast | long-text | Bounded by construction — the message interpolates a 5-character time and a 1–2 digit increment. No variable-length content. |
+
+### Resolved — backstop (manual verification; no frontend test runner exists)
+
+Every row here is a documented manual check rather than an automated assertion, because the
+frontend has no test harness (D-15) and Playwright screenshots never settle on this app. Where
+geometry is the question, measure it with `browser_evaluate`, not a screenshot.
+
+| Surface | Category | Statement | Verification |
+|---|---|---|---|
+| Grid section heading | overflow | The lengthened heading sits **outside** the grid's `overflowX: 'auto'` container, so it cannot be absorbed by the table's own scrolling — confirm it does not force horizontal scroll on the page itself at a 21:00-anchored desk. | backstop |
+| Grid section heading | long-text | The added parenthetical is ~37 characters of fixed format; confirm it wraps rather than clipping at a narrow viewport. | backstop |
+| Allocation grid | overflow | 24+ anchored slot columns in the horizontally scrolling table, with the sticky Agent column — confirm the re-ordering has not disturbed the sticky-column offset. | backstop |
+| Disabled/locked control | long-text | The explanation carries a UUID plus two ISO dates (~60 characters) inside a table cell; confirm wrapping at real desk-name widths. | backstop |
+| Disabled/locked control | overflow | Same measurement as above — confirm the cell does not force the table wider than the viewport. | backstop |
+| Refusal toasts | long-text | The ACCEPTED-schedule refusal interpolates a UUID and two dates, making it **the longest Toast string this application will have produced**. Confirm it renders fully rather than clipping. | backstop |
+| Refusal toasts | overflow | Same string against the Toast container's fixed width. | backstop |
+| D-05 warning toast | overflow | Confirm a two-line warning renders inside the Toast container at a narrow viewport. | backstop |
+| D-02 validation message | long-text | The message interpolates a day start and both envelope times into one sentence, delivered through a single-message Toast rather than `ShiftLibrary.tsx`'s `details[]` field-error block. Confirm it reads completely. | backstop |
+| D-02 validation message | overflow | Same string, same container. | backstop |
+| Excel roster legend | — | Confirm the restructured vertical legend does not collide with the agent rows above it, and that `createFreezePane(1, 1)` still behaves with the taller legend block. | backstop |
+
+### Dismissed — with reason
+
+Grouped by the reason, which is genuinely identical within each group. Every one of the 21 is
+listed; none is silently dropped.
+
+```
+A generated Excel workbook is a byte stream, not a rendered view — it has no in-flight or
+failure state inside a cell. Export failure surfaces at the download, a surface this phase
+does not touch.
+  Excel roster cell      — loading, error
+  Excel roster legend    — loading, error
+  Excel allocation sheet — loading, error
+
+The value is a fixed-width 5-character HH:MM emitted by a native time input — no
+variable-length content is reachable.
+  Day-start control      — long-text, overflow
+
+A single scalar field on one desk row is not a collection; the many-case lives on the grid
+surfaces, not here.
+  Day-start control      — zero-one-many
+  Excel roster cell      — zero-one-many
+  Grid section heading   — zero-one-many
+
+The legend's entries are statically authored in one block and are written together or not at
+all — a fixed set of seven after this phase, never a variable count. There is no partial or
+empty variant and no zero/one/many reading to design for.
+  Excel roster legend    — empty, partial, zero-one-many
+
+Column headers are fixed HH:MM strings; the ordering change cannot lengthen them.
+  Excel allocation sheet — long-text
+
+The disabled state is derived from data already present in the desk list response — no
+separate fetch, so nothing to show while loading.
+  Disabled/locked control — loading
+
+A heading has no failure state of its own; the data it names comes from the already-loaded
+payload, and its absence is handled as a degradation under `loading`/`partial` above.
+  Grid section heading   — error
+
+Grid-level load failures surface at the page level through pre-existing wiring that this
+phase does not change.
+  Allocation grid        — error
+
+A synchronous validation response has no in-flight state, exists only in reply to a
+submitted envelope, and arrives as one complete message.
+  D-02 validation message — empty, loading, partial
+  Library validation      — loading
+```
+
+### Message behaviour (prose-owned — outside the closed taxonomy)
+
+The taxonomy covers content shape, not notification timing. These follow from D-05's design and
+need stating because one save can now produce two messages:
+
+- **A successful save that also fails the tiling check produces exactly one Toast — the
+  `warning`.** There is no success Toast followed by a warning Toast; the warning carries the
+  success ("The desk still saved") in its own copy, per the Copywriting Contract.
+- **A refused save produces exactly one `error` Toast and no warning** — the tiling check runs
+  only after a successful write, so the two can never both fire for one submission.
+- `Toast` is a global singleton with a 4-second auto-dismiss. The ACCEPTED-schedule refusal is
+  the longest message the app will produce; whether 4 seconds is adequate for a string naming a
+  UUID and two dates is the one open question here, and it is covered by that row's backstop
+  check rather than assumed.
 
 ---
 
@@ -131,12 +286,22 @@ Not applicable — `Tool: none`. No shadcn, no component registry, no third-part
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: FLAG → closed post-verification by the `## Visual Hierarchy` section above
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS (12px declared as a documented exception, verified live in `index.css`)
+- [x] Dimension 6 Registry Safety: PASS (not applicable — `Tool: none`)
+- [x] Dimension 7 Inventory Provenance: PASS (no inventory to enumerate — no design system)
 
-**Approval:** pending
+**Approval:** APPROVED by `gsd-ui-checker` 2026-10-02. No BLOCK-level issues. The single
+Dimension 2 FLAG was the absence of a focal-point statement, not a disagreement with the design;
+it was closed by adding `## Visual Hierarchy` rather than by spending a revision iteration, since
+re-running the researcher rewrites the whole contract.
+
+All six locked-decision cross-checks passed: D-12's cell format, column width and legend text
+reproduced verbatim with no `(+1)` substitution; D-11's void premise cited rather than designed
+around; D-04 carrying both the disabled render and the server error path; D-05 strictly
+non-blocking; D-17 suppressed at a `00:00` anchor. Every acceptance claim routes through the
+TypeScript compiler or an explicitly labelled manual check — none assumes a test runner, and no
+screenshot-based criterion appears anywhere.
