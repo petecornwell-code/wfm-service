@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-01-PLAN.md
-last_updated: "2026-10-02T21:43:01.846Z"
+stopped_at: Completed 21-02-PLAN.md
+last_updated: "2026-10-02T21:59:38.389Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 2b96aa49f46eebff745934076bf36336e11f9e6a
+state_head: 2d886cfea6e1c81bc50b84e5e63a61004395771e
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 26
+  completed_plans: 27
   percent: 60
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 2 of 12
-Status: Executing Phase 21 (21-01 complete)
+Plan: 3 of 12
+Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
 ## Milestone v1.3 Outcome
@@ -326,6 +326,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: `loadLiveTimeslots` imposes an explicit business-day-chronological sort while `loadLiveStaffingRequirements` deliberately does not sort at all (P-02) — the underlying unpaginated `findLiveByDeskAndDateRange` declares no `ORDER BY`, so imposing one would change returned order at a `00:00` anchor and break the no-op invariant the midnight control proves (plan 20-12)
 - [Phase 21]: [Phase 21] 21-01: D-02's refusal message is reproduced verbatim from the UI-SPEC Copywriting Contract, interpolating the bound window's own dayStart() accessor (added to DayWindow) rather than re-loading the desk; D-08's 16-hour MAX_SPAN_MINUTES cap lives in ShiftTemplateService.validate, not DayWindow, per 19-CONTEXT D-11's prohibition on interval arithmetic holding a shift-length opinion
 - [Phase 21]: [Phase 21] 21-01: MidnightBoundaryPropertyTest's ShiftCrossingMidnight.save-path assertion flipped from refuse to accept an anchored overnight envelope, its @AssertsTodaysBehaviour(flippedBy="OVNT-01") marker removed, and the matching row deleted from midnight-boundary-scenarios.md's fenced registry (now 2 entries, not 3) in the same change -- MidnightBoundaryScenarioRegistryTest.EXPECTED_REGISTRY_SIZE updated 3->2 as an unplanned but required consequence (Rule 3)
+- [Phase 21]: DeskService.setDayStart's fifth refusal (D-03) and dayStartTilingWarning (D-05) share DayWindow.anchoredIsForwardWithinDay / TimeslotGeneratorService.getLiveBounds respectively -- never hand-written comparisons -- so the refusal and the save path, and the advisory and generation, can never disagree
+- [Phase 21]: DeskService.dayStartLocksByDeskId resolves the per-desk ACCEPTED-schedule lock in one batch query for the whole tenant, keeping the first (latest createdAt) row per deskId -- reused by every DeskController response path rather than adding a second per-desk finder shape
 
 ### Blockers/Concerns
 
@@ -349,8 +351,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T21:43:01.808Z
-Stopped at: Completed 21-01-PLAN.md
+Last session: 2026-10-02T21:59:38.351Z
+Stopped at: Completed 21-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -429,3 +431,4 @@ Resume file: None
 | Phase 20 P11 | 95min | 2 tasks | 3 files |
 | Phase 20 P12 | 30min | 3 tasks | 6 files |
 | Phase 21 P01 | unspecified | 2 tasks | 6 files |
+| Phase 21 P02 | 35 min | 3 tasks | 7 files |
