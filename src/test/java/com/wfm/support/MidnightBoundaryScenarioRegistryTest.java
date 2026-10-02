@@ -48,8 +48,9 @@ class MidnightBoundaryScenarioRegistryTest {
 
     /** The exact number of scenarios whose property cannot exist today -- BDAY-06's original three
      *  (plan 20-05 removed SOLV-04's fourth, the SLOT-mode scenario plan 20-04 added, in the same
-     *  commit that flipped its assertion). */
-    private static final int EXPECTED_REGISTRY_SIZE = 3;
+     *  commit that flipped its assertion; plan 21-01 removed OVNT-01's entry, the last of the
+     *  original three, in the same commit that flipped its assertion). */
+    private static final int EXPECTED_REGISTRY_SIZE = 2;
 
     /**
      * The milestone's own requirement IDs a {@link AssertsTodaysBehaviour#flippedBy()} value may

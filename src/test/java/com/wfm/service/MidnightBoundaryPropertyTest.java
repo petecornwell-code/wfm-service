@@ -217,39 +217,34 @@ class MidnightBoundaryPropertyTest {
     class ShiftCrossingMidnight {
 
         @Test
-        @AssertsTodaysBehaviour(flippedBy = "OVNT-01",
-                to = "an interval whose end is earlier in the clock than its start means the "
-                        + "shift crosses the day anchor into the next calendar date, not that the "
-                        + "interval is malformed")
-        @DisplayName("today: the shift-template save path refuses such a template (OVNT-01 still governs this); "
-                + "DayWindow's own backstop throw was already removed from public surface by BDAY-04 criterion 2 "
-                + "(this phase) -- see the comment below")
-        void durationMinutesThrowsAndTheSavePathRefuses() {
-            // BDAY-04 criterion 2 (THIS phase, plan 19-08) already removed DayWindow's own
-            // crossing-interval throw from its public surface: the anchored instance method never
-            // throws for a backward interval, it wraps forward across the anchor instead (D-11).
-            // 19-CONTEXT.md D-11 established that this was always a backstop only -- the save-path
-            // refusal below (via isForwardWithinDay, exercised through the real service) is what
-            // actually governs template creation, and it is UNCHANGED here; relaxing IT for a
-            // genuinely spanning template is OVNT-01's job (Phase 21), which is what this test's
-            // @AssertsTodaysBehaviour marker still names. Positive proof that DayWindow's own
-            // crossing-the-anchor composition already yields a value rather than throwing:
+        @DisplayName("an anchored desk accepts a 22:00-06:00 envelope as one shift crossing its own "
+                + "anchor into the next calendar date (OVNT-01), while DayWindow's wrap-forward "
+                + "composition proves the same arithmetic underneath")
+        void anchoredDeskAcceptsTheCrossingEnvelope() {
+            // DayWindow's own crossing-the-anchor composition already yields a value rather than
+            // throwing (BDAY-04 criterion 2, plan 19-08) -- the positive proof underneath OVNT-01's
+            // save-path acceptance below:
             assertThat(DayWindow.anchoredAt(LocalTime.MIDNIGHT)
                     .anchoredDurationMinutes(LocalTime.of(22, 0), LocalTime.of(6, 0)))
                     .as("22:00 -> 06:00 now wraps forward across the anchor (8 hours) instead of throwing")
                     .isEqualTo(480);
 
+            // OVNT-01 (this phase): a desk saved with a non-midnight day start accepts the same
+            // 22:00-06:00 request the save path refuses at a 00:00 anchor -- the interval crosses
+            // the day anchor into the next calendar date rather than being malformed.
             Desk desk = new Desk();
             desk.setTenantId(TENANT);
             desk.setName("Desk " + UUID.randomUUID());
+            desk.setDayStart(LocalTime.of(21, 0));
             UUID deskId = deskRepository.save(desk).getId();
 
             ShiftTemplateRequest req = new ShiftTemplateRequest("Overnight", LocalTime.of(22, 0), LocalTime.of(6, 0),
                     List.of(), Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 1, 1), null);
 
-            assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("Shift template end time must be after its start time");
+            ShiftTemplate created = service.createShiftTemplate(deskId, req);
+
+            assertThat(created.getNetHours(0, DayWindow.anchoredAt(LocalTime.of(21, 0))))
+                    .isEqualByComparingTo(new BigDecimal("8.00"));
         }
     }
 }

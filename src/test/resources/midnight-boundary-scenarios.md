@@ -59,7 +59,7 @@ envelope crossing the day anchor
 
 ## Scenarios asserting today's behaviour
 
-Three scenarios in this suite assert what this codebase does TODAY at a property whose correct
+Two scenarios in this suite assert what this codebase does TODAY at a property whose correct
 behaviour has not shipped yet. Each is marked `@AssertsTodaysBehaviour` on its test method
 (`com.wfm.support.AssertsTodaysBehaviour`); `MidnightBoundaryScenarioRegistryTest` asserts the
 marked-method set and the fenced registry below are set-equal in BOTH directions. A later phase
@@ -71,18 +71,21 @@ described was deleted or rewritten fails the build exactly as an unregistered ne
 was removed here in the SAME commit that flipped its assertion, plan 20-05: the join now resolves
 business date, so `SlotModeOvernightContractedHoursTest.TodaysBehaviour` and its registry entry are
 both gone, not merely updated. The before-picture those literals recorded now lives in plan
-20-04's SUMMARY.)
+20-04's SUMMARY. OVNT-01's own entry -- "A shift starting before and ending after midnight" -- was
+removed here in the SAME commit that flipped its assertion, plan 21-01: the save path now accepts
+an overnight envelope on an anchored desk, so
+`MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses` was
+rewritten to `#anchoredDeskAcceptsTheCrossingEnvelope` and both its marker and this registry row are
+gone, not merely updated. The before-picture is preserved in plan 21-01's SUMMARY.)
 
 | Scenario | Flipped by | What it flips to |
 |---|---|---|
 | A day-off record's attribution to a shift's calendar date | OVNT-03 | Attribution follows the business day a midnight-spanning shift starts on, not each individually stamped calendar date |
 | Contracted hours consumed by the starting weekday only | OVNT-04 | The whole stretch of a midnight-spanning shift consumes only the starting weekday's contracted-hours row |
-| A shift starting before and ending after midnight | OVNT-01 | The interval means the shift crosses the day anchor into the next calendar date, not that the interval is malformed |
 
 ### Scenarios asserting today's behaviour
 
 ```
 com.wfm.solver.MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly -> OVNT-03
 com.wfm.service.MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows -> OVNT-04
-com.wfm.service.MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses -> OVNT-01
 ```

@@ -97,6 +97,16 @@ public final class DayWindow {
     }
 
     /**
+     * The anchor this instance was bound with (OVNT-01, D-02). Read-only — no arithmetic, no
+     * policy. Added so {@code ShiftTemplateService}'s forward-interval refusal can name the
+     * desk's own day start in its message without re-loading the desk a second time (the caller
+     * already resolved it once, in {@code dayWindowFor}).
+     */
+    public LocalTime dayStart() {
+        return dayStart;
+    }
+
+    /**
      * Instance equivalent of {@link #startMinute(LocalTime)}, day-start-relative. Delegates to
      * {@link #startMinuteFromDayStart(LocalTime, LocalTime)} against the bound anchor; at a
      * {@code 00:00} anchor this equals {@link #startMinute(LocalTime)} exactly.

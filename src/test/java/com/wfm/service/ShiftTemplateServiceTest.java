@@ -184,7 +184,8 @@ class ShiftTemplateServiceTest {
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Shift template end time must be after its start time");
+                .hasMessageContaining("Shift template end time must be after its start time")
+                .hasMessageContaining("would span two business days");
     }
 
     // ---------- Midnight end (a desk whose day runs to 00:00) ----------
@@ -248,7 +249,8 @@ class ShiftTemplateServiceTest {
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Shift template end time must be after its start time");
+                .hasMessageContaining("Shift template end time must be after its start time")
+                .hasMessageContaining("would span two business days");
     }
 
     @Test
@@ -259,7 +261,8 @@ class ShiftTemplateServiceTest {
 
         assertThatThrownBy(() -> service.createShiftTemplate(deskId, req))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Shift template end time must be after its start time");
+                .hasMessageContaining("Shift template end time must be after its start time")
+                .hasMessageContaining("would span two business days");
     }
 
     @Test

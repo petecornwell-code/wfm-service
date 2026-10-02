@@ -245,9 +245,20 @@ public class ShiftTemplateService {
         // An endTime of 00:00 means END OF DAY, so this is DayWindow's forward-within-a-day test
         // rather than endTime.isAfter(startTime) -- the latter rejects every shift finishing at
         // midnight, because LocalTime has no 24:00 and 00:00 is the smallest value in the type.
-        if (request.startTime() == null || request.endTime() == null
-                || !window.anchoredIsForwardWithinDay(request.startTime(), request.endTime())) {
+        //
+        // OVNT-01/D-02: a non-forward interval on THIS desk's anchor means it would span two
+        // business days -- an overnight-capable desk (a non-midnight day start) accepts the exact
+        // same pair, so the cause is the anchor, not the operator's own times. The message names
+        // the anchor so the refusal does not misattribute an anchor-caused rejection to the times
+        // the operator actually entered correctly (see this plan's prohibition).
+        if (request.startTime() == null || request.endTime() == null) {
             throw new IllegalArgumentException("Shift template end time must be after its start time");
+        }
+        if (!window.anchoredIsForwardWithinDay(request.startTime(), request.endTime())) {
+            throw new IllegalArgumentException("Shift template end time must be after its start time"
+                    + " — this desk's business day starts at " + window.dayStart() + ", so "
+                    + request.startTime() + "–" + request.endTime()
+                    + " would span two business days. Give the desk an overnight day start to allow this.");
         }
 
         long envelopeMinutes = window.anchoredDurationMinutes(request.startTime(), request.endTime());
