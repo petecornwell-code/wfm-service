@@ -231,7 +231,7 @@ carrying two occurrences — 19 call-site occurrences across 18 lines; `getDate(
 which 8 need migration and 4 are already business-date-shaped. **Amendments D-04, D-07 and D-14 are
 already discharged** — criteria 6 and 7 exist and criterion 5 is reworded, and `REQUIREMENTS.md`'s
 BDAY-07 carries its 2026-10-01 amendment.
-**Plans**: 8 plans, 6 waves
+**Plans**: 11 plans — 8 original (6 waves), plus 3 gap-closure plans (3 waves of their own, run with `/gsd-execute-phase 20 --gaps-only`)
 
 Plans:
 **Wave 1**
@@ -259,6 +259,12 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion)*
 
 - [ ] 20-08-PLAN.md — The gate deletion and the 15-minute refusal, with the disclosure copy corrected first and the generation-time tiling refusal proven to fire — this phase's FINAL commit (wave 6)
+
+**Gap closure** *(from `20-VERIFICATION.md`, status `gaps_found`, 6/8 must-haves. Run with `/gsd-execute-phase 20 --gaps-only`; the wave numbers below are this run's own, not a continuation of waves 1-6.)*
+
+- [ ] 20-09-PLAN.md — GAP 1 (criterion 6, SOLV-01): the generate-timeslots endpoint reads the desk's own day start through a tenant-scoped lookup, proven through the real controller path, and the save-time gate refuses sub-minute precision by name (gap-closure wave 1)
+- [ ] 20-10-PLAN.md — GAP 2 (the phase goal's "every solver join", CR-02): `expandMinimumStaffingSeats` resolves the business date at both reads, proven on a 21:00-anchored desk; advisory 2's stale pre-migration javadoc corrected (gap-closure wave 2)
+- [ ] 20-11-PLAN.md — Advisory 1 discharged: the two further `Timeslot` calendar-date reads the audit found in `runPreSolveValidation` migrated and proven, and the full `SolverService` enumeration plus the join-guard scope decision recorded in `bday-join-guard.md` (gap-closure wave 3)
 
 ### Phase 21: Overnight Shift Templates
 
