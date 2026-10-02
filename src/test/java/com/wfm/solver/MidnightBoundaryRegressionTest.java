@@ -269,10 +269,12 @@ class MidnightBoundaryRegressionTest {
      * SOLV-03 (D-11): the phase's tracer. Every assertion below is argued against what the
      * MIGRATED solver (plan 20-05's join and anchor migration) must produce -- never copied from
      * this test's own output -- so a RED result here is falsifiability evidence, not a
-     * self-fulfilling baseline. Today's solver still runs every interval on {@code
-     * ScheduleConstraintProvider.PENDING_DESK_ANCHOR} (a hardcoded midnight anchor) and still
-     * joins {@code AgentShiftAssignment}/{@code Timeslot} pairs on CALENDAR date rather than
-     * business date, so a 21:00-anchored scenario is scored wrong in both dimensions at once.
+     * self-fulfilling baseline. At the commit these assertions were written against, BEFORE plan
+     * 20-05's migration landed, the solver ran every interval on {@code
+     * ScheduleConstraintProvider.PENDING_DESK_ANCHOR} (a hardcoded midnight anchor) and joined
+     * {@code AgentShiftAssignment}/{@code Timeslot} pairs on CALENDAR date rather than business
+     * date, so a 21:00-anchored scenario was scored wrong in both dimensions at once. The
+     * migration has since landed (SOLV-01, SOLV-03), and both are gone from the solver.
      */
     @Nested
     @DisplayName("SOLV-03: assertions at a 21:00 (non-midnight) anchor")
@@ -305,9 +307,10 @@ class MidnightBoundaryRegressionTest {
                     .getConstraintMatchCount();
             assertThat(ninePmMovedCount)
                     .as("21:00-anchor: moving the band one minute off flush must ALSO violate exactly one "
-                            + "seat, matching the 00:00-anchor count -- today's solver still joins "
-                            + "AgentShiftAssignment/Timeslot pairs on calendar date, which silently drops "
-                            + "every seat on this scenario's business date from the join")
+                            + "seat, matching the 00:00-anchor count -- before plan 20-05's migration "
+                            + "landed, the solver joined AgentShiftAssignment/Timeslot pairs on calendar "
+                            + "date, which silently dropped every seat on this scenario's business date "
+                            + "from the join")
                     .isEqualTo(midnightMovedCount);
         }
 
@@ -354,18 +357,19 @@ class MidnightBoundaryRegressionTest {
             // two one-hour gaps (04:00-05:00, 06:00-07:00) and no break band to explain either --
             // shiftWorkContiguity's "at most one interior gap is free" fallback exempts ONE gap and
             // penalises the other, so a correctly migrated solver (business-date join, SOLV-03)
-            // reads exactly one hole here. Today's solver still joins AgentShiftAssignment/
-            // Timeslot pairs on CALENDAR date: this agent-day's business date is BASE_DATE, but
-            // every one of its timeslots carries calendar date BASE_DATE.plusDays(1), so NONE of
-            // the four worked seats ever joins this row -- it drops out of the constraint's
-            // grouping entirely and reads zero, not one (a silent non-join, not a wrong number).
+            // reads exactly one hole here. Before plan 20-05's migration landed, the solver joined
+            // AgentShiftAssignment/Timeslot pairs on CALENDAR date: this agent-day's business date
+            // is BASE_DATE, but every one of its timeslots carries calendar date
+            // BASE_DATE.plusDays(1), so NONE of the four worked seats ever joined this row -- it
+            // dropped out of the constraint's grouping entirely and read zero, not one (a silent
+            // non-join, not a wrong number).
             assertThat(requireConstraint(solutionManager, schedule, "Shift work contiguity")
                     .getConstraintMatchCount())
                     .as("an agent-day whose timeslots fall entirely in its business day's "
                             + "calendar-date-shifted tail must still read its true hole count (one, "
-                            + "per the fallback's 'at most one free gap' rule) -- today's calendar-date "
-                            + "join silently drops every one of this agent-day's seats, reading zero "
-                            + "instead")
+                            + "per the fallback's 'at most one free gap' rule) -- before plan 20-05's "
+                            + "migration landed, a calendar-date join silently dropped every one of "
+                            + "this agent-day's seats, reading zero instead")
                     .isEqualTo(1);
         }
 
