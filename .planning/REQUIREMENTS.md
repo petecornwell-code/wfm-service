@@ -132,7 +132,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **SOLV-04**: SLOT mode counts an overnight stretch against a single business day rather than under-allocating both calendar days
 - [x] **SOLV-05**: The pre-solve seat-supply check reports shortfalls per business day
 - [x] **SOLV-06**: Each migrated join is proven non-vacuous — per-constraint match counts are asserted, so a constraint that matches nothing cannot pass as satisfied
-- [ ] **SOLV-07**: Demand upload, coverage reporting and the solver provably resolve the same business date for the same timeslot, guarded by a test rather than by convention
+- [x] **SOLV-07**: Demand upload, coverage reporting and the solver provably resolve the same business date for the same timeslot, guarded by a test rather than by convention
 
 ### Minimum Rest (REST)
 
@@ -225,7 +225,7 @@ Populated during roadmap creation.
 | SOLV-04 | Phase 20 | Complete |
 | SOLV-05 | Phase 20 | Complete |
 | SOLV-06 | Phase 20 | Complete |
-| SOLV-07 | Phase 20 | Pending |
+| SOLV-07 | Phase 20 | Complete |
 | REST-01 | Phase 22 | Pending |
 | REST-02 | Phase 22 | Pending |
 | REST-03 | Phase 22 | Pending |
