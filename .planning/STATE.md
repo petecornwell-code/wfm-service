@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 20
-current_phase_name: Solver Business-Date Correctness
-status: verifying
-stopped_at: Completed 20-12-PLAN.md
-last_updated: "2026-10-02T13:16:26.610Z"
+current_phase: 21
+current_phase_name: Overnight Shift Templates
+status: planning
+stopped_at: Phase 20 complete, ready to plan Phase 21
+last_updated: "2026-10-02T13:54:27.737Z"
 last_activity: 2026-10-02
-last_activity_desc: Phase 20 execution started
-state_head: 4a1edf06ede0711529d4bda2b0c43e73592ee4f2
+last_activity_desc: Phase 20 complete, transitioned to Phase 21
+state_head: 1677c50fb5e676134a5c295e19a9ebbbacd4a473
 progress:
   total_phases: 5
   completed_phases: 1
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
 
 ## Current Position
 
-Phase: 20 (Solver Business-Date Correctness) — ALL PLANS COMPLETE
-Plan: 12 of 12 (gap closure 20-12; 12 complete)
-Status: Phase complete — ready for verification
-Last activity: 2026-10-02 — Phase 20 execution complete
+Phase: 21 — Overnight Shift Templates
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-02 — Phase 20 complete, transitioned to Phase 21
 
 ## Milestone v1.3 Outcome
 
@@ -345,7 +345,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-10-02T13:16:26.568Z
-Stopped at: Completed 20-12-PLAN.md
+Stopped at: Phase 20 complete, ready to plan Phase 21
 Resume file: None
 
 ## Operator Next Steps

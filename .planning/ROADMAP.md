@@ -25,7 +25,7 @@ than four captured live desks standing in for both jobs at once.
 
 - [x] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
 - [x] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change (completed 2026-10-01)
-- [ ] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved
+- [x] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved (completed 2026-10-02)
 - [ ] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block
 - [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
 
@@ -231,7 +231,7 @@ carrying two occurrences — 19 call-site occurrences across 18 lines; `getDate(
 which 8 need migration and 4 are already business-date-shaped. **Amendments D-04, D-07 and D-14 are
 already discharged** — criteria 6 and 7 exist and criterion 5 is reworded, and `REQUIREMENTS.md`'s
 BDAY-07 carries its 2026-10-01 amendment.
-**Plans**: 11 plans — 8 original (6 waves), plus 3 gap-closure plans (3 waves of their own, run with `/gsd-execute-phase 20 --gaps-only`)
+**Plans**: 12/12 plans complete — 8 original (6 waves), plus 4 gap-closure plans across two rounds (20-09..20-11 in round 1, 20-12 in round 2; each round's waves are its own, run with `/gsd-execute-phase 20 --gaps-only`)
 
 Plans:
 **Wave 1**
@@ -241,34 +241,34 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 20-02-PLAN.md — The two structural guards: `BusinessDateJoinGuardTest` over four files (red) and `AgentDayDerivationGuardTest` over D-06's chain (green) (wave 2)
-- [ ] 20-03-PLAN.md — The two per-constraint count proofs: SOLV-06's reflective anchor-invariance table (red) and BDAY-07's 48-agent Phil-US-shaped drift baseline (green) (wave 2)
-- [ ] 20-04-PLAN.md — SOLV-04's constructed SLOT-mode overnight proof (red) and SOLV-05's seat-supply key-system fix (wave 2)
+- [x] 20-03-PLAN.md — The two per-constraint count proofs: SOLV-06's reflective anchor-invariance table (red) and BDAY-07's 48-agent Phil-US-shaped drift baseline (green) (wave 2)
+- [x] 20-04-PLAN.md — SOLV-04's constructed SLOT-mode overnight proof (red) and SOLV-05's seat-supply key-system fix (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 20-05-PLAN.md — THE migration, one deliberate commit: 8 key-position edits, 19 anchor occurrences across 6 constraints, the placeholder and its allowlist row gone — with a blocking decision checkpoint for `honourPreferredBreakTime` (wave 3, not autonomous)
+- [x] 20-05-PLAN.md — THE migration, one deliberate commit: 8 key-position edits, 19 anchor occurrences across 6 constraints, the placeholder and its allowlist row gone — with a blocking decision checkpoint for `honourPreferredBreakTime` (wave 3, not autonomous)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 20-06-PLAN.md — SOLV-07's read paths: 6 coverage grouping keys and 4 library-generation key positions, two display labels deliberately unchanged (wave 4)
+- [x] 20-06-PLAN.md — SOLV-07's read paths: 6 coverage grouping keys and 4 library-generation key positions, two display labels deliberately unchanged (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 20-07-PLAN.md — D-15's destructive delete range and its repository filter moved together, proven by observing survivors; the join guard goes green (wave 5)
+- [x] 20-07-PLAN.md — D-15's destructive delete range and its repository filter moved together, proven by observing survivors; the join guard goes green (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 20-08-PLAN.md — The gate deletion and the 15-minute refusal, with the disclosure copy corrected first and the generation-time tiling refusal proven to fire — this phase's FINAL commit (wave 6)
+- [x] 20-08-PLAN.md — The gate deletion and the 15-minute refusal, with the disclosure copy corrected first and the generation-time tiling refusal proven to fire — this phase's FINAL commit (wave 6)
 
 **Gap closure** *(from `20-VERIFICATION.md`, status `gaps_found`, 6/8 must-haves. Run with `/gsd-execute-phase 20 --gaps-only`; the wave numbers below are this run's own, not a continuation of waves 1-6.)*
 
-- [ ] 20-09-PLAN.md — GAP 1 (criterion 6, SOLV-01): the generate-timeslots endpoint reads the desk's own day start through a tenant-scoped lookup, proven through the real controller path, and the save-time gate refuses sub-minute precision by name (gap-closure wave 1)
-- [ ] 20-10-PLAN.md — GAP 2 (the phase goal's "every solver join", CR-02): `expandMinimumStaffingSeats` resolves the business date at both reads, proven on a 21:00-anchored desk; advisory 2's stale pre-migration javadoc corrected (gap-closure wave 2)
-- [ ] 20-11-PLAN.md — Advisory 1 discharged: the two further `Timeslot` calendar-date reads the audit found in `runPreSolveValidation` migrated and proven, and the full `SolverService` enumeration plus the join-guard scope decision recorded in `bday-join-guard.md` (gap-closure wave 3)
+- [x] 20-09-PLAN.md — GAP 1 (criterion 6, SOLV-01): the generate-timeslots endpoint reads the desk's own day start through a tenant-scoped lookup, proven through the real controller path, and the save-time gate refuses sub-minute precision by name (gap-closure wave 1)
+- [x] 20-10-PLAN.md — GAP 2 (the phase goal's "every solver join", CR-02): `expandMinimumStaffingSeats` resolves the business date at both reads, proven on a 21:00-anchored desk; advisory 2's stale pre-migration javadoc corrected (gap-closure wave 2)
+- [x] 20-11-PLAN.md — Advisory 1 discharged: the two further `Timeslot` calendar-date reads the audit found in `runPreSolveValidation` migrated and proven, and the full `SolverService` enumeration plus the join-guard scope decision recorded in `bday-join-guard.md` (gap-closure wave 3)
 
 **Gap closure, round 2** *(from `20-REVIEW.md` CR-01/WR-01/IN-01, status `issues_found`. Run with `/gsd-execute-phase 20 --gaps-only`.)*
 
-- [ ] 20-12-PLAN.md — CR-01: the four problem-fact and snapshot fetches that pass business-date period bounds into calendar-date finders load through one shared widen-then-derive loader (`BusinessDayPeriodLoader`), mirroring `TimeslotGeneratorService`'s BDAY-03 read-back; proven end-to-end on the accept path at a 21:00 anchor with a midnight control. WR-01: the repository derived-query-name / JPQL `t.date` blind spot recorded in `bday-join-guard.md`. IN-01 folded in (gap-closure round 2, wave 1)
+- [x] 20-12-PLAN.md — CR-01: the four problem-fact and snapshot fetches that pass business-date period bounds into calendar-date finders load through one shared widen-then-derive loader (`BusinessDayPeriodLoader`), mirroring `TimeslotGeneratorService`'s BDAY-03 read-back; proven end-to-end on the accept path at a 21:00 anchor with a midnight control. WR-01: the repository derived-query-name / JPQL `t.date` blind spot recorded in `bday-join-guard.md`. IN-01 folded in (gap-closure round 2, wave 1)
 
 ### Phase 21: Overnight Shift Templates
 
