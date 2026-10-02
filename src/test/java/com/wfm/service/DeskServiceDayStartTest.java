@@ -13,6 +13,8 @@ import com.wfm.repository.ScheduleRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
@@ -30,9 +32,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Verifies DeskService.setDayStart: the 00:00-only gate, the null refusal, the equal-value
- * no-op, and the endpoint round trip (BDAY-01); and the unconditional accepted-schedule refusal,
- * including deterministic ordering when a desk holds more than one ACCEPTED schedule.
+ * Verifies DeskService.setDayStart: the 15-minute-boundary gate (SOLV-01), the null refusal, the
+ * equal-value no-op, and the endpoint round trip; and the unconditional accepted-schedule
+ * refusal, including deterministic ordering when a desk holds more than one ACCEPTED schedule.
+ *
+ * <p>Written RED against the 15-minute-boundary contract this plan's final commit delivers: at
+ * the commit that lands this change, the service still refuses any value other than {@code
+ * 00:00}, so every case below that saves a non-midnight day start fails until that commit lands.
  *
  * Uses H2 via @DataJpaTest, mirroring DeskServiceSchedulingModeTest's shape.
  */
@@ -92,11 +98,36 @@ class DeskServiceDayStartTest {
     }
 
     @Test
-    void setDayStart_nonMidnightValue_throwsIllegalArgument_deskRowUnchanged() {
+    void setDayStart_2100_acceptedPersistedAndReadsBackFromDeskRow() {
         Desk desk = saveDesk(TENANT_A);
 
-        assertThatThrownBy(() -> deskService.setDayStart(desk.getId(), LocalTime.of(21, 0)))
-                .isInstanceOf(IllegalArgumentException.class);
+        Desk result = deskService.setDayStart(desk.getId(), LocalTime.of(21, 0));
+
+        assertThat(result.getDayStart()).isEqualTo(LocalTime.of(21, 0));
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.of(21, 0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"00:15", "06:30", "21:15", "23:45"})
+    void setDayStart_quarterHourBoundary_accepted(String boundary) {
+        Desk desk = saveDesk(TENANT_A);
+        LocalTime value = LocalTime.parse(boundary);
+
+        Desk result = deskService.setDayStart(desk.getId(), value);
+
+        assertThat(result.getDayStart()).isEqualTo(value);
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getDayStart()).isEqualTo(value);
+    }
+
+    @Test
+    void setDayStart_2107_refusedNamingRejectedValue() {
+        Desk desk = saveDesk(TENANT_A);
+
+        assertThatThrownBy(() -> deskService.setDayStart(desk.getId(), LocalTime.of(21, 7)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("21:07");
 
         Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
         assertThat(reloaded.getDayStart()).isEqualTo(LocalTime.MIDNIGHT);
@@ -136,12 +167,13 @@ class DeskServiceDayStartTest {
     }
 
     @Test
-    void controller_setDayStart_nonMidnightValue_throwsIllegalArgument() {
+    void controller_setDayStart_2100_returnsResponseCarrying2100() {
         Desk desk = saveDesk(TENANT_A);
 
-        assertThatThrownBy(() -> deskController.setDayStart(desk.getId(),
-                new DayStartRequest(LocalTime.of(21, 0))))
-                .isInstanceOf(IllegalArgumentException.class);
+        DeskResponse response = deskController.setDayStart(desk.getId(),
+                new DayStartRequest(LocalTime.of(21, 0)));
+
+        assertThat(response.dayStart()).isEqualTo(LocalTime.of(21, 0));
     }
 
     // --- Accepted-schedule refusal (unconditional, no bypass) ---
