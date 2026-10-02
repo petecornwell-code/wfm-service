@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-10-02T21:59:38.389Z"
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-10-02T22:32:32.897Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 2d886cfea6e1c81bc50b84e5e63a61004395771e
+state_head: 16ee1d560273efeb98cfa8fd109129f4685b0bd9
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 27
+  completed_plans: 29
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 3 of 12
+Plan: 4 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -328,6 +328,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: [Phase 21] 21-01: MidnightBoundaryPropertyTest's ShiftCrossingMidnight.save-path assertion flipped from refuse to accept an anchored overnight envelope, its @AssertsTodaysBehaviour(flippedBy="OVNT-01") marker removed, and the matching row deleted from midnight-boundary-scenarios.md's fenced registry (now 2 entries, not 3) in the same change -- MidnightBoundaryScenarioRegistryTest.EXPECTED_REGISTRY_SIZE updated 3->2 as an unplanned but required consequence (Rule 3)
 - [Phase 21]: DeskService.setDayStart's fifth refusal (D-03) and dayStartTilingWarning (D-05) share DayWindow.anchoredIsForwardWithinDay / TimeslotGeneratorService.getLiveBounds respectively -- never hand-written comparisons -- so the refusal and the save path, and the advisory and generation, can never disagree
 - [Phase 21]: DeskService.dayStartLocksByDeskId resolves the per-desk ACCEPTED-schedule lock in one batch query for the whole tenant, keeping the first (latest createdAt) row per deskId -- reused by every DeskController response path rather than adding a second per-desk finder shape
+- [Phase 21]: Task 1's three new behavior tests exercise construction site 2 (buildAcceptedConstraintViolations) via the existing acceptedScheduleWithEnvelope + relocated-Timeslot fixture pattern; site 1 (live explain() path) is covered structurally by the compiler-forced widened constructor and an unmodified pre-existing live-path test.
+- [Phase 21]: unfilledSeatsByDateAndSlot's result map key changed from the label's parsed calendar date to businessDate.toString(), matching writeAgentAllocation's lookup key (AgentScheduleEntry.date(), always the business date) -- the actual fix for the post-midnight shortfall attribution bug.
 
 ### Blockers/Concerns
 
@@ -351,8 +353,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T21:59:38.351Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-10-02T22:32:32.861Z
+Stopped at: Completed 21-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -432,3 +434,4 @@ Resume file: None
 | Phase 20 P12 | 30min | 3 tasks | 6 files |
 | Phase 21 P01 | unspecified | 2 tasks | 6 files |
 | Phase 21 P02 | 35 min | 3 tasks | 7 files |
+| Phase 21 P03 | 40min | 2 tasks | 5 files |
