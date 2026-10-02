@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -383,6 +384,85 @@ class DeskServiceDayStartTest {
         assertThat(warning).isEmpty();
     }
 
+    // --- Day-start lock disclosure and the write-response tiling advisory (OVNT-01/D-04/D-05):
+    // GET /desks and the setDayStart response must carry the fields the control needs. ---
+
+    @Test
+    void listDesks_oneLockedOneNot_lockFieldsPopulatedOnlyOnLockedDesk() {
+        Desk locked = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        Schedule accepted = saveAcceptedSchedule(locked.getId(), OffsetDateTime.now());
+        Desk unlocked = saveDesk(TENANT_A);
+
+        List<DeskResponse> responses = deskController.listDesks();
+
+        DeskResponse lockedResponse = responses.stream()
+                .filter(r -> r.id().equals(locked.getId())).findFirst().orElseThrow();
+        DeskResponse unlockedResponse = responses.stream()
+                .filter(r -> r.id().equals(unlocked.getId())).findFirst().orElseThrow();
+
+        assertThat(lockedResponse.dayStartLockedByScheduleId()).isEqualTo(accepted.getId());
+        assertThat(lockedResponse.dayStartLockedPeriodStart()).isEqualTo(accepted.getPeriodStartDate());
+        assertThat(lockedResponse.dayStartLockedPeriodEnd()).isEqualTo(accepted.getPeriodEndDate());
+
+        assertThat(unlockedResponse.dayStartLockedByScheduleId()).isNull();
+        assertThat(unlockedResponse.dayStartLockedPeriodStart()).isNull();
+        assertThat(unlockedResponse.dayStartLockedPeriodEnd()).isNull();
+    }
+
+    @Test
+    void listDesks_disclosedLockId_matchesTheIdNamedByTheSetDayStartRefusal() {
+        Desk desk = saveDeskWithDayStart(TENANT_A, LocalTime.of(21, 0));
+        Schedule accepted = saveAcceptedSchedule(desk.getId(), OffsetDateTime.now());
+
+        String refusalMessage = catchConflictMessage(desk.getId());
+        List<DeskResponse> responses = deskController.listDesks();
+        DeskResponse response = responses.stream()
+                .filter(r -> r.id().equals(desk.getId())).findFirst().orElseThrow();
+
+        assertThat(refusalMessage).contains(accepted.getId().toString());
+        assertThat(response.dayStartLockedByScheduleId()).isEqualTo(accepted.getId());
+    }
+
+    @Test
+    void controller_setDayStart_nonTilingValue_returns200WithAdvisoryAndSubmittedValue() {
+        Desk desk = saveDesk(TENANT_A);
+        generateLiveTimeslots(desk.getId(), 30);
+
+        DeskResponse response = deskController.setDayStart(desk.getId(), new DayStartRequest(LocalTime.of(21, 15)));
+
+        assertThat(response.dayStart()).isEqualTo(LocalTime.of(21, 15));
+        assertThat(response.dayStartTilingWarning()).isNotNull().contains("21:15");
+    }
+
+    @Test
+    void controller_setDayStart_tilingValue_returns200WithNullAdvisory() {
+        Desk desk = saveDesk(TENANT_A);
+        generateLiveTimeslots(desk.getId(), 30);
+
+        DeskResponse response = deskController.setDayStart(desk.getId(), new DayStartRequest(LocalTime.of(21, 30)));
+
+        assertThat(response.dayStart()).isEqualTo(LocalTime.of(21, 30));
+        assertThat(response.dayStartTilingWarning()).isNull();
+    }
+
+    @Test
+    void listDesks_tenantScoped_otherTenantDeskAndScheduleNeverDisclosed() {
+        long tenantB = 2L;
+        TenantContext.setTenantId(tenantB);
+        Desk otherTenantDesk = saveDeskWithDayStart(tenantB, LocalTime.of(21, 0));
+        Schedule otherTenantAccepted = saveAcceptedScheduleForTenant(tenantB, otherTenantDesk.getId(), OffsetDateTime.now());
+        TenantContext.setTenantId(TENANT_A);
+
+        Desk ownDesk = saveDesk(TENANT_A);
+
+        List<DeskResponse> responses = deskController.listDesks();
+
+        assertThat(responses).noneMatch(r -> r.id().equals(otherTenantDesk.getId()));
+        assertThat(responses).noneMatch(r ->
+                otherTenantAccepted.getId().equals(r.dayStartLockedByScheduleId()));
+        assertThat(responses).anyMatch(r -> r.id().equals(ownDesk.getId()));
+    }
+
     // --- Helpers ---
 
     private Desk saveDesk(long tenantId) {
@@ -403,8 +483,12 @@ class DeskServiceDayStartTest {
     }
 
     private Schedule saveAcceptedSchedule(UUID deskId, OffsetDateTime createdAt) {
+        return saveAcceptedScheduleForTenant(TENANT_A, deskId, createdAt);
+    }
+
+    private Schedule saveAcceptedScheduleForTenant(long tenantId, UUID deskId, OffsetDateTime createdAt) {
         Schedule schedule = new Schedule();
-        schedule.setTenantId(TENANT_A);
+        schedule.setTenantId(tenantId);
         schedule.setDeskId(deskId);
         schedule.setIncrementMinutes(30);
         schedule.setStartTime(LocalTime.of(8, 0));

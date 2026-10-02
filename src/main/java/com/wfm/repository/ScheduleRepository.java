@@ -32,5 +32,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findByTenantIdAndDeskIdAndStatusOrderByCreatedAtDesc(long tenantId, UUID deskId,
                                                 com.wfm.model.ScheduleStatus status);
 
+    // OVNT-01/D-04: the batch twin of the finder above -- one query for every desk's lock
+    // disclosure rather than the per-desk finder called in a loop. Both must keep createdAt
+    // descending so the disclosed row (DeskService.dayStartLocksByDeskId's first-per-deskId pick)
+    // and the row the setDayStart refusal names are always the same schedule.
+    List<Schedule> findByTenantIdAndStatusOrderByCreatedAtDesc(long tenantId,
+                                                com.wfm.model.ScheduleStatus status);
+
     void deleteByTenantIdAndDeskId(long tenantId, UUID deskId);
 }
