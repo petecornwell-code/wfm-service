@@ -413,4 +413,96 @@ class ScheduleAllocationExportTest {
         }
     }
 
+    /**
+     * Plan 21-03 Task 2 (OVNT-02/D-14) — unfilled-seat attribution reads the violation's
+     * structured {@code businessDate}/{@code startTime} fields rather than parsing
+     * {@code timeslotLabel}, and keys the result by BUSINESS date rather than calendar date.
+     * {@link #detail()}'s own fixture above is the no-op control for a 00:00-anchored desk
+     * (business date == calendar date there) — its pre-existing {@code unfilledRow} and
+     * {@code noUnfilledRowWhenFullyCovered} assertions are unmodified and still pass.
+     */
+    @Nested
+    @DisplayName("unfilled seat attribution reads structured fields")
+    class UnfilledSeatAttribution {
+
+        private static final LocalTime NIGHT_ANCHOR = LocalTime.of(21, 0);
+
+        @Test
+        @DisplayName("a post-midnight shortfall on an anchored desk lands on its business day's sheet")
+        void postMidnightShortfallLandsOnBusinessDaySheet() throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(NIGHT_ANCHOR);
+            d.setDeskName("Night Desk");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_TWO);
+            d.setIncrementMinutes(60);
+            // One worked seat on business day DAY_ONE, after the 21:00 anchor.
+            d.setAgentSchedule(List.of(
+                    agent("Zoe Last", DAY_ONE, new BigDecimal("1.0"),
+                            List.of(seat(22, "PRIMARY")), List.of())));
+            // The shortfall: business date DAY_ONE, calendar date DAY_TWO (02:00-03:00 occurs on
+            // the calendar day after the anchor rolls over). Before this change this marker was
+            // keyed under DAY_TWO (parsed from the calendar-date label) and no sheet for DAY_TWO
+            // exists in this fixture, so it rendered nowhere.
+            d.setConstraintViolations(List.of(new ConstraintViolationEntry(
+                    "Unassigned assignment", "SOFT", new ScheduleSummary.ScoreDto(0, 1000), 1,
+                    new ScheduleSummary.ScoreDto(0, -1000),
+                    List.of(new ViolationDetail(null, null, UUID.randomUUID(),
+                            DAY_ONE, DAY_TWO, LocalTime.of(2, 0), LocalTime.of(3, 0),
+                            DAY_TWO + " 02:00-03:00", "unfilled")))));
+
+            byte[] bytes = new ScheduleExportService().exportToExcel(d);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                assertThat(wb.getSheet("Allocation " + DAY_TWO))
+                        .as("no agent worked on DAY_TWO, so no sheet for it exists at all")
+                        .isNull();
+
+                Sheet sheet = wb.getSheet("Allocation " + DAY_ONE);
+                assertThat(sheet).isNotNull();
+
+                Row header = sheet.getRow(0);
+                // Slots sorted by time-of-day: 02:00 precedes 22:00.
+                assertThat(header.getCell(3).getStringCellValue()).isEqualTo("02:00");
+                assertThat(header.getCell(4).getStringCellValue()).isEqualTo("22:00");
+
+                // header(0), one agent(1), totals(2), unfilled(3).
+                Row unfilled = sheet.getRow(3);
+                assertThat(unfilled.getCell(0).getStringCellValue()).isEqualTo("Unfilled");
+                assertThat(unfilled.getCell(3).getNumericCellValue()).isEqualTo(1.0);
+                assertThat(unfilled.getCell(4).getCellType()).isEqualTo(CellType.BLANK);
+            }
+        }
+
+        @Test
+        @DisplayName("a violation with null structured fields produces no marker and does not throw")
+        void nullStructuredFieldsSkippedWithoutException() throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(LocalTime.MIDNIGHT);
+            d.setDeskName("Vinted");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_ONE);
+            d.setIncrementMinutes(60);
+            d.setAgentSchedule(List.of(
+                    agent("Zoe Last", DAY_ONE, new BigDecimal("1.0"),
+                            List.of(seat(22, "PRIMARY")), List.of())));
+            d.setConstraintViolations(List.of(new ConstraintViolationEntry(
+                    "Unassigned assignment", "SOFT", new ScheduleSummary.ScoreDto(0, 1000), 1,
+                    new ScheduleSummary.ScoreDto(0, -1000),
+                    List.of(new ViolationDetail(null, null, UUID.randomUUID(),
+                            null, null, null, null, null, "unfilled")))));
+
+            byte[] bytes = new ScheduleExportService().exportToExcel(d);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                Sheet sheet = wb.getSheet("Allocation " + DAY_ONE);
+                assertThat(sheet).isNotNull();
+                // header(0), one agent(1), totals(2) -- no unfilled row at all, since the null
+                // structured fields on the only violation produced no marker.
+                assertThat(sheet.getRow(2).getCell(0).getStringCellValue()).startsWith("Total:");
+                assertThat(sheet.getRow(3)).isNull();
+            }
+        }
+    }
+
 }
