@@ -12,20 +12,20 @@ last_activity_desc: Phase 20 complete, transitioned to Phase 21
 state_head: 1677c50fb5e676134a5c295e19a9ebbbacd4a473
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 3
   total_plans: 26
   completed_plans: 26
-  percent: 20
+  percent: 60
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-30 after Phase 18)
+See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 20 — Solver Business-Date Correctness
+**Current focus:** Phase 21 — Overnight Shift Templates
 
 ## Current Position
 
@@ -322,6 +322,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 20]: runPreSolveValidation converted private instance -> package-private static (ShiftLibraryValidationService as leading param), mirroring appendBandCapacityErrors, as its own behaviour-free commit before the RED test and the production fix — Direct unit-testability without a Spring context; the same conversion this file already established for appendBandCapacityErrors
 - [Phase 20]: SolverService's complete Timeslot-date-read audit (4 sites) recorded in bday-join-guard.md's Known scope boundaries section rather than only in a planning document — The guard parses that file at test time, so the audit lives beside the contract it qualifies and survives independent of planning-doc lifecycle
 - [Phase 20]: Test C's plan-specified assertion (hasSize(3)) contradicted DayWindow.businessDateOf's own documented semantics; corrected to hasSize(24) so the test proves derivation governs over the stored column (plan 20-12).
+- [Phase 20]: The four business-date-bounds-into-calendar-date-finder sites (CR-01) were closed behind ONE shared package-private `BusinessDayPeriodLoader` rather than four inlined copies of the widen/filter/sort logic — a future reader cannot fix one site and leave the other three on calendar date, and the defect class is grep-able by class name. It widens the calendar upper bound by `plusDays(1)` then narrows on the DERIVED business date via `DayWindow.businessDateOf`, deliberately NOT on `Timeslot`'s stored `business_date` column: this mirrors `TimeslotGeneratorService`'s BDAY-03 read-back and overrides 20-REVIEW.md CR-01's own suggested fix, which proposed stored-column repository twins (plan 20-12)
+- [Phase 20]: `loadLiveTimeslots` imposes an explicit business-day-chronological sort while `loadLiveStaffingRequirements` deliberately does not sort at all (P-02) — the underlying unpaginated `findLiveByDeskAndDateRange` declares no `ORDER BY`, so imposing one would change returned order at a `00:00` anchor and break the no-op invariant the midnight control proves (plan 20-12)
 
 ### Blockers/Concerns
 
@@ -341,6 +343,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - Plan 15-15 found a pre-existing, uncommitted change to 15-UAT.md's G-15-27 entry (status open->resolved, full resolved_by/resolved_evidence) already on disk before the plan's own edits -- not authored by this execution, deliberately left uncommitted (touch no other gap entry), needs a human or future session to commit or discard it
 - **⚠ [Phase 18] The `skipped="0"` guard is a one-time observation, not a standing control (T-18-05-04).** `MidnightTimeslotPostgresTest` is what exercises V53 through real Flyway, but `@Testcontainers(disabledWithoutDocker = true)` means a machine with no Docker daemon skips the whole class and the build still reports green — the V39 failure mode. The phase's mitigation ("assert the JUnit XML shows `skipped=\"0\"`") WAS performed and evidenced in `18-05-SUMMARY.md` (`tests="6" skipped="0"`), but no code asserts it: grepping `src/test/java` and `build.gradle` for `skipped="0"` returns nothing. CI has Docker so it is live there; local `./gradlew build` without Docker is not covered. Recorded as a residual risk in `18-SECURITY.md`, not an open threat, because the mitigation as written was an execution-time check. Closing it permanently needs a standing assertion.
 - 16-02: MultiDayConstraintDiagnosticTest (solver package, wall-clock time-boxed) failed once during the mandatory full-suite run under contention; confirmed flaky, green in isolation. Pre-existing, out of this phase's scope — logged to .planning/phases/16-usual-shift-storage/deferred-items.md
+- **⚠ [Phase 20] No real-DB test proves business-date *exclusion* at a non-midnight anchor** (code review WR-01, advisory in `20-VERIFICATION.md`; not a gap — the phase verified 8/8). `BusinessDayPeriodLoader`'s exclusion half is proven only at the unit/mocked level (`BusinessDayPeriodLoaderTest` Test 3) and, through the real `acceptSchedule`/JPA path, only at a `00:00` anchor where calendar and business date coincide and the assertion cannot discriminate. `ScheduleServiceShiftSnapshotTest` Tests A/B/C hold exactly the rows the widened fetch returns, so they would stay green if the filter were deleted outright. Production code is correct by direct read; what is missing is a 21:00-anchored accept-path test carrying an out-of-range decoy row — the test that would catch a future regression in the widen/narrow pair
 
 ## Session Continuity
 
