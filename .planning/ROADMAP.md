@@ -266,6 +266,10 @@ Plans:
 - [ ] 20-10-PLAN.md — GAP 2 (the phase goal's "every solver join", CR-02): `expandMinimumStaffingSeats` resolves the business date at both reads, proven on a 21:00-anchored desk; advisory 2's stale pre-migration javadoc corrected (gap-closure wave 2)
 - [ ] 20-11-PLAN.md — Advisory 1 discharged: the two further `Timeslot` calendar-date reads the audit found in `runPreSolveValidation` migrated and proven, and the full `SolverService` enumeration plus the join-guard scope decision recorded in `bday-join-guard.md` (gap-closure wave 3)
 
+**Gap closure, round 2** *(from `20-REVIEW.md` CR-01/WR-01/IN-01, status `issues_found`. Run with `/gsd-execute-phase 20 --gaps-only`.)*
+
+- [ ] 20-12-PLAN.md — CR-01: the four problem-fact and snapshot fetches that pass business-date period bounds into calendar-date finders load through one shared widen-then-derive loader (`BusinessDayPeriodLoader`), mirroring `TimeslotGeneratorService`'s BDAY-03 read-back; proven end-to-end on the accept path at a 21:00 anchor with a midnight control. WR-01: the repository derived-query-name / JPQL `t.date` blind spot recorded in `bday-join-guard.md`. IN-01 folded in (gap-closure round 2, wave 1)
+
 ### Phase 21: Overnight Shift Templates
 
 **Goal**: A desk can define a shift that spans midnight, and every surface that touches it — save-time
