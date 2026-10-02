@@ -1952,7 +1952,18 @@ public class SolverService {
             // weekend 08:00/09:00/20:00 — all zero-demand hours, all reachable only by a weekday
             // template. Same calendar-blindness class as the validWeekdays eligibility defect, in
             // the seat-supply path rather than the value range.
-            LocalDate tsDate = ts.getDate();
+            //
+            // SOLV-01/SOLV-05: both reads below MUST resolve the timeslot's BUSINESS date, not its
+            // calendar date -- the identical key-system mismatch requireShiftEnvelopeSeatSupply
+            // (above, in this same file) was already fixed for. workingAgentDaysByDate is built
+            // from AgentShiftAssignment::getDate, which is already the business date (D-05); a
+            // timeslot's calendar date is a different value whenever the desk's day start is not
+            // midnight. Before this fix, the weekday-eligibility filter evaluated the wrong day of
+            // the week for any timeslot whose calendar day differs from its business day, and the
+            // count lookup below missed its key and silently defaulted to zero -- re-opening the
+            // weekday-eligibility defect and under-provisioning filler seats with no error, no
+            // warning and no failing test.
+            LocalDate tsDate = ts.getBusinessDate();
             boolean covered = shiftBandPairs.stream()
                     .filter(pair -> pair.template().isEffectiveOn(tsDate) && pair.template().appliesOn(tsDate))
                     .anyMatch(pair -> pair.covers(ts, window));
@@ -1963,7 +1974,7 @@ public class SolverService {
             int target = Math.max(ScheduleConstraintProvider.MIN_AGENTS_PER_TIMESLOT,
                     workingAgentDaysByDate == null
                             ? 0
-                            : workingAgentDaysByDate.getOrDefault(ts.getDate(), 0));
+                            : workingAgentDaysByDate.getOrDefault(ts.getBusinessDate(), 0));
             for (int i = 0; i < target; i++) {
                 Specialization spec = orderedSpecs.get(i % orderedSpecs.size());
                 extra.add(fillerSeat(tenantId, deskId, scheduleId, ts, spec));
