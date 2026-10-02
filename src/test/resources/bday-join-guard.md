@@ -58,6 +58,49 @@ Every site below is either genuinely out of this guard's four-verb scope by desi
 blind spot this guard's own textual technique cannot close. Recording them here means the next
 reader files each as a decision rather than rediscovering it as a missed migration.
 
+- **`SolverService` is deliberately not one of the four files in `TARGET_FILES` above.** Adding it
+  would contribute ZERO matched lines: this guard requires one of the four verb tokens
+  (`join(`/`equal(`/`groupBy(`/`computeIfAbsent(`) AND a `Timeslot`-receiver date read on the SAME
+  line, and none of the four `Timeslot`-receiver calendar-date reads this file was found to carry
+  (enumerated below) satisfies the verb half. Its presence would therefore make an empty allowlist
+  appear to certify a ~1900-line date-sensitive file the scan structurally cannot see -- the
+  decoration outcome D-08 and D-09 chose the four-verb scope to avoid, the identical failure
+  already recorded below for `StaffingRequirementService`'s `.min(`/`.max(` blind spot.
+
+  The audit (plan 20-11, prompted by `20-VERIFICATION.md` advisory 1: "is CR-02 the only remaining
+  instance, or one of several?") found all four of this file's `Timeslot`-receiver calendar-date
+  reads. Two were found by the phase's own code review and fixed by plan 20-10; two more were found
+  by the audit advisory 1 itself prompted and fixed by plan 20-11 -- one careful pass found half of
+  them, which is the measured case for treating this file's absence from the guard as a real
+  residual risk rather than a formality.
+
+  - `runPreSolveValidation` lines 1104 and 1127 (pre-solve checks 2 and 3; migrated by plan
+    20-11). Check 2 built its period-coverage set with `.map(Timeslot::getDate)` -- a `.map(` with
+    a method reference, not a scanned verb. Check 3 selected the last timeslot of a day with
+    `.filter(t -> t.getDate().equals(first.getDate()))` -- a `.filter(` with a lambda over locals
+    named `t` and `first`, not the bare `ts` variable the receiver heuristic recognises, and
+    `.equals(` is not a scanned verb either.
+  - `expandMinimumStaffingSeats` lines 1984 and 1995 (shift-template weekday eligibility and the
+    `workingAgentDaysByDate` count lookup; migrated by plan 20-10). The eligibility read was a bare
+    local assignment, `LocalDate tsDate = ts.getDate();` -- the receiver (`ts`) IS the bare variable
+    the heuristic recognises, but the line itself carries no verb token at all. The count lookup was
+    `workingAgentDaysByDate.getOrDefault(ts.getDate(), 0)` -- a `.getOrDefault(` lookup, also not a
+    scanned verb.
+
+  Correctness at all four sites was established by direct reading plus two proving test classes --
+  `MinimumStaffingSeatsBusinessDateTest` (the seat-expansion pair) and
+  `PreSolveValidationBusinessDateTest` (the pre-solve pair), each anchored at 21:00 with a
+  midnight-anchored control -- never by this guard turning green, because it cannot see any of the
+  four regardless of migration state. That remains true after this plan: a future regression at any
+  of these four lines will not fail `BusinessDateJoinGuardTest`, so correctness there must keep
+  being verified by reading the diff, not by trusting this guard's silence.
+
+  What would change this decision: a guard that reaches these shapes needs a different predicate --
+  non-join key positions (`.map(`, `.filter(`, `.getOrDefault(`, bare local assignments) and a
+  type-aware receiver test rather than a bare-variable name match -- with its own allowlist-cost
+  measurement taken before it is adopted (18-CONTEXT.md D-03 measured the naive token scan at 100+
+  entries). That is a later-phase guard-design item, not a gap in this one.
+
 - **`ScheduleOutputService` lines 670 and 771** (line numbers as of plan 20-06; originally 664 and
   759 before this plan's explanatory comments shifted them) build an operator-facing timeslot label
   by string
