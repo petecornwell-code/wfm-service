@@ -713,8 +713,18 @@ public class ScheduleExportService {
             // the shape of a day impossible to see. Agent-days with no envelope sort LAST, as the
             // UI's "No shift assigned" group does, and they are the ones worth looking at — see
             // the off-roster seating defect that group made visible.
+            //
+            // OVNT-06 (planner item P-01): the key below is ANCHORED (start minute, then end
+            // minute, both from window.anchoredStartMinute/anchoredEndMinute), not the two clock
+            // times concatenated and compared as a string. The old string key is clock order: on
+            // a desk whose day start is not midnight, the day's first envelope sorts wherever its
+            // clock time falls, so a night desk's Allocation sheet reads as though its day begins
+            // in the morning (a 22:00 envelope landing after an 08:00 one). At a 00:00 anchor the
+            // anchored minute equals the clock minute, and the zero-padded HH:MM string
+            // comparison is already in that same order, so the emitted sequence is identical on
+            // every desk in use today. shiftLabel's text is unchanged — only this comparator.
             dayEntries.sort(Comparator
-                    .comparing(ScheduleExportService::shiftSortKey,
+                    .comparing((AgentScheduleEntry e) -> anchoredShiftSortKey(e, window),
                             Comparator.nullsLast(Comparator.naturalOrder()))
                     .thenComparing(AgentScheduleEntry::agentName,
                             Comparator.nullsLast(String::compareToIgnoreCase)));
@@ -735,12 +745,37 @@ public class ScheduleExportService {
      * Sort key placing agent-days in envelope order: start time first, then end, so a template and
      * its variants stay together. {@code null} for an agent-day with no assigned envelope, which
      * {@code nullsLast} then sorts to the bottom of the day.
+     *
+     * <p>No longer used for ROW ORDERING (see {@link #anchoredShiftSortKey}) — this clock-string
+     * key is kept only because {@link #shiftLabel} still produces the Shift column's text from
+     * it, and that text must not change.
      */
     private static String shiftSortKey(AgentScheduleEntry entry) {
         if (entry.shift() == null) {
             return null;
         }
         return entry.shift().startTime() + "-" + entry.shift().endTime();
+    }
+
+    /**
+     * ANCHORED ordering key for {@link #writeAgentAllocation}'s row sort (OVNT-06, planner item
+     * P-01): the envelope's anchored start minute, then its anchored end minute, packed into one
+     * comparable {@code Long} so a single {@code Comparator.naturalOrder()} sorts by start first
+     * and end second. {@code null} for an agent-day with no envelope, which {@code nullsLast}
+     * sorts to the bottom of the day, exactly as {@link #shiftSortKey} already does.
+     *
+     * <p>The pack multiplies the start minute by {@code MINUTES_PER_DAY + 1} before adding the
+     * end minute: the end minute's range is {@code (0, MINUTES_PER_DAY]}, always less than the
+     * multiplier, so two different (start, end) pairs never collide and the packed value orders
+     * exactly as the two-level comparison would.
+     */
+    private static Long anchoredShiftSortKey(AgentScheduleEntry entry, DayWindow window) {
+        if (entry.shift() == null) {
+            return null;
+        }
+        long start = window.anchoredStartMinute(entry.shift().startTime());
+        long end = window.anchoredEndMinute(entry.shift().endTime());
+        return start * (DayWindow.MINUTES_PER_DAY + 1) + end;
     }
 
     /**
