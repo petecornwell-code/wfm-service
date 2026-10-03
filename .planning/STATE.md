@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-08-PLAN.md
-last_updated: "2026-10-03T01:39:39.247Z"
+stopped_at: Completed 21-09-PLAN.md
+last_updated: "2026-10-03T02:00:12.814Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 10783361801693de745738e4e23314432bb0bce3
+state_head: 967f4d6aa395a571cbcc35dde57e3cc7ae4b4377
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 34
+  completed_plans: 35
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 9 of 12
+Plan: 10 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -339,6 +339,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: P-01 (planner-surfaced, Task 3): writeAgentAllocation's row grouping shared D-13's clock-ordered-string defect; fixed with a new packed-Long anchoredShiftSortKey, leaving shiftSortKey alone since shiftLabel still needs its string form
 - [Phase 21]: dayStartLockExplanation renders schedule id and period as independent optional halves, never a dangling separator, degrading to the bare sentence when both are absent
 - [Phase 21]: The day-start mutation is called only when the value changed and only after the row's existing name/description/hours update succeeds, so a day-start-only refusal leaves the earlier change saved and the row open for retry
+- [Phase 21]: Phase 21 Plan 09: the anchor rides the schedule payload (Schedule.getDayStart() at both ScheduleSummary construction sites), never the desk -- the anchor is part of a solved schedule's identity (D-15)
+- [Phase 21]: Phase 21 Plan 09: frontend/src/utils/dayWindow.ts is a deliberate 1:1 port of backend DayWindow's bound-instance methods behind a branded DayOffset type, with zero consumers until 21-10 -- the compiler is the structural guard on a surface with no test runner
+- [Phase 21]: Phase 21 Plan 09: anchoredPlusWithinDay's minutes parameter stays a plain number (an additive delta), not DayOffset, since it is not itself a position measured from the anchor
 
 ### Blockers/Concerns
 
@@ -362,8 +365,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T01:39:39.211Z
-Stopped at: Completed 21-08-PLAN.md
+Last session: 2026-10-03T02:00:12.777Z
+Stopped at: Completed 21-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -449,3 +452,4 @@ Resume file: None
 | Phase 21 P06 | 45min | 3 tasks | 6 files |
 | Phase 21 P07 | ~70 min | 3 tasks | 3 files |
 | Phase 21 P08 | 30 min | 2 tasks | 1 files |
+| Phase 21 P09 | 20min | 2 tasks | 6 files |
