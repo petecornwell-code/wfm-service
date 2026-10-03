@@ -400,8 +400,11 @@ class ShiftLibraryGenerationServiceTest {
         Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
         LocalTime anchor = LocalTime.of(21, 0);
         // Every demand timeslot this test creates sits in the grid's own early-morning hours.
+        // OVNT-05/D-10: one hour wider than the raw 00:00-09:00 demand span, for the same reason
+        // as weekdayAttributionUnchanged's grid above -- the 9h-contracted agent below needs a 10h
+        // envelope (9h net + the mandatory 1h break), which a flush 9h window leaves no room for.
         TimeslotBoundsResponse earlyMorningGrid = new TimeslotBoundsResponse(
-                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(0, 0), LocalTime.of(9, 0), 60);
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(0, 0), LocalTime.of(10, 0), 60);
         when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(earlyMorningGrid));
 
         // Every slot sits on calendar TUESDAY at 00:00-09:00 -- all strictly BEFORE the 21:00
@@ -434,9 +437,17 @@ class ShiftLibraryGenerationServiceTest {
     void generateSuggestion_00_00AnchoredDesk_weekdayAttributionUnchanged() {
         // At a 00:00 anchor business date equals calendar date for every time of day -- every live
         // desk today -- so weekday attribution must be provably unchanged from today's behaviour.
+        // OVNT-05/D-10: this fixture's 13h-contracted agent needs a 14h envelope (13h net + the
+        // mandatory 1h break), so it needs its OWN grid one hour wider than the shared
+        // HOURLY_08_21_GRID -- which is exactly flush with the demand span and leaves no room for
+        // the break. Pre-D-10 nothing bounded a candidate to the operating window, so this fixture
+        // was silently generating an envelope reaching past 21:00; this is the fix making that
+        // visible, not a change to what this test is about (weekday attribution).
         UUID deskId = saveDesk(TENANT_A);
         Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
-        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(HOURLY_08_21_GRID));
+        TimeslotBoundsResponse wideEnoughForTheMandatoryBreak = new TimeslotBoundsResponse(
+                WEEK_START, WEEK_START.plusDays(6), LocalTime.of(8, 0), LocalTime.of(22, 0), 60);
+        when(timeslotGeneratorService.getLiveBounds(deskId)).thenReturn(Optional.of(wideEnoughForTheMandatoryBreak));
 
         for (int hour = 8; hour < 21; hour++) {
             saveDemand(TENANT_A, deskId, spec, WEEK_START, LocalTime.of(hour, 0), LocalTime.of(hour + 1, 0), 1);

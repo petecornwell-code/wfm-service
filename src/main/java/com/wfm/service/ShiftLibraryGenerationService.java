@@ -300,10 +300,17 @@ public class ShiftLibraryGenerationService {
             }
         }
 
+        // Planner-surfaced (P-03, OVNT-05): anchored order, not clock order. On a desk whose day
+        // start is not midnight, the two orderings are different sequences -- the clock-minimum of
+        // a set of demanded start times can have a LARGER anchored minute than the clock-maximum.
+        // The sweep immediately below converts both through anchoredStartMinute, so deriving these
+        // bounds in clock order can invert the range or make the loop run short/zero times -- a
+        // silent empty or truncated result, not an error. At a 00:00 anchor the anchored minute
+        // equals the clock minute, so this emits the identical pair on every desk that exists today.
         LocalTime earliestStart = windows.stream().map(ShiftLibraryValidationService.Window::startTime)
-                .min(Comparator.naturalOrder()).orElseThrow();
+                .min(Comparator.comparingInt(window::anchoredStartMinute)).orElseThrow();
         LocalTime latestStart = windows.stream().map(ShiftLibraryValidationService.Window::startTime)
-                .max(Comparator.naturalOrder()).orElseThrow();
+                .max(Comparator.comparingInt(window::anchoredStartMinute)).orElseThrow();
 
         List<Candidate> candidates = new ArrayList<>();
         for (BigDecimal hours : distinctHours) {
@@ -327,8 +334,13 @@ public class ShiftLibraryGenerationService {
                         continue;
                     }
                     LocalTime spanEnd = window.anchoredToLocalTime(spanEndMinute);
+                    // D-10 (OVNT-05): a suggestion the save path would refuse is worse than no
+                    // suggestion at all -- reject it here, at the point candidates are
+                    // CONSTRUCTED, rather than filtering the response after the fact. Shares the
+                    // exact predicate ShiftTemplateService.validate calls at save time.
                     if (!ShiftTemplateService.isAligned(bounds.startTime(), increment, spanStart, window)
-                            || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd, window)) {
+                            || !ShiftTemplateService.isAligned(bounds.startTime(), increment, spanEnd, window)
+                            || !ShiftTemplateService.isWithinOperatingWindow(bounds, spanStart, spanEnd, window)) {
                         continue;
                     }
                     if (breakDuration == 0) {
