@@ -5,11 +5,11 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: planning
-stopped_at: Phase 21 complete, ready to plan Phase 22
-last_updated: "2026-10-03T16:29:42.317Z"
+stopped_at: Phase 22 context gathered
+last_updated: "2026-10-03T18:26:03.188Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 21 complete, transitioned to Phase 22
-state_head: 0d7d3eb264707c103fdfd6898e8810d9b5196e00
+state_head: e2197a098a52f919fd368b6c3e997c8ea1c4bf48
 progress:
   total_phases: 5
   completed_phases: 4
@@ -371,9 +371,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T11:59:38.665Z
-Stopped at: Phase 21 complete, ready to plan Phase 22
-Resume file: None
+Last session: 2026-10-03T18:26:03.103Z
+Stopped at: Phase 22 context gathered
+Resume file: .planning/phases/22-minimum-rest/22-CONTEXT.md
 
 ## Operator Next Steps
 
