@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
-status: executing
-stopped_at: Completed 21-11-PLAN.md
-last_updated: "2026-10-03T03:04:03.137Z"
+status: verifying
+stopped_at: Completed 21-12-PLAN.md
+last_updated: "2026-10-03T11:59:38.702Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 05febd602550bc5921ff26d2d9e93b24db4110f4
+state_head: 6494df827735d0349cf1dc2afa31e8eea6ee8005
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 37
+  completed_plans: 38
   percent: 60
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
 Plan: 12 of 12
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
 ## Milestone v1.3 Outcome
@@ -347,6 +347,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Plan 21-11: timeslot label discloses business date as a labelled '(business day: ...)' suffix when it diverges from calendar date; reuses project's established 'business day' vocabulary rather than 21-07's weekday-abbreviation span convention, which addresses a different disclosure shape
 - [Phase 21]: Plan 21-11: found (not fixed) that the 'Unassigned assignment' constraint's live-path ConstraintMatch never indicts an AgentAssignment, making its 'No agent assigned for X at Y' description branch pre-existing dead code; documented as WINDOWS.md #14, Rule 4 architectural, out of scope to fix
 - [Phase 21]: Plan 21-11: amended ROADMAP.md Phase 21 criterion 4 and REQUIREMENTS.md OVNT-06 text to describe the business-day-keyed roster's calendar-span disclosure, locating the never-two-fragments property on the per-date slot grids fixed by 21-07/21-10; the original 'continuation indicator' premise was measured void (D-11)
+- [Phase 21]: 21-12: operator chose convert-seven-amend-two for the nine-entry raw-comparison allowlist; seven operator-visible sites converted to anchored-minute comparisons (incl. the preferred-start soft constraint, the one genuine scoring change), two solver move-ordering tie-breaks left unconverted with amended justifications; comparison fence now 2 entries
 
 ### Blockers/Concerns
 
@@ -370,8 +371,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T03:03:51.449Z
-Stopped at: Completed 21-11-PLAN.md
+Last session: 2026-10-03T11:59:38.665Z
+Stopped at: Completed 21-12-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -460,3 +461,4 @@ Resume file: None
 | Phase 21 P09 | 20min | 2 tasks | 6 files |
 | Phase 21 P10 | 50 min | 3 tasks | 1 files |
 | Phase 21 P11 | 55 min | 2 tasks | 5 files |
+| Phase 21 P12 | ~90min | 2 tasks | 12 files |
