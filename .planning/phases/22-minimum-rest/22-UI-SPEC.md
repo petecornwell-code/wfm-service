@@ -58,28 +58,42 @@ padding (`AgentExceptions.tsx`'s "Add Exception" box), table-ish cell padding
 page's own existing sections. This phase does not introduce a new exception; it reuses the
 existing one. Every new element this phase adds (the desk table column, the Rest Waivers section,
 the Rest Waivers tab) must pick from the table above or from this one pre-existing 12px value — no
-new off-scale number.
+new off-scale number. **12px is the only sanctioned off-standard-set value for Phase 22.** No
+further exception may be introduced at planning or implementation time without a new revision of
+this UI-SPEC.
 
 ---
 
 ## Typography
 
-No new type scale. These are the sizes already live in the three files this phase touches,
-declared here so the executor does not invent a fourth:
+**Pre-existing condition — not governed by this phase's contract.** Verified on HEAD, independent
+of this phase: `src/index.css` alone already carries five distinct sizes (`:root` 16px/400 default
+body text; `th` `0.85rem`/600; `label` `0.85rem`/500; `button` `0.9rem`/500; `input, select`
+`0.9rem`/400-inherited) plus the unstyled browser defaults on `h1`/`h3` (bold → 700, ~32px and
+~18.7px respectively — `.main-content h1` and bare `h3` carry no font-size/weight override at
+all), and `ScheduleResults.tsx` alone adds `0.7rem`, `0.75rem`, `0.8rem`, `1.1rem`, and `1.125rem`
+on top of that. This is a wider scale than the 4-size/2-weight ceiling, it predates Phase 22 by
+many phases, and this phase neither touches it nor asserts compliance with it. Recorded here, per
+the fix applied to this revision, as an out-of-contract pre-existing condition rather than
+restated as this phase's own declared contract — the same "no new exception" standard the Spacing
+Scale section above already applies to its own 12px case.
 
-| Role | Size | Weight | Line Height |
-|------|------|--------|-------------|
-| Body | 16px | 400 | 1.5 (root default, `index.css:3-4`) |
-| Label | 14px (`0.85rem`–`0.9rem`, both already in use) | 500 | 1.3 — inputs, buttons, form labels, table cell text |
-| Heading | 18px (browser-default `h3`, unset by CSS) | 600 (bold, default) | 1.2 — section headers: "Add Exception", "Rest Waivers" |
-| Display | 32px (browser-default `h1`, unset by CSS) | 700 (bold, default) | 1.2 — page titles: "Desk Management", "Agent Exceptions", "Schedule Results" |
+**This phase's own Typography contract: zero new sizes, zero new weights.** Every one of this
+phase's three new surfaces inherits an already-existing, named rule verbatim — none is assigned an
+independent size or weight by this phase, so there is nothing new to bound against the ceiling:
 
-A fifth size is already load-bearing and worth naming explicitly because this phase's new tables
-reuse it: **13px (`0.8rem`–`0.85rem`)**, used for table headers (uppercase, 600, `#6b7280`), small
-badges, and the `ViolationsTab`'s dense table body. The new Rest Waivers tables (DeskManagement
-column cell, Agent Exceptions Rest Waivers table, ScheduleResults Rest Waivers tab) use this size,
-matching `ViolationsTab`'s existing `0.85rem` table exactly — a sixth, novel size would read as a
-different product.
+| New element | Inherits verbatim | Citation (copy the rule, not a new value) |
+|---|---|---|
+| `DeskManagement.tsx` Min Rest column — read-mode cell, edit-mode `<input>` | plain `<td>`; `input, select` | `index.css:82-86`, `index.css:128-133` — the exact rule the five existing columns already use |
+| `DeskManagement.tsx` Min Rest validation text | the identical inline style already used by `dayStartLockExplanation` two columns over | `DeskManagement.tsx:158`, `:190` (`fontSize: '13px', fontWeight: 400` — copy the style object, do not pick a new value) |
+| `AgentExceptions.tsx` "Rest Waivers" `<h3>` | plain `<h3>`, identical to the "Add Exception" heading immediately above it | `AgentExceptions.tsx:106` (`style={{ marginBottom: '0.5rem' }}` — no font-size/weight override, browser default) |
+| `AgentExceptions.tsx` helper text, Add-form labels/inputs, new table's cells and "No rest waivers" empty row | `label`; plain `<td>` | `index.css:140-147`; `AgentExceptions.tsx:136` (`No exceptions` row — identical un-styled `<td>`, the literal parallel this phase's empty row copies) |
+| `ScheduleResults.tsx` header badge | the identical `<span>` style already beside it (Feasible / "Feasible after…") | `ScheduleResults.tsx:233`, `:238` (`fontSize: '0.85rem'`) |
+| `ScheduleResults.tsx` Rest Waivers tab, both sub-tables | the identical `<table style={{ fontSize: '0.85rem' }}>` every other tab in this file already uses | `ScheduleResults.tsx:942, 1005, 1106, 1181, 1232, 1282, 1367` — the file's one existing table-font-size convention, not a new "dense table" size |
+
+No element in this phase picks a size or weight that is not a direct copy of one of the citations
+above. This table is exhaustive for Phase 22 as written — a genuinely new value would require a
+revision to this contract, not a silent sixth addition at implementation time.
 
 ---
 
@@ -155,6 +169,11 @@ Applicable state considerations resolved: **11 covered, 2 backstop, 0 unresolved
 A sixth table column, inserted between the existing "Day Start" and "Actions" columns (per
 22-CONTEXT D-04, which names this exact file and table).
 
+**Visual anchor:** the eye continues left-to-right along the existing table row exactly as it does
+today; the new column introduces no new color, weight, or size, so no competing anchor is added —
+"Actions" (the row's buttons) remains the rightmost, highest-contrast element on the row, unchanged
+from today.
+
 - **Header text:** `Min Rest (hrs)` — unit stated in the header, matching the existing `Default
   Hours/Day` column's convention of naming the unit in the header rather than per cell.
 - **Read-mode cell:** the value in hours (e.g. `11`, `10.5`), or `—` when unset — identical dash
@@ -193,6 +212,11 @@ New section, placed **below** the existing exceptions table and "Save All" butto
 card (`background: '#fff', padding: '1rem', borderRadius: '8px'`, matching the "Add Exception"
 box above it):
 
+**Visual anchor:** the page's primary anchor stays the existing "Add Exception" card at the top,
+unchanged — this new card is a same-weight sibling beneath it, not a competing focal point. Within
+the new card, the accent-blue "Add Waiver" button is the only accent-colored element, so it is the
+one thing on this card that pulls the eye, matching how "Add" already does on the card above it.
+
 - **Heading:** `<h3>Rest Waivers</h3>`
 - **Helper text**, one muted line (`#6b7280`, `0.85rem`) beneath the heading, explaining D-06's
   waiver direction in operator language (never the raw "waives rest coming into D" phrasing):
@@ -224,6 +248,13 @@ box above it):
 
 Two additions, matching D-13 (fields, computed deterministically, never from `explain()`) and D-15
 (a summary-level count plus a detail-level section).
+
+**Visual anchor:** the header row's existing anchor — Status / Feasible — is untouched and remains
+first-read; the new badge sits last in that row, same muted treatment as the adjacent "Feasible
+after…" text, so it reads as an incremental fact appended to the row, not a new focal point. Inside
+the new tab, the "Applied" sub-table (success-green) sits above "Unused" (neutral-grey) specifically
+so the positive case reads first, matching the existing pattern of ordering a page's own good news
+before its informational notes.
 
 **(a) Header badge — summary-level, visible even while `RUNNING`.** In the existing header `<div>`
 (the row already carrying Status / Desk / Period / Score / Feasible), add one more `<span>`,
@@ -273,8 +304,9 @@ overflowX: 'auto' }}>` wrapper every other tab uses:
   `#f0fdf4`) from the Color section; "Unused" rows use the **neutral/muted** treatment (`#6b7280` /
   `#f3f4f6`) — not amber, not red. An unused waiver is information, not a warning; D-09's own
   framing is "reported as unused," never "flagged."
-- Table font-size `0.85rem`, matching `ViolationsTab`'s existing dense-table convention exactly —
-  this is the sixth-size question resolved in Typography above.
+- Table font-size `0.85rem`, matching `ViolationsTab`'s (and every other tab's) existing
+  `<table style={{ fontSize: '0.85rem' }}>` convention exactly — an inherited citation, not a new
+  size; see Typography above.
 
 **Out of scope for this UI-SPEC:** whether the Excel export also carries the waiver (D-15 covers
 UI only; the export question was left open in 22-CONTEXT) and whether `unusedRestWaivers` is
