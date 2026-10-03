@@ -398,7 +398,7 @@ export interface Score { hardScore: number; softScore: number }
 // visibly dropped.
 export interface ConstraintWeightsData { [key: string]: Score | number | string }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
-export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
+export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; dayStart?: string; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
 
 export interface StaffingSummaryEntry {
   date: string | null
@@ -507,6 +507,10 @@ export interface ViolationDetail {
   agentId: string | null
   agentName: string | null
   timeslotId: string | null
+  businessDate: string | null
+  calendarDate: string | null
+  startTime: string | null
+  endTime: string | null
   timeslotLabel: string | null
   description: string
 }

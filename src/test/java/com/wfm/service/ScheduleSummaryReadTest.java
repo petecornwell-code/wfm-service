@@ -2,6 +2,7 @@ package com.wfm.service;
 
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import com.wfm.config.TenantContext;
+import com.wfm.controller.ScheduleController;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
@@ -162,5 +163,56 @@ class ScheduleSummaryReadTest {
 
         assertThatThrownBy(() -> service.getScheduleSummary(DESK, id))
                 .isInstanceOf(RuntimeException.class);
+    }
+
+    // --- OVNT-02/D-15: the anchor the schedule was solved against rides the summary payload ---
+
+    @Test
+    @DisplayName("a summary built from a 21:00-anchored schedule carries 21:00")
+    void summaryCarriesTheSchedulesOwnAnchor() {
+        UUID id = UUID.randomUUID();
+        Schedule s = schedule(id, ScheduleStatus.RUNNING, 0, 0);
+        s.setDayStart(LocalTime.of(21, 0));
+        inMemoryStore.put(s);
+
+        var summary = service.getScheduleSummary(DESK, id);
+
+        assertThat(summary.dayStart()).isEqualTo(LocalTime.of(21, 0));
+    }
+
+    @Test
+    @DisplayName("a midnight-anchored schedule carries 00:00, not null -- absent-field "
+            + "degradation is reserved for genuinely old payloads, not the normal case")
+    void midnightAnchoredScheduleCarriesMidnightNotNull() {
+        UUID id = UUID.randomUUID();
+        Schedule s = schedule(id, ScheduleStatus.RUNNING, 0, 0);
+        s.setDayStart(LocalTime.MIDNIGHT);
+        inMemoryStore.put(s);
+
+        var summary = service.getScheduleSummary(DESK, id);
+
+        assertThat(summary.dayStart()).isEqualTo(LocalTime.MIDNIGHT);
+    }
+
+    @Test
+    @DisplayName("the fast poll (ScheduleService) and the slow fetch's sibling construction site "
+            + "(ScheduleController.toSummary) cannot disagree about the anchor")
+    void bothConstructionSitesAgreeOnTheAnchor() {
+        UUID id = UUID.randomUUID();
+        Schedule s = schedule(id, ScheduleStatus.RUNNING, 0, 0);
+        s.setDayStart(LocalTime.of(21, 0));
+        inMemoryStore.put(s);
+
+        var fromService = service.getScheduleSummary(DESK, id);
+
+        SolverService solverService = mock(SolverService.class);
+        when(solverService.stopSolve(DESK, id)).thenReturn(s);
+        ScheduleController controller = new ScheduleController(service, solverService,
+                mock(ScheduleExportService.class), deskRepository, mock(AgentDayOffService.class));
+
+        var fromController = controller.stopSolve(DESK, id).getBody();
+
+        assertThat(fromController).isNotNull();
+        assertThat(fromController.dayStart()).isEqualTo(fromService.dayStart());
     }
 }

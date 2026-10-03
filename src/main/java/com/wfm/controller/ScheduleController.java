@@ -146,7 +146,7 @@ public class ScheduleController {
         return new ScheduleSummary(
                 s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
-                s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(),
+                s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(), s.getDayStart(),
                 scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }
