@@ -161,10 +161,26 @@ public class FteUploadService {
             List<Timeslot> timeslots = timeslotGeneratorService.generateTimeslots(
                     deskId, minDate, maxDate, desk.getDayStart(), startTime, endTime, incrementMinutes);
 
-            // Build lookup: date -> startTime -> Timeslot
+            // Build lookup: businessDate -> startTime -> Timeslot.
+            // CR-01 (phase 21 code review): keyed by getBusinessDate(), not getDate() (calendar
+            // date). The second pass below queries this map by sheetDate, which is the business
+            // date parsed from the uploaded sheet's name -- the same business day for every column
+            // in that sheet. On a desk anchored away from midnight, getDate() (calendar date)
+            // diverges from getBusinessDate() for every post-midnight row (TimeslotGeneratorService:
+            // "A 21:00-anchored desk's post-midnight rows carry the FOLLOWING calendar date but the
+            // ORIGINAL business date"), so keying by calendar date made a single calendar-date
+            // bucket hold a MIX of one business day's post-midnight rows and the following business
+            // day's pre-midnight rows -- not just a missed lookup, but a lookup that could resolve
+            // to the WRONG business day's timeslot. Keying by business date matches every sibling
+            // consumer in this phase (ScheduleOutputService, ScheduleExportService,
+            // StaffingRequirementService.saveRequirements/calculateErlangC/calculateErlangX) and is
+            // byte-identical on a 00:00-anchored desk, where business date already equals calendar
+            // date. Out of scope: staffingRequirementRepository.deleteLiveByDeskAndDateRange below
+            // deliberately stays on calendar-date semantics per plan 21-04's settled decision -- this
+            // fix only changes how the per-sheet lookup keys individual timeslots.
             Map<LocalDate, Map<LocalTime, Timeslot>> timeslotLookup = new HashMap<>();
             for (Timeslot ts : timeslots) {
-                timeslotLookup.computeIfAbsent(ts.getDate(), k -> new HashMap<>())
+                timeslotLookup.computeIfAbsent(ts.getBusinessDate(), k -> new HashMap<>())
                         .put(ts.getStartTime(), ts);
             }
 
