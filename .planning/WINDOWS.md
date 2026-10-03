@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 0
 fixed_count: 0
-total_count: 13
-last_updated: 2026-10-03T02:29:43.049Z
+total_count: 14
+last_updated: 2026-10-03T03:01:51.216Z
 ---
 
 # Broken Windows Ledger
@@ -28,6 +28,7 @@ last_updated: 2026-10-03T02:29:43.049Z
 | 11 | 21 | unrun-verify | frontend/src/pages/DeskManagement.tsx |  | 21-08 backstop geometry checks (cell wrapping, table-width overflow, Toast long-text at narrow viewport) not executed — no browser-automation tool available in this execution session; installing one (Playwright/Puppeteer) would violate the plan's own no-new-dependency threat mitigation | open |  | 2026-10-03T01:38:09.327Z |  |
 | 12 | 21 | unrun-verify | frontend/src/pages/ScheduleResults.tsx |  | 21-10 Task 2 backstop geometry check not executed: whether 24+ anchored slot columns disturb the sticky Agent column's offset -- no browser-automation tool available in this execution session; functional claims (contiguous run, envelope containment, anchored ordering, business-date keying, midnight no-op) were instead proven by executing the real dayWindow.ts module against representative fixtures (12/12 checks passed, see plan SUMMARY) | open |  | 2026-10-03T02:29:42.969Z |  |
 | 13 | 21 | unrun-verify | frontend/src/pages/ScheduleResults.tsx |  | 21-10 Task 3 backstop geometry checks not executed: whether the lengthened section heading forces horizontal page scroll at a 21:00-anchored desk, and whether its ~37-character parenthetical wraps rather than clips at a narrow viewport -- no browser-automation tool available in this execution session; the heading's exact text contract (locked copy, midnight suppression, absent-anchor degradation) was proven by executing sectionHeading() against representative fixtures | open |  | 2026-10-03T02:29:43.049Z |  |
+| 14 | 21 | deviation | src/main/java/com/wfm/service/ScheduleOutputService.java |  | The 'Unassigned assignment' constraint's ConstraintMatch never indicts an individual AgentAssignment (groupBy/join/join/filter aggregate; justification is Timeslot+int+TimeslotDemandConfig+ScheduleConfig), so its 'No agent assigned for X at Y' description branch is pre-existing dead code in buildConstraintViolations' live path -- confirmed empirically in plan 21-11, not introduced by it, not fixed (out of scope: would require restructuring ScheduleConstraintProvider's stream shape) | open |  | 2026-10-03T03:01:51.216Z |  |
 
 ````json
 [
@@ -189,6 +190,19 @@ last_updated: 2026-10-03T02:29:43.049Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T02:29:43.049Z",
+    "resolved_at": null,
+    "milestone": "v1.5"
+  },
+  {
+    "id": 14,
+    "kind": "deviation",
+    "phase": "21",
+    "file": "src/main/java/com/wfm/service/ScheduleOutputService.java",
+    "line": null,
+    "description": "The 'Unassigned assignment' constraint's ConstraintMatch never indicts an individual AgentAssignment (groupBy/join/join/filter aggregate; justification is Timeslot+int+TimeslotDemandConfig+ScheduleConfig), so its 'No agent assigned for X at Y' description branch is pre-existing dead code in buildConstraintViolations' live path -- confirmed empirically in plan 21-11, not introduced by it, not fixed (out of scope: would require restructuring ScheduleConstraintProvider's stream shape)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T03:01:51.216Z",
     "resolved_at": null,
     "milestone": "v1.5"
   }

@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-10-PLAN.md
-last_updated: "2026-10-03T02:32:25.497Z"
+stopped_at: Completed 21-11-PLAN.md
+last_updated: "2026-10-03T03:04:03.137Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 189146248d153f0b88375b665b1f2b17e1e0bdff
+state_head: 05febd602550bc5921ff26d2d9e93b24db4110f4
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 36
+  completed_plans: 37
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 11 of 12
+Plan: 12 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -344,6 +344,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Phase 21 Plan 09: anchoredPlusWithinDay's minutes parameter stays a plain number (an additive delta), not DayOffset, since it is not itself a position measured from the anchor
 - [Phase 21]: Converted the one standalone timeDiffMinutes call immediately in Task 1, left the four calls embedded in the three break-band loops and the full-day loop unconverted until Task 2, so the compiler's resulting 7 TS2304 errors landed exactly at the sites needing the offset-cursor rewrite.
 - [Phase 21]: Verified ScheduleResults.tsx's anchored-time conversion by executing the real compiled dayWindow.ts module against representative fixtures in a standalone node script rather than manual arithmetic or a live browser render -- 12/12 checks passed including a 00:00-anchor no-op control.
+- [Phase 21]: Plan 21-11: timeslot label discloses business date as a labelled '(business day: ...)' suffix when it diverges from calendar date; reuses project's established 'business day' vocabulary rather than 21-07's weekday-abbreviation span convention, which addresses a different disclosure shape
+- [Phase 21]: Plan 21-11: found (not fixed) that the 'Unassigned assignment' constraint's live-path ConstraintMatch never indicts an AgentAssignment, making its 'No agent assigned for X at Y' description branch pre-existing dead code; documented as WINDOWS.md #14, Rule 4 architectural, out of scope to fix
+- [Phase 21]: Plan 21-11: amended ROADMAP.md Phase 21 criterion 4 and REQUIREMENTS.md OVNT-06 text to describe the business-day-keyed roster's calendar-span disclosure, locating the never-two-fragments property on the per-date slot grids fixed by 21-07/21-10; the original 'continuation indicator' premise was measured void (D-11)
 
 ### Blockers/Concerns
 
@@ -367,8 +370,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T02:32:25.461Z
-Stopped at: Completed 21-10-PLAN.md
+Last session: 2026-10-03T03:03:51.449Z
+Stopped at: Completed 21-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -456,3 +459,4 @@ Resume file: None
 | Phase 21 P08 | 30 min | 2 tasks | 1 files |
 | Phase 21 P09 | 20min | 2 tasks | 6 files |
 | Phase 21 P10 | 50 min | 3 tasks | 1 files |
+| Phase 21 P11 | 55 min | 2 tasks | 5 files |
