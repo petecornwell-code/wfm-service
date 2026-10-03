@@ -502,13 +502,148 @@ class ScheduleOutputServiceShiftReportingTest {
     }
 
     @Test
-    void buildConstraintViolations_anchoredDesk_labelTextStaysCalendarDateSpaceStartHyphenEnd() {
-        // The no-change control (D-14): the label is byte-identical to today's shape even though
-        // its business date and calendar date now diverge.
-        ViolationDetail detail = singleRelocatedViolation(LocalTime.of(21, 0),
+    void buildConstraintViolations_anchoredDesk_labelNowDisclosesTheBusinessDateWhenDatesDiffer_staysPlainWhenTheyAgree() {
+        // Plan 21-11 (OVNT-07/D-14) inverts this control. It used to pin the label as
+        // byte-identical to today's shape even though business date and calendar date diverged
+        // -- that premise held only while a consumer still split the label as data. Both former
+        // parsers (ScheduleExportService, ScheduleResults.tsx) moved onto the structured fields
+        // in 21-03/21-10, so the text can now safely disclose the divergence. This test is NOT
+        // deleted and replaced -- it is inverted, so it keeps protecting the property it was
+        // written for: what the label's text actually is.
+        ViolationDetail differing = singleRelocatedViolation(LocalTime.of(21, 0),
+                DAY.plusDays(1), DAY, LocalTime.of(2, 0), LocalTime.of(3, 0));
+        assertThat(differing.timeslotLabel())
+                .isEqualTo(DAY.plusDays(1) + " 02:00-03:00 (business day: " + DAY + ")");
+
+        // The byte-identical half of the control survives unchanged: every midnight-anchored
+        // desk's label, and every same-day slot on an anchored desk, is exactly what it was
+        // before this plan.
+        ViolationDetail same = singleRelocatedViolation(LocalTime.MIDNIGHT,
+                DAY, DAY, LocalTime.of(9, 0), LocalTime.of(10, 0));
+        assertThat(same.timeslotLabel()).isEqualTo(DAY + " 09:00-10:00");
+    }
+
+    // ------------------------------------------------------------------
+    //  Plan 21-11 Task 1 (OVNT-07, D-14) -- the label itself now discloses the calendar span,
+    //  built by one shared private helper (timeslotLabel) called from both violation paths.
+    //  Confirmed before this plan changed the text: neither ScheduleExportService nor
+    //  ScheduleResults.tsx recovers a date or a time from the label by splitting the string --
+    //  both read ViolationDetail's structured fields (21-03, 21-10).
+    // ------------------------------------------------------------------
+
+    @Test
+    void timeslotLabel_differingBusinessAndCalendarDates_disclosesBothAsALabelledSuffix() {
+        // A 20:00-anchored desk, a 01:30-02:30 slot: business date DAY, calendar date DAY+1.
+        ViolationDetail detail = singleRelocatedViolation(LocalTime.of(20, 0),
+                DAY.plusDays(1), DAY, LocalTime.of(1, 30), LocalTime.of(2, 30));
+
+        assertThat(detail.timeslotLabel())
+                .as("the calendar date stays leading -- that's what finds the row on a calendar --"
+                        + " and the business date is disclosed as an explicit, labelled suffix so"
+                        + " the two can never be confused for each other")
+                .isEqualTo(DAY.plusDays(1) + " 01:30-02:30 (business day: " + DAY + ")");
+    }
+
+    @Test
+    void timeslotLabel_equalBusinessAndCalendarDates_isByteIdenticalToToday() {
+        // A 00:00-anchored desk: business date and calendar date are the same LocalDate for
+        // every slot. The label must carry no disclosure suffix at all. 08:00 sits before the
+        // NAMED_ROW envelope (11:00-20:00) so the fixture's single relocated seat still reports
+        // exactly one violation.
+        ViolationDetail detail = singleRelocatedViolation(LocalTime.MIDNIGHT,
+                DAY, DAY, LocalTime.of(8, 0), LocalTime.of(9, 0));
+
+        assertThat(detail.timeslotLabel()).isEqualTo(DAY + " 08:00-09:00");
+    }
+
+    @Test
+    void buildConstraintViolations_liveViolation_carriesTheDisclosingLabel() {
+        ViolationDetail detail = singleLiveSpecializationMismatchViolation(LocalTime.of(21, 0),
                 DAY.plusDays(1), DAY, LocalTime.of(2, 0), LocalTime.of(3, 0));
 
-        assertThat(detail.timeslotLabel()).isEqualTo(DAY.plusDays(1) + " 02:00-03:00");
+        assertThat(detail.timeslotLabel())
+                .isEqualTo(DAY.plusDays(1) + " 02:00-03:00 (business day: " + DAY + ")");
+    }
+
+    @Test
+    void unassignedSeatDescription_isBuiltFromTheSameTimeslotLabelVariable() throws java.io.IOException {
+        // The "Unassigned assignment" constraint is a groupBy/join/join/filter/penalizeConfigurable
+        // aggregate (ScheduleConstraintProvider.unassignedAssignment) whose ConstraintMatch
+        // justification is the (Timeslot key, summed int, TimeslotDemandConfig, ScheduleConfig)
+        // tuple -- never an individual AgentAssignment. Confirmed empirically against the real
+        // solver (a hand-built unassigned seat, and a two-seat group with one assigned and one
+        // unassigned, run through solutionManager.explain()): specName and timeslotLabel are
+        // always null for this constraint's violations, so the
+        // "No agent assigned for " + specName + " at " + timeslotLabel branch can never execute
+        // in the live path today. This is a genuine, pre-existing gap (not introduced by this
+        // plan's label-text change) and is out of scope to fix here -- it would mean restructuring
+        // that constraint's stream shape in ScheduleConstraintProvider, a solver file this plan's
+        // threat model does not touch. Recorded in this plan's SUMMARY. What this test proves
+        // instead is the source-level invariant that IS true: wherever that branch does execute,
+        // it is built from the exact same timeslotLabel variable this plan's shared helper
+        // populates, so it can never disagree with it.
+        String source = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/java/com/wfm/service/ScheduleOutputService.java"));
+        assertThat(source)
+                .contains("description = \"No agent assigned for \" + specName + \" at \" + timeslotLabel;");
+    }
+
+    @Test
+    void buildConstraintViolations_liveAndAcceptedPaths_produceIdenticalLabelsForTheSameTimeslot() {
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate calendarDate = DAY.plusDays(1);
+        LocalDate businessDate = DAY;
+        LocalTime start = LocalTime.of(2, 0);
+        LocalTime end = LocalTime.of(3, 0);
+
+        ViolationDetail accepted = singleRelocatedViolation(dayStart, calendarDate, businessDate, start, end);
+        ViolationDetail live = singleLiveSpecializationMismatchViolation(dayStart, calendarDate, businessDate, start, end);
+
+        assertThat(live.timeslotLabel())
+                .as("two violation-reporting paths, one shared label helper -- they must never"
+                        + " disagree about the same slot's label")
+                .isEqualTo(accepted.timeslotLabel());
+    }
+
+    /**
+     * A single held seat whose agent has no primary or secondary specialization at all, run
+     * through the LIVE path's real {@code solutionManager.explain()} -- deterministically fires
+     * {@code ScheduleConstraintProvider.specializationMatch} ("Specialization match"), which
+     * {@code forEach}s {@link AgentAssignment} directly rather than through a {@code groupBy}
+     * aggregate, so its {@code ConstraintMatch} DOES indict the individual {@link AgentAssignment}
+     * -- unlike "Unassigned assignment" (see {@code unassignedSeatDescription_...} above).
+     */
+    private ViolationDetail singleLiveSpecializationMismatchViolation(LocalTime dayStart, LocalDate calendarDate,
+            LocalDate businessDate, LocalTime start, LocalTime end) {
+        Specialization spec = specialization("Chat");
+
+        Timeslot ts = new Timeslot();
+        ts.setId(UUID.randomUUID());
+        ts.setDate(calendarDate);
+        ts.setBusinessDate(businessDate);
+        ts.setStartTime(start);
+        ts.setEndTime(end);
+
+        AgentAssignment held = new AgentAssignment();
+        held.setId(UUID.randomUUID());
+        held.setAgent(agent("Probe")); // no primary/secondary specialization -- guarantees a mismatch
+        held.setTimeslot(ts);
+        held.setRequiredSpecialization(spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(dayStart);
+        schedule.setAssignments(new ArrayList<>(List.of(held)));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, false);
+        ConstraintViolationEntry entry = violations.stream()
+                .filter(e -> "Specialization match".equals(e.constraintName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Specialization match constraint did not fire; violations=" + violations));
+        assertThat(entry.violations()).hasSize(1);
+        return entry.violations().get(0);
     }
 
     // ------------------------------------------------------------------

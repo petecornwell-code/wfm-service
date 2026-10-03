@@ -141,15 +141,19 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   consistent with how plan 20-11 dispositioned the same question for `SolverService`'s absence
   from `TARGET_FILES`.
 
-- **`ScheduleOutputService` lines 670 and 771** (line numbers as of plan 20-06; originally 664 and
-  759 before this plan's explanatory comments shifted them) build an operator-facing timeslot label
-  by string
-  concatenation (`ts.getDate() + " " + startTime + "-" + endTime`, and the equivalent in
-  `buildAcceptedConstraintViolations`). They keep the calendar date per D-10: a label answers "when
-  does this happen", which is a calendar question — on a 21:00-anchored desk a 02:00 slot belongs to
-  business day D but occurs on calendar day D+1, and the operator needs the latter to find the row
-  on their calendar. Concatenation is not one of the four scanned verbs, so these are out of scope
-  by construction and need no allowlist entry. All labelling change belongs to OVNT-07 (Phase 21).
+- **`ScheduleOutputService`'s timeslot label** (line numbers have moved twice since this bullet was
+  first written — as of plan 20-06 they were 670 and 771; plan 21-11 extracted the concatenation
+  into one shared private static `timeslotLabel(Timeslot)` helper, so there is now exactly one
+  construction site, called from both `buildConstraintViolations`'s live-path loop and
+  `buildAcceptedConstraintViolations`) kept the calendar date in its leading position per D-10 — a
+  label answers "when does this happen", which is a calendar question — and, as of plan 21-11
+  (OVNT-07/D-14), discloses the business date as an explicit, labelled suffix whenever it differs
+  from the calendar date, so an operator reading a business-day-anchored surface can still tell
+  the slot runs into the next calendar day. Concatenation is not one of the four scanned verbs, so
+  this call site is out of scope by construction and needs no allowlist entry **regardless of its
+  text** — this guard's silence here was never conditional on the label staying unchanged. The
+  labelling change this bullet used to defer to OVNT-07 has now landed; this bullet records that it
+  landed, not that it is still pending.
 
 - **`StaffingRequirementService` line 388** (`t.getDate()`, populating
   `StaffingRequirementResponse.Item`'s `date` field; line number as of plan 20-07) keeps the

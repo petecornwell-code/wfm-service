@@ -673,15 +673,16 @@ public class ScheduleOutputService {
                             calendarDate = ts.getDate();
                             slotStartTime = ts.getStartTime();
                             slotEndTime = ts.getEndTime();
-                            // Deliberately calendar date, not business date (SOLV-07/D-10): a label
-                            // answers "when does this happen", which is a calendar question. On a
-                            // desk whose day starts at 21:00 a 02:00 slot belongs to business day D
-                            // but occurs on calendar day D+1, and the operator needs the calendar
-                            // date to find this row on a calendar. All labelling change, including
-                            // showing both dates, belongs to OVNT-07.
-                            timeslotLabel = ts.getDate() + " "
-                                    + ts.getStartTime() + "-"
-                                    + ts.getEndTime();
+                            // OVNT-07/D-14: built by the one shared helper below, called from both
+                            // violation paths, so the live path and the accepted path can never
+                            // silently drift into producing different labels for the same slot.
+                            // No consumer recovers data from this string any longer: the export's
+                            // unfilled-seat attribution (ScheduleExportService) and the schedule
+                            // grid's unfilled-seat map (ScheduleResults.tsx) both read
+                            // ViolationDetail's structured businessDate/calendarDate/startTime/
+                            // endTime fields directly (21-03, 21-10) — the channel that replaced
+                            // this one.
+                            timeslotLabel = timeslotLabel(ts);
                             if (aa.getRequiredSpecialization() != null) {
                                 specName = aa.getRequiredSpecialization().getName();
                             }
@@ -730,6 +731,38 @@ public class ScheduleOutputService {
     }
 
     /**
+     * The one place both violation-reporting paths build the operator-facing timeslot label
+     * (OVNT-07/D-14) — called from both {@link #buildConstraintViolations}'s live-path loop and
+     * {@link #buildAcceptedConstraintViolations}, so the two paths can never silently drift into
+     * producing different labels for the same slot.
+     *
+     * <p>The calendar date stays in the leading position, byte-identical to today, because that
+     * is what an operator needs to find the row on a calendar — the reason the label kept the
+     * calendar date through Phase 20 (D-10). When the slot's business-day attribution differs
+     * from its calendar date — a {@code 21:00}-anchored desk's {@code 02:00} slot belongs to
+     * business day D but occurs on calendar day D+1 — the business date is disclosed as an
+     * explicit, labelled suffix so the two can never be confused for each other. At a
+     * {@code 00:00} anchor, or any slot whose business and calendar dates agree, this returns
+     * exactly what was produced before this method existed.
+     *
+     * <p>No consumer recovers data from this string any longer (D-14's precondition, confirmed
+     * before this method's text changed): the export's unfilled-seat attribution
+     * ({@code ScheduleExportService.unfilledSeatsByDateAndSlot}, 21-03) and the schedule grid's
+     * unfilled-seat map ({@code ScheduleResults.tsx}, 21-10) both read {@link ViolationDetail}'s
+     * structured {@code businessDate}/{@code calendarDate}/{@code startTime}/{@code endTime}
+     * fields directly — the channel that replaced this one.
+     */
+    private static String timeslotLabel(Timeslot ts) {
+        LocalDate calendarDate = ts.getDate();
+        LocalDate businessDate = ts.getBusinessDate();
+        String plain = calendarDate + " " + ts.getStartTime() + "-" + ts.getEndTime();
+        if (businessDate == null || businessDate.equals(calendarDate)) {
+            return plain;
+        }
+        return plain + " (business day: " + businessDate + ")";
+    }
+
+    /**
      * The accepted/DB-path violation report (G-15-32 gap closure) — built from the persisted
      * snapshot, never from {@code solutionManager.explain}. Walks every agent-day exactly as
      * {@link #buildAgentSchedule} does, resolving each descriptor through the same
@@ -775,13 +808,15 @@ public class ScheduleOutputService {
                 for (AgentAssignment out : outOfEnvelopeAssignments(descriptor, dateEntry.getValue(), window)) {
                     Agent agent = out.getAgent();
                     Timeslot ts = out.getTimeslot();
-                    // Deliberately calendar date, not business date (SOLV-07/D-10): a label answers
-                    // "when does this happen", which is a calendar question. On a desk whose day
-                    // starts at 21:00 a 02:00 slot belongs to business day D but occurs on calendar
-                    // day D+1, and the operator needs the calendar date to find this row on a
-                    // calendar. All labelling change, including showing both dates, belongs to
-                    // OVNT-07.
-                    String timeslotLabel = ts.getDate() + " " + ts.getStartTime() + "-" + ts.getEndTime();
+                    // OVNT-07/D-14: built by the one shared helper below, called from both
+                    // violation paths, so the live path and the accepted path can never silently
+                    // drift into producing different labels for the same slot. No consumer
+                    // recovers data from this string any longer: the export's unfilled-seat
+                    // attribution (ScheduleExportService) and the schedule grid's unfilled-seat
+                    // map (ScheduleResults.tsx) both read ViolationDetail's structured
+                    // businessDate/calendarDate/startTime/endTime fields directly (21-03, 21-10) —
+                    // the channel that replaced this one.
+                    String timeslotLabel = timeslotLabel(ts);
                     // OVNT-02/D-14: the structured attribution channel the label above used to be
                     // the only way to recover. businessDate is the key every consumer should group
                     // by; calendarDate is what the label displays.
