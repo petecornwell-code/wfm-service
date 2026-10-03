@@ -384,15 +384,28 @@ above, and satisfying it. Ten plans across seven waves is in line with this proj
 **Plans**: 10 plans in 7 waves
 
 Plans:
+**Wave 1**
 - [ ] 22-01-PLAN.md — Tracer: a SHIFT desk's minimum rest is a hard violation end to end, plus the operator PUT endpoint (REST-01, REST-02, REST-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 22-02-PLAN.md — SLOT-mode rest enforcement over the whole assigned span, with the compliant-break-gap regression proof (REST-02, REST-04)
 - [ ] 22-03-PLAN.md — The `agent_rest_waiver` table, its service and its three endpoints beside the Agent Exceptions endpoints (REST-06)
 - [ ] 22-04-PLAN.md — The Min Rest (hrs) column on the desk configuration table, plus its client contract (REST-01, REST-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
+
+**Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 22-07-PLAN.md — Pre-solve refusal for the structurally unavoidable case, both modes, naming agent and both shifts (REST-03)
 - [ ] 22-08-PLAN.md — Applied and unused waiver disclosure on the detail response, plus both counts on the summary (REST-07)
+
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
+
+**Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
 
 **UI hint**: yes

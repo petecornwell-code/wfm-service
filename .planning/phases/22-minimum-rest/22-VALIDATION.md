@@ -47,7 +47,7 @@ replaces these rows with one row per task once PLAN.md files exist.*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | REST-01 | — | Operator sets/clears minimum rest per desk via PUT endpoint | integration | `./gradlew test --tests "com.wfm.controller.DeskControllerTest"` | ❌ W0 | ⬜ pending |
+| TBD | TBD | TBD | REST-01 | — | Operator sets/clears minimum rest per desk via PUT endpoint | integration | `./gradlew test --tests "com.wfm.service.DeskServiceMinimumRestTest"` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | REST-02 | — | Hard violation fires for insufficient rest, both modes, same-day and overnight | unit | `./gradlew test --tests "com.wfm.solver.ScheduleConstraintProviderTest"` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | REST-03 | — | Pre-solve refusal names agent + both shifts for the structurally unavoidable case | unit | `./gradlew test --tests "com.wfm.service.SolverServiceTest"` | ❌ W0 | ⬜ pending |
 | TBD | TBD | TBD | REST-04 | — | NULL minimum rest produces zero tuples (byte-identical solve) | unit | `./gradlew test --tests "com.wfm.solver.ConstraintMatchCountNonVacuityTest"` | ✅ | ⬜ pending |
@@ -70,8 +70,13 @@ replaces these rows with one row per task once PLAN.md files exist.*
 - [ ] A constructed fixture desk with a tight-but-not-impossible shift library, so
       "hard violation, solvable with a different choice" and "structurally impossible, pre-solve
       refused" can be distinguished in the same test file — different code paths, different fixtures
-- [ ] New test methods on `DeskControllerTest` (REST-01) and `ConstraintMatchCountNonVacuityTest`
-      (REST-04 non-vacuity)
+- [ ] New test class `src/test/java/com/wfm/service/DeskServiceMinimumRestTest.java` (REST-01),
+      mirroring the real `DeskServiceDayStartTest` sibling, and new methods on
+      `ConstraintMatchCountNonVacuityTest` (REST-04 non-vacuity).
+      *Corrected 2026-10-03:* 22-RESEARCH.md's validation table named
+      `com.wfm.controller.DeskControllerTest` for REST-01; no such class exists at HEAD
+      (`src/test/java/com/wfm/service/` has only `DeskServiceDayStartTest` and
+      `DeskServiceSchedulingModeTest`). The plans use the corrected name.
 
 ---
 
