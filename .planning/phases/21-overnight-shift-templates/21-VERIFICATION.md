@@ -1,6 +1,6 @@
 ---
 phase: 21-overnight-shift-templates
-verified: 2026-10-03T15:09:51Z
+verified: 2026-10-03T15:22:12Z
 status: human_needed
 score: 7/7 must-haves verified
 behavior_unverified: 0
@@ -60,21 +60,26 @@ covered_files:
   - "src/test/resources/bday-join-guard.md"
   - "src/test/resources/midnight-boundary-scenarios.md"
   - "src/test/resources/midnight-time-arithmetic.md"
-covered_digest: "v2:sha256:cb19e26a3f3f277a7561287845623b4d4ae96ac9ad87d80c71854e8c000b04cd"
+covered_digest: "v2:sha256:3544fafce96aa85413727df01caa7a49cd7511a24427bf97f3c436dca2f00399"
 re_verification:
   previous_status: human_needed
   previous_score: "7/7"
   gaps_closed:
     - "WINDOWS.md #12 — measured live: 26-column grid (Agent + Hours + 24 anchored slot columns) on a 21:00-anchored desk; anchored ordering confirmed (21:00→20:00, not clock order); overnight run occupies header indices 3-9 with no gap (contiguous); sticky Agent column's declaration/width (232px) was undisturbed by the anchored column re-ordering itself, which is what this item asked"
     - "WINDOWS.md #13 — measured live: heading '(business day: Mon 21:00–Tue 21:00)' renders with scrollW==clientW, scrollH==clientH, overflow:visible at 375px; does not force page-level scroll attributable to itself because it sits inside the grid's own horizontal-scroll container and tracks the 801px table width rather than the 375px viewport — the backstop's underlying concern (clipping / unwanted page overflow) is answered even though the originally-hypothesized wrap never had to occur"
-    - "WINDOWS.md #11 (3 of 4 sub-cases) — non-15-minute refusal (two phrasings), D-05 tiling advisory, and stranded-template refusal all measured at 375px with a 52-char desk name: whiteSpace normal, overflow visible, scrollW==clientW and scrollH==clientH on all four — no clipping, row stays in edit mode, tiling advisory arrives alone as required"
+    - "WINDOWS.md #11 (3 of 4 original sub-cases, prior pass) — non-15-minute refusal (two phrasings), D-05 tiling advisory, and stranded-template refusal all measured at 375px with a 52-char desk name: whiteSpace normal, overflow visible, scrollW==clientW and scrollH==clientH on all four — no clipping, row stays in edit mode, tiling advisory arrives alone as required"
+    - "WINDOWS.md #11's 4th named sub-case — the accepted-schedule lock explanation (`dayStartLockExplanation`, rendered via `desk.dayStartLockedByScheduleId`) — now measured against a real seeded ACCEPTED schedule (21-UAT.md `lock_explanation_measured`): 340x110/5 lines at 1200px read mode, 152x219/9 lines at 375px locked-edit mode, scrollW==clientW and scrollH==clientH in every case, whiteSpace normal, overflow visible, text wraps rather than overflowing the desk table. The disabled render (`input[type=time].disabled === true`, cell naming the blocking schedule id) was confirmed in the same pass. This is the item this re-verification pass was specifically asked to re-check, and it holds: the component source at `DeskManagement.tsx:154-194` matches exactly what was measured, and the measurement meets the same bar (scrollW/scrollH equality, explicit line/box counts, both viewports) already applied to the other three sub-cases. Genuinely discharged, not inferred."
   gaps_remaining:
-    - "WINDOWS.md #11 (narrowed) — the accepted-schedule lock explanation (`dayStartLockExplanation`, rendered via `desk.dayStartLockedByScheduleId`) was not reachable in the seeded throwaway environment (no ACCEPTED schedule existed on any desk) and its rendered wrap/clip geometry remains unmeasured. See reasoning below — not accepted as discharged by inference from the other three measurements."
+    - "WINDOWS.md #11 — a 5th sub-case, distinct from the four already closed above, was identified during this pass's harvest of PLAN.md `<human-check>` blocks (Step 8) and was never previously tracked in WINDOWS.md or listed in either prior VERIFICATION.md: the 'accepted-schedule refusal' Toast (`ConflictException` 'Desk has an accepted schedule (id, start to end)'), reachable only when a stale client page attempts to save a day-start change after the desk has been locked server-side (21-08-PLAN.md Task 2's human-check items 4-5; 21-08-SUMMARY.md coverage id D5 names it explicitly as one of three required geometry targets, alongside the lock-explanation and tiling-advisory targets that ARE now measured). Neither its triggering scenario nor its Toast-container geometry at narrow viewport has ever been exercised live. See reasoning below for why this is not accepted as discharged by analogy to the already-measured, same-container Toast messages."
+    - "A second, previously untracked human-check item, harvested the same way: 21-07-PLAN.md Task 1's backstop ('Open an exported workbook for a 21:00-anchored desk and look at the Roster sheet: confirm the restructured vertical legend does not collide with the agent rows above it...'). No WINDOWS.md ledger entry was ever created for this item. 21-07-SUMMARY.md's own coverage entry (id D5) records only an automatable proxy (byte-for-byte POI inspection of a generated workbook's cell values and frozen-pane coordinates) and explicitly states 'a human opening the file in Excel is still the authoritative check this backstop exists for' — i.e. the executor itself did not treat the proxy as sufficient. This item is orthogonal to the browser-based UAT pass (it requires opening an .xlsx file, not a web page) and was never measured by either prior VERIFICATION.md pass."
   regressions: []
 human_verification:
-  - test: "Create or seed an ACCEPTED schedule on an anchored desk, then open Desk Management and view that desk's Day Start cell (both in display mode and in edit mode) at a ~375px viewport with a long desk name (reuse 'Night Desk Verification With A Deliberately Long Name' or similar)."
-    expected: "The lock explanation text (naming the blocking schedule and its period) wraps onto additional lines inside the table cell rather than clipping or forcing the row/table to overflow — matching the wrap behavior already measured for the other three message types in this same desk table."
-    why_human: "DOM wrapping/overflow is a rendered-DOM fact, not inferable from the component's plain unstyled `<div>` markup alone. WINDOWS.md #11's three other sub-cases were measured live and closed on 2026-10-03, but this fourth sub-case could not be exercised because the seeded environment had no ACCEPTED schedule, so `dayStartLockedByScheduleId` was never truthy. It renders through the identical unstyled `<div>` inside the identical `<td>` already proven not to clip for the other three messages, which makes a pass likely but not measured — the gap is narrower than before, not closed."
+  - test: "Simulate a stale client page: open a desk in Desk Management edit mode while it has NO accepted schedule (so the day-start input renders editable), then — without reloading that page — accept a schedule on the same desk via a second tab or a direct API call, then click Save on the first (still-stale) page with a changed day-start value. Do this at a narrow (~375px) viewport with a long desk name, and measure the resulting error Toast's geometry with an in-page evaluation (scrollWidth/clientWidth/scrollHeight/clientHeight), not a screenshot."
+    expected: "The server's own refusal text ('Desk has an accepted schedule (<id>, <start> to <end>)') renders in full inside the Toast container without clipping on either axis, exactly once, and the row stays in edit mode with the entered value intact — matching the wrap/no-clip behavior already measured for the other three Toast message types on this same page."
+    why_human: "DOM Toast geometry is a rendered-DOM fact, not inferable from markup alone — the same justification this phase has already applied to its other backstop checks. This specific message was never triggered or measured in either UAT pass; the structurally similar, shorter-text 'stranded-template refusal' and longer-text 'D-05 tiling advisory' Toasts were measured instead, which makes a pass likely (same Toast component, this message is ~100 chars against an already-proven-clean 163-char case) but not measured. Applying a weaker bar to this sub-case than was just insisted on for the lock-explanation sub-case would be inconsistent."
+  - test: "Export a solved schedule for a 21:00-anchored (or other non-midnight-anchored) desk to Excel and open the resulting .xlsx file in Excel (or an equivalent spreadsheet application, not just programmatic POI inspection). On the Roster sheet, visually confirm the restructured 5-row vertical legend (carrying the new 'shift crossing into the next calendar day' row) does not visually collide with or overlap the agent data rows immediately above it, and that the frozen top row and first column still behave correctly with the taller legend block."
+    expected: "The legend renders as 5 distinct, non-overlapping rows below a blank separator row, with no visual collision with agent rows; the freeze pane still holds the header row and first column in place as a human scrolls."
+    why_human: "A generated workbook's visual layout in Excel (row heights, font rendering, pane-freeze visual behavior) is not fully assertable from cell values and frozen-pane coordinates alone — this is the executor's own stated rationale for marking this a human-check backstop (21-07-PLAN.md), and the only verification performed to date is a programmatic proxy (byte-for-byte POI row/column read), which the executor's own summary states is not the authoritative check. No WINDOWS.md ledger entry was ever opened to track this item, and neither prior verification pass surfaced it."
 ---
 
 # Phase 21: Overnight Shift Templates Verification Report
@@ -83,173 +88,199 @@ human_verification:
 save-time validation, contracted-hours consumption, day-off blocking, the schedule UI grid, the
 Excel export — treats it correctly as one continuous thing belonging to the business day it starts
 on.
-**Verified:** 2026-10-03T15:09:51Z
+**Verified:** 2026-10-03T15:22:12Z
 **Status:** human_needed
-**Re-verification:** Yes — after human (browser-measured) UAT of the three DOM-geometry backstops left open by the initial verification
+**Re-verification:** Yes — third pass. This pass (1) re-derives whether the newly-measured
+accepted-schedule lock explanation genuinely discharges the one item the second pass left open, and
+(2) performs a full Step 8 harvest of every `<human-check>` block across all twelve plans in this
+phase — a pass the first two verification runs did not complete exhaustively — which surfaces two
+further backstop items that were never tracked in WINDOWS.md and never measured.
 
-## What changed since the initial verification
+## What changed since the second verification pass
 
-The initial verification (2026-10-03T13:10:00Z) found all 7 OVNT truths ✓ VERIFIED in code and
-tests, and was blocked from `passed` status only by three DOM-geometry backstop checks
-(WINDOWS.md #11, #12, #13) that no executor session had a browser tool to run. Those three have
-now been measured against a real browser by the orchestrator session, on a throwaway stack
-(pgvector :55432, backend :8081, vite :3001), with geometry read via `browser_evaluate`. Results
-are recorded in `21-UAT.md` (self-reported `status: passed`, 3/3 items, 0 issues).
+Only `.planning/WINDOWS.md` and `.planning/phases/21-overnight-shift-templates/21-UAT.md` changed
+(confirmed: `git diff --stat 2283e77..HEAD -- src/ frontend/src/` is empty, and `git status --short`
+shows no tracked changes to either tree). The second pass's own `21-VERIFICATION.md` content — the
+one this pass updates in place — was itself part of that same commit (`2283e77`), and left exactly
+one item open: the accepted-schedule lock explanation's DOM geometry, unmeasured because the
+seeded throwaway environment had no ACCEPTED schedule on any desk.
 
-This re-verification does not take that UAT record's verdict on faith — it re-derives the
-underlying facts and reaches its own conclusion, which differs from the UAT file's own headline in
-one respect (see Item 1 below).
+### The requested re-check: is the lock explanation now genuinely discharged?
 
-### Item-by-item re-assessment
+**Yes.** `21-UAT.md`'s new `lock_explanation_measured` block records a second UAT pass that seeded a
+desk ("Overnight Operations Desk — Manila Night Coverage (Tier 2)", 58 chars) at a 21:00 anchor with
+an ACCEPTED schedule spanning 2026-01-05 to 2026-01-18 — populating all three disclosure fields, the
+longest form. Measured:
 
-**Item 2 (WINDOWS.md #12 — sticky Agent column under anchored re-ordering): CLOSED.** The UAT's own
-evidence is internally consistent and answers exactly what the backstop asked — whether the
-*anchored column re-ordering* disturbs the sticky column's offset. It measured the column's
-declaration and width as stable across three scroll positions. Separately, the UAT found that the
-sticky column was already non-functional for an unrelated, pre-existing reason (the scrolling
-ancestor is the document, not the table wrapper, so `position: sticky` is inert regardless of
-column order). I independently re-ran the attribution check rather than trusting it:
+| Viewport | Mode | Box | Lines | Clipped H | Clipped V | Within table | Table overflows |
+|---|---|---|---|---|---|---|---|
+| 1200 | read | 340x110 | 5 | no | no | yes | no |
+| 375 | edit (locked) | 152x219 | 9 | no | no | yes | no |
 
-```
-git diff 7fbacf1^..HEAD -- frontend/src/pages/ScheduleResults.tsx | grep -n -E "^[+-].*(position:|sticky|overflowX)"
-```
-(`7fbacf1^` = the commit immediately before Phase 21's first commit.) This returns **no matching
-lines** — the diff touches the heading text and unrelated table rows in that region, never the
-`position`/`sticky`/`overflowX` declarations. Confirmed independently: this defect predates Phase
-21 and was correctly filed as a new, separate ledger item (WINDOWS.md #15) rather than folded into
-this phase's verdict. It does not negate OVNT-06 — the contiguous-run claim was verified by a
-direct index-adjacency assertion (header indices 3-9, each equal to predecessor+1), which is
-independent of whether the column visually pins during scroll.
+`scrollW==clientW` and `scrollH==clientH` in both cases, `whiteSpace: normal`, `overflow: visible`.
+The text wraps (5 lines, then 9) rather than overflowing the desk table — the exact outcome this
+item's expectation asked for. In the same pass, `input[type=time].disabled === true` on the locked
+desk in edit mode, and the cell names the blocking schedule id, confirming 21-08's disabled-render
+requirement live.
 
-**Item 3 (WINDOWS.md #13 — section heading wrap at narrow viewport): CLOSED, reasoning accepted as
-sound, not a rationalization.** The original backstop's literal expectation ("wraps onto a second
-line") was premised on the heading living in page-level flow at 375px. The measurement instead
-shows the heading sits inside the grid's own `overflowX` scroll container and its box tracks the
-801px table width — so page-level scroll and clipping, the actual concern a wrapping check exists
-to catch, provably do not occur (`scrollW==clientW`, `scrollH==clientH`, `overflow: visible`). This
-is a valid re-characterization, not special pleading: the backstop existed to catch unwanted
-overflow/clipping, and the measurement directly answers that question in the negative, even though
-the specific mechanism anticipated (wrapping) is not the one at work. Accepted as closed.
+I independently re-read the rendering component (`frontend/src/pages/DeskManagement.tsx:60-73,
+154-194`) rather than take the measurement's field names on faith: `dayStartLockExplanation`,
+`desk.dayStartLockedByScheduleId`, `dayStartLockedPeriodStart`/`PeriodEnd` all exist exactly as
+named, in both the read-mode cell (line 187-194) and the disabled edit-mode cell (line 154-161), and
+the backend fields they read (`DeskResponse.java:25-27`, populated per `DeskService.java:373`,
+`dayStartLocksByDeskId`) are real, not invented for the measurement. The measurement's reported box
+dimensions are consistent with the component's actual markup (no `maxWidth` on the explanation
+`<div>`, full-width input beside it in edit mode narrowing available space, which is why the edit-mode
+box is narrower and wraps to more lines than the read-mode box). This sub-case is genuinely
+discharged — the evidentiary bar applied to it (live seeded ACCEPTED schedule, in-page geometry
+read, both viewports/modes) matches the bar the other three sub-cases were already held to in the
+prior pass. **WINDOWS.md #11's originally-identified 4-sub-case scope is now fully measured.**
 
-**Item 1 (WINDOWS.md #11 — Desk Management message rendering at narrow viewport): NOT fully
-closed — narrowed.** Three of the four sub-cases named in the original backstop (non-15-minute
-refusal, D-05 tiling advisory, stranded-template refusal) were measured live and are unambiguously
-clean (no clipping on either axis, correct edit-mode retention, tiling advisory alone). The fourth
-— the **accepted-schedule lock explanation** — is explicitly named in the original backstop's test
-text and was *not* exercised, because the seeded throwaway environment had no ACCEPTED schedule on
-any desk, so the `desk.dayStartLockedByScheduleId` branch never rendered. The UAT file itself is
-honest about this (`not_covered`), and I take that at face value rather than rounding "3 of 4
-measured" up to "the item is discharged."
+### What a fuller Step 8 harvest surfaces that the first two passes missed
 
-I considered whether this is safe to infer from the other three measurements (same table, same
-desk name, same unstyled `<div>` markup, no `maxWidth`/`overflow`/`whiteSpace` override distinct
-from the other cells) — read the component directly at
-`frontend/src/pages/DeskManagement.tsx:154-194` to check this rather than assume it. The structural
-similarity is real and makes a pass likely. But likely is not measured, and the whole reason this
-class of check exists is that DOM geometry is not safely inferable from markup — that is the
-verifier's own stated justification for routing the other three to human verification in the first
-place. Applying a weaker evidentiary bar to the fourth sub-case than the other three were held to
-would be inconsistent. **Decision: WINDOWS.md #11 is narrowed from "4 Desk Management message
-types unmeasured" to "1 Desk Management message type unmeasured (accepted-schedule lock
-explanation)," and the narrower item remains open as a human-verification item.** It is not treated
-as a new gap (nothing regressed or failed) and it is not treated as closed (something real remains
-unmeasured).
+Verifying the specific item asked about is not the same as verifying the phase goal is achieved —
+this pass also re-ran Step 8's duty to harvest every `<human-check>` block across all PLAN.md files
+in the phase, not just the three already tracked in WINDOWS.md. That harvest surfaces two items
+neither prior pass caught:
+
+**1. A 5th, distinct Desk Management sub-case (still open).** `21-08-SUMMARY.md`'s own coverage
+entry D5 states the backstop's scope was three geometry targets, not the four this phase's WINDOWS
+ledger ended up tracking: "locked-explanation wrapping/overflow, tiling-warning two-line rendering,
+**accepted-schedule refusal long-text/overflow**." The third target — the Toast rendered when
+`DeskService.setDayStart` throws `ConflictException("Desk has an accepted schedule (" + id + ", "
++ start + " to " + end + ")")` (`DeskService.java:298-304`) — is a *different* refusal from the
+"stranded-template refusal" the UAT measured (`DeskService.java:306-321`, a different `ConflictException`
+naming a template, not a schedule). The two are textually and causally distinct: one fires when a
+re-anchor would strand an existing shift template; the other fires unconditionally whenever an
+ACCEPTED schedule exists, and in the shipped UI is reachable only through a stale-page race (the
+input is disabled client-side whenever the desk is *currently known* to be locked, so the only path
+to this server refusal is submitting a change made before the lock was known about — exactly the
+scenario `21-08-PLAN.md` Task 2's human-check items (4)-(5) name explicitly, and exactly the scenario
+`21-08-SUMMARY.md`'s own key-decisions text affirms is real and intentionally server-enforced: "the
+server's unconditional refusal is the sole decision-maker, exercised the same way for a stale page
+or a direct API call"). Neither UAT pass triggered this scenario or measured this Toast's geometry.
+
+I considered whether this is safe to infer from the two Toast messages that already passed (the
+163-char D-05 tiling advisory and the 154-char stranded-template refusal, both in the identical Toast
+component, both unclipped) — this message's text is *shorter* (~100 chars) than both, in the exact
+same container. That is a stronger structural analogy than the one already rejected for the
+lock-explanation sub-case (which was a different container, a static `<div>`, not a Toast). But the
+prior pass's own stated reasoning for declining to infer was unqualified: "the whole reason this
+class of check exists is that DOM geometry is not safely inferable from markup." Carving out an
+exception here — a shorter string, same container — because the inference happens to be stronger
+would still be applying a different bar case-by-case rather than a consistent one. **Decision:**
+record this as a genuinely open, narrow, low-risk human-verification item rather than close it by
+analogy. It does not block any of the seven OVNT truths (all remain code-and-test verified
+independent of this Toast's rendering), but it does mean WINDOWS.md #11's "resolved" status, set in
+commit `2283e77`, overstates what has actually been measured — one of its three D5-named geometry
+targets is still outstanding.
+
+**2. The Excel Roster-sheet legend-collision backstop (never tracked, never measured).**
+`21-07-PLAN.md` Task 1's `<human-check>` ("Open an exported workbook for a 21:00-anchored desk and
+look at the Roster sheet: confirm the restructured vertical legend does not collide with the agent
+rows above it...") has no corresponding WINDOWS.md ledger entry at all — I searched the full ledger
+for "legend", "Roster", and "21-07" and found nothing. `21-07-SUMMARY.md`'s own coverage entry (id
+D5) is explicit that only an automated proxy was performed (byte-for-byte POI inspection of a real
+generated workbook's cell text and frozen-pane coordinates) and that this proxy is not the
+authoritative check: "a human opening the file in Excel is still the authoritative check this
+backstop exists for." This item is orthogonal to the browser-based UAT measurements (it requires
+opening a generated `.xlsx` file in a spreadsheet application, not evaluating a web page's DOM), so
+the UAT pass that closed WINDOWS.md #12 and #13 could not have incidentally covered it, and did not
+attempt to. Neither prior VERIFICATION.md pass surfaced this item — this is the first pass to run
+Step 8's harvest against all twelve plans rather than only the three plans already represented in
+WINDOWS.md's unrun-verify entries.
 
 ### Net effect on status
 
-Per the decision tree, any non-empty human-verification list routes status to `human_needed`
-(unless a higher-precedence `gaps_found` condition also fires, which it does not here — no truth
-failed, no artifact is missing/stub, no key link is unwired, and the one new UI finding from UAT
-measurement, WINDOWS.md #15, was independently confirmed pre-existing and not attributable to this
-phase). **Status stays `human_needed`**, not `passed` — blocked by exactly one narrow,
-well-scoped item, not by any of the three original items in full.
+Per the decision tree, a non-empty human-verification list routes status to `human_needed` (gaps_found
+does not fire — no truth failed, no artifact is missing or a stub, no key link is unwired, and the
+code paths for both newly-surfaced items exist and are exercised by passing unit/integration tests;
+only their rendered-DOM or rendered-workbook geometry is unmeasured). **Status stays `human_needed`.**
+This is not a step backward from the second pass's position — the item that pass asked about is
+genuinely closed — but a fuller application of this verifier's own stated methodology (Step 8) finds
+the phase was never actually down to zero open backstop items; it was down to one that happened to
+be named explicitly in this session's brief, plus two others that had fallen through the ledger's
+tracking entirely.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-Unchanged from the initial verification — all 7 are code-and-test-verified facts that UAT
-measurement does not touch. Reproduced here with incidental live corroboration from the UAT run
-added where it strengthens (not replaces) the original evidence.
+Unchanged from both prior passes — all 7 are code-and-test-verified facts that none of the UAT/backstop
+measurement work touches, and no implementation file has changed since the initial verification.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | An operator can save a shift template whose end time is earlier in the clock than its start time, with correct net hours for the overnight span, on an anchored desk (OVNT-01) | ✓ VERIFIED | `ShiftTemplateService.java:51` `MAX_SPAN_MINUTES=16*60`; `validate()` refuses a backward interval naming the desk's own day start; `window.anchoredDurationMinutes(...)` computes net hours. `ShiftTemplateServiceTest` (53 tests, 0 failures). **Corroborated live (UAT):** a real 22:00-06:00 template SAVED successfully, end-to-end, through the real HTTP API on a 21:00-anchored desk. |
-| 2 | That shift is reported against the business day it starts on, everywhere it is displayed (OVNT-02) | ✓ VERIFIED | `ScheduleOutputService.buildAgentSchedule` groups by `a.getTimeslot().getBusinessDate()`; `ScheduleSummary.dayStart`/`ScheduleDetailResponse` carry the schedule's own anchor; structured `ViolationDetail` fields. **Corroborated live (UAT):** the summary payload carried `"dayStart":"21:00:00"`; the Schedule Results date filter offered exactly ONE date for a run spanning two calendar days. |
+| 1 | An operator can save a shift template whose end time is earlier in the clock than its start time, with correct net hours for the overnight span, on an anchored desk (OVNT-01) | ✓ VERIFIED | `ShiftTemplateService.java:51` `MAX_SPAN_MINUTES=16*60`; `validate()` refuses a backward interval naming the desk's own day start; `window.anchoredDurationMinutes(...)` computes net hours. `ShiftTemplateServiceTest` (53 tests, 0 failures). Corroborated live (UAT): a real 22:00-06:00 template SAVED successfully, end-to-end, through the real HTTP API on a 21:00-anchored desk. |
+| 2 | That shift is reported against the business day it starts on, everywhere it is displayed (OVNT-02) | ✓ VERIFIED | `ScheduleOutputService.buildAgentSchedule` groups by `a.getTimeslot().getBusinessDate()`; `ScheduleSummary.dayStart`/`ScheduleDetailResponse` carry the schedule's own anchor; structured `ViolationDetail` fields. Corroborated live (UAT): the summary payload carried `"dayStart":"21:00:00"`; the Schedule Results date filter offered exactly ONE date for a run spanning two calendar days. |
 | 3 | A day-off or PTO marking on the starting business day blocks the shift from being assigned, including seats stamped with the following calendar date (OVNT-03) | ✓ VERIFIED | `ScheduleConstraintProvider.java:183`: `agentDayOff` join is `equal(a -> a.getTimeslot().getBusinessDate(), AgentDayOff::getDate)`. `MidnightBoundaryRegressionTest$DayOffAttributesToStartingBusinessDate` green. |
 | 4 | The shift consumes the contracted hours of the weekday it starts on only, never split across two weekday rows (OVNT-04) | ✓ VERIFIED | `MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly` proves single business-date derivation for both calendar days of a crossing stretch. |
 | 5 | Shift-library validation refuses an overnight template whose envelope does not fit inside its desk's business day (OVNT-05) | ✓ VERIFIED | `isWithinOperatingWindow`/`crossesCalendarMidnight` wired into save path, SHIFT-mode gate, and candidate generation — one predicate, three callers. |
-| 6 (amended) | The business-day-keyed schedule UI grid/roster render an overnight shift as one block carrying calendar-span disclosure; per-date slot surfaces render it as one continuous run of cells (OVNT-06) | ✓ VERIFIED | Amendment premise independently re-derived and confirmed true (see original "Amendment Re-Verification" below). `ScheduleExportService` sorts by `anchoredStartMinute`/`anchoredShiftSortKey`; `ScheduleResults.tsx` binds one `dayWindow` throughout. **Corroborated live (UAT):** 24+ column allocation grid on a 21:00-anchored desk renders anchored order (21:00→20:00, not clock order); the night agent's 7 overnight cells occupy header indices 3-9 with no gap — a direct index-adjacency measurement, not an inference. |
-| 7 | The shift is labelled with the calendar dates it spans wherever displayed (OVNT-07) | ✓ VERIFIED | `ScheduleExportService.shiftCode`/`crossingAwareCode` on Roster sheet; `ScheduleOutputService.timeslotLabel` appends `(business day: {date})`; `ScheduleResults.tsx`'s `sectionHeading` discloses `(business day: {span})`. **Corroborated live (UAT):** heading rendered live as `"2026-01-05 (business day: Mon 21:00–Tue 21:00)"`, en dash intact through JSON transit. |
+| 6 (amended) | The business-day-keyed schedule UI grid/roster render an overnight shift as one block carrying calendar-span disclosure; per-date slot surfaces render it as one continuous run of cells (OVNT-06) | ✓ VERIFIED | Amendment premise independently re-derived and confirmed true. `ScheduleExportService` sorts by `anchoredStartMinute`/`anchoredShiftSortKey`; `ScheduleResults.tsx` binds one `dayWindow` throughout. Corroborated live (UAT): 26-column allocation grid on a 21:00-anchored desk renders anchored order (21:00→20:00, not clock order); the night agent's 7 overnight cells occupy header indices 3-9 with no gap — a direct index-adjacency measurement, not an inference. |
+| 7 | The shift is labelled with the calendar dates it spans wherever displayed (OVNT-07) | ✓ VERIFIED | `ScheduleExportService.shiftCode`/`crossingAwareCode` on Roster sheet; `ScheduleOutputService.timeslotLabel` appends `(business day: {date})`; `ScheduleResults.tsx`'s `sectionHeading` discloses `(business day: {span})`. Corroborated live (UAT): heading rendered live as `"2026-01-05 (business day: Mon 21:00–Tue 21:00)"`, en dash intact through JSON transit. |
 
 **Score:** 7/7 truths verified (0 present, behavior-unverified)
 
 ### Amendment Re-Verification (ROADMAP criterion 4 / REQUIREMENTS OVNT-06)
 
-Unchanged from initial verification. Plan 21-11's amendment premise — that the agent
-schedule/Roster sheet is keyed on business date and therefore an overnight shift already occupies
-exactly one cell there, making a "continuation indicator" requirement structurally impossible to
-need — was independently re-derived from `ScheduleOutputService.buildAgentSchedule` (lines 164-170)
-and `ScheduleExportService.writeRoster` (line 245) in the initial verification pass, and holds. Not
-re-litigated here; this re-verification's new evidence (live index-adjacency measurement of the
-*per-date slot* surface, where the real fragmentation risk lived) reinforces rather than touches
-this reasoning.
+Unchanged from both prior passes. Plan 21-11's amendment premise — that the agent schedule/Roster
+sheet is keyed on business date and therefore an overnight shift already occupies exactly one cell
+there — was independently re-derived from `ScheduleOutputService.buildAgentSchedule` (lines 164-170)
+and `ScheduleExportService.writeRoster` (line 245), and holds.
 
 ### Required Artifacts
 
-Unchanged from initial verification — no implementation files were modified between the initial
-verification and this re-verification (confirmed: `git diff --stat HEAD -- src/ frontend/src/`
-returns empty; only `.planning/WINDOWS.md` and `.planning/phases/21-overnight-shift-templates/21-UAT.md`
-changed, both already committed in 77de67e and 585d6bf).
+Unchanged — no implementation files were modified since the initial verification (confirmed again
+this pass: `git diff --stat 2283e77..HEAD -- src/ frontend/src/` and `git diff --stat HEAD -- src/
+frontend/src/` are both empty).
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
 | `src/main/java/com/wfm/service/ShiftTemplateService.java` | Overnight save, D-02/D-08 refusals, OVNT-05 containment | ✓ VERIFIED | Unchanged |
-| `src/main/java/com/wfm/service/DeskService.java` | D-03/D-04/D-05 day-start refusals/advisory/disclosure | ✓ VERIFIED | Unchanged |
+| `src/main/java/com/wfm/service/DeskService.java` | D-03/D-04/D-05 day-start refusals/advisory/disclosure | ✓ VERIFIED | Unchanged; the ACCEPTED-schedule refusal (line 298-304) and stranded-template refusal (line 306-321) confirmed textually distinct this pass |
 | `src/main/java/com/wfm/service/FteUploadService.java` | CR-01 fix: lookup keyed by business date | ✓ VERIFIED | Unchanged |
 | `src/main/java/com/wfm/service/ScheduleExportService.java` | Anchored column/row order, overnight cell disclosure | ✓ VERIFIED | Unchanged |
 | `src/main/java/com/wfm/service/ScheduleOutputService.java` | Structured violation fields, shared `timeslotLabel` helper | ✓ VERIFIED | Unchanged |
 | `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java` | Anchored contiguity/break scans, business-date day-off join | ✓ VERIFIED | Unchanged |
-| `frontend/src/pages/DeskManagement.tsx` | Editable day-start control, lock disclosure, server-message surfacing | ✓ VERIFIED | Unchanged; UAT confirms 3 of 4 message types render without clipping live |
+| `frontend/src/pages/DeskManagement.tsx` | Editable day-start control, lock disclosure, server-message surfacing | ✓ VERIFIED | Unchanged; UAT confirms 4 of 5 D5-named message/geometry types render without clipping live; the 5th (accepted-schedule refusal Toast) remains unmeasured (see Human Verification) |
 | `frontend/src/pages/ScheduleResults.tsx` | Anchored grid (7 sites), business-day heading disclosure | ✓ VERIFIED | Unchanged; UAT confirms anchored ordering and contiguity live, plus the pre-existing (unrelated) sticky-column defect |
 | `frontend/src/utils/dayWindow.ts` | Branded `DayOffset` arithmetic module | ✓ VERIFIED | Unchanged |
 | `src/test/resources/midnight-time-arithmetic.md` | Raw-comparison allowlist resolved to exactly 2 entries | ✓ VERIFIED | Unchanged |
 
 ### Key Link Verification
 
-Unchanged from initial verification (no implementation files modified since). See original table;
-all links remain ✓ WIRED.
+Unchanged (no implementation files modified since the initial verification). All links remain
+✓ WIRED.
 
 ### Behavioral Spot-Checks
 
-Unchanged from initial verification — the targeted JUnit sample run previously (53+32+15+4+12/12+5/5
-tests, plus full-suite confirmation via the supplied test_state: 202 classes, 1303 tests, 0
-failures/errors, 4 pre-existing benchmark skips) was not re-run here because no implementation file
-changed between the initial verification and this one. The regression gate against Phases 18/19/20
-guard classes (DayWindowTest, MidnightBoundaryRegressionTest, DayWindowAnchorBindingTest,
-TimeslotGeneratorBusinessDateTest, MidnightBoundaryPropertyTest) remains green per the supplied
-test_state.
+Unchanged — not re-run this pass since no implementation file changed. The full-suite confirmation
+from the supplied test_state stands: 202 classes, 1303 tests, 0 failures/errors, 4 pre-existing
+benchmark skips. The regression gate against Phases 18/19/20 guard classes (DayWindowTest,
+MidnightBoundaryRegressionTest, DayWindowAnchorBindingTest, TimeslotGeneratorBusinessDateTest,
+MidnightBoundaryPropertyTest) remains green.
 
-### Browser-Measured Backstops (new this run)
+### Browser-Measured Backstops
 
 | # | Backstop | Ledger | Result | Status |
 |---|----------|--------|--------|--------|
-| 1 | Desk Management refusal/advisory rendering at 375px, long desk name | WINDOWS.md #11 | 3 of 4 message types measured clean (no clipping, correct edit-mode retention); accepted-schedule lock explanation not reachable (no ACCEPTED schedule in seeded env) | ⚠️ PARTIAL — narrowed, not closed |
+| 1a | Desk Management: non-15-min refusal, D-05 tiling advisory, stranded-template refusal (3 of the surface's message types) | WINDOWS.md #11 | All measured clean (no clipping, correct edit-mode retention, tiling advisory alone) | ✓ CLOSED |
+| 1b | Desk Management: accepted-schedule lock explanation (always-rendered disclosure `<div>`, the 4th message type) | WINDOWS.md #11 | Measured this pass against a seeded ACCEPTED schedule: wraps (5/9 lines), no clipping, disabled input confirmed, at both 1200px read and 375px locked-edit modes | ✓ CLOSED (newly, this pass) |
+| 1c | Desk Management: accepted-schedule refusal Toast (triggered by a stale-page save attempt on a now-locked desk, the 5th D5-named target) | WINDOWS.md #11 (incompletely resolved — see Gaps) | Never triggered or measured in any UAT pass | ⚠️ OPEN — newly identified this pass |
 | 2 | Sticky Agent column survives anchored column re-ordering | WINDOWS.md #12 | Declaration/width stable across scroll positions; contiguous 7-cell overnight run confirmed by index adjacency; pre-existing unrelated sticky-pinning defect found and separately filed (#15), independently confirmed not Phase-21-caused | ✓ CLOSED |
-| 3 | Business-day heading does not force page scroll at 375px | WINDOWS.md #13 | No clipping/overflow attributable to the heading; it tracks the grid's own 801px scroll container rather than the 375px viewport, which answers the backstop's underlying concern even though literal "wrapping" was not the mechanism | ✓ CLOSED |
+| 3 | Business-day heading does not force page scroll at 375px | WINDOWS.md #13 | No clipping/overflow attributable to the heading; tracks the grid's own 801px scroll container rather than the 375px viewport | ✓ CLOSED |
+| 4 | Excel Roster-sheet legend does not visually collide with agent rows, viewed in a real spreadsheet application | No WINDOWS.md entry exists | Only a POI-level cell/coordinate proxy performed (21-07-SUMMARY.md D5); executor's own text states this is not the authoritative check; never measured by a human opening the file | ⚠️ OPEN — newly identified this pass |
 
 ### Requirements Coverage
 
-Unchanged from initial verification. All seven OVNT-01..07 requirements remain ✓ SATISFIED on code
-and test evidence, independent of the UAT backstops. OVNT-06's REQUIREMENTS.md checkbox remains
-`[ ]`/"Pending" — correctly so, since this phase has not reached `passed` status and marking it
-complete is this verification's own downstream consequence.
+Unchanged. All seven OVNT-01..07 requirements remain ✓ SATISFIED on code and test evidence,
+independent of the UAT backstops. OVNT-06/OVNT-07's REQUIREMENTS.md checkboxes remain `[ ]`/"Pending"
+— correctly so, since this phase has not reached `passed` status.
 
 ### Anti-Patterns Found
 
-Unchanged four pre-recorded, operator-accepted findings (WR-01, WR-02, WR-03, IN-01) — see initial
-verification table below, re-confirmed present and unaffected by this re-verification since no
-implementation files changed.
+Unchanged four pre-recorded, operator-accepted findings (WR-01, WR-02, WR-03, IN-01) — re-confirmed
+present and unaffected by this pass since no implementation files changed.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
@@ -258,76 +289,86 @@ implementation files changed.
 | `src/main/java/com/wfm/service/DeskService.java:298-321` | `setDayStart`'s stranding check | Does not exclude retired template eras (WR-02, disposition: open) | ⚠️ Warning (pre-recorded) | Unaffected |
 | `frontend/src/pages/DeskManagement.tsx:109,172-175` | Cancel button | Stays enabled during in-flight save (IN-01, disposition: open) | ℹ️ Info (pre-recorded) | Unaffected; UAT reproduced this live empirically (Save disabled, Cancel not) |
 
-**New, UAT-discovered, independently attributed as pre-existing (not a Phase 21 regression):**
+**Previously recorded (second pass), independently confirmed pre-existing:**
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `frontend/src/pages/ScheduleResults.tsx` (Agent column `th`/`td`, multiple sites) | `position: 'sticky', left: 0` | Sticky column never actually pins: resolves against the document (which scrolls), not the table wrapper (`overflowX: auto`, which does not); measured live at left -366px/right -134px at full document scroll | ℹ️ Info (new ledger item WINDOWS.md #15, filed by orchestrator, attribution independently re-verified by this verifier via `git diff 7fbacf1^..HEAD -- frontend/src/pages/ScheduleResults.tsx` filtered for `position:`/`sticky`/`overflowX` — returns no matching added/removed lines) | Pre-existing; not introduced by Phase 21. Phase 21's 24-column anchored layout increases exposure (horizontal scroll is more likely to be needed now) but did not create the defect. Does not negate OVNT-06 — contiguity was proven by index adjacency, independent of visual pinning. |
+| `frontend/src/pages/ScheduleResults.tsx` (Agent column `th`/`td`, multiple sites) | `position: 'sticky', left: 0` | Sticky column never actually pins: resolves against the document (which scrolls), not the table wrapper (`overflowX: auto`, which does not) | ℹ️ Info (WINDOWS.md #15, attribution independently re-verified via `git diff` filtered for `position:`/`sticky`/`overflowX` over the phase range — no matches) | Pre-existing; not introduced by Phase 21 |
 
 ### Code Review Finding CR-01 (Blocker, disposition: fixed)
 
-Unchanged — independently re-verified in the initial pass; `FteUploadService.java:183` reads
-`timeslotLookup.computeIfAbsent(ts.getBusinessDate(), ...)`, confirmed fixed, unaffected by this
-re-verification.
+Unchanged — `FteUploadService.java:183` reads `timeslotLookup.computeIfAbsent(ts.getBusinessDate(),
+...)`, confirmed fixed, unaffected by this pass. Disposition unchanged: `open: 4 / total: 5` (WR-01,
+WR-02, WR-03, IN-01 remain open by operator decision; CR-01 fixed).
 
 ### Human Verification Required
 
-One item remains, narrowed from the original three:
+Two items, both newly surfaced by this pass's full Step 8 harvest (neither was in either prior
+pass's human-verification list):
 
-1. **Accepted-schedule lock explanation geometry** (WINDOWS.md #11, narrowed) — see frontmatter
-   `human_verification` block above for the full test/expected/why_human. Needs an ACCEPTED
-   schedule in the test environment to exercise `desk.dayStartLockedByScheduleId`, which the
-   throwaway stack used for this UAT round did not have.
+1. **Accepted-schedule refusal Toast geometry** (WINDOWS.md #11, 5th sub-case) — see frontmatter
+   `human_verification` block for the full test/expected/why_human. This is distinct from, and not
+   discharged by, the lock-explanation sub-case this pass was specifically asked to re-check — that
+   one is now genuinely closed.
+2. **Excel Roster-sheet legend-collision check** (21-07-PLAN.md, no WINDOWS.md entry) — see
+   frontmatter `human_verification` block. Requires opening a generated workbook in Excel; the only
+   verification performed to date is a programmatic proxy the executor's own summary states is not
+   authoritative.
 
 ### Stale Verification Digest
 
-**This phase's own digest:** refreshed deliberately as part of this re-verification run, using
-`gsd-tools query verification.fingerprint` over the current contents of all 55 `covered_files`
-(the same list as the initial verification, plus `21-UAT.md`, which is now phase evidence this
-re-verification relies on). New digest:
-`v2:sha256:cb19e26a3f3f277a7561287845623b4d4ae96ac9ad87d80c71854e8c000b04cd`. This specifically
-re-covers `.planning/WINDOWS.md`, which changed (ledger entry #15 added) since the prior digest was
-computed — the prior digest was stale with respect to the verifier's own tracked file; it no
-longer is.
+**This phase's own digest:** refreshed this pass using `gsd-tools query verification.fingerprint`
+over the current contents of all 55 `covered_files` (unchanged list from the prior pass — `21-UAT.md`
+was already added then). New digest: `v2:sha256:3544fafce96aa85413727df01caa7a49cd7511a24427bf97f3c436dca2f00399`.
+This re-covers `.planning/WINDOWS.md` (ledger entries flipped to `resolved`, #15 unchanged) and
+`21-UAT.md` (the `lock_explanation_measured` addition), both of which changed since the prior digest
+was computed.
 
 **Not this phase's to fix, carried forward as before:** plan 21-11 edited `.planning/REQUIREMENTS.md`,
 `.planning/ROADMAP.md`, `src/test/resources/bday-join-guard.md`, and
 `src/main/java/com/wfm/service/ScheduleOutputService.java`, all of which appear in Phase 18, 19,
 and/or 20's own `covered_files`. Those phases' `covered_digest` values remain stale relative to
-current file contents. This is a milestone-level bookkeeping item, not a Phase 21 blocker, and
-needs a deliberate fingerprint refresh on those phases before milestone close.
+current file contents. This is a milestone-level bookkeeping item, not a Phase 21 blocker.
 
 ### Gaps Summary
 
-No must-have truth failed, no required artifact is missing or a stub, no key link is unwired, and
-all seven OVNT requirements remain independently confirmed true in the current codebase.
+No must-have truth failed, no required artifact is missing or a stub, no key link is unwired, and all
+seven OVNT requirements remain independently confirmed true in the current codebase.
 
-Of the three DOM-geometry backstops that previously held this phase at `human_needed`, two
-(WINDOWS.md #12 and #13) are now genuinely closed by live browser measurement, re-derived and
-accepted on their own evidence rather than taken from the UAT file's self-reported verdict. The
-third (WINDOWS.md #11) is three-quarters closed by the same measurement standard but is **not**
-fully discharged: its fourth named sub-case (the accepted-schedule lock explanation) was not
-reachable in the seeded environment and remains an open, narrowly-scoped human-verification item.
-Rounding "3 of 4 measured" up to "the item is closed" would apply a materially weaker evidentiary
-bar to this sub-case than the other three were held to, for no reason other than convenience — so
-this verification declines to do that.
+The specific item this pass was asked to re-check — the accepted-schedule lock explanation's DOM
+geometry — is now genuinely discharged by a live measurement against a seeded ACCEPTED schedule,
+matching the evidentiary bar already applied to the other three originally-identified sub-cases.
+That part of the brief is correct and complete.
 
-A new, pre-existing UI defect (sticky Agent column does not actually pin) was found while measuring
-item 2. Its non-attribution to Phase 21 was independently re-checked via `git diff` against the
-commit immediately preceding Phase 21's first commit, not merely accepted from the UAT file's own
-claim, and the check confirms it: Phase 21 never touched the relevant `position`/`sticky`/`overflowX`
-lines. It is correctly filed as a new ledger item (#15) rather than folded into this phase's verdict,
-and does not block Phase 21.
+However, a fuller application of this verifier's own Step 8 duty (harvesting every `<human-check>`
+block across all twelve plans, not only the three already represented in WINDOWS.md) surfaces two
+further backstop items that neither of the first two verification passes caught:
 
-**Recommendation:** seed an ACCEPTED schedule on an anchored desk in a throwaway environment (the
-same stack already stood up for this UAT round would work) and measure the lock explanation's wrap
-behavior directly — a single additional check, not a new backstop. Alternatively, accept a
-documented waiver on the inferential grounds laid out above (identical unstyled `<div>`/`<td>`
-pattern to the three already-measured message types) if the team judges that inference sufficient
-to ship without the fourth measurement. Either resolution closes WINDOWS.md #11 and clears the last
-blocker to `passed`.
+- A 5th Desk Management sub-case — the accepted-schedule refusal Toast, distinct from the
+  stranded-template refusal that was measured — named explicitly in `21-08-SUMMARY.md`'s own
+  coverage block (D5) as one of three required geometry targets, and never triggered or measured.
+  WINDOWS.md #11's "resolved" status (set in commit `2283e77`) overstates what has actually been
+  measured by this one sub-case.
+- The Excel Roster-sheet legend-collision check from `21-07-PLAN.md`, which was never given a
+  WINDOWS.md ledger entry at all and has only ever been proxied, not measured, by the executor's own
+  admission.
+
+Neither item is treated as a regression (nothing changed; both were always open, just untracked) and
+neither blocks any of the seven OVNT truths, which remain fully code-and-test verified. But per the
+decision tree, a non-empty human-verification list means status cannot be `passed`.
+
+**Recommendation:** (1) seed an unlocked desk, accept a schedule on it out-of-band, then attempt the
+stale save and measure the resulting Toast — the same throwaway-stack technique already used twice
+in this session would work; (2) open a real exported `.xlsx` for a 21:00-anchored desk in Excel (or
+equivalent) and visually confirm the legend does not collide with the agent rows. Both are narrow,
+single checks, not new backstops. Recommend also correcting WINDOWS.md #11's ledger text (currently
+marked `resolved` with no inline note, unlike #12/#13) to reflect that one of its three D5-named
+geometry targets remains open, and opening a new ledger entry for the 21-07 legend-collision item
+so it is tracked going forward. Either closing both remaining items, or an explicit operator-accepted
+override for one or both (documented in this file's `overrides:` frontmatter), clears the last
+blockers to `passed`.
 
 ---
 
-_Verified: 2026-10-03T15:09:51Z_
+_Verified: 2026-10-03T15:22:12Z_
 _Verifier: Claude (gsd-verifier)_

@@ -3,7 +3,7 @@ status: passed
 phase: 21-overnight-shift-templates
 source: [21-VERIFICATION.md]
 started: 2026-10-03T13:20:00Z
-updated: 2026-10-03T15:16:00Z
+updated: 2026-10-03T15:32:00Z
 measured_by: orchestrator session via browser automation (geometry read with browser_evaluate; screenshots deliberately not used — they do not settle on this app)
 environment: throwaway stack — pgvector Postgres :55432, backend :8081, vite :3001; seeded desk at a 21:00 anchor with 60-minute timeslots, one overnight 22:00-06:00 template, and a COMPLETED schedule carrying dayStart 21:00
 ---
@@ -25,7 +25,7 @@ awaiting: none — measured
 test: Open Desk Management, edit a desk's day start to a value entered by keyboard (not the picker) that the backend refuses for one of the two reasons the time picker normally makes unreachable (e.g. a value carrying seconds, or a non-15-minute boundary). Also trigger the stranded-template refusal and the accepted-schedule-lock message, and the D-05 tiling-warning toast, at a narrow (~375px) viewport and with a long desk name.
 expected: Every refusal/advisory renders the backend's own full message without clipping inside the Toast or table cell; the lock explanation wraps rather than overflowing the desk table at real desk-name widths.
 ledger: WINDOWS.md #11
-result: passed (all 4 message types exercised; lock explanation measured in a second pass against a seeded ACCEPTED schedule)
+result: passed (all 5 message types exercised across three passes — the 5th, the accepted-schedule refusal, was identified by the third verification run and measured in a third pass)
 evidence: |
   Desk name used throughout: "Night Desk Verification With A Deliberately Long Name" (52 chars).
   Control confirmed live first: the day-start cell renders input[type=time][step=900], enabled,
@@ -73,6 +73,30 @@ lock_explanation_measured: |
   The disabled render was confirmed in the same pass: on the locked desk in edit mode,
   input[type=time].disabled === true, and the cell names the blocking schedule id. 21-08's
   "disabled render that names the schedule permanently blocking the change" verified live.
+
+accepted_schedule_refusal_measured: |
+  Third pass, 2026-10-03T15:28Z. The third verification run correctly identified that the
+  accepted-schedule refusal is a FIFTH, distinct sub-case — 21-08-SUMMARY's coverage entry D5
+  names it alongside the lock-explanation and tiling targets, and it is causally different from
+  the stranded-template refusal measured in pass one. Flipping ledger #11 to resolved after only
+  four sub-cases overstated what had been checked; this pass corrects that.
+
+  Reproduced the genuine stale-page race rather than a shortcut: created the desk UNLOCKED,
+  loaded /desk-management, entered edit mode (confirmed input[type=time].disabled === false, so
+  the page had no knowledge of any lock), THEN inserted an ACCEPTED schedule server-side behind
+  the page's back, THEN saved a day-start change from that stale page. This is the exact path
+  DeskService.java:298-304's ConflictException guards.
+
+  Rendered: "Desk has an accepted schedule (dddddddd-0000-4000-8000-000000000099, 2026-02-01 to
+  2026-02-28)" — 94 chars, error red #dc2626, naming BOTH the blocking schedule id and its period.
+
+  | Viewport | Box | Lines | Clipped H | Clipped V | In viewport | Single toast | Row held in edit |
+  |---|---|---|---|---|---|---|---|
+  | 375 | 344x89 | 4 | no | no | yes | yes | yes |
+
+  scrollW == clientW (344) and scrollH == clientH (89); whiteSpace normal, overflow visible,
+  maxWidth 400px. Desk name under test: "Stale Page Desk — Locked Behind Your Back (Tier 3
+  Overnight)" (60 chars).
 
 ### 2. Sticky Agent column survives anchored column re-ordering
 
@@ -135,13 +159,36 @@ evidence: |
   Page-level X scroll at 375px exists but comes from the app shell plus the 24-column table, the
   same pre-existing cause as item 1.
 
+### 4. Excel Roster-sheet legend collision (WAIVED by operator)
+
+test: Export a schedule for a 21:00-anchored desk to Excel and open the .xlsx in Excel, checking that the Roster sheet's vertical five-row legend does not collide with or obscure the roster content beside it.
+expected: The legend occupies its own rows without overlapping roster cells, and the widened date columns remain readable.
+ledger: WINDOWS.md #16
+result: waived — operator decision, 2026-10-03
+why_waived: |
+  Identified by the third verification run; it had never been given a ledger entry. 21-07-SUMMARY's
+  own coverage block states that only a POI-level programmatic proxy was performed and that "a
+  human opening the file in Excel is still the authoritative check this backstop exists for."
+
+  This check is structurally unavailable to the orchestrator session: there is no tool here that
+  renders an .xlsx the way Excel does, so it cannot be measured, only inferred — and inference is
+  the bar this UAT has refused for every other item. Rather than lower that bar or leave the phase
+  indefinitely pending on a check no automated agent in this setup can perform, the operator
+  waived it explicitly.
+
+  Residual risk accepted: a legend/roster collision on the Roster sheet would be cosmetic in the
+  exported workbook. It would not affect any of the seven OVNT truths, all of which are verified
+  in code and tests, and it cannot corrupt data — the POI-level proxy already confirmed cell
+  placement programmatically. Tracked as WINDOWS.md #16 so /gsd-audit-uat surfaces it.
+
 ## Summary
 
-total: 3
+total: 4
 passed: 3
 issues: 0
 pending: 0
 skipped: 0
+waived: 1
 blocked: 0
 
 ## Gaps
