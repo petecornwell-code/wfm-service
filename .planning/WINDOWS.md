@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 13
 waived_count: 0
 fixed_count: 0
-total_count: 11
-last_updated: 2026-10-03T01:38:09.327Z
+total_count: 13
+last_updated: 2026-10-03T02:29:43.049Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,8 @@ last_updated: 2026-10-03T01:38:09.327Z
 | 9 | 17 | stub | src/main/java/com/wfm/service/ScheduleOutputService.java |  | buildDriftReport's popularity field always returns List.of() -- DRFT-04's over-subscription ranking is plan 17-03's deliverable (D-13), explicitly deferred per the plan's own Task 1 action text | open |  | 2026-09-17T16:33:12.009Z |  |
 | 10 | 20 | deviation | src/test/resources/bday-join-guard.md |  | BusinessDateJoinGuardTest cannot see ScheduleConstraintProvider's shared DATE lambda (lines 91-92) or the seven groupBy(AGENT_ID, DATE, ...) consumers it feeds -- symbolic-constant indirection breaks the guard's single-line verb+receiver co-occurrence scan. Covers ~half of SOLV-01's edit surface; plan 20-05's migration at these 8 lines must be verified by direct code review, not by this guard's green. | open |  | 2026-10-01T18:52:23.613Z |  |
 | 11 | 21 | unrun-verify | frontend/src/pages/DeskManagement.tsx |  | 21-08 backstop geometry checks (cell wrapping, table-width overflow, Toast long-text at narrow viewport) not executed — no browser-automation tool available in this execution session; installing one (Playwright/Puppeteer) would violate the plan's own no-new-dependency threat mitigation | open |  | 2026-10-03T01:38:09.327Z |  |
+| 12 | 21 | unrun-verify | frontend/src/pages/ScheduleResults.tsx |  | 21-10 Task 2 backstop geometry check not executed: whether 24+ anchored slot columns disturb the sticky Agent column's offset -- no browser-automation tool available in this execution session; functional claims (contiguous run, envelope containment, anchored ordering, business-date keying, midnight no-op) were instead proven by executing the real dayWindow.ts module against representative fixtures (12/12 checks passed, see plan SUMMARY) | open |  | 2026-10-03T02:29:42.969Z |  |
+| 13 | 21 | unrun-verify | frontend/src/pages/ScheduleResults.tsx |  | 21-10 Task 3 backstop geometry checks not executed: whether the lengthened section heading forces horizontal page scroll at a 21:00-anchored desk, and whether its ~37-character parenthetical wraps rather than clips at a narrow viewport -- no browser-automation tool available in this execution session; the heading's exact text contract (locked copy, midnight suppression, absent-anchor degradation) was proven by executing sectionHeading() against representative fixtures | open |  | 2026-10-03T02:29:43.049Z |  |
 
 ````json
 [
@@ -161,6 +163,32 @@ last_updated: 2026-10-03T01:38:09.327Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T01:38:09.327Z",
+    "resolved_at": null,
+    "milestone": "v1.5"
+  },
+  {
+    "id": 12,
+    "kind": "unrun-verify",
+    "phase": "21",
+    "file": "frontend/src/pages/ScheduleResults.tsx",
+    "line": null,
+    "description": "21-10 Task 2 backstop geometry check not executed: whether 24+ anchored slot columns disturb the sticky Agent column's offset -- no browser-automation tool available in this execution session; functional claims (contiguous run, envelope containment, anchored ordering, business-date keying, midnight no-op) were instead proven by executing the real dayWindow.ts module against representative fixtures (12/12 checks passed, see plan SUMMARY)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T02:29:42.969Z",
+    "resolved_at": null,
+    "milestone": "v1.5"
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "21",
+    "file": "frontend/src/pages/ScheduleResults.tsx",
+    "line": null,
+    "description": "21-10 Task 3 backstop geometry checks not executed: whether the lengthened section heading forces horizontal page scroll at a 21:00-anchored desk, and whether its ~37-character parenthetical wraps rather than clips at a narrow viewport -- no browser-automation tool available in this execution session; the heading's exact text contract (locked copy, midnight suppression, absent-anchor degradation) was proven by executing sectionHeading() against representative fixtures",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T02:29:43.049Z",
     "resolved_at": null,
     "milestone": "v1.5"
   }

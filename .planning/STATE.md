@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-09-PLAN.md
-last_updated: "2026-10-03T02:00:12.814Z"
+stopped_at: Completed 21-10-PLAN.md
+last_updated: "2026-10-03T02:32:25.497Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 967f4d6aa395a571cbcc35dde57e3cc7ae4b4377
+state_head: 189146248d153f0b88375b665b1f2b17e1e0bdff
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 35
+  completed_plans: 36
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 10 of 12
+Plan: 11 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -342,6 +342,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Phase 21 Plan 09: the anchor rides the schedule payload (Schedule.getDayStart() at both ScheduleSummary construction sites), never the desk -- the anchor is part of a solved schedule's identity (D-15)
 - [Phase 21]: Phase 21 Plan 09: frontend/src/utils/dayWindow.ts is a deliberate 1:1 port of backend DayWindow's bound-instance methods behind a branded DayOffset type, with zero consumers until 21-10 -- the compiler is the structural guard on a surface with no test runner
 - [Phase 21]: Phase 21 Plan 09: anchoredPlusWithinDay's minutes parameter stays a plain number (an additive delta), not DayOffset, since it is not itself a position measured from the anchor
+- [Phase 21]: Converted the one standalone timeDiffMinutes call immediately in Task 1, left the four calls embedded in the three break-band loops and the full-day loop unconverted until Task 2, so the compiler's resulting 7 TS2304 errors landed exactly at the sites needing the offset-cursor rewrite.
+- [Phase 21]: Verified ScheduleResults.tsx's anchored-time conversion by executing the real compiled dayWindow.ts module against representative fixtures in a standalone node script rather than manual arithmetic or a live browser render -- 12/12 checks passed including a 00:00-anchor no-op control.
 
 ### Blockers/Concerns
 
@@ -365,8 +367,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T02:00:12.777Z
-Stopped at: Completed 21-09-PLAN.md
+Last session: 2026-10-03T02:32:25.461Z
+Stopped at: Completed 21-10-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -453,3 +455,4 @@ Resume file: None
 | Phase 21 P07 | ~70 min | 3 tasks | 3 files |
 | Phase 21 P08 | 30 min | 2 tasks | 1 files |
 | Phase 21 P09 | 20min | 2 tasks | 6 files |
+| Phase 21 P10 | 50 min | 3 tasks | 1 files |
