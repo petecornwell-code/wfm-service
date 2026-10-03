@@ -613,4 +613,110 @@ class ScheduleAllocationExportTest {
         }
     }
 
+    /**
+     * Plan 21-07 Task 3 (OVNT-06, planner item P-01) — agent rows are grouped by the envelope's
+     * ANCHORED start/end minute instead of the two clock times concatenated and compared as a
+     * string, so a night desk's first shift (e.g. 22:00) sorts before a daytime one (08:00)
+     * rather than wherever its clock time falls. {@code shiftLabel}'s text is unchanged — only
+     * the comparator changes. The pre-existing {@code ShiftGrouping} nested class above, built on
+     * a 00:00-anchored desk, is the byte-identical no-op regression surface and is unmodified by
+     * this task (anchored minute equals clock minute at that anchor).
+     */
+    @Nested
+    @DisplayName("agent rows grouped in anchored envelope order (OVNT-06, planner P-01)")
+    class AnchoredRowGrouping {
+
+        private static final LocalTime NIGHT_ANCHOR = LocalTime.of(21, 0);
+
+        private AgentScheduleEntry withShift(String name, LocalTime start, LocalTime end) {
+            ShiftDescriptor sd = new ShiftDescriptor(UUID.randomUUID(), "T", start, end, 180, 60);
+            return new AgentScheduleEntry(UUID.randomUUID(), name, DAY_ONE, start, end,
+                    new BigDecimal("1.0"),
+                    List.of(new AssignmentDetail(UUID.randomUUID(), start, start.plusHours(1),
+                            "Security and Item Quality", "PRIMARY")),
+                    List.of(), sd, null);
+        }
+
+        private AgentScheduleEntry offRoster(String name) {
+            return new AgentScheduleEntry(UUID.randomUUID(), name, DAY_ONE, LocalTime.of(9, 0),
+                    LocalTime.of(10, 0), new BigDecimal("1.0"),
+                    List.of(new AssignmentDetail(UUID.randomUUID(), LocalTime.of(9, 0),
+                            LocalTime.of(10, 0), "Security and Item Quality", "PRIMARY")),
+                    List.of(), null, null);
+        }
+
+        private Sheet nightDeskSheet(List<AgentScheduleEntry> entries) throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(NIGHT_ANCHOR);
+            d.setDeskName("Night Desk");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_ONE);
+            d.setIncrementMinutes(60);
+            d.setAgentSchedule(entries);
+            byte[] xlsx = new ScheduleExportService().exportToExcel(d, List.of());
+            return new XSSFWorkbook(new ByteArrayInputStream(xlsx)).getSheet("Allocation " + DAY_ONE);
+        }
+
+        @Test
+        @DisplayName("the night shift group comes first, by anchored start minute not clock time")
+        void anchoredEnvelopeOrderPutsNightShiftFirst() throws IOException {
+            Sheet s = nightDeskSheet(List.of(
+                    withShift("Dawn Day", LocalTime.of(8, 0), LocalTime.of(17, 0)),
+                    withShift("Nox Night", LocalTime.of(22, 0), LocalTime.of(6, 0))));
+
+            assertThat(s.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Nox Night");
+            assertThat(s.getRow(2).getCell(0).getStringCellValue()).isEqualTo("Dawn Day");
+        }
+
+        @Test
+        @DisplayName("the no-op control: a 00:00-anchored desk's row order is unchanged")
+        void midnightAnchorRowOrderUnchanged() throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(LocalTime.MIDNIGHT);
+            d.setDeskName("Vinted");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_ONE);
+            d.setIncrementMinutes(60);
+            d.setAgentSchedule(List.of(
+                    withShift("Zed Early", LocalTime.of(8, 0), LocalTime.of(17, 0)),
+                    withShift("Nora Late", LocalTime.of(15, 0), LocalTime.MIDNIGHT),
+                    offRoster("Bob NoShift"),
+                    withShift("Ann Early", LocalTime.of(8, 0), LocalTime.of(17, 0))));
+            byte[] xlsx = new ScheduleExportService().exportToExcel(d, List.of());
+            Sheet s = new XSSFWorkbook(new ByteArrayInputStream(xlsx)).getSheet("Allocation " + DAY_ONE);
+
+            assertThat(List.of(
+                    s.getRow(1).getCell(0).getStringCellValue(),
+                    s.getRow(2).getCell(0).getStringCellValue(),
+                    s.getRow(3).getCell(0).getStringCellValue(),
+                    s.getRow(4).getCell(0).getStringCellValue()))
+                    .containsExactly("Ann Early", "Zed Early", "Nora Late", "Bob NoShift");
+        }
+
+        @Test
+        @DisplayName("an agent-day with no envelope still sorts last, with the explicit marker")
+        void offRosterSortsLastOnAnAnchoredDesk() throws IOException {
+            Sheet s = nightDeskSheet(List.of(
+                    offRoster("Off Roster"),
+                    withShift("Nox Night", LocalTime.of(22, 0), LocalTime.of(6, 0))));
+
+            assertThat(s.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Nox Night");
+            assertThat(s.getRow(2).getCell(0).getStringCellValue()).isEqualTo("Off Roster");
+            assertThat(s.getRow(2).getCell(1).getStringCellValue()).isEqualTo("No shift assigned");
+        }
+
+        @Test
+        @DisplayName("two agent-days sharing an envelope still tie-break by name, case-insensitively")
+        void tieBreakByNameWithinASharedEnvelope() throws IOException {
+            Sheet s = nightDeskSheet(List.of(
+                    withShift("zoe", LocalTime.of(22, 0), LocalTime.of(6, 0)),
+                    withShift("Anna", LocalTime.of(22, 0), LocalTime.of(6, 0))));
+
+            assertThat(s.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Anna");
+            assertThat(s.getRow(2).getCell(0).getStringCellValue()).isEqualTo("zoe");
+        }
+    }
+
 }
