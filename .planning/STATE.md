@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 21
-current_phase_name: Overnight Shift Templates
-status: verifying
-stopped_at: Completed 21-12-PLAN.md
-last_updated: "2026-10-03T11:59:38.702Z"
-last_activity: 2026-10-02
-last_activity_desc: Phase 21 execution started
-state_head: 6494df827735d0349cf1dc2afa31e8eea6ee8005
+current_phase: 22
+current_phase_name: Minimum Rest
+status: planning
+stopped_at: Phase 21 complete, ready to plan Phase 22
+last_updated: "2026-10-03T16:29:42.317Z"
+last_activity: 2026-10-03
+last_activity_desc: Phase 21 complete, transitioned to Phase 22
+state_head: 0d7d3eb264707c103fdfd6898e8810d9b5196e00
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 38
   completed_plans: 38
-  percent: 60
+  percent: 80
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 ## Current Position
 
-Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 12 of 12
-Status: Phase complete — ready for verification
-Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
+Phase: 22 — Minimum Rest
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-03 — Phase 21 complete, transitioned to Phase 22
 
 ## Milestone v1.3 Outcome
 
@@ -372,7 +372,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-10-03T11:59:38.665Z
-Stopped at: Completed 21-12-PLAN.md
+Stopped at: Phase 21 complete, ready to plan Phase 22
 Resume file: None
 
 ## Operator Next Steps

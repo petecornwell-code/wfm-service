@@ -26,7 +26,7 @@ than four captured live desks standing in for both jobs at once.
 - [x] **Phase 18: Business-Day Foundation & Guards** - Guard tests and constructed regression scenarios exist and pass green against today's `00:00`-only behaviour; desk day-start and timeslot business-date schema lands gated to a provable no-op
 - [x] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change (completed 2026-10-01)
 - [x] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved (completed 2026-10-02)
-- [ ] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block
+- [x] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block (completed 2026-10-03)
 - [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
 
 ### Phase 18: Business-Day Foundation & Guards
@@ -311,30 +311,30 @@ built one. The real fragmentation lived on the per-date slot grids — the Excel
 (fixed by plan 21-07) and the schedule grid (fixed by plan 21-10) — both now ordered from the
 desk's day start. Criterion 4 above restates what is actually true and verifiable rather than what
 was originally assumed.
-**Plans**: 12 plans
+**Plans**: 12/12 plans complete
 Plans:
 
 **Wave 1**
-- [ ] 21-01-PLAN.md — Tracer: an overnight template saves on a 21:00-anchored desk; the refusal on a 00:00 desk names the anchor; a 16-hour span cap (D-02, D-08, OVNT-01 registry flip)
-- [ ] 21-02-PLAN.md — Desk day-start reachability, backend: the stranded-template refusal, the non-blocking tiling advisory, the permanent-lock disclosure fields (D-03, D-04, D-05)
-- [ ] 21-03-PLAN.md — Additive-first: structured business/calendar date and times on the violation DTO, and the export's parser moved onto them (D-14, first half)
-- [ ] 21-04-PLAN.md — Scope decision + outcome: which date system the two Erlang calculators' clear-before-insert range means (checkpoint, surfaced by 20-CONTEXT and this phase's research)
+- [x] 21-01-PLAN.md — Tracer: an overnight template saves on a 21:00-anchored desk; the refusal on a 00:00 desk names the anchor; a 16-hour span cap (D-02, D-08, OVNT-01 registry flip)
+- [x] 21-02-PLAN.md — Desk day-start reachability, backend: the stranded-template refusal, the non-blocking tiling advisory, the permanent-lock disclosure fields (D-03, D-04, D-05)
+- [x] 21-03-PLAN.md — Additive-first: structured business/calendar date and times on the violation DTO, and the export's parser moved onto them (D-14, first half)
+- [x] 21-04-PLAN.md — Scope decision + outcome: which date system the two Erlang calculators' clear-before-insert range means (checkpoint, surfaced by 20-CONTEXT and this phase's research)
 
 **Wave 2**
-- [ ] 21-05-PLAN.md — OVNT-05: one operating-window containment predicate shared by the save path, the library report, the mode gate and candidate generation (D-06, D-07, D-09, D-10, P-03)
-- [ ] 21-06-PLAN.md — The genuinely midnight-crossing fixture, the solver's anchored scan ranges, and the last two registry flips (D-18, D-19, P-02)
-- [ ] 21-07-PLAN.md — Excel: the spelled-out overnight roster cell with its vertical legend, and anchored allocation columns and rows (D-12, D-13, P-01)
-- [ ] 21-08-PLAN.md — The editable day-start control, its locked render, and every refusal surfaced as the server's own message (D-01, D-04, D-05)
-- [ ] 21-09-PLAN.md — Contracts: the schedule's anchor on both payloads, and a new branded-offset frontend day-window module with no consumers yet (D-15, first half)
+- [x] 21-05-PLAN.md — OVNT-05: one operating-window containment predicate shared by the save path, the library report, the mode gate and candidate generation (D-06, D-07, D-09, D-10, P-03)
+- [x] 21-06-PLAN.md — The genuinely midnight-crossing fixture, the solver's anchored scan ranges, and the last two registry flips (D-18, D-19, P-02)
+- [x] 21-07-PLAN.md — Excel: the spelled-out overnight roster cell with its vertical legend, and anchored allocation columns and rows (D-12, D-13, P-01)
+- [x] 21-08-PLAN.md — The editable day-start control, its locked render, and every refusal surfaced as the server's own message (D-01, D-04, D-05)
+- [x] 21-09-PLAN.md — Contracts: the schedule's anchor on both payloads, and a new branded-offset frontend day-window module with no consumers yet (D-15, first half)
 
 **Wave 3**
-- [ ] 21-10-PLAN.md — The grid converted onto anchored time: all seven defect sites in both render branches, business-day span disclosure, structured unfilled-seat attribution (D-15, D-16, D-17)
+- [x] 21-10-PLAN.md — The grid converted onto anchored time: all seven defect sites in both render branches, business-day span disclosure, structured unfilled-seat attribution (D-15, D-16, D-17)
 
 **Wave 4**
-- [ ] 21-11-PLAN.md — OVNT-07's label text, now that nothing parses it, plus the ROADMAP and REQUIREMENTS amendments for the void continuation-indicator premise (D-11, D-14, second half)
+- [x] 21-11-PLAN.md — OVNT-07's label text, now that nothing parses it, plus the ROADMAP and REQUIREMENTS amendments for the void continuation-indicator premise (D-11, D-14, second half)
 
 **Wave 5**
-- [ ] 21-12-PLAN.md — Scope decision + outcome: nine build-allowlisted raw time comparisons whose "both operands are start times" justification does not hold at a non-midnight anchor (checkpoint, P-04)
+- [x] 21-12-PLAN.md — Scope decision + outcome: nine build-allowlisted raw time comparisons whose "both operands are start times" justification does not hold at a non-midnight anchor (checkpoint, P-04)
 
 **UI hint**: yes
 

@@ -121,8 +121,8 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **OVNT-03**: A day-off or PTO marking on the business day an overnight shift starts prevents that shift being assigned
 - [x] **OVNT-04**: An overnight shift consumes the contracted hours of the weekday it starts on, not split across two
 - [x] **OVNT-05**: Shift library validation refuses an overnight template whose envelope does not fit inside its desk's business day
-- [ ] **OVNT-06**: The Excel Allocation sheet and the schedule UI grid — the per-date slot surfaces, ordered from the desk's day start — show an overnight shift as one continuous block, never two fragments; the business-day-keyed Roster sheet and schedule grid carry the shift's calendar-span disclosure instead of a continuation indicator, since an overnight shift there already occupies exactly one business-day cell
-- [ ] **OVNT-07**: An overnight shift is labelled with the calendar dates it spans wherever it is displayed, so a business-day-anchored surface still tells the operator the shift runs into the next calendar day
+- [x] **OVNT-06**: The Excel Allocation sheet and the schedule UI grid — the per-date slot surfaces, ordered from the desk's day start — show an overnight shift as one continuous block, never two fragments; the business-day-keyed Roster sheet and schedule grid carry the shift's calendar-span disclosure instead of a continuation indicator, since an overnight shift there already occupies exactly one business-day cell
+- [x] **OVNT-07**: An overnight shift is labelled with the calendar dates it spans wherever it is displayed, so a business-day-anchored surface still tells the operator the shift runs into the next calendar day
 
 ### Solver Correctness (SOLV)
 
@@ -217,8 +217,8 @@ Populated during roadmap creation.
 | OVNT-03 | Phase 21 | Complete |
 | OVNT-04 | Phase 21 | Complete |
 | OVNT-05 | Phase 21 | Complete |
-| OVNT-06 | Phase 21 | Pending |
-| OVNT-07 | Phase 21 | Pending |
+| OVNT-06 | Phase 21 | Complete |
+| OVNT-07 | Phase 21 | Complete |
 | SOLV-01 | Phase 20 | Complete |
 | SOLV-02 | Phase 20 | Complete |
 | SOLV-03 | Phase 20 | Complete |
