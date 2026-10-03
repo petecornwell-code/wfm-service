@@ -49,8 +49,13 @@ class MidnightBoundaryScenarioRegistryTest {
     /** The exact number of scenarios whose property cannot exist today -- BDAY-06's original three
      *  (plan 20-05 removed SOLV-04's fourth, the SLOT-mode scenario plan 20-04 added, in the same
      *  commit that flipped its assertion; plan 21-01 removed OVNT-01's entry, the last of the
-     *  original three, in the same commit that flipped its assertion). */
-    private static final int EXPECTED_REGISTRY_SIZE = 2;
+     *  original three, in the same commit that flipped its assertion; plan 21-06 removed the
+     *  remaining two -- OVNT-03's and OVNT-04's -- in the same commit that flipped each one's
+     *  assertion). Zero is the real terminal state, not an oversight: a future requirement that
+     *  genuinely needs this mechanism again adds both a marked method and a registry row at once,
+     *  and {@link #markedMethodSet_equalsTheParsedRegistry_inBothDirections()} and this count would
+     *  both catch a mismatch immediately. */
+    private static final int EXPECTED_REGISTRY_SIZE = 0;
 
     /**
      * The milestone's own requirement IDs a {@link AssertsTodaysBehaviour#flippedBy()} value may
@@ -184,15 +189,18 @@ class MidnightBoundaryScenarioRegistryTest {
 
     // --- resource parsing (same idiom as the other structural guards in this codebase) ---
 
+    /**
+     * Returns the fenced registry entries, empty or not. An empty result is now the deliberate
+     * terminal state (plan 21-06 discharged the last two rows) rather than a parse accident: a
+     * genuine accident -- the heading moving, or the fence itself disappearing -- still fails
+     * loudly inside {@link #parseFencedBlock}, which this method does not shadow. {@link
+     * #EXPECTED_REGISTRY_SIZE} and {@link #markedMethodSet_equalsTheParsedRegistry_inBothDirections()}
+     * are the live guards against a silently-wrong count from here on, which is why the
+     * vacuous-emptiness guard this method used to carry was removed rather than widened --
+     * keeping it would fail the suite on its own correctly-reached zero.
+     */
     private static Set<String> parseRegistry() throws IOException {
-        Set<String> entries = parseFencedBlock(readResource(), REGISTRY_HEADING);
-        if (entries.isEmpty()) {
-            throw new IllegalStateException(
-                    RESOURCE + " parsed to an EMPTY registry under '" + REGISTRY_HEADING
-                            + "'. An empty expected set would make the set-equality assertion "
-                            + "vacuously satisfiable.");
-        }
-        return entries;
+        return parseFencedBlock(readResource(), REGISTRY_HEADING);
     }
 
     private static String readResource() throws IOException {

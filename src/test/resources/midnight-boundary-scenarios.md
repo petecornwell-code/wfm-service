@@ -59,13 +59,14 @@ envelope crossing the day anchor
 
 ## Scenarios asserting today's behaviour
 
-Two scenarios in this suite assert what this codebase does TODAY at a property whose correct
-behaviour has not shipped yet. Each is marked `@AssertsTodaysBehaviour` on its test method
-(`com.wfm.support.AssertsTodaysBehaviour`); `MidnightBoundaryScenarioRegistryTest` asserts the
-marked-method set and the fenced registry below are set-equal in BOTH directions. A later phase
-implementing one of these requirements must remove the corresponding entry below in the SAME
-change that flips the assertion it names -- leaving a stale entry here after the method it
-described was deleted or rewritten fails the build exactly as an unregistered new mark does.
+This registry is now EMPTY. Every scenario that once asserted what this codebase did TODAY at a
+property whose correct behaviour had not shipped yet has had its assertion flipped, with its
+registry row removed in the SAME change -- never left stale, never flipped without removal. Each
+is marked `@AssertsTodaysBehaviour` on its test method
+(`com.wfm.support.AssertsTodaysBehaviour`) only while its row still stands here;
+`MidnightBoundaryScenarioRegistryTest` asserts the marked-method set and the fenced registry below
+are set-equal in BOTH directions, so a future scenario that genuinely needs this mechanism again
+adds both at once.
 
 (SOLV-04's own entry -- "A SLOT-mode cross-midnight stretch charged to the wrong calendar dates" --
 was removed here in the SAME commit that flipped its assertion, plan 20-05: the join now resolves
@@ -76,16 +77,21 @@ removed here in the SAME commit that flipped its assertion, plan 21-01: the save
 an overnight envelope on an anchored desk, so
 `MidnightBoundaryPropertyTest.ShiftCrossingMidnight#durationMinutesThrowsAndTheSavePathRefuses` was
 rewritten to `#anchoredDeskAcceptsTheCrossingEnvelope` and both its marker and this registry row are
-gone, not merely updated. The before-picture is preserved in plan 21-01's SUMMARY.)
-
-| Scenario | Flipped by | What it flips to |
-|---|---|---|
-| A day-off record's attribution to a shift's calendar date | OVNT-03 | Attribution follows the business day a midnight-spanning shift starts on, not each individually stamped calendar date |
-| Contracted hours consumed by the starting weekday only | OVNT-04 | The whole stretch of a midnight-spanning shift consumes only the starting weekday's contracted-hours row |
+gone, not merely updated. The before-picture is preserved in plan 21-01's SUMMARY. The remaining
+two entries -- "A day-off record's attribution to a shift's calendar date" (OVNT-03) and
+"Contracted hours consumed by the starting weekday only" (OVNT-04) -- were both discharged here, in
+plan 21-06, in the SAME commit that rewrote the assertions each one named:
+`MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly` became
+`DayOffAttributesToStartingBusinessDate#dayOffOnStartingBusinessDate_blocksEverySeatIncludingTheFollowingCalendarDate`,
+proving the day-off join's existing business-date attribution against a genuinely
+midnight-crossing agent-day rather than against a shift whose seats happened to share one
+calendar date; `MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows`
+became `#bothCalendarDatesResolveToOneBusinessDate_oneWeekdaysHoursCoverTheWholeStretch`, proving
+that both calendar dates of a midnight-spanning stretch resolve to the same business date and that
+`resolveEffectiveHours` -- itself unchanged -- is handed that one date for the whole stretch. Both
+before-pictures are preserved in plan 21-06's SUMMARY.)
 
 ### Scenarios asserting today's behaviour
 
 ```
-com.wfm.solver.MidnightBoundaryRegressionTest.PtoOnAdjacentCalendarDate#attributionIsPerCalendarDateOnly -> OVNT-03
-com.wfm.service.MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly#twoCalendarDatesDrawFromTwoIndependentWeekdayRows -> OVNT-04
 ```

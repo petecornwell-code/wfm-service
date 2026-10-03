@@ -8,7 +8,6 @@ import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ShiftTemplateRepository;
-import com.wfm.support.AssertsTodaysBehaviour;
 import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.AfterEach;
@@ -178,37 +177,60 @@ class MidnightBoundaryPropertyTest {
         }
     }
 
+    /**
+     * OVNT-04 (plan 21-06, Task 3): {@code SolverService.resolveEffectiveHours} is unchanged --
+     * it correctly looks up only the {@code DayOfWeek} of the {@code LocalDate} it is handed. The
+     * property this task proves is WHICH date a midnight-spanning stretch hands it: one business
+     * date for the whole stretch, derived through {@code DayWindow.businessDateOf}, never a
+     * second independent row for the calendar date the stretch runs into.
+     */
     @Nested
-    @DisplayName("contracted hours consumed by the starting weekday only")
+    @DisplayName("contracted hours consumed by the starting business date's weekday only")
     class ContractedHoursStartingWeekdayOnly {
 
         @Test
-        @AssertsTodaysBehaviour(flippedBy = "OVNT-04",
-                to = "the whole stretch of a midnight-spanning shift consumes only the starting "
-                        + "weekday's contracted-hours row, not a second row for the calendar date "
-                        + "it runs into")
-        @DisplayName("today: a would-be midnight-spanning stretch's two calendar dates each draw from their own independent weekday row")
-        void twoCalendarDatesDrawFromTwoIndependentWeekdayRows() {
+        @DisplayName("a midnight-spanning stretch's two calendar dates resolve to one business date, whose weekday's hours cover the whole stretch")
+        void bothCalendarDatesResolveToOneBusinessDate_oneWeekdaysHoursCoverTheWholeStretch() {
+            LocalTime anchor = LocalTime.of(21, 0);
             LocalDate monday = LocalDate.of(2026, 1, 5);
             LocalDate tuesday = monday.plusDays(1);
             assertThat(monday.getDayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
             assertThat(tuesday.getDayOfWeek()).isEqualTo(DayOfWeek.TUESDAY);
 
+            // Argued: at a 21:00 anchor, calendar Monday at 22:00 and calendar Tuesday at 02:00
+            // are the two halves of the SAME stretch -- DayWindow.businessDateOf derives the SAME
+            // business date (Monday) for both, since 02:00 on Tuesday falls before the anchor and
+            // therefore belongs to the PREVIOUS calendar date's business day.
+            LocalDate businessDateAt22 = DayWindow.businessDateOf(anchor, monday, LocalTime.of(22, 0));
+            LocalDate businessDateAt02 = DayWindow.businessDateOf(anchor, tuesday, LocalTime.of(2, 0));
+            assertThat(businessDateAt22)
+                    .as("22:00 on the starting calendar date must derive to that date's own business date")
+                    .isEqualTo(monday);
+            assertThat(businessDateAt02)
+                    .as("02:00 on the FOLLOWING calendar date must derive to the SAME business "
+                            + "date as 22:00 the night before, never its own calendar date's "
+                            + "business day")
+                    .isEqualTo(monday);
+            assertThat(businessDateAt02)
+                    .as("both halves of the stretch must resolve to the identical business date")
+                    .isEqualTo(businessDateAt22);
+
+            // Argued: resolveEffectiveHours is unchanged -- the property that changed is WHICH
+            // date it is handed, one business date for the whole stretch, never the following
+            // calendar date's own independent weekday row.
             Map<DayOfWeek, BigDecimal> dayHoursMap = Map.of(
                     DayOfWeek.MONDAY, new BigDecimal("8.00"),
                     DayOfWeek.TUESDAY, new BigDecimal("4.00"));
             BigDecimal scheduleDefault = new BigDecimal("8.00");
+            BigDecimal resolvedHours = SolverService.resolveEffectiveHours(
+                    Map.of(), dayHoursMap, businessDateAt22, scheduleDefault);
 
-            // Argued: resolveEffectiveHours takes no notion of "the business day a stretch started
-            // on" -- it looks up ONLY the DayOfWeek of the LocalDate it is given, independently,
-            // every time. A midnight-spanning stretch's two calendar dates therefore draw from two
-            // independent weekday rows today, which is the property OVNT-04 changes.
-            BigDecimal mondayHours = SolverService.resolveEffectiveHours(Map.of(), dayHoursMap, monday, scheduleDefault);
-            BigDecimal tuesdayHours = SolverService.resolveEffectiveHours(Map.of(), dayHoursMap, tuesday, scheduleDefault);
-
-            assertThat(mondayHours).isEqualByComparingTo(new BigDecimal("8.00"));
-            assertThat(tuesdayHours).isEqualByComparingTo(new BigDecimal("4.00"));
-            assertThat(mondayHours).isNotEqualByComparingTo(tuesdayHours);
+            assertThat(resolvedHours)
+                    .as("the resolved hours must be the STARTING weekday's row (Monday's 8.00)")
+                    .isEqualByComparingTo(new BigDecimal("8.00"));
+            assertThat(resolvedHours)
+                    .as("never the FOLLOWING weekday's row (Tuesday's 4.00)")
+                    .isNotEqualByComparingTo(new BigDecimal("4.00"));
         }
     }
 

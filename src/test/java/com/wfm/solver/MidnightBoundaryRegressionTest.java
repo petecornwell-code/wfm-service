@@ -12,7 +12,6 @@ import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftBandPair;
 import com.wfm.model.Timeslot;
-import com.wfm.support.AssertsTodaysBehaviour;
 import com.wfm.util.DayWindow;
 
 import org.junit.jupiter.api.DisplayName;
@@ -234,33 +233,46 @@ class MidnightBoundaryRegressionTest {
         }
     }
 
+    /**
+     * OVNT-03 (plan 21-06, Task 3): the day-off join already resolves business date
+     * ({@code ScheduleConstraintProvider.agentDayOff} joins on
+     * {@code a.getTimeslot().getBusinessDate()}, not calendar date) -- this class proves that
+     * directly against a genuinely midnight-crossing agent-day rather than against a shift whose
+     * seats happen to share one calendar date. This is proof work, not a flip of solver
+     * behaviour: {@code agentDayOff}'s join itself is unchanged by this task.
+     */
     @Nested
-    @DisplayName("PTO on the starting versus the following calendar day")
-    class PtoOnAdjacentCalendarDate {
+    @DisplayName("a day-off record attributes to the business day a midnight-spanning shift starts on")
+    class DayOffAttributesToStartingBusinessDate {
 
         @Test
-        @AssertsTodaysBehaviour(flippedBy = "OVNT-03",
-                to = "a day-off record attributes to the business day a midnight-spanning shift "
-                        + "starts on, not to each individually stamped calendar date")
-        @DisplayName("today: attribution is per calendar date only, not per business day")
-        void attributionIsPerCalendarDateOnly() {
+        @DisplayName("blocks every seat of the shift, including the ones stamped with the following calendar date")
+        void dayOffOnStartingBusinessDate_blocksEverySeatIncludingTheFollowingCalendarDate() {
             SolutionManager<Schedule, HardSoftScore> solutionManager = newSolutionManager();
 
-            // Argued: all three of this agent-day's seats (21:00-22:00, 22:00-23:00, 23:00-00:00)
-            // are stamped with the SAME calendar date the day-off record itself is dated, so all
-            // three (agent, date) joins against that one AgentDayOff row match -- three tuples.
-            Schedule onStartingDate = MidnightBoundaryFixture.ptoOnShiftStartingDateScenario();
-            assertThat(requireConstraint(solutionManager, onStartingDate, "Agent day off")
+            // Argued: every one of this agent-day's eight seats (22:00-23:00 through 05:00-06:00)
+            // resolves to the SAME business date (the first two slots carry calendar date
+            // BASE_DATE, the remaining six carry BASE_DATE.plusDays(1), but all eight share one
+            // business date, BASE_DATE) -- a day-off record dated that one business date matches
+            // every seat via the business-date join, including the six stamped with the
+            // FOLLOWING calendar date.
+            Schedule onStartingBusinessDate =
+                    MidnightBoundaryFixture.dayOffOnCrossingShiftStartingBusinessDateScenario();
+            assertThat(requireConstraint(solutionManager, onStartingBusinessDate, "Agent day off")
                     .getConstraintMatchCount())
-                    .isEqualTo(3);
+                    .as("a day-off on the shift's starting business date must block every one of "
+                            + "its eight seats, including the six stamped with the following "
+                            + "calendar date")
+                    .isEqualTo(8);
 
-            // Argued: every seat is stamped with the shift's own starting calendar date, never the
-            // following one -- today's attribution is per calendar date only, so a day-off record
-            // dated the day after never reaches a seat dated the day before, no matter how close to
-            // midnight that seat's times run. This is the property OVNT-03 changes.
-            Schedule onFollowingDate = MidnightBoundaryFixture.ptoOnFollowingDateScenario();
-            assertThat(requireConstraint(solutionManager, onFollowingDate, "Agent day off")
+            // Argued, the complement that keeps the above from passing for the wrong reason: a
+            // day-off record dated the NEXT business date matches none of the same eight seats --
+            // a join that matched every date would satisfy the first assertion too.
+            Schedule onFollowingBusinessDate =
+                    MidnightBoundaryFixture.dayOffOnCrossingShiftFollowingBusinessDateScenario();
+            assertThat(requireConstraint(solutionManager, onFollowingBusinessDate, "Agent day off")
                     .getConstraintMatchCount())
+                    .as("a day-off on the NEXT business date must match none of this agent-day's seats")
                     .isEqualTo(0);
         }
     }

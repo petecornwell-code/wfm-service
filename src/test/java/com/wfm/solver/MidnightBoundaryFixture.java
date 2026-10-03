@@ -130,6 +130,8 @@ final class MidnightBoundaryFixture {
         scenarios.add(ninePmBreakBandFlushToEnvelopeEndScenario());
         scenarios.add(ninePmOvernightContiguityScenario());
         scenarios.add(ninePmShiftCrossingMidnight());
+        scenarios.add(dayOffOnCrossingShiftStartingBusinessDateScenario());
+        scenarios.add(dayOffOnCrossingShiftFollowingBusinessDateScenario());
         return List.copyOf(scenarios);
     }
 
@@ -684,6 +686,84 @@ final class MidnightBoundaryFixture {
         schedule.setAssignments(assignments);
         schedule.setShiftBandPairs(pairs);
         schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
+
+        pinPlanningVariables(schedule, NINE_PM_WINDOW);
+        return schedule;
+    }
+
+    /**
+     * {@link #ninePmShiftCrossingMidnight()}'s geometry (a 21:00-anchored, genuinely
+     * midnight-crossing 22:00-06:00 envelope, eight hourly seats spanning two calendar dates and
+     * one business date), with a day-off record on that one business date -- OVNT-03's proof that
+     * the day-off join attributes to the business day a midnight-spanning shift STARTS on,
+     * including the seats stamped with the FOLLOWING calendar date. No break band and no gap this
+     * time: every one of the eight slots is a plain demanded, assigned seat, since this scenario
+     * isolates the day-off join alone, not contiguity.
+     */
+    static Schedule dayOffOnCrossingShiftStartingBusinessDateScenario() {
+        return dayOffCrossingMidnightScenario(BASE_DATE);
+    }
+
+    /**
+     * The complement of {@link #dayOffOnCrossingShiftStartingBusinessDateScenario()}: the same
+     * eight-seat agent-day, with the day-off record moved to the NEXT business date instead. Kept
+     * alongside the first so the starting-date assertion cannot pass for the wrong reason -- a join
+     * that matched every date would satisfy the first scenario too.
+     */
+    static Schedule dayOffOnCrossingShiftFollowingBusinessDateScenario() {
+        return dayOffCrossingMidnightScenario(BASE_DATE.plusDays(1));
+    }
+
+    private static Schedule dayOffCrossingMidnightScenario(LocalDate dayOffDate) {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        Specialization spec = specialization(ids, deskId, "Support");
+        Agent agentEntity = agent(ids, deskId, "A-1", "Agent-1", spec);
+
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate businessDate = BASE_DATE;
+        LocalTime start = LocalTime.of(22, 0);
+        LocalTime end = LocalTime.of(6, 0);
+
+        List<Timeslot> timeslots = new ArrayList<>();
+        for (int m = NINE_PM_WINDOW.anchoredStartMinute(start);
+                m < NINE_PM_WINDOW.anchoredEndMinute(end); m += INCREMENT_MINUTES) {
+            LocalDate slotCalendarDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, m);
+            timeslots.add(timeslot(ids, deskId, scheduleId, slotCalendarDate,
+                    NINE_PM_WINDOW.anchoredToLocalTime(m), NINE_PM_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES),
+                    dayStart));
+        }
+
+        BigDecimal contractedHours = new BigDecimal("8.00");
+        AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), businessDate, contractedHours, dayStart);
+
+        List<StaffingRequirement> staffingReqs = new ArrayList<>();
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : timeslots) {
+            staffingReqs.add(staffingRequirement(ids, deskId, scheduleId, ts, spec, 1));
+            assignments.add(seat(ids, deskId, scheduleId, ts, spec));
+        }
+        List<TimeslotDemandConfig> demandConfigs = timeslots.stream()
+                .map(ts -> new TimeslotDemandConfig(ts, 1))
+                .toList();
+
+        AgentDayOff dayOff = new AgentDayOff();
+        dayOff.setId(nextId(ids));
+        dayOff.setTenantId(TENANT);
+        dayOff.setAgent(agentEntity);
+        dayOff.setDate(dayOffDate);
+        dayOff.setType(DayOffType.PTO);
+
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, businessDate, businessDate, dayStart);
+        schedule.setSpecializations(List.of(spec));
+        schedule.setAgents(List.of(agentEntity));
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setAgentDayConfigs(List.of(dayConfig));
+        schedule.setTimeslotDemandConfigs(demandConfigs);
+        schedule.setAssignments(assignments);
+        schedule.setAgentDaysOff(List.of(dayOff));
 
         pinPlanningVariables(schedule, NINE_PM_WINDOW);
         return schedule;
