@@ -13,6 +13,7 @@ export default function DeskManagement() {
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editHours, setEditHours] = useState(8)
+  const [editDayStart, setEditDayStart] = useState('')
 
   useEffect(() => {
     desks.list()
@@ -52,6 +53,22 @@ export default function DeskManagement() {
     setEditName(desk.name)
     setEditDescription(desk.description || '')
     setEditHours(desk.defaultContractedHoursPerDay)
+    setEditDayStart(desk.dayStart)
+  }
+
+  // The locked disclosure (OVNT-01/D-04) treats the schedule id and the period as independent
+  // halves: a complete period (start and end both present) renders as its own parenthetical, an
+  // id renders on its own when present, and neither is ever shown as a dangling fragment (a lone
+  // date or an empty bracket pair). Absent both, the bare sentence stands alone.
+  const dayStartLockExplanation = (desk: Desk): string => {
+    const base = 'Locked — accepted schedule blocks day start.'
+    const id = desk.dayStartLockedByScheduleId
+    const hasPeriod = Boolean(desk.dayStartLockedPeriodStart && desk.dayStartLockedPeriodEnd)
+    const period = hasPeriod ? `(${desk.dayStartLockedPeriodStart}–${desk.dayStartLockedPeriodEnd})` : ''
+    if (id && hasPeriod) return `${base} ${id} ${period}.`
+    if (id) return `${base} ${id}.`
+    if (hasPeriod) return `${base} ${period}.`
+    return base
   }
 
   const handleUpdate = async () => {
@@ -105,13 +122,30 @@ export default function DeskManagement() {
                       cell keeps the row's column count equal across edit/display so the table does not
                       shift while a row is being edited. */}
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
-                  {/* Read-only in both branches for the same reason Scheduling Mode is above — the
-                      backend (SOLV-01) accepts any 15-minute boundary, but an editable control
-                      here needs a time picker plus error surfacing for two distinct refusals (the
-                      15-minute-boundary refusal and the unconditional refusal when an accepted
-                      schedule exists), which is operator-facing work belonging with the
-                      overnight-template phase. */}
-                  <td>{desk.dayStart} (15-minute boundaries accepted)</td>
+                  {/* The time input steps in 15-minute increments (OVNT-01) because that is the
+                      only boundary the backend's day-start save accepts — stepping the picker
+                      keeps an operator from producing a value it will refuse. A desk permanently
+                      locked by an ACCEPTED schedule (OVNT-01/D-04) renders disabled instead, with
+                      the blocking schedule named beneath it, because the constraint cannot be
+                      worked around from this page. */}
+                  <td>
+                    {desk.dayStartLockedByScheduleId ? (
+                      <>
+                        <input type="time" step="900" value={desk.dayStart} readOnly disabled style={{ width: '100%' }} />
+                        <div style={{ color: '#6b7280', fontSize: '13px', fontWeight: 400, marginTop: '2px' }}>
+                          {dayStartLockExplanation(desk)}
+                        </div>
+                      </>
+                    ) : (
+                      <input
+                        type="time"
+                        step="900"
+                        value={editDayStart}
+                        onChange={e => setEditDayStart(e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                    )}
+                  </td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button className="primary" onClick={handleUpdate}>Save</button>
                     <button onClick={() => setEditingId(null)}>Cancel</button>
@@ -123,13 +157,18 @@ export default function DeskManagement() {
                   <td>{desk.description || '—'}</td>
                   <td>{desk.defaultContractedHoursPerDay}</td>
                   <td>{desk.schedulingMode === 'SHIFT' ? 'Shift' : 'Slot'}</td>
-                  {/* Read-only in both branches for the same reason Scheduling Mode is above — the
-                      backend (SOLV-01) accepts any 15-minute boundary, but an editable control
-                      here needs a time picker plus error surfacing for two distinct refusals (the
-                      15-minute-boundary refusal and the unconditional refusal when an accepted
-                      schedule exists), which is operator-facing work belonging with the
-                      overnight-template phase. */}
-                  <td>{desk.dayStart} (15-minute boundaries accepted)</td>
+                  {/* Plain-text read mode; the editable 15-minute-stepped picker (OVNT-01) only
+                      appears in edit mode below. When a schedule locks the day start (OVNT-01/D-04)
+                      the same disclosure renders here too, so an operator learns the constraint
+                      without entering edit mode. */}
+                  <td>
+                    {desk.dayStart}
+                    {desk.dayStartLockedByScheduleId && (
+                      <div style={{ color: '#6b7280', fontSize: '13px', fontWeight: 400, marginTop: '2px' }}>
+                        {dayStartLockExplanation(desk)}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button onClick={() => startEdit(desk)}>Edit</button>
                     <button className="danger" onClick={() => handleDelete(desk.id)}>Delete</button>
