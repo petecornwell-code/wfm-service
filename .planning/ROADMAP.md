@@ -369,7 +369,32 @@ the pre-solve refusal composes with a desk whose shift library structurally cann
 violation for some agent — distinct from the ENVL-07 seat-supply-gate precedent's simpler case. If a
 horizon-edge lookback query is built, bound it to the maximum configured rest period across all desks
 and batch it as one query, not N+1 per agent.
-**Plans**: TBD
+
+**Planner note (2026-10-03):** a phase split was evaluated explicitly, as 22-CONTEXT.md and
+22-RESEARCH.md both asked, and **not** recommended. No split boundary preserves requirement
+acceptance: REST-02 and REST-03 are both worded as "unless waived" / "a waived occurrence does not
+trigger", so splitting REST-06 out would ship two constraints and a refusal that are then retrofitted
+with the waiver filter — re-opening the exact drift D-08's shared predicate and guard exist to
+prevent. Splitting the UI out breaks ROADMAP criterion 1 ("via the desk configuration UI") and D-15
+across a phase boundary. The bound lookback is one business date, not one maximum-rest window, because
+D-05's sub-24-hour cap makes a single step provably sufficient — strictly tighter than the instruction
+above, and satisfying it. Ten plans across seven waves is in line with this project's own precedent
+(Phases 20 and 21 ran to twelve each, Phase 15 to twenty).
+
+**Plans**: 10 plans in 7 waves
+
+Plans:
+- [ ] 22-01-PLAN.md — Tracer: a SHIFT desk's minimum rest is a hard violation end to end, plus the operator PUT endpoint (REST-01, REST-02, REST-04)
+- [ ] 22-02-PLAN.md — SLOT-mode rest enforcement over the whole assigned span, with the compliant-break-gap regression proof (REST-02, REST-04)
+- [ ] 22-03-PLAN.md — The `agent_rest_waiver` table, its service and its three endpoints beside the Agent Exceptions endpoints (REST-06)
+- [ ] 22-04-PLAN.md — The Min Rest (hrs) column on the desk configuration table, plus its client contract (REST-01, REST-04)
+- [ ] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
+- [ ] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
+- [ ] 22-07-PLAN.md — Pre-solve refusal for the structurally unavoidable case, both modes, naming agent and both shifts (REST-03)
+- [ ] 22-08-PLAN.md — Applied and unused waiver disclosure on the detail response, plus both counts on the summary (REST-07)
+- [ ] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
+- [ ] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
+
 **UI hint**: yes
 
 <details>
