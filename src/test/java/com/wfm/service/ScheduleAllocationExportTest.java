@@ -505,4 +505,109 @@ class ScheduleAllocationExportTest {
         }
     }
 
+    /**
+     * Plan 21-07 Task 2 (OVNT-06/D-13) — slot columns ordered by offset from the desk's day
+     * start instead of by clock, so an overnight shift renders as one contiguous run of filled
+     * cells rather than two runs at opposite ends of the row. At a {@code 00:00} anchor the
+     * anchored minute equals the clock minute, so {@link #dayOne()}'s pre-existing column
+     * assertions (built on the class-level {@code detail()} fixture) are the byte-identical
+     * no-op regression surface and are unmodified by this task.
+     */
+    @Nested
+    @DisplayName("slot columns ordered from the desk's day start (OVNT-06/D-13)")
+    class AnchoredSlotColumnOrder {
+
+        private static final LocalTime NIGHT_ANCHOR = LocalTime.of(21, 0);
+
+        private byte[] nightDeskWorkbook(List<AgentScheduleEntry> entries,
+                                          List<ConstraintViolationEntry> violations) throws IOException {
+            ScheduleDetailResponse d = new ScheduleDetailResponse();
+            d.setDayStart(NIGHT_ANCHOR);
+            d.setDeskName("Night Desk");
+            d.setStatus("COMPLETED");
+            d.setPeriodStartDate(DAY_ONE);
+            d.setPeriodEndDate(DAY_ONE);
+            d.setIncrementMinutes(60);
+            d.setAgentSchedule(entries);
+            if (violations != null) {
+                d.setConstraintViolations(violations);
+            }
+            return new ScheduleExportService().exportToExcel(d);
+        }
+
+        @Test
+        @DisplayName("an overnight agent-day's slot columns run contiguously from 22:00 to 05:00")
+        void contiguousRunFromTheAnchor() throws IOException {
+            AgentScheduleEntry nyx = agent("Nyx", DAY_ONE, new BigDecimal("8.0"),
+                    List.of(seat(22, "PRIMARY"), seat(23, "PRIMARY"), seat(0, "PRIMARY"),
+                            seat(1, "PRIMARY"), seat(2, "PRIMARY"), seat(3, "PRIMARY"),
+                            seat(4, "PRIMARY"), seat(5, "PRIMARY")),
+                    List.of());
+
+            byte[] bytes = nightDeskWorkbook(List.of(nyx), null);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                Row header = wb.getSheet("Allocation " + DAY_ONE).getRow(0);
+                assertThat(List.of(
+                        header.getCell(3).getStringCellValue(), header.getCell(4).getStringCellValue(),
+                        header.getCell(5).getStringCellValue(), header.getCell(6).getStringCellValue(),
+                        header.getCell(7).getStringCellValue(), header.getCell(8).getStringCellValue(),
+                        header.getCell(9).getStringCellValue(), header.getCell(10).getStringCellValue()))
+                        .containsExactly("22:00", "23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00");
+            }
+        }
+
+        @Test
+        @DisplayName("the no-op control: a 00:00-anchored desk's slot-column sequence is unchanged")
+        void midnightAnchorSequenceUnchanged() {
+            Row header = dayOne().getRow(0);
+            // Same sequence as Layout.slotColumnsCoverTheDay — clock order, since anchored minute
+            // equals clock minute at a 00:00 anchor.
+            assertThat(List.of(
+                    header.getCell(3).getStringCellValue(), header.getCell(4).getStringCellValue(),
+                    header.getCell(5).getStringCellValue(), header.getCell(6).getStringCellValue(),
+                    header.getCell(7).getStringCellValue()))
+                    .containsExactly("19:00", "20:00", "21:00", "22:00", "23:00");
+        }
+
+        @Test
+        @DisplayName("column count is unchanged by the re-ordering")
+        void columnCountUnchanged() throws IOException {
+            AgentScheduleEntry nyx = agent("Nyx", DAY_ONE, new BigDecimal("8.0"),
+                    List.of(seat(22, "PRIMARY"), seat(23, "PRIMARY"), seat(0, "PRIMARY"),
+                            seat(1, "PRIMARY"), seat(2, "PRIMARY"), seat(3, "PRIMARY"),
+                            seat(4, "PRIMARY"), seat(5, "PRIMARY")),
+                    List.of());
+
+            byte[] bytes = nightDeskWorkbook(List.of(nyx), null);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                // SLOT_COL (3) + 8 distinct hours worked = 11 total columns, exactly as a
+                // clock-ordered build of the same fixture would also total.
+                assertThat((int) wb.getSheet("Allocation " + DAY_ONE).getRow(0).getLastCellNum())
+                        .isEqualTo(11);
+            }
+        }
+
+        @Test
+        @DisplayName("a slot carrying only a shortfall marker still appears, in its anchored position")
+        void shortfallOnlySlotKeepsItsAnchoredPosition() throws IOException {
+            AgentScheduleEntry nyx = agent("Nyx", DAY_ONE, new BigDecimal("1.0"),
+                    List.of(seat(22, "PRIMARY")), List.of());
+            List<ConstraintViolationEntry> violations = List.of(new ConstraintViolationEntry(
+                    "Unassigned assignment", "SOFT", new ScheduleSummary.ScoreDto(0, 1000), 1,
+                    new ScheduleSummary.ScoreDto(0, -1000),
+                    List.of(new ViolationDetail(null, null, UUID.randomUUID(),
+                            DAY_ONE, DAY_ONE, LocalTime.of(6, 0), LocalTime.of(7, 0),
+                            DAY_ONE + " 06:00-07:00", "unfilled"))));
+
+            byte[] bytes = nightDeskWorkbook(List.of(nyx), violations);
+            try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+                Row header = wb.getSheet("Allocation " + DAY_ONE).getRow(0);
+                // 22:00 (worked, anchored minute 60) precedes 06:00 (shortfall only, anchored
+                // minute 540) — anchored order, not clock order (which would put 06:00 first).
+                assertThat(header.getCell(3).getStringCellValue()).isEqualTo("22:00");
+                assertThat(header.getCell(4).getStringCellValue()).isEqualTo("06:00");
+            }
+        }
+    }
+
 }
