@@ -432,4 +432,116 @@ class MidnightBoundaryRegressionTest {
                     .isEqualTo(firstAgentOrder);
         }
     }
+
+    /**
+     * OVNT-02 (plan 21-06, Task 1): the genuinely midnight-crossing scenario Phase 18 deferred.
+     * Tests 1 and 2 are expected to FAIL until Task 2 anchors the three clock-ordered first/last
+     * reads in {@link ScheduleConstraintProvider} -- the proof that the fix is load-bearing, not
+     * decorative. Tests 3 and 4 are green throughout: Test 3 is a structural property this
+     * scenario's construction already satisfies, and Test 4 is the no-op control for Task 2's
+     * fix, asserted against pre-existing scenarios whose assigned starts never cross the anchor.
+     */
+    @Nested
+    @DisplayName("OVNT-02: a genuinely midnight-crossing shift (22:00-06:00 envelope at a 21:00 anchor)")
+    class ShiftCrossingMidnightContiguity {
+
+        private static final DayWindow NINE_PM_ANCHOR = DayWindow.anchoredAt(LocalTime.of(21, 0));
+
+        @Test
+        @DisplayName("the contiguity constraint reports the agent-day's one interior gap, not zero")
+        void reportsItsOneInteriorGap() {
+            Schedule schedule = MidnightBoundaryFixture.ninePmShiftCrossingMidnight();
+            SolutionManager<Schedule, HardSoftScore> solutionManager = newSolutionManager();
+
+            // Argued: this scenario is constructed with exactly one interior gap (03:00-04:00)
+            // strictly between its first worked seat (22:00) and its last (05:00), with one break
+            // band (00:00-01:00) explained by the assigned ShiftBandPair -- shiftWorkContiguity's
+            // break-aware path must therefore report exactly one hole. Today it reports zero: the
+            // worked set's clock-ordered first() (01:00, anchored minute 240) sorts AFTER its
+            // clock-ordered last() (23:00, anchored minute 120), so the scan range [240, 120) is
+            // empty and the gap at 03:00 is never visited (P-02).
+            assertThat(requireConstraint(solutionManager, schedule, "Shift work contiguity")
+                    .getConstraintMatchCount())
+                    .as("the agent-day's one genuine interior gap must be counted, not silently "
+                            + "scanned past by a scan range that collapsed to empty")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("the break-start scan locates the agent-day's break slot, not null")
+        void locatesItsBreakSlot() {
+            Schedule schedule = MidnightBoundaryFixture.ninePmShiftCrossingMidnight();
+            List<AgentAssignment> workedAssignments = schedule.getAssignments();
+
+            // Argued: the same clock-order collapse that zeroes the hole count above also empties
+            // findBreakStart's scan range -- today it returns null for an agent-day that
+            // genuinely has a break. The break band is anchored to start at 00:00 (template start
+            // 22:00, anchored minute 60, plus the band's 120-minute offset = anchored minute 180
+            // = 00:00) -- the FIRST unassigned slot the scan reaches once the range is anchored
+            // correctly, since its anchored minute (180) precedes the gap's (360).
+            assertThat(ScheduleConstraintProvider.findBreakStart(workedAssignments, 60, NINE_PM_ANCHOR))
+                    .as("the scan must locate the agent-day's genuine break slot, not return null "
+                            + "because its range collapsed to empty")
+                    .isEqualTo(LocalTime.MIDNIGHT);
+        }
+
+        @Test
+        @DisplayName("every one of its seats resolves to one business date, across two calendar dates")
+        void resolvesToOneBusinessDateAcrossTwoCalendarDates() {
+            Schedule schedule = MidnightBoundaryFixture.ninePmShiftCrossingMidnight();
+            LocalTime dayStart = LocalTime.of(21, 0);
+
+            // Derived through DayWindow.businessDateOf against each slot's own stored calendar
+            // date and start time -- never against the stored business-date column -- so this
+            // proves the DERIVATION, not merely that the fixture wrote a consistent value.
+            List<LocalDate> derivedBusinessDates = schedule.getTimeslots().stream()
+                    .map(ts -> DayWindow.businessDateOf(dayStart, ts.getDate(), ts.getStartTime()))
+                    .distinct()
+                    .toList();
+            assertThat(derivedBusinessDates)
+                    .as("every slot's DERIVED business date must be the same single date (OVNT-04)")
+                    .hasSize(1);
+
+            List<LocalDate> calendarDates = schedule.getTimeslots().stream()
+                    .map(Timeslot::getDate)
+                    .distinct()
+                    .toList();
+            assertThat(calendarDates)
+                    .as("the slots must genuinely span two distinct calendar dates")
+                    .hasSize(2);
+
+            assertThat(schedule.getTimeslots())
+                    .as("at least one slot must start exactly at calendar midnight -- the clock "
+                            + "time this scenario's siblings deliberately avoid")
+                    .anyMatch(ts -> ts.getStartTime().equals(LocalTime.MIDNIGHT));
+        }
+
+        @Test
+        @DisplayName("no-op control: every pre-existing scenario's per-constraint match counts are unchanged")
+        void preExistingScenarios_matchCountsUnchanged() {
+            SolutionManager<Schedule, HardSoftScore> solutionManager = newSolutionManager();
+
+            // None of these pre-existing scenarios' assigned starts cross the anchor the way this
+            // plan's new scenario deliberately does, so Task 2's anchored-min/max fix must leave
+            // every one of these byte-identical to its already-asserted value elsewhere in this
+            // file -- the regression surface for Task 2's production change.
+            assertThat(requireConstraint(solutionManager, MidnightBoundaryFixture.midnightCoverageScenario(),
+                    "Minimum staffing").getConstraintMatchCount())
+                    .isEqualTo(0);
+            assertThat(requireConstraint(solutionManager,
+                    MidnightBoundaryFixture.breakBandFlushToEnvelopeEndScenario(),
+                    ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME)
+                    .getConstraintMatchCount())
+                    .isEqualTo(0);
+            assertThat(requireConstraint(solutionManager,
+                    MidnightBoundaryFixture.ninePmBreakBandFlushToEnvelopeEndScenario(),
+                    ScheduleConstraintProvider.SHIFT_ENVELOPE_COMPLIANCE_CONSTRAINT_NAME)
+                    .getConstraintMatchCount())
+                    .isEqualTo(0);
+            assertThat(requireConstraint(solutionManager,
+                    MidnightBoundaryFixture.ninePmOvernightContiguityScenario(), "Shift work contiguity")
+                    .getConstraintMatchCount())
+                    .isEqualTo(1);
+        }
+    }
 }

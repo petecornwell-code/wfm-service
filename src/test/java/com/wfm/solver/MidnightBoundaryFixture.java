@@ -129,6 +129,7 @@ final class MidnightBoundaryFixture {
         scenarios.add(ninePmCoverageScenario());
         scenarios.add(ninePmBreakBandFlushToEnvelopeEndScenario());
         scenarios.add(ninePmOvernightContiguityScenario());
+        scenarios.add(ninePmShiftCrossingMidnight());
         return List.copyOf(scenarios);
     }
 
@@ -561,6 +562,105 @@ final class MidnightBoundaryFixture {
         Set<LocalTime> gapStarts = Set.of(LocalTime.of(4, 0), LocalTime.of(6, 0));
         List<Timeslot> workedSlots = timeslots.stream()
                 .filter(ts -> !gapStarts.contains(ts.getStartTime()))
+                .toList();
+
+        List<StaffingRequirement> staffingReqs = new ArrayList<>();
+        List<AgentAssignment> assignments = new ArrayList<>();
+        for (Timeslot ts : workedSlots) {
+            staffingReqs.add(staffingRequirement(ids, deskId, scheduleId, ts, spec, 1));
+            assignments.add(seat(ids, deskId, scheduleId, ts, spec));
+        }
+        List<TimeslotDemandConfig> demandConfigs = workedSlots.stream()
+                .map(ts -> new TimeslotDemandConfig(ts, 1))
+                .toList();
+
+        Schedule schedule = baseSchedule(ids, deskId, scheduleId, businessDate, businessDate, dayStart);
+        schedule.setSchedulingMode(SchedulingMode.SHIFT);
+        schedule.setSpecializations(List.of(spec));
+        schedule.setAgents(List.of(agentEntity));
+        schedule.setTimeslots(timeslots);
+        schedule.setStaffingRequirements(staffingReqs);
+        schedule.setAgentDayConfigs(List.of(dayConfig));
+        schedule.setTimeslotDemandConfigs(demandConfigs);
+        schedule.setAssignments(assignments);
+        schedule.setShiftBandPairs(pairs);
+        schedule.setShiftAssignments(new ArrayList<>(List.of(shiftRow)));
+
+        pinPlanningVariables(schedule, NINE_PM_WINDOW);
+        return schedule;
+    }
+
+    /**
+     * The genuinely midnight-crossing scenario Phase 18 deferred and this plan (21-06) builds
+     * (OVNT-02, OVNT-03, OVNT-04): a 21:00-anchored SHIFT-mode agent-day whose envelope runs
+     * 22:00-06:00 -- eight hourly slots whose clock times DO touch {@code 00:00}, unlike {@link
+     * #ninePmOvernightContiguityScenario}'s deliberately clock-{@code 00:00}-avoiding geometry
+     * (that scenario's own javadoc names this defect and hands it here).
+     *
+     * <p>The template carries one real break band (offset 120, duration 60 -- the break runs
+     * 00:00-01:00, the third generated slot) and the worked seats carry exactly one further
+     * interior gap at 03:00-04:00, strictly between the agent-day's first worked seat (22:00) and
+     * its last (05:00) -- the two properties this plan's contiguity and break-location assertions
+     * isolate. The break slot and the gap slot are the only two of the eight generated timeslots
+     * with no demand and no seat.
+     *
+     * <p>The first two generated slots (22:00-23:00, 23:00-00:00) carry calendar date {@link
+     * #BASE_DATE}; the remaining six (00:00-01:00 through 05:00-06:00) carry {@code
+     * BASE_DATE.plusDays(1)} -- two distinct calendar dates, one business date ({@code
+     * BASE_DATE}), the OVNT-04 property.
+     *
+     * <p>This is the scenario whose clock-ordered {@code TreeSet<LocalTime>} first and last
+     * invert: the worked set's clock-earliest start is 01:00 (anchored minute 240) and its
+     * clock-latest is 23:00 (anchored minute 120), so a scan range derived from the CLOCK-ordered
+     * ends collapses to {@code [240, 120)} -- empty -- regardless of which of the three call
+     * sites (the contiguity gap scan, the break-start scan, the break-aware contiguity path)
+     * derives it. Before this plan's fix, the contiguity constraint therefore read zero holes
+     * for a day that has one, and the break-start scan located no break at all (P-02).
+     */
+    static Schedule ninePmShiftCrossingMidnight() {
+        AtomicLong ids = new AtomicLong(1);
+        UUID deskId = nextId(ids);
+        UUID scheduleId = nextId(ids);
+        Specialization spec = specialization(ids, deskId, "Support");
+        Agent agentEntity = agent(ids, deskId, "A-1", "Agent-1", spec);
+
+        LocalTime dayStart = LocalTime.of(21, 0);
+        LocalDate businessDate = BASE_DATE;
+        LocalTime envelopeStart = LocalTime.of(22, 0);
+        LocalTime envelopeEnd = LocalTime.of(6, 0);
+        ShiftTemplate template = template(ids, deskId, "CrossingMidnight", envelopeStart, envelopeEnd);
+        ShiftTemplateBreakBand band = band(ids, template, 120, 60); // break 00:00-01:00 (OVNT-02)
+        ShiftBandPair pair = new ShiftBandPair(template, band);
+        List<ShiftBandPair> pairs = List.of(pair);
+
+        List<Timeslot> timeslots = new ArrayList<>();
+        for (int m = NINE_PM_WINDOW.anchoredStartMinute(envelopeStart);
+                m < NINE_PM_WINDOW.anchoredEndMinute(envelopeEnd); m += INCREMENT_MINUTES) {
+            LocalDate slotCalendarDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, m);
+            timeslots.add(timeslot(ids, deskId, scheduleId, slotCalendarDate,
+                    NINE_PM_WINDOW.anchoredToLocalTime(m), NINE_PM_WINDOW.anchoredToLocalTime(m + INCREMENT_MINUTES),
+                    dayStart));
+        }
+
+        BigDecimal contractedHours = template.getNetHours(60, NINE_PM_WINDOW);
+        AgentDayConfig dayConfig = dayConfig(agentEntity.getId(), businessDate, contractedHours, dayStart);
+
+        AgentShiftAssignment shiftRow = new AgentShiftAssignment();
+        shiftRow.setId(nextId(ids));
+        shiftRow.setTenantId(TENANT);
+        shiftRow.setDeskId(deskId);
+        shiftRow.setScheduleId(scheduleId);
+        shiftRow.setAgent(agentEntity);
+        shiftRow.setDate(businessDate);
+        shiftRow.setDayConfig(dayConfig);
+        shiftRow.setDeskShiftBandPairs(pairs);
+
+        // The break slot (00:00-01:00, explained by the assigned band) and the interior gap
+        // (03:00-04:00, explained by nothing -- the hole this plan's Task 1/2 exist to prove) are
+        // both excluded from the worked/demanded set.
+        Set<LocalTime> excludedStarts = Set.of(LocalTime.MIDNIGHT, LocalTime.of(3, 0));
+        List<Timeslot> workedSlots = timeslots.stream()
+                .filter(ts -> !excludedStarts.contains(ts.getStartTime()))
                 .toList();
 
         List<StaffingRequirement> staffingReqs = new ArrayList<>();
