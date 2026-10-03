@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
+import { anchoredAt } from '../utils/dayWindow'
 
 const MATCH_COLORS: Record<string, string> = {
   PRIMARY: '#dcfce7',
@@ -341,6 +342,14 @@ export default function ScheduleResults() {
 }
 
 function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFilterChange }: { schedule: ScheduleDetail; dateFilter: string; specs: Specialization[]; specFilter: string; onSpecFilterChange: (v: string) => void }) {
+  // OVNT-02/D-15: one anchored window, bound once from the schedule's own day-start anchor, so
+  // every scheduling-time comparison, sort and subtraction in this tab routes through it instead
+  // of a raw clock-string operation. A payload carrying no anchor -- an older schedule read from
+  // cache, or a summary polled before the field shipped -- falls back to midnight: an anchored
+  // offset equals a clock minute at that anchor, so this renders exactly as it does today rather
+  // than failing. Threaded into both the slot-mode and shift-mode render branches below, which
+  // both live inside this same closure.
+  const dayWindow = anchoredAt(schedule.dayStart ?? '00:00')
   const agentSchedule = schedule.agentSchedule || []
   const violations = schedule.constraintViolations || []
 
@@ -364,7 +373,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         .map(e => {
           const matchedAssignments = e.assignments.filter(a => a.specializationName === specFilter)
           if (matchedAssignments.length === 0) return null
-          const totalMinutes = matchedAssignments.reduce((sum, a) => sum + timeDiffMinutes(a.startTime, a.endTime), 0)
+          const totalMinutes = matchedAssignments.reduce((sum, a) => sum + dayWindow.anchoredDurationMinutes(a.startTime, a.endTime), 0)
           return { ...e, assignments: matchedAssignments, totalHours: totalMinutes / 60 }
         })
         .filter((e): e is NonNullable<typeof e> => e !== null)
@@ -876,22 +885,6 @@ function formatElapsed(totalSeconds: number): string {
 /** Normalize time to "HH:MM" — strips seconds from "HH:MM:SS" */
 function toHHMM(time: string): string {
   return time.substring(0, 5)
-}
-
-/** Parse "HH:MM" or "HH:MM:SS" time difference in minutes */
-function timeDiffMinutes(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number)
-  const [eh, em] = end.split(':').map(Number)
-  return (eh * 60 + em) - (sh * 60 + sm)
-}
-
-/** Add minutes to a "HH:MM" or "HH:MM:SS" time string, return "HH:MM" */
-function addMinutes(time: string, minutes: number): string {
-  const [h, m] = time.split(':').map(Number)
-  const total = h * 60 + m + minutes
-  const nh = Math.floor(total / 60) % 24
-  const nm = total % 60
-  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
 }
 
 function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
