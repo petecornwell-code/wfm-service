@@ -667,8 +667,11 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         LocalTime breakEnd = window.anchoredPlusWithinDay(breakStart, pair.band().getDurationMinutes());
 
         int holes = 0;
-        int firstMinute = window.anchoredStartMinute(worked.first());
-        int lastMinute = window.anchoredStartMinute(worked.last());
+        // The range bounds must be ANCHORED, not read off the clock-ordered set's first()/last()
+        // -- see anchoredMinAndMaxMinute's javadoc (OVNT-02).
+        int[] bounds = anchoredMinAndMaxMinute(worked, window);
+        int firstMinute = bounds[0];
+        int lastMinute = bounds[1];
         for (int minute = firstMinute; minute < lastMinute; minute += incrementMinutes) {
             LocalTime t = window.anchoredToLocalTime(minute);
             if (worked.contains(t)) {
@@ -1347,6 +1350,30 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .mapToInt(Integer::intValue).sum();
     }
 
+    /**
+     * The ANCHORED minimum and maximum across {@code starts} -- the range bound shared by the
+     * contiguity gap scan ({@link #getGapLengths}), the break-start scan ({@link #findBreakStart}),
+     * and the break-aware contiguity path's {@code worked} set below (OVNT-02). A plain
+     * clock-ordered {@code TreeSet<LocalTime>}'s {@code first()}/{@code last()} inverts on a span
+     * crossing the window's own anchor -- a {@code 22:00}-{@code 06:00} envelope at a {@code 21:00}
+     * anchor has clock-first {@code 00:00} (anchored minute 180) and clock-last {@code 23:00}
+     * (anchored minute 120) -- which collapses a scan range built from those clock-ordered ends to
+     * zero width: the constraint then reports a day with holes as hole-free, and the break-start
+     * scan locates no break at all. Deriving the ANCHORED min/max instead keeps the range correct
+     * on either side of the anchor. Three copies of this derivation is how two of them later
+     * disagree, so it is extracted once here rather than repeated at each call site.
+     */
+    private static int[] anchoredMinAndMaxMinute(Collection<LocalTime> starts, DayWindow window) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (LocalTime t : starts) {
+            int minute = window.anchoredStartMinute(t);
+            if (minute < min) min = minute;
+            if (minute > max) max = minute;
+        }
+        return new int[] {min, max};
+    }
+
     static List<Integer> getGapLengths(List<AgentAssignment> assignments, int incrementMinutes, DayWindow window) {
         if (assignments == null || assignments.isEmpty()) return List.of();
 
@@ -1360,8 +1387,13 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
         // yields 00:00, whose START minute is 0 -- so a cursor-based loop wraps around the clock
         // instead of terminating, and a shift reaching midnight spins forever. The int cursor has
         // no such ambiguity: it simply passes shiftEndMinute (at most 1440) and stops.
-        int firstMinute = window.anchoredStartMinute(assignedStarts.first());
-        int shiftEndMinute = window.anchoredStartMinute(assignedStarts.last()) + incrementMinutes;
+        //
+        // The range bounds must also be ANCHORED, not read off the clock-ordered set's first()/
+        // last(): a span crossing the anchor inverts those two, collapsing the range to zero
+        // width and reporting a day with holes as hole-free (OVNT-02).
+        int[] bounds = anchoredMinAndMaxMinute(assignedStarts, window);
+        int firstMinute = bounds[0];
+        int shiftEndMinute = bounds[1] + incrementMinutes;
 
         List<Integer> gapLengths = new ArrayList<>();
         int currentGap = 0;
@@ -1393,8 +1425,12 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
 
         // Minute-of-day cursor, for the same reason as getGapLengths above: a LocalTime cursor
         // stepped past 23:00 becomes 00:00 and wraps instead of terminating.
-        int firstMinute = window.anchoredStartMinute(assignedStarts.first());
-        int shiftEndMinute = window.anchoredStartMinute(assignedStarts.last()) + incrementMinutes;
+        //
+        // The range bounds must also be ANCHORED, not read off the clock-ordered set's first()/
+        // last() -- see anchoredMinAndMaxMinute's javadoc (OVNT-02).
+        int[] bounds = anchoredMinAndMaxMinute(assignedStarts, window);
+        int firstMinute = bounds[0];
+        int shiftEndMinute = bounds[1] + incrementMinutes;
 
         for (int minute = firstMinute; minute < shiftEndMinute; minute += incrementMinutes) {
             LocalTime t = window.anchoredToLocalTime(minute);
