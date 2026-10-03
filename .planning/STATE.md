@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-05-PLAN.md
-last_updated: "2026-10-03T00:06:45.754Z"
+stopped_at: Completed 21-06-PLAN.md
+last_updated: "2026-10-03T00:59:45.528Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 34a1587d9b140c9a69a4e9d9f86d9c027d1f762c
+state_head: 1153ca9994b41959612d9942be66d3627aa6ca09
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 30
+  completed_plans: 32
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 6 of 12
+Plan: 7 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -333,6 +333,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: migrate-now: calculateErlangC and calculateErlangX re-pointed to deleteLiveByDeskAndBusinessDateRange (OVNT-02), closing the gap plan 21-02 made reachable rather than deferring it; bday-join-guard.md updated to record the migration
 - [Phase 21]: OVNT-05's operating-window containment is blocking only for an overnight (calendar-midnight-crossing) escape; a same-day escape is a non-blocking advisory everywhere (save path, shift-library report, mode gate)
 - [Phase 21]: Generated shift-library suggestions are filtered by the same containment predicate, stricter than the save path: no envelope outside the operating window is ever proposed, overnight or same-day
+- [Phase 21]: Extracted anchoredMinAndMaxMinute(Collection<LocalTime>, DayWindow) in ScheduleConstraintProvider, replacing three clock-ordered TreeSet.first()/last() range-bound reads (getGapLengths, findBreakStart, the break-aware contiguity path) that inverted on a span crossing the anchor.
+- [Phase 21]: MidnightBoundaryScenarioRegistryTest's parseRegistry() throw-on-empty guard removed and EXPECTED_REGISTRY_SIZE updated 2 -> 0 (Rule 3 deviation, file not in plan's files_modified) so the now-deliberately-empty asserts-todays-behaviour registry can be a passing terminal state rather than a build failure.
 
 ### Blockers/Concerns
 
@@ -356,8 +358,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T00:06:45.719Z
-Stopped at: Completed 21-05-PLAN.md
+Last session: 2026-10-03T00:59:45.490Z
+Stopped at: Completed 21-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -440,3 +442,4 @@ Resume file: None
 | Phase 21 P03 | 40min | 2 tasks | 5 files |
 | Phase 21 P04 | ~25min | 2 tasks | 4 files |
 | Phase 21 P05 | 30 min | 3 tasks | 9 files |
+| Phase 21 P06 | 45min | 3 tasks | 6 files |
