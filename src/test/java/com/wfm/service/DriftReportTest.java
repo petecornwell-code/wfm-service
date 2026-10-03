@@ -123,7 +123,81 @@ class DriftReportTest {
         weights.setConsistencyToleranceMinutes(consistencyToleranceMinutes);
         schedule.setConstraintWeights(weights);
         schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
+        // OVNT-02/plan 21-12: buildDriftReport now binds a DayWindow from
+        // schedule.getScheduleConfig().dayStart() for the drift-sign ternary's anchored
+        // comparison, matching the precedent every other ScheduleOutputService public method
+        // (buildAgentSchedule/buildPreferenceReport/buildConstraintViolations) already established
+        // -- an unset dayStart is null, and DayWindow.anchoredAt(null) throws. Every test in this
+        // class predates that bind, so this helper sets the explicit midnight anchor every one of
+        // them implicitly assumed; midnight is a no-op anchor, so this changes none of their
+        // existing assertions.
+        schedule.setDayStart(LocalTime.MIDNIGHT);
         return schedule;
+    }
+
+    /** Same shape as {@link #schedule}, with an explicit anchor rather than the implicit midnight
+     *  default above -- needed by the anchored-verdict / midnight-no-op control pair below for the
+     *  drift-sign ternary (OVNT-02/plan 21-12). */
+    private Schedule scheduleWithAnchor(int consistencyToleranceMinutes,
+            List<AgentShiftAssignment> shiftAssignments, LocalTime dayStart) {
+        Schedule schedule = schedule(consistencyToleranceMinutes, shiftAssignments);
+        schedule.setDayStart(dayStart);
+        return schedule;
+    }
+
+    // ------------------------------------------------------------------
+    //  OVNT-02/plan 21-12 -- the drift-sign ternary now compares anchored minute, not raw clock
+    //  order. A 22:00 assigned start against a 06:00 usual start is the textbook case: at a 21:00
+    //  anchor, 22:00 is only ONE hour into the business day while 06:00 is NINE hours in, so the
+    //  assignment is EARLY relative to usual (negative sign) -- the opposite of what raw
+    //  isAfter/isBefore on clock values would ever say (22:00 is always "after" 06:00 in clock
+    //  terms, which is exactly the bug: positive/late when the true answer is negative/early). At
+    //  a 00:00 anchor the two orderings coincide, so the control test is byte-identical to the
+    //  pre-conversion sign.
+    // ------------------------------------------------------------------
+
+    @Test
+    void driftedEntry_anchoredDesk_signReflectsAnchoredOrderNotClockOrder() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(6, 0), LocalTime.of(15, 0));
+        ShiftTemplate assignedTemplate = template("Late", LocalTime.of(22, 0), LocalTime.of(7, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(usualTemplate));
+
+        Schedule schedule = scheduleWithAnchor(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)),
+                LocalTime.of(21, 0));
+        DriftReportEntry entry = service.buildDriftReport(schedule).entries().get(0);
+
+        assertThat(entry.status()).isEqualTo(DriftStatus.DRIFTED);
+        // Assigned (22:00) is EARLIER than usual (06:00) in business-day order at a 21:00 anchor
+        // (one hour in vs. nine hours in) -> negative sign, not the positive/"late" sign raw clock
+        // order would report (22:00 is always clock-after 06:00).
+        assertThat(entry.deltaMinutes()).isEqualTo(-960);
+    }
+
+    @Test
+    void driftedEntry_midnightAnchor_signUnchangedFromClockOrder() {
+        Agent ana = agent("Ana");
+        ShiftTemplate usualTemplate = template("Early", LocalTime.of(6, 0), LocalTime.of(15, 0));
+        ShiftTemplate assignedTemplate = template("Late", LocalTime.of(22, 0), LocalTime.of(7, 0));
+
+        when(agentUsualShiftRepository.findByTenantIdAndDeskId(TENANT_ID, DESK_ID))
+                .thenReturn(List.of(usualShift(ana, MONDAY.getDayOfWeek(), usualTemplate)));
+        when(shiftTemplateRepository.findByTenantIdAndDeskIdAndName(TENANT_ID, DESK_ID, "Early"))
+                .thenReturn(List.of(usualTemplate));
+
+        Schedule schedule = scheduleWithAnchor(60, List.of(shiftRow(ana, MONDAY, assignedTemplate)),
+                LocalTime.MIDNIGHT);
+        DriftReportEntry entry = service.buildDriftReport(schedule).entries().get(0);
+
+        assertThat(entry.status()).isEqualTo(DriftStatus.DRIFTED);
+        // At a 00:00 anchor the anchored minute equals the clock minute, so this is a
+        // byte-identical no-op against the pre-conversion sign: assigned (22:00) reads clock-after
+        // usual (06:00) -> positive sign.
+        assertThat(entry.deltaMinutes()).isEqualTo(960);
     }
 
     // ------------------------------------------------------------------

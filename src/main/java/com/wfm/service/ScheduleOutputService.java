@@ -384,7 +384,13 @@ public class ScheduleOutputService {
             if (prefStart == null) {
                 startOk = true;
             } else {
-                startOk = actStart != null && !actStart.isBefore(prefStart);
+                // OVNT-02/plan 21-12: compared as START boundaries through the anchored minute,
+                // not raw isBefore -- on a desk anchored away from midnight, two start times
+                // compared raw order by CLOCK, not by position in the business day, so this
+                // preference-report verdict would invert. At a 00:00 anchor the anchored minute
+                // equals the clock minute, so this is a no-op on every desk that exists today.
+                startOk = actStart != null
+                        && window.anchoredStartMinute(actStart) >= window.anchoredStartMinute(prefStart);
             }
             if (prefStart != null) {
                 totalFields++;
@@ -465,6 +471,12 @@ public class ScheduleOutputService {
      * folding it into the main table.
      */
     public DriftReport buildDriftReport(Schedule schedule) {
+        // BDAY-04/plan 21-12: one window per public method, bound from the Schedule this method
+        // already receives -- same accessor style buildAgentSchedule/buildPreferenceReport use
+        // (plan 19-05/19-06). Needed so the drift-sign ternary below can compare the assigned
+        // envelope start and the usual start by anchored position rather than raw clock order.
+        DayWindow window = DayWindow.anchoredAt(schedule.getScheduleConfig().dayStart());
+
         List<AgentUsualShift> allUsualShifts = agentUsualShiftRepository
                 .findByTenantIdAndDeskId(schedule.getTenantId(), schedule.getDeskId());
         Map<UUID, Map<DayOfWeek, AgentUsualShift>> byAgentAndWeekday = new HashMap<>();
@@ -520,8 +532,16 @@ public class ScheduleOutputService {
                 int magnitude = ShiftBandPair.startDeviationMinutes(actualStartTime, usualStartTime);
                 if (magnitude > toleranceMinutes) {
                     status = DriftStatus.DRIFTED;
-                    int sign = actualStartTime.isAfter(usualStartTime) ? 1
-                            : actualStartTime.isBefore(usualStartTime) ? -1 : 0;
+                    // OVNT-02/plan 21-12: compared as START boundaries through the anchored
+                    // minute, not raw isAfter/isBefore -- on a desk anchored away from midnight,
+                    // two start times compared raw order by CLOCK, not by position in the
+                    // business day, so the drift sign would invert (late reads as early). At a
+                    // 00:00 anchor the anchored minute equals the clock minute, so this is a
+                    // no-op on every desk that exists today.
+                    int actualAnchored = window.anchoredStartMinute(actualStartTime);
+                    int usualAnchored = window.anchoredStartMinute(usualStartTime);
+                    int sign = actualAnchored > usualAnchored ? 1
+                            : actualAnchored < usualAnchored ? -1 : 0;
                     deltaMinutes = sign * magnitude;
                 } else {
                     status = DriftStatus.HONOURED;

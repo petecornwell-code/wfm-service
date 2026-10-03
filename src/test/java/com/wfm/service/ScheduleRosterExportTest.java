@@ -205,6 +205,49 @@ class ScheduleRosterExportTest {
         assertThat(sheet.getColumnWidth(1)).isEqualTo(22 * 256);
     }
 
+    // --- OVNT-02/plan 21-12: the no-envelope fallback's earliest-start tracking, anchored ---
+
+    @Test
+    void noEnvelopeFallback_anchoredDesk_earliestTrackedByAnchoredOrderNotClockOrder() throws Exception {
+        // Two assignments spanning the overnight boundary, no ShiftDescriptor -- the fallback
+        // (worked-span) branch of shiftCode. 06:00 is the CLOCK-earliest of the two, but at a
+        // 21:00 anchor it is nine hours INTO the business day while 22:00 is only one hour in, so
+        // the anchored-earliest start is 22:00. Listed 22:00 first so the second iteration is the
+        // one that must NOT overwrite it -- a raw isBefore comparison would have incorrectly
+        // overwritten the already-correct 22:00 with the clock-earliest 06:00.
+        AgentScheduleEntry entry = new AgentScheduleEntry(
+                UUID.randomUUID(), "Overnight Worker", SUN, LocalTime.of(22, 0), LocalTime.of(7, 0),
+                new BigDecimal("2.00"),
+                List.of(new AssignmentDetail(UUID.randomUUID(), LocalTime.of(22, 0), LocalTime.of(23, 0), "Chat", "PRIMARY"),
+                        new AssignmentDetail(UUID.randomUUID(), LocalTime.of(6, 0), LocalTime.of(7, 0), "Chat", "PRIMARY")),
+                List.of(), null, null);
+
+        Sheet sheet = roster(detail(List.of(entry), LocalTime.of(21, 0)), List.of());
+
+        assertThat(text(sheet.getRow(1), SUN_COL))
+                .as("the anchored-earliest start (22:00) must survive, not the clock-earliest (06:00) "
+                        + "a raw isBefore comparison would have picked")
+                .isEqualTo("Sun 22:00-Mon 07:00");
+    }
+
+    @Test
+    void noEnvelopeFallback_midnightAnchor_earliestUnchangedFromClockOrder() throws Exception {
+        // Same two assignments, midnight anchor -- the anchored minute equals the clock minute, so
+        // this is a byte-identical no-op against the pre-conversion raw isBefore behaviour: 06:00
+        // is both the clock-earliest and the anchored-earliest, and the cell renders plain (no
+        // crossing disclosure) because both ends fall on the same calendar date at this anchor.
+        AgentScheduleEntry entry = new AgentScheduleEntry(
+                UUID.randomUUID(), "Overnight Worker", SUN, LocalTime.of(6, 0), LocalTime.of(23, 0),
+                new BigDecimal("2.00"),
+                List.of(new AssignmentDetail(UUID.randomUUID(), LocalTime.of(22, 0), LocalTime.of(23, 0), "Chat", "PRIMARY"),
+                        new AssignmentDetail(UUID.randomUUID(), LocalTime.of(6, 0), LocalTime.of(7, 0), "Chat", "PRIMARY")),
+                List.of(), null, null);
+
+        Sheet sheet = roster(detail(List.of(entry), LocalTime.MIDNIGHT), List.of());
+
+        assertThat(text(sheet.getRow(1), SUN_COL)).isEqualTo("06:00-23:00");
+    }
+
     @Test
     void noEnvelopeFallbackAndBlankCellsAreUnchanged() throws Exception {
         // No ShiftDescriptor at all — fallback to the worked span; neither shift nor assignments

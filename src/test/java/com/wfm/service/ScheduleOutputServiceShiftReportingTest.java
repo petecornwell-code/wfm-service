@@ -338,6 +338,78 @@ class ScheduleOutputServiceShiftReportingTest {
     }
 
     // ------------------------------------------------------------------
+    //  OVNT-02/plan 21-12 — the preference-report start check now compares anchored minute, not
+    //  raw clock order. A 22:00 actual start against a 06:00 preferred start is the textbook case:
+    //  at a 21:00 anchor, 22:00 is only ONE hour into the business day while 06:00 is NINE hours
+    //  in, so the actual start genuinely came BEFORE the preference in business-day order and
+    //  must NOT be honoured -- the opposite of what raw isBefore on clock values would ever say
+    //  (22:00 is never clock-before 06:00, so the old check read "honoured" when the agent
+    //  started objectively too early). At a 00:00 anchor the two orderings coincide, so the
+    //  control test is byte-identical to the pre-conversion verdict.
+    // ------------------------------------------------------------------
+
+    @Test
+    void buildPreferenceReport_anchoredDesk_startCheckUsesAnchoredOrderNotClockOrder() {
+        Agent nightOwl = agent("Night Owl");
+        Specialization spec = specialization("Chat");
+        AgentAssignment lateClockEarlyAnchored = assignment(nightOwl, timeslot(LocalTime.of(22, 0)), spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(LocalTime.of(21, 0));
+        schedule.setAssignments(new ArrayList<>(List.of(lateClockEarlyAnchored)));
+        schedule.setShiftAssignments(new ArrayList<>());
+        schedule.setTimeslots(new ArrayList<>());
+
+        AgentPreference pref = new AgentPreference();
+        pref.setId(UUID.randomUUID());
+        pref.setAgent(nightOwl);
+        pref.setDate(DAY);
+        pref.setPreferredStartTime(LocalTime.of(6, 0));
+        schedule.setAgentPreferences(new ArrayList<>(List.of(pref)));
+
+        PreferenceReport report = service.buildPreferenceReport(schedule);
+
+        assertThat(report.entries()).hasSize(1);
+        PreferenceReportEntry entry = report.entries().get(0);
+        assertThat(entry.actualStartTime()).isEqualTo(LocalTime.of(22, 0));
+        assertThat(entry.startTimeHonoured())
+                .as("the actual start (22:00) is genuinely earlier than the preference (06:00) in "
+                        + "business-day order at a 21:00 anchor, so it must NOT be honoured")
+                .isFalse();
+    }
+
+    @Test
+    void buildPreferenceReport_midnightAnchor_startCheckUnchangedFromClockOrder() {
+        Agent nightOwl = agent("Night Owl");
+        Specialization spec = specialization("Chat");
+        AgentAssignment lateClockEarlyAnchored = assignment(nightOwl, timeslot(LocalTime.of(22, 0)), spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(LocalTime.MIDNIGHT);
+        schedule.setAssignments(new ArrayList<>(List.of(lateClockEarlyAnchored)));
+        schedule.setShiftAssignments(new ArrayList<>());
+        schedule.setTimeslots(new ArrayList<>());
+
+        AgentPreference pref = new AgentPreference();
+        pref.setId(UUID.randomUUID());
+        pref.setAgent(nightOwl);
+        pref.setDate(DAY);
+        pref.setPreferredStartTime(LocalTime.of(6, 0));
+        schedule.setAgentPreferences(new ArrayList<>(List.of(pref)));
+
+        PreferenceReport report = service.buildPreferenceReport(schedule);
+
+        assertThat(report.entries()).hasSize(1);
+        PreferenceReportEntry entry = report.entries().get(0);
+        // At a 00:00 anchor the anchored minute equals the clock minute, so this is a
+        // byte-identical no-op against the pre-conversion verdict: 22:00 is clock-after 06:00, so
+        // "at or after preferred" holds -> honoured.
+        assertThat(entry.startTimeHonoured()).isTrue();
+    }
+
+    // ------------------------------------------------------------------
     //  Task 2 (G-15-32 gap closure) — accepted-path constraint violation report
     // ------------------------------------------------------------------
     //

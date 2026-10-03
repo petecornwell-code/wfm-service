@@ -10,6 +10,7 @@ import com.wfm.model.AgentDayHours;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
+import com.wfm.model.ShiftTemplate;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.Timeslot;
@@ -30,6 +31,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -40,6 +43,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -665,6 +669,90 @@ class ShiftLibraryGenerationServiceTest {
             assertThat(t.startTime()).isAfterOrEqualTo(LocalTime.of(8, 0));
             assertThat(t.endTime()).isBeforeOrEqualTo(LocalTime.of(21, 0));
         });
+    }
+
+    // ---------- OVNT-02/plan 21-12: expandForSupply's admission check, and the paired
+    // clock-ordered reduction (earliestStart) feeding it, now compare anchored minute ----------
+    //
+    // Reached directly via reflection rather than through generateSuggestion's full pipeline:
+    // every candidate enumerateCandidates produces for a cluster is ALREADY bounded to that same
+    // cluster's own anchored start range (the P-03 fix plan 21-05 shipped), so expandForSupply's
+    // own earliestStart/admission check can never observably diverge from enumeration's bound
+    // through the public API alone -- the two are self-consistent regardless of which order either
+    // uses. Constructing a candidate by hand, outside that self-consistent set, is what makes the
+    // conversion's effect reachable at all.
+
+    private static ShiftTemplate template(LocalTime start, LocalTime end) {
+        ShiftTemplate t = new ShiftTemplate();
+        t.setStartTime(start);
+        t.setEndTime(end);
+        return t;
+    }
+
+    /** Invokes the private {@code expandForSupply(List, List, List, BigDecimal, BigDecimal,
+     *  DayWindow)} via reflection, constructing its private nested {@code Candidate} record the
+     *  same way. A fresh plain-Mockito-mocked instance is used rather than the {@code @Autowired}
+     *  bean, so a possible CGLIB proxy subclass is never in the way of the private-method lookup. */
+    private static List<?> invokeExpandForSupply(List<Object> selected, List<Object> candidates,
+            List<ShiftLibraryValidationService.Window> windows, BigDecimal demandHours,
+            BigDecimal supplyHours, DayWindow window) throws Exception {
+        ShiftLibraryGenerationService service = new ShiftLibraryGenerationService(
+                mock(StaffingRequirementRepository.class), mock(AgentDayHoursRepository.class),
+                mock(TimeslotGeneratorService.class), mock(ShiftLibraryValidationService.class),
+                mock(ScheduleRepository.class));
+        Method m = ShiftLibraryGenerationService.class.getDeclaredMethod("expandForSupply",
+                List.class, List.class, List.class, BigDecimal.class, BigDecimal.class, DayWindow.class);
+        m.setAccessible(true);
+        return (List<?>) m.invoke(service, selected, candidates, windows, demandHours, supplyHours, window);
+    }
+
+    private static Object candidate(LocalTime spanStart, LocalTime spanEnd) throws Exception {
+        Class<?> candidateClass = Class.forName("com.wfm.service.ShiftLibraryGenerationService$Candidate");
+        Constructor<?> ctor = candidateClass.getDeclaredConstructor(ShiftTemplate.class, List.class,
+                LocalTime.class, int.class, int.class, int.class, BigDecimal.class);
+        ctor.setAccessible(true);
+        return ctor.newInstance(template(spanStart, spanEnd), List.of(), spanStart, 60, 0, 0, BigDecimal.ZERO);
+    }
+
+    @Test
+    void expandForSupply_anchoredDesk_admissionUsesAnchoredOrderNotClockOrder() throws Exception {
+        // One already-selected span (22:00-23:00) and one hand-built candidate (06:00-23:00) that
+        // enumeration would never itself produce for this one-window cluster -- the point is to
+        // test the admission check in isolation from enumeration's own self-consistent bound.
+        ShiftLibraryValidationService.Window window = new ShiftLibraryValidationService.Window(
+                WEEK_START, LocalTime.of(22, 0), LocalTime.of(23, 0));
+        Object alreadySelected = candidate(LocalTime.of(22, 0), LocalTime.of(23, 0));
+        Object outOfClockRangeButInAnchoredRange = candidate(LocalTime.of(6, 0), LocalTime.of(23, 0));
+
+        DayWindow anchor2100 = DayWindow.anchoredAt(LocalTime.of(21, 0));
+        List<?> expanded = invokeExpandForSupply(
+                List.of(alreadySelected), List.of(outOfClockRangeButInAnchoredRange), List.of(window),
+                new BigDecimal("1.00"), new BigDecimal("10.00"), anchor2100);
+
+        assertThat(expanded)
+                .as("06:00 is LATER in a 21:00-anchored business day than the window's own 22:00 "
+                        + "start (nine hours in vs. one hour in), so the candidate must be admitted "
+                        + "-- the opposite of what raw isBefore (06:00 is always clock-before 22:00) "
+                        + "would have decided")
+                .hasSize(2);
+    }
+
+    @Test
+    void expandForSupply_midnightAnchor_admissionUnchangedFromClockOrder() throws Exception {
+        ShiftLibraryValidationService.Window window = new ShiftLibraryValidationService.Window(
+                WEEK_START, LocalTime.of(22, 0), LocalTime.of(23, 0));
+        Object alreadySelected = candidate(LocalTime.of(22, 0), LocalTime.of(23, 0));
+        Object outOfClockRangeButInAnchoredRange = candidate(LocalTime.of(6, 0), LocalTime.of(23, 0));
+
+        DayWindow midnight = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
+        List<?> expanded = invokeExpandForSupply(
+                List.of(alreadySelected), List.of(outOfClockRangeButInAnchoredRange), List.of(window),
+                new BigDecimal("1.00"), new BigDecimal("10.00"), midnight);
+
+        // At a 00:00 anchor the anchored minute equals the clock minute, so this is a
+        // byte-identical no-op against the pre-conversion verdict: 06:00 is clock-before 22:00,
+        // so the candidate is rejected exactly as raw isBefore would have rejected it.
+        assertThat(expanded).hasSize(1);
     }
 
     /** Full week of hourly 08:00-21:00 demand, and {@code agentCount} agents contracted 8h daily. */

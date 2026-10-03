@@ -78,6 +78,18 @@ class ShiftModeBreakGatingTest {
                 ALIGNMENT, 20, CONTRACTED_HOURS, 130, 70, mode);
     }
 
+    /**
+     * Same shape as {@link #scheduleConfig}, with an explicit {@code dayStart} rather than the
+     * 12-arg constructor's implicit {@code MIDNIGHT} default (OVNT-02/plan 21-12) — needed by the
+     * anchored-verdict / midnight-no-op control pair below for {@code honourPreferredStartTime}.
+     */
+    private static ScheduleConfig scheduleConfigWithAnchor(SchedulingMode mode, LocalTime dayStart) {
+        return new ScheduleConfig(INCREMENT, LocalTime.of(0, 0), LocalTime.of(23, 59),
+                BREAK_DURATION_MINUTES, BREAK_MIN_SHIFT_HOURS, BREAK_BLOCKED_HOURS,
+                ALIGNMENT, 20, CONTRACTED_HOURS, 130, 70, mode,
+                ScheduleConfig.DEFAULT_CONSISTENCY_TOLERANCE_MINUTES, dayStart);
+    }
+
     private static Timeslot ts(LocalTime start) {
         Timeslot t = new Timeslot();
         t.setId(UUID.randomUUID());
@@ -212,6 +224,53 @@ class ShiftModeBreakGatingTest {
         verifier.verifyThat(ScheduleConstraintProvider::honourPreferredStartTime)
                 .given(early, pref, scheduleConfig(SchedulingMode.SLOT))
                 .penalizesBy(1);
+    }
+
+    // ------------------------------------------------------------------
+    //  Scenario E (cont.) -- OVNT-02/plan 21-12: honourPreferredStartTime now compares anchored
+    //  minute, not raw clock order. A 22:00 assignment start against a 06:00 preferred start is
+    //  the textbook case the plan's objective names: at a 21:00 anchor, 22:00 is only ONE hour
+    //  into the business day while 06:00 is NINE hours in, so the anchored order says the
+    //  assignment started BEFORE the preference (penalised) -- the opposite of what raw
+    //  isBefore(06:00) on a 22:00 LocalTime would ever say (22:00 is never before 06:00 in clock
+    //  terms). At a 00:00 anchor the two orderings coincide, so the control test below is a
+    //  byte-identical no-op against this constraint's pre-conversion behaviour.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("honourPreferredStartTime: anchored verdict at a 21:00 anchor -- "
+            + "a 22:00 start is earlier than a 06:00 preference in business-day order")
+    void honourPreferredStartTime_anchoredDesk_anchoredOrderNotClockOrder() {
+        Agent a = agent();
+        AgentAssignment lateClockEarlyAnchored = seat(a, LocalTime.of(22, 0));
+        AgentPreference pref = new AgentPreference();
+        pref.setId(UUID.randomUUID());
+        pref.setAgent(a);
+        pref.setDate(DAY);
+        pref.setPreferredStartTime(LocalTime.of(6, 0));
+
+        verifier.verifyThat(ScheduleConstraintProvider::honourPreferredStartTime)
+                .given(lateClockEarlyAnchored, pref,
+                        scheduleConfigWithAnchor(SchedulingMode.SLOT, LocalTime.of(21, 0)))
+                .penalizesBy(1);
+    }
+
+    @Test
+    @DisplayName("honourPreferredStartTime: midnight-anchor no-op control -- "
+            + "the same 22:00/06:00 pair draws no penalty at a 00:00 anchor, unchanged from today")
+    void honourPreferredStartTime_midnightAnchor_noOpControl() {
+        Agent a = agent();
+        AgentAssignment lateClockEarlyAnchored = seat(a, LocalTime.of(22, 0));
+        AgentPreference pref = new AgentPreference();
+        pref.setId(UUID.randomUUID());
+        pref.setAgent(a);
+        pref.setDate(DAY);
+        pref.setPreferredStartTime(LocalTime.of(6, 0));
+
+        verifier.verifyThat(ScheduleConstraintProvider::honourPreferredStartTime)
+                .given(lateClockEarlyAnchored, pref,
+                        scheduleConfigWithAnchor(SchedulingMode.SLOT, LocalTime.MIDNIGHT))
+                .penalizesBy(0);
     }
 
     // ------------------------------------------------------------------

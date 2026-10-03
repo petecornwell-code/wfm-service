@@ -69,6 +69,20 @@ named limitations:
    token — here `getStartTime()` — rather than the true owner further left (`shift`). For this
    heuristic's purpose that is fine, since `getStartTime()` is itself the receiver that matters,
    but a chain shaped differently could resolve to an unexpected name.
+4. **It inspects names rather than anchors.** The scan can tell a scheduling-time receiver from a
+   non-scheduling one, but it cannot tell a comparison that is correct at any anchor from one that
+   is only correct at midnight, because it inspects names rather than anchors — it has no notion
+   of "anchor" at all. The end-boundary ambiguity
+   this guard's "Raw comparisons" section exists to catch and the ordering question a start-to-
+   start comparison answers are two SEPARATE properties: an entry justified on "both operands are
+   start times" has answered only the first. Two start times compared raw order by CLOCK, not by
+   position in the business day, so on a desk anchored away from midnight a later-clock-time start
+   can be an EARLIER business-day start, and a start-to-start entry's justification can be true
+   about the end boundary while being silent — and wrong — about ordering. This is what let the
+   nine-entry family below (plan 21-12, OVNT-02) survive unexamined for three prior plans in this
+   phase: every entry was true about the end boundary and never asked about ordering. Narrowing
+   this gap further means tracking a desk's anchor through the scan, which this heuristic does not
+   do and is not scoped to do.
 
 A false positive fails safe: a human looks at a diff and adds a justified allowlist entry or a
 `DayWindow` fix. A false negative is only possible under one of the three limitations above;
@@ -153,38 +167,51 @@ com.wfm.service.ScheduleOutputService :: long dist = Math.abs(ChronoUnit.MINUTES
 ### Permitted raw time comparisons
 
 ```
-com.wfm.service.FteUploadService :: if (startTime == null || slotStart.isBefore(startTime)) startTime = slotStart;
-com.wfm.service.ScheduleExportService :: if (earliest == null || ad.startTime().isBefore(earliest)) earliest = ad.startTime();
-com.wfm.service.ScheduleOutputService :: startOk = actStart != null && !actStart.isBefore(prefStart);
-com.wfm.service.ScheduleOutputService :: int sign = actualStartTime.isAfter(usualStartTime) ? 1
-com.wfm.service.ScheduleOutputService :: : actualStartTime.isBefore(usualStartTime) ? -1 : 0;
-com.wfm.service.ShiftLibraryGenerationService :: if (start.isBefore(earliestStart) || window.anchoredEndMinute(end) > window.anchoredEndMinute(latestEnd)) {
 com.wfm.service.ShiftLibraryGenerationService :: int startCompare = candidate.spanStart().compareTo(currentBest.spanStart());
 com.wfm.solver.AgentAssignmentDifficultyComparator :: int timeCompare = a.getTimeslot().getStartTime().compareTo(b.getTimeslot().getStartTime());
-com.wfm.solver.ScheduleConstraintProvider :: return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
 ```
 
 ### Why each comparison is permitted
 
-- **`FteUploadService`** — the min-start tracking beside the sheet's already-correct max-end
-  tracking two lines below it (which routes through `DayWindow.endMinute`). Both operands of this
-  line are slot START times; the ambiguity only exists at the end boundary.
-- **`ScheduleExportService`** — the earliest-start half of the roster cell's earliest/latest loop.
-  The latest-end half of the same loop routes through `DayWindow.endMinute` (see "Permitted raw
-  time arithmetic" above); this line's both operands are assignment START times.
-- **`ScheduleOutputService`, all three lines** — the preference-report start check
-  (`actStart`/`prefStart`) and the two ternary branches of the drift-sign calculation
-  (`actualStartTime`/`usualStartTime`). Every operand named here is a START time; no end is
-  involved in any of the three.
-- **`ShiftLibraryGenerationService`, both lines** — the earliest-start clause that shares its line
-  with an already-correct end comparison, now routed through the method's own bound `window`
-  (`start`/`earliestStart` are both starts; only the end half needed `DayWindow`), and the
-  span-start tie-break (`candidate.spanStart()`/`currentBest.spanStart()`), whose `spanStart()` is
-  built via `DayWindow.toLocalTime` and is a START position by construction.
+**(OVNT-02/plan 21-12) Seven sibling entries were converted, not amended, and no longer appear
+here.** The family below used to carry nine entries, all justified on "both operands are START
+times, so the end-of-day ambiguity does not apply." That reason is true about the end boundary and
+silent about ordering (see heuristic limitation 4 above): two start times compared raw order by
+CLOCK, not by position in the business day, so on a desk anchored away from midnight the
+justification's own premise does not imply the comparison is correct. Seven of the nine produced
+an operator-visible wrong answer on such a desk and were routed through `DayWindow`'s anchored
+minute in plan 21-12, with their allowlist entries removed in the same change: the FTE upload's
+min-start tracking (`FteUploadService`), the export's roster-cell earliest-start fallback
+(`ScheduleExportService`), the preference report's start check and the drift-sign ternary's two
+branches (`ScheduleOutputService`), the shift-library generator's expansion admission check
+together with the clock-ordered reduction (`earliestStart`) it reads, converted in the same change
+because the consumer and its source must move together (`ShiftLibraryGenerationService`), and the
+preferred-start soft constraint (`ScheduleConstraintProvider`) — the one genuine scoring change in
+the group, since it changes which assignments get penalised on a desk anchored away from midnight
+(provably a no-op on every desk that exists today, since at a `00:00` anchor an anchored minute
+equals the clock minute). The two entries remaining below are deliberately NOT converted:
+
+- **`ShiftLibraryGenerationService`** — the greedy-cover tie-break between two already-selected
+  candidates' `spanStart()` values (`candidate.spanStart()`/`currentBest.spanStart()`). Both
+  operands are START positions; no end is involved. This orders by CLOCK, not by the candidate's
+  position in the business day — on a desk anchored away from midnight the two orderings differ,
+  so a different candidate could win a tie than the anchored order would pick. The consequence is
+  ordering only: `isBetterCandidate` only ever breaks a tie between two candidates that already
+  cover the identical uncovered-window set and the identical break-duration cost, so a different
+  winner is a different but equally valid suggestion, never a wrong one. Left unconverted
+  deliberately (plan 21-12, operator ruling): changing which candidate wins a tie alters which
+  template the generator proposes, in a way no test in this repo asserts, which is out of scope for
+  a phase scoped to overnight templates.
 - **`AgentAssignmentDifficultyComparator`** — the start-time tie-break between two timeslots'
-  `getStartTime()`. Both are START positions; the comparator never orders by end.
-- **`ScheduleConstraintProvider`** — the preferred-start comparison between a timeslot's START and
-  an agent's preferred START time. No end is involved.
+  `getStartTime()` in the solver's construction-heuristic placement order. Both are START
+  positions; the comparator never orders by end. This orders by CLOCK, not by the timeslot's
+  position in the business day — on a desk anchored away from midnight the two orderings differ,
+  so the solver would place a different assignment first during construction. The consequence is
+  ordering only: it changes the construction heuristic's placement SEQUENCE, never the legality or
+  scoring of any resulting assignment. Left unconverted deliberately (plan 21-12, operator ruling):
+  a move-ordering change alters the solver's search trajectory and therefore which schedule it
+  lands on, in ways no test in this repo asserts — out of scope for a phase scoped to overnight
+  templates.
 
 ### Permitted midnight anchors
 

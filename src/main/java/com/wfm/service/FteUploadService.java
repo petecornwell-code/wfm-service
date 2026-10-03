@@ -120,7 +120,17 @@ public class FteUploadService {
                 for (int i = 0; i < headerTimes.size(); i++) {
                     LocalTime slotStart = headerTimes.get(i);
                     if (slotStart == null) continue;
-                    if (startTime == null || slotStart.isBefore(startTime)) startTime = slotStart;
+                    // OVNT-02/plan 21-12: compared as START boundaries through the anchored
+                    // minute, not raw isBefore -- on a desk anchored away from midnight, two
+                    // start times compared raw order by CLOCK, not by position in the business
+                    // day, so the sheet's stored operating-window start would be computed from
+                    // the clock-earliest slot rather than the business day's first. At a 00:00
+                    // anchor the anchored minute equals the clock minute, so this is a no-op on
+                    // every desk that exists today.
+                    if (startTime == null
+                            || window.anchoredStartMinute(slotStart) < window.anchoredStartMinute(startTime)) {
+                        startTime = slotStart;
+                    }
                     // Determine end of this slot
                     LocalTime slotEnd = (i + 1 < headerTimes.size() && headerTimes.get(i + 1) != null)
                             ? headerTimes.get(i + 1)

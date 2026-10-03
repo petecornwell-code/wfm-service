@@ -1098,13 +1098,26 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .join(AgentPreference.class,
                         equal(a -> a.getAgent().getId(), p -> p.getAgent().getId()),
                         equal(a -> a.getTimeslot().getBusinessDate(), AgentPreference::getDate))
-                .ifExists(ScheduleConfig.class,
-                        filtering((a, p, cfg) -> cfg.schedulingMode() != SchedulingMode.SHIFT))
-                .filter((a, p) -> {
+                // OVNT-02/plan 21-12: widened from ifExists to a real join against the
+                // ScheduleConfig singleton so this constraint can reach the desk's anchor (cfg
+                // .dayStart()) for the anchored comparison below -- the identical cheap-cross-join
+                // shape #preferredStartShiftMode already uses, not a new join pattern in this file.
+                .join(ScheduleConfig.class)
+                .filter((a, p, cfg) -> {
+                    if (cfg.schedulingMode() == SchedulingMode.SHIFT) return false;
                     if (p.getPreferredStartTime() == null) return false;
-                    return a.getTimeslot().getStartTime().isBefore(p.getPreferredStartTime());
+                    // Compared as START boundaries through the anchored minute, not raw isBefore
+                    // -- on a desk anchored away from midnight, two start times compared raw
+                    // order by CLOCK, not by position in the business day, so this soft
+                    // constraint would penalise the wrong assignments. At a 00:00 anchor the
+                    // anchored minute equals the clock minute, so this is a no-op on every desk
+                    // that exists today -- it is a genuine scoring change only on a desk anchored
+                    // away from midnight, which no desk in production is yet.
+                    DayWindow window = resolveAnchor(cfg.dayStart());
+                    return window.anchoredStartMinute(a.getTimeslot().getStartTime())
+                            < window.anchoredStartMinute(p.getPreferredStartTime());
                 })
-                .penalizeConfigurable((a, p) -> 1)
+                .penalizeConfigurable((a, p, cfg) -> 1)
                 .asConstraint("Honour preferred start time");
     }
 

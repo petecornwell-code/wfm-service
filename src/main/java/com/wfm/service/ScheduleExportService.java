@@ -395,7 +395,15 @@ public class ScheduleExportService {
         LocalTime earliest = null;
         LocalTime latest = null;
         for (AssignmentDetail ad : entry.assignments()) {
-            if (earliest == null || ad.startTime().isBefore(earliest)) earliest = ad.startTime();
+            // OVNT-02/plan 21-12: compared as START boundaries through the anchored minute, not
+            // raw isBefore -- on a desk anchored away from midnight, two start times compared raw
+            // order by CLOCK, not by position in the business day, so this roster-cell fallback
+            // would report the wrong worked span. At a 00:00 anchor the anchored minute equals
+            // the clock minute, so this is a no-op on every desk that exists today.
+            if (earliest == null
+                    || window.anchoredStartMinute(ad.startTime()) < window.anchoredStartMinute(earliest)) {
+                earliest = ad.startTime();
+            }
             // Compared as END boundaries: an assignment ending at midnight stores 00:00, which
             // isAfter() reads as the earliest time of day, so the roster cell would under-report
             // the shift's true end time. See FteUploadService and ShiftLibraryGenerationService

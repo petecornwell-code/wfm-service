@@ -582,8 +582,15 @@ public class ShiftLibraryGenerationService {
             return selected;
         }
 
+        // OVNT-02/plan 21-12: ranked by anchored START minute, not clock order -- the clock-
+        // minimum of a set of demanded start times can have a LARGER anchored minute than the
+        // clock-maximum on a desk anchored away from midnight, exactly the P-03 defect plan 21-05
+        // fixed for enumerateCandidates' own earliestStart/latestStart derivation above. This
+        // reduction feeds the admission check immediately below, so the two must move together
+        // (left deliberately paired by plan 21-05). At a 00:00 anchor the anchored minute equals
+        // the clock minute, so this emits the identical value on every desk that exists today.
         LocalTime earliestStart = windows.stream().map(ShiftLibraryValidationService.Window::startTime)
-                .min(Comparator.naturalOrder()).orElseThrow();
+                .min(Comparator.comparingInt(window::anchoredStartMinute)).orElseThrow();
         // Ranked by END minute-of-day: natural order puts a midnight end (00:00) FIRST, so a
         // desk running to midnight would report its second-latest window end as the latest.
         LocalTime latestEnd = windows.stream().map(ShiftLibraryValidationService.Window::endTime)
@@ -599,10 +606,13 @@ public class ShiftLibraryGenerationService {
             }
             LocalTime start = candidate.template().getStartTime();
             LocalTime end = candidate.template().getEndTime();
-            // BDAY-04 (plan 19-07): migrated off the deprecated static, together with the matching
-            // allowlist entry in midnight-time-arithmetic.md (D-07/Shape K) in the same commit --
-            // plan 19-06 deliberately deferred this one line because it could not touch that file.
-            if (start.isBefore(earliestStart) || window.anchoredEndMinute(end) > window.anchoredEndMinute(latestEnd)) {
+            // OVNT-02/plan 21-12: compared as START boundaries through the anchored minute, not
+            // raw isBefore -- on a desk anchored away from midnight, two start times compared raw
+            // order by CLOCK, not by position in the business day, so this admission check would
+            // filter against a clock-ordered bound. At a 00:00 anchor the anchored minute equals
+            // the clock minute, so this is a no-op on every desk that exists today.
+            if (window.anchoredStartMinute(start) < window.anchoredStartMinute(earliestStart)
+                    || window.anchoredEndMinute(end) > window.anchoredEndMinute(latestEnd)) {
                 continue; // never propose an envelope reaching outside the demanded range
             }
             chosenSpans.add(spanKey(candidate));
