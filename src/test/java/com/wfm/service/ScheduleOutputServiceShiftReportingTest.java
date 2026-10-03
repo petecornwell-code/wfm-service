@@ -677,6 +677,107 @@ class ScheduleOutputServiceShiftReportingTest {
                 .isEqualTo(accepted.timeslotLabel());
     }
 
+    // ------------------------------------------------------------------
+    //  #14 (WINDOWS.md) -- the "Unassigned assignment" groupBy aggregate indicts the Timeslot
+    //  group key directly, never an individual AgentAssignment (see
+    //  unassignedSeatDescription_isBuiltFromTheSameTimeslotLabelVariable above for that proof).
+    //  Before this fix that meant every one of its ViolationDetail rows carried null
+    //  businessDate/calendarDate/startTime/endTime, so ScheduleResults.tsx's unfilledSlots map
+    //  (keyed businessDate|startTime) could never match a real slot and the operator-facing
+    //  unfilled-seat marker could never render in either grid branch.
+    // ------------------------------------------------------------------
+
+    @Test
+    void buildConstraintViolations_unassignedAssignment_violationNowCarriesTimeslotAttribution() {
+        // Drives the REAL live path end to end (solutionManager.explain against the real
+        // solverConfig.xml) rather than a narrower seam: the bug is about which object
+        // ScheduleConstraintProvider.unassignedAssignment's ConstraintMatch indicts, and only a
+        // genuine explain() call against the real constraint stream can prove that one way or
+        // the other. A seam-level test that just called a private extraction method directly
+        // would have to assume the match shape rather than prove it.
+        Timeslot ts = timeslot(LocalTime.of(10, 0));
+
+        // One AgentAssignment entity, left unassigned (agent == null) -- forEachIncludingUnassigned
+        // requires the entity to exist even when its planning variable is null.
+        AgentAssignment unassigned = new AgentAssignment();
+        unassigned.setId(UUID.randomUUID());
+        unassigned.setTimeslot(ts);
+
+        // Demand 2, assigned 0: minRequired = 2 * underallocationHardLimitPct(70) / 100 = 1,
+        // and 0 < 1, so unassignedAssignment's hard-limit filter fires exactly once.
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(LocalTime.MIDNIGHT);
+        schedule.setAssignments(new ArrayList<>(List.of(unassigned)));
+        schedule.setTimeslotDemandConfigs(
+                new ArrayList<>(List.of(new com.wfm.model.TimeslotDemandConfig(ts, 2))));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, false);
+        ConstraintViolationEntry entry = violations.stream()
+                .filter(e -> "Unassigned assignment".equals(e.constraintName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Unassigned assignment constraint did not fire; violations=" + violations));
+        assertThat(entry.violations()).hasSize(1);
+        ViolationDetail detail = entry.violations().get(0);
+
+        assertThat(detail.timeslotId()).isEqualTo(ts.getId());
+        assertThat(detail.businessDate()).isEqualTo(DAY);
+        assertThat(detail.calendarDate()).isEqualTo(DAY);
+        assertThat(detail.startTime()).isEqualTo(LocalTime.of(10, 0));
+        assertThat(detail.endTime()).isEqualTo(LocalTime.of(10, 0).plusMinutes(INCREMENT));
+
+        // No AgentAssignment is indicted for this aggregate constraint and TimeslotDemandConfig
+        // carries no specialization field -- agent identity and specName are correctly absent,
+        // never fabricated. Description choice (a): falls through to the generic form.
+        assertThat(detail.agentId()).isNull();
+        assertThat(detail.agentName()).isNull();
+        assertThat(entry.violations().get(0).description()).isEqualTo("Unassigned assignment violation");
+    }
+
+    @Test
+    void buildConstraintViolations_liveAgentAssignmentIndictedConstraint_attributionUnaffectedByNewTimeslotBranch() {
+        // No-regression requirement for #14's fix: a constraint that DOES indict an individual
+        // AgentAssignment (specializationMatch forEach()s AgentAssignment directly, unlike the
+        // groupBy aggregate above) must come out byte-identical to before the fix -- agentId,
+        // agentName, and all five structured timeslot fields -- proving the new Timeslot branch
+        // (guarded on timeslotId == null) never clobbers values the AgentAssignment branch
+        // already set.
+        Agent probe = agent("Probe"); // no primary/secondary specialization -- guarantees a mismatch
+        Specialization spec = specialization("Chat");
+        Timeslot ts = timeslot(LocalTime.of(14, 0));
+
+        AgentAssignment held = new AgentAssignment();
+        held.setId(UUID.randomUUID());
+        held.setAgent(probe);
+        held.setTimeslot(ts);
+        held.setRequiredSpecialization(spec);
+
+        Schedule schedule = new Schedule();
+        schedule.setIncrementMinutes(INCREMENT);
+        schedule.setDayStart(LocalTime.MIDNIGHT);
+        schedule.setAssignments(new ArrayList<>(List.of(held)));
+        schedule.setConstraintWeights(new ConstraintWeights());
+
+        List<ConstraintViolationEntry> violations = service.buildConstraintViolations(schedule, false);
+        ConstraintViolationEntry entry = violations.stream()
+                .filter(e -> "Specialization match".equals(e.constraintName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Specialization match did not fire; violations=" + violations));
+        assertThat(entry.violations()).hasSize(1);
+        ViolationDetail detail = entry.violations().get(0);
+
+        assertThat(detail.agentId()).isEqualTo(probe.getId());
+        assertThat(detail.agentName()).isEqualTo("Probe");
+        assertThat(detail.timeslotId()).isEqualTo(ts.getId());
+        assertThat(detail.businessDate()).isEqualTo(DAY);
+        assertThat(detail.calendarDate()).isEqualTo(DAY);
+        assertThat(detail.startTime()).isEqualTo(LocalTime.of(14, 0));
+        assertThat(detail.endTime()).isEqualTo(LocalTime.of(14, 0).plusMinutes(INCREMENT));
+    }
+
     /**
      * A single held seat whose agent has no primary or secondary specialization at all, run
      * through the LIVE path's real {@code solutionManager.explain()} -- deterministically fires

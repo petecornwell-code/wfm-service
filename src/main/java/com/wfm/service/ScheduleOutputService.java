@@ -706,6 +706,37 @@ public class ScheduleOutputService {
                             if (aa.getRequiredSpecialization() != null) {
                                 specName = aa.getRequiredSpecialization().getName();
                             }
+                        } else if (justification instanceof Timeslot ts && timeslotId == null) {
+                            // #14 (WINDOWS.md): a groupBy/join/join/filter aggregate constraint
+                            // (e.g. "Unassigned assignment" -- groupBy(a -> a.getTimeslot(), ...)
+                            // .join(TimeslotDemandConfig.class, ...).join(ScheduleConfig.class))
+                            // never indicts an individual AgentAssignment; its ConstraintMatch
+                            // indicts the Timeslot group key directly instead. Without this
+                            // branch every one of its violations carried null businessDate/
+                            // calendarDate/startTime/endTime end-to-end, so the operator-facing
+                            // unfilled-seat marker (ScheduleResults.tsx:391-402, keyed on
+                            // businessDate|startTime) could never render. The Timeslot IS already
+                            // indicted -- the solver was never withholding it -- this loop simply
+                            // didn't know how to read it; fixed read-side, not by reshaping
+                            // ScheduleConstraintProvider's stream.
+                            //
+                            // Guarded on timeslotId == null so an AgentAssignment's own values
+                            // (richer -- carries agent identity) always take precedence if a
+                            // match ever indicts both; today no constraint in this codebase does.
+                            //
+                            // specName is deliberately left null here: the other indicted fact
+                            // for this constraint, TimeslotDemandConfig, carries no specialization
+                            // field (record TimeslotDemandConfig(Timeslot, int) -- no spec), so it
+                            // cannot be derived and must never be fabricated or guessed from
+                            // elsewhere in the schedule. The description below therefore falls
+                            // through to the generic "<constraintName> violation" form for this
+                            // constraint -- only the structured fields are fixed here.
+                            timeslotId = ts.getId();
+                            businessDate = ts.getBusinessDate();
+                            calendarDate = ts.getDate();
+                            slotStartTime = ts.getStartTime();
+                            slotEndTime = ts.getEndTime();
+                            timeslotLabel = timeslotLabel(ts);
                         }
                     }
 
