@@ -658,6 +658,11 @@ public class SolverService {
         // BDAY-04 (D-10's additive commit): the desk's dayStart flows onto the schedule the same
         // way schedulingMode already does, immediately above. Nothing reads this value yet.
         s.setDayStart(desk.getDayStart());
+        // REST-04/D-14: the desk's minimum rest minutes, snapshotted the same way dayStart is,
+        // immediately above. This is what the solver's rest constraints measure against -- a later
+        // desk edit cannot retroactively change what an already-ACCEPTED schedule was scored
+        // against (see Schedule.minimumRestMinutes's javadoc).
+        s.setMinimumRestMinutes(desk.getMinimumRestMinutes());
 
         s.setPeriodStartDate(request.periodStartDate());
         s.setPeriodEndDate(request.periodEndDate());

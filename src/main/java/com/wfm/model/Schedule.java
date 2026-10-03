@@ -51,6 +51,15 @@ public class Schedule {
     @Column(name = "day_start")
     private LocalTime dayStart;
 
+    // REST-04/D-14: the desk's minimum rest minutes, snapshotted onto the schedule the same way
+    // dayStart already is (V54's precedent). The rest minimum is part of what the score was
+    // computed against -- a later desk edit must not retroactively change what an already-ACCEPTED
+    // schedule's measurement means. Written only by SolverService.buildSchedule from the
+    // tenant-scoped Desk already loaded for the solve; nullable because NULL is the real,
+    // structural "no minimum configured" signal both rest constraints depend on.
+    @Column(name = "minimum_rest_minutes")
+    private Integer minimumRestMinutes;
+
     @Column(name = "period_start_date", nullable = false)
     private LocalDate periodStartDate;
 
@@ -227,6 +236,9 @@ public class Schedule {
     public LocalTime getDayStart() { return dayStart; }
     public void setDayStart(LocalTime dayStart) { this.dayStart = dayStart; }
 
+    public Integer getMinimumRestMinutes() { return minimumRestMinutes; }
+    public void setMinimumRestMinutes(Integer minimumRestMinutes) { this.minimumRestMinutes = minimumRestMinutes; }
+
     public LocalDate getPeriodStartDate() { return periodStartDate; }
     public void setPeriodStartDate(LocalDate periodStartDate) { this.periodStartDate = periodStartDate; }
 
@@ -346,6 +358,7 @@ public class Schedule {
                 breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay,
                 overallocationHardLimitPct, underallocationHardLimitPct,
-                schedulingMode, consistencyToleranceMinutes, dayStart);
+                schedulingMode, consistencyToleranceMinutes, dayStart,
+                minimumRestMinutes);
     }
 }

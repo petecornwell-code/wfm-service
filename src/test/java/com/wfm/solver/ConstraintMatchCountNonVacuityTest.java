@@ -152,6 +152,11 @@ class ConstraintMatchCountNonVacuityTest {
         expected.put("Usual shift consistency", 0);
         expected.put("Preferred start (shift mode)", 0);
         expected.put("Shift start mix", 0);
+        // REST-04: zero here is the structural evidence this requirement demands, not a vacuous
+        // join -- MidnightBoundaryFixture's baseline desk sets no minimum rest at all, so the
+        // constraint's leading filtered forEach(ScheduleConfig.class) produces no tuples and the
+        // self-join below it is never built.
+        expected.put("Minimum rest (shift)", 0);
         return java.util.Collections.unmodifiableMap(expected);
     }
 

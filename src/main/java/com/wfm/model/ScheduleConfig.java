@@ -31,17 +31,49 @@ public record ScheduleConfig(
         int underallocationHardLimitPct,
         SchedulingMode schedulingMode,
         int consistencyToleranceMinutes,
-        LocalTime dayStart
+        LocalTime dayStart,
+        Integer minimumRestMinutes
 ) {
     /** Default tolerance band (minutes) used by the 12-argument delegating constructor below. */
     public static final int DEFAULT_CONSISTENCY_TOLERANCE_MINUTES = 60;
 
     /**
+     * Delegating constructor preserving the pre-REST-04 14-argument shape, so every
+     * pre-Phase-22 test construction site compiles unchanged — supplies {@code null} for the new
+     * 15th component. {@code null} is the correct fixture default here: an unset rest minimum is
+     * exactly the state REST-04 requires every unmigrated fixture to be in. The single production
+     * construction site ({@link Schedule#getScheduleConfig()}) passes the value explicitly.
+     * Deliberate carve-out from the D-07 allowlist, whose scope is {@code src/main/java}.
+     */
+    public ScheduleConfig(
+            int incrementMinutes,
+            LocalTime startTime,
+            LocalTime endTime,
+            int breakDurationMinutes,
+            BigDecimal breakMinShiftHours,
+            BigDecimal breakBlockedHours,
+            BreakAlignment breakStartAlignment,
+            int breakClusterThresholdPct,
+            BigDecimal defaultContractedHoursPerDay,
+            int overallocationHardLimitPct,
+            int underallocationHardLimitPct,
+            SchedulingMode schedulingMode,
+            int consistencyToleranceMinutes,
+            LocalTime dayStart
+    ) {
+        this(incrementMinutes, startTime, endTime, breakDurationMinutes, breakMinShiftHours,
+                breakBlockedHours, breakStartAlignment, breakClusterThresholdPct,
+                defaultContractedHoursPerDay, overallocationHardLimitPct, underallocationHardLimitPct,
+                schedulingMode, consistencyToleranceMinutes, dayStart, null);
+    }
+
+    /**
      * Delegating constructor preserving the pre-Phase-19 13-argument shape, so every
      * pre-BDAY-04 test construction site compiles unchanged — supplies {@code LocalTime.MIDNIGHT}
-     * for the new 14th component. This midnight default exists for test fixtures only; the single
-     * production construction site ({@link Schedule#getScheduleConfig()}) passes the value
-     * explicitly. Deliberate carve-out from the D-07 allowlist, whose scope is {@code src/main/java}.
+     * for the 14th component and {@code null} for the new 15th. This midnight default exists for
+     * test fixtures only; the single production construction site
+     * ({@link Schedule#getScheduleConfig()}) passes both values explicitly. Deliberate carve-out
+     * from the D-07 allowlist, whose scope is {@code src/main/java}.
      */
     public ScheduleConfig(
             int incrementMinutes,
@@ -61,7 +93,7 @@ public record ScheduleConfig(
         this(incrementMinutes, startTime, endTime, breakDurationMinutes, breakMinShiftHours,
                 breakBlockedHours, breakStartAlignment, breakClusterThresholdPct,
                 defaultContractedHoursPerDay, overallocationHardLimitPct, underallocationHardLimitPct,
-                schedulingMode, consistencyToleranceMinutes, LocalTime.MIDNIGHT);
+                schedulingMode, consistencyToleranceMinutes, LocalTime.MIDNIGHT, null);
     }
 
     /**

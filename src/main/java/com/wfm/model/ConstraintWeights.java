@@ -309,6 +309,24 @@ public class ConstraintWeights {
     @Column(name = "shift_start_mix_mode", nullable = false, length = 16)
     private ShiftStartMixMode shiftStartMixMode = ShiftStartMixMode.OFF;
 
+    /**
+     * Weight for "Minimum rest (shift)" (Phase 22, REST-02/REST-04) — the hard constraint
+     * penalising an agent whose shift on business date D starts too soon after their shift on
+     * D-1, on a SHIFT-mode desk with a configured {@code minimum_rest_minutes}. Hard at 1000, the
+     * same tier as {@link #noOverlapWeight} and {@link #nonWorkingDaySeatWeight} ("this schedule
+     * is operationally illegal", not "low quality"), deliberately below {@link #agentDayOffWeight}'s
+     * 10000 hard.
+     *
+     * <p>This weight has no bearing on REST-04's structural inertness: a {@code NULL}
+     * {@code Desk.minimumRestMinutes} means the constraint's leading filtered
+     * {@code forEach(ScheduleConfig.class)} produces zero tuples, so no downstream join node is
+     * even built — not merely a penalty scaled to zero by this column.
+     */
+    @ConstraintWeight("Minimum rest (shift)")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "minimum_rest_shift_weight")
+    private HardSoftScore minimumRestShiftWeight = HardSoftScore.ofHard(1000);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -403,4 +421,7 @@ public class ConstraintWeights {
 
     public ShiftStartMixMode getShiftStartMixMode() { return shiftStartMixMode; }
     public void setShiftStartMixMode(ShiftStartMixMode shiftStartMixMode) { this.shiftStartMixMode = shiftStartMixMode; }
+
+    public HardSoftScore getMinimumRestShiftWeight() { return minimumRestShiftWeight; }
+    public void setMinimumRestShiftWeight(HardSoftScore minimumRestShiftWeight) { this.minimumRestShiftWeight = minimumRestShiftWeight; }
 }

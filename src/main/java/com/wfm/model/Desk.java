@@ -36,6 +36,14 @@ public class Desk {
     @Column(name = "day_start", nullable = false)
     private LocalTime dayStart = LocalTime.MIDNIGHT;
 
+    // REST-01/REST-04, D-04: the per-desk minimum shift-to-shift rest floor, in minutes.
+    // Deliberately NULLable with no field initialiser -- NULL is the unambiguous "no legal minimum
+    // is being assumed" state the solver's rest constraints depend on structurally (a NULL here
+    // means neither constraint's stream produces a tuple at all, not merely a zero-weight penalty).
+    // No baked-in default per research/FEATURES.md:150.
+    @Column(name = "minimum_rest_minutes")
+    private Integer minimumRestMinutes;
+
     public Desk() {}
 
     public UUID getId() { return id; }
@@ -60,4 +68,7 @@ public class Desk {
 
     public LocalTime getDayStart() { return dayStart; }
     public void setDayStart(LocalTime dayStart) { this.dayStart = dayStart; }
+
+    public Integer getMinimumRestMinutes() { return minimumRestMinutes; }
+    public void setMinimumRestMinutes(Integer minimumRestMinutes) { this.minimumRestMinutes = minimumRestMinutes; }
 }

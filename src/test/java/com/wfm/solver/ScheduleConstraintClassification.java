@@ -336,6 +336,19 @@ public final class ScheduleConstraintClassification {
                         + "date with no usual-shift targets.",
                 null));
 
+        map.put("Minimum rest (shift)", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 22 (REST-02/REST-04): leads with a filtered forEach(ScheduleConfig.class) "
+                        + "requiring a non-null minimumRestMinutes AND SchedulingMode.SHIFT explicitly, "
+                        + "then self-joins the (non-null-shiftBandPair) AgentShiftAssignment stream on "
+                        + "(agentId, businessDate -> businessDate.plusDays(1)), penalising a gap below "
+                        + "the configured minimum. The explicit SHIFT gate on the leading singleton is "
+                        + "what makes an unset OR SLOT-mode desk produce zero tuples at the first "
+                        + "stream node -- not merely a discarded self-join -- the same structural-"
+                        + "inertness argument 'Shift envelope compliance' established, extended here so "
+                        + "REST-04 holds even though D-01 chose to enforce rest in BOTH modes.",
+                null));
+
         return java.util.Collections.unmodifiableMap(map);
     }
 }

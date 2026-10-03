@@ -3,6 +3,7 @@ package com.wfm.solver;
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
 import ai.timefold.solver.core.api.score.stream.bi.BiConstraintStream;
+import ai.timefold.solver.core.api.score.stream.uni.UniConstraintStream;
 import com.wfm.model.*;
 import com.wfm.util.DayWindow;
 
@@ -134,6 +135,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             usualShiftConsistency(factory),
             preferredStartShiftMode(factory),
             shiftStartMix(factory),
+            minimumRestShift(factory),
         };
     }
 
@@ -996,6 +998,67 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter((date, start, count, target) -> count > target.targetCount())
                 .penalizeConfigurable((date, start, count, target) -> count - target.targetCount())
                 .asConstraint(SHIFT_START_MIX_CONSTRAINT_NAME);
+    }
+
+    /**
+     * (Phase 22, REST-02/REST-04, D-01/D-03) Minimum rest (shift) — penalises an agent whose shift
+     * on business date D starts too soon after their shift on business date D-1, on a SHIFT-mode
+     * desk that has configured a {@code minimumRestMinutes} floor.
+     *
+     * <p><b>Real instants, not calendar-date buckets (REST-02).</b> The comparison below is always
+     * between the predecessor's envelope END and the successor's envelope START, both read through
+     * {@link RestSpan#gapMinutes}'s anchored arithmetic — never a calendar-date adjacency check.
+     * This is what makes REST-02's "same-day back-to-back" clause correct with no special branch:
+     * on a mid-day-anchored desk, two adjacent BUSINESS dates (D-1 and D) can fall on the identical
+     * CALENDAR date (22-CONTEXT.md Phase Boundary item 4) — the gap arithmetic does not care, since
+     * it never looks at the calendar date at all.
+     *
+     * <p><b>The leading filtered {@code forEach(ScheduleConfig.class)} is what makes REST-04
+     * structural, not incidental.</b> {@code ScheduleConfig} is a {@code @ProblemFactProperty}
+     * singleton, so filtering it to a non-null {@code minimumRestMinutes} and
+     * {@code SchedulingMode.SHIFT} means an unset or SLOT-mode desk produces ZERO tuples at the
+     * very first stream node — the self-join below is never built, not merely discarded after
+     * being built cheaply. A trailing filter would have built the full self-join first and thrown
+     * the tuples away afterward, which is exactly the "cheap tuples" shape REST-04 forbids on a
+     * desk that does not reliably solve to hard 0. The SHIFT gate is explicit here (rather than
+     * relying on {@code AgentShiftAssignment} being empty in SLOT mode) for symmetry with D-03's
+     * two-mode-gated-constraints split (22-RESEARCH.md Assumption A1).
+     *
+     * <p><b>An indexed self-join, never {@code forEachUniquePair}.</b> {@code spans} is built once,
+     * as a local variable, and used on both sides of the join below — first as every candidate
+     * predecessor (paired unconditionally with the filtered config singleton), then again as every
+     * candidate successor, matched via two {@code Joiners.equal} positions: same {@code agentId()},
+     * and the predecessor's {@code businessDate().plusDays(1)} equal to the successor's
+     * {@code businessDate()}. This is a hash-indexed join, not a filtered Cartesian scan —
+     * {@code oneAssignmentPerTimeslot}'s own comment states the identical reasoning for preferring
+     * {@code forEach}-based joins over {@code forEachUniquePair}. A single one-day step is provably
+     * sufficient: D-05 bounds the configured minimum below 24 hours, so a shift two business dates
+     * back ends no later than the start of business day D-1 and can never be in range of a shift on
+     * business day D.
+     *
+     * <p>Penalises configurably by the shortfall in minutes — the configured minimum less the
+     * measured gap — so a worse violation costs more, matching {@link #exactlyOneBreak}'s
+     * proportional-penalty register.
+     *
+     * <p>Structurally inert on a SLOT desk (explicit {@code SchedulingMode.SHIFT} gate above) and
+     * on any desk with no configured minimum (the leading filter), the same double-inertness shape
+     * as {@link #shiftEnvelopeCompliance}.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint minimumRestShift(ConstraintFactory factory) {
+        UniConstraintStream<RestSpan> spans = factory.forEach(AgentShiftAssignment.class)
+                .filter(sa -> sa.getShiftBandPair() != null)
+                .map(sa -> RestSpan.ofShift(sa, anchorFor(sa).dayStart()));
+
+        return factory.forEach(ScheduleConfig.class)
+                .filter(cfg -> cfg.minimumRestMinutes() != null && cfg.schedulingMode() == SchedulingMode.SHIFT)
+                .join(spans)
+                .join(spans,
+                        equal((cfg, prev) -> prev.agentId(), RestSpan::agentId),
+                        equal((cfg, prev) -> prev.businessDate().plusDays(1), RestSpan::businessDate))
+                .filter((cfg, prev, next) -> RestSpan.gapMinutes(prev, next) < cfg.minimumRestMinutes())
+                .penalizeConfigurable((cfg, prev, next) -> cfg.minimumRestMinutes() - RestSpan.gapMinutes(prev, next))
+                .asConstraint("Minimum rest (shift)");
     }
 
     /**
