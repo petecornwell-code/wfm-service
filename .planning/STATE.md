@@ -5,11 +5,11 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-04-PLAN.md
-last_updated: "2026-10-02T23:22:19.689Z"
+stopped_at: Completed 21-05-PLAN.md
+last_updated: "2026-10-03T00:06:45.754Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 487fa5c10b66640aadd6dfca265a2ddcb8812c7a
+state_head: 34a1587d9b140c9a69a4e9d9f86d9c027d1f762c
 progress:
   total_phases: 5
   completed_phases: 3
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 5 of 12
+Plan: 6 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -331,6 +331,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Task 1's three new behavior tests exercise construction site 2 (buildAcceptedConstraintViolations) via the existing acceptedScheduleWithEnvelope + relocated-Timeslot fixture pattern; site 1 (live explain() path) is covered structurally by the compiler-forced widened constructor and an unmodified pre-existing live-path test.
 - [Phase 21]: unfilledSeatsByDateAndSlot's result map key changed from the label's parsed calendar date to businessDate.toString(), matching writeAgentAllocation's lookup key (AgentScheduleEntry.date(), always the business date) -- the actual fix for the post-midnight shortfall attribution bug.
 - [Phase 21]: migrate-now: calculateErlangC and calculateErlangX re-pointed to deleteLiveByDeskAndBusinessDateRange (OVNT-02), closing the gap plan 21-02 made reachable rather than deferring it; bday-join-guard.md updated to record the migration
+- [Phase 21]: OVNT-05's operating-window containment is blocking only for an overnight (calendar-midnight-crossing) escape; a same-day escape is a non-blocking advisory everywhere (save path, shift-library report, mode gate)
+- [Phase 21]: Generated shift-library suggestions are filtered by the same containment predicate, stricter than the save path: no envelope outside the operating window is ever proposed, overnight or same-day
 
 ### Blockers/Concerns
 
@@ -354,8 +356,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-02T23:22:19.652Z
-Stopped at: Completed 21-04-PLAN.md
+Last session: 2026-10-03T00:06:45.719Z
+Stopped at: Completed 21-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -437,3 +439,4 @@ Resume file: None
 | Phase 21 P02 | 35 min | 3 tasks | 7 files |
 | Phase 21 P03 | 40min | 2 tasks | 5 files |
 | Phase 21 P04 | ~25min | 2 tasks | 4 files |
+| Phase 21 P05 | 30 min | 3 tasks | 9 files |
