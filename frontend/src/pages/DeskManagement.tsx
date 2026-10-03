@@ -14,6 +14,7 @@ export default function DeskManagement() {
   const [editDescription, setEditDescription] = useState('')
   const [editHours, setEditHours] = useState(8)
   const [editDayStart, setEditDayStart] = useState('')
+  const [savingDayStart, setSavingDayStart] = useState(false)
 
   useEffect(() => {
     desks.list()
@@ -73,6 +74,8 @@ export default function DeskManagement() {
 
   const handleUpdate = async () => {
     if (!editingId || !editName.trim()) return
+    const original = deskList.find(d => d.id === editingId)
+    setSavingDayStart(true)
     try {
       const updated = await desks.update(editingId, {
         name: editName,
@@ -80,10 +83,30 @@ export default function DeskManagement() {
         defaultContractedHoursPerDay: editHours,
       })
       setDeskList(deskList.map(d => d.id === editingId ? updated : d))
+
+      // The backend's equal-value early return makes a redundant call harmless, but only
+      // submitting when the value actually changed keeps the no-change path a single request.
+      let latest = updated
+      if (original && editDayStart !== original.dayStart) {
+        latest = await desks.setDayStart(editingId, editDayStart)
+        setDeskList(prev => prev.map(d => d.id === editingId ? latest : d))
+      }
+
       setEditingId(null)
-      showToast('success', 'Desk updated')
+      // One submission produces exactly one message: the tiling advisory (when present) carries
+      // its own "the desk still saved" confirmation, so it replaces the success message rather
+      // than following it.
+      if (latest.dayStartTilingWarning) {
+        showToast('warning', latest.dayStartTilingWarning)
+      } else {
+        showToast('success', 'Desk updated')
+      }
     } catch (err) {
+      // Stay in edit mode on failure (do not clear editingId here) so the operator's entered
+      // value is not discarded, and show exactly the message the server produced.
       showToast('error', getErrorMessage(err))
+    } finally {
+      setSavingDayStart(false)
     }
   }
 
@@ -147,7 +170,7 @@ export default function DeskManagement() {
                     )}
                   </td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
-                    <button className="primary" onClick={handleUpdate}>Save</button>
+                    <button className="primary" onClick={handleUpdate} disabled={savingDayStart}>Save</button>
                     <button onClick={() => setEditingId(null)}>Cancel</button>
                   </td>
                 </>
