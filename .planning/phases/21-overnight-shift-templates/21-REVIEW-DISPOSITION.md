@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: CR-01
     severity: Blocker
-    disposition: open
+    disposition: fixed
     title: "FTE upload silently drops post-midnight demand on any desk anchored away from midnight"
   - id: WR-01
     severity: Warning
@@ -23,7 +23,7 @@ findings:
     severity: Info
     disposition: open
     title: "`DeskManagement.tsx`'s Cancel button stays enabled while a day-start save is in flight"
-open: 5
+open: 4
 total: 5
 recorded: 2026-10-03T12:40:00Z
 ---
@@ -32,7 +32,7 @@ recorded: 2026-10-03T12:40:00Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | Blocker | open | src/main/java/com/wfm/service/FteUploadService.java:165-169, 190, 213-218 — orchestrator independently confirmed the calendar/business key mismatch and found the impact UNDERSTATED: unmatched columns are reported via the `skipped` list (not silent), but columns that DO resolve under the calendar key attach FTE values to the WRONG business day's timeslot, which is mis-attribution rather than omission |
+| CR-01 | Blocker | fixed | src/main/java/com/wfm/service/FteUploadService.java:165-169, 190, 213-218 — orchestrator independently confirmed the calendar/business key mismatch and found the impact UNDERSTATED: unmatched columns are reported via the `skipped` list (not silent), but columns that DO resolve under the calendar key attach FTE values to the WRONG business day's timeslot, which is mis-attribution rather than omission. Fixed by keying the lookup by `getBusinessDate()`; proven by a new mis-attribution test and a 00:00-anchor no-op control; full suite green (202 classes, 1303 tests, 0 failures/errors, 4 pre-existing skips) |
 | WR-01 | Warning | open | src/main/java/com/wfm/service/ShiftTemplateService.java:412-424 |
 | WR-02 | Warning | open | src/main/java/com/wfm/service/DeskService.java:298-321 |
 | WR-03 | Warning | open | frontend/src/pages/ScheduleResults.tsx:695-698 |
