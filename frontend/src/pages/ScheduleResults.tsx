@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
-import { anchoredAt } from '../utils/dayWindow'
+import { anchoredAt, type DayWindow } from '../utils/dayWindow'
 
 const MATCH_COLORS: Record<string, string> = {
   PRIMARY: '#dcfce7',
@@ -388,18 +388,17 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
     }
   }
 
-  // Build unfilled slot counts from "Unassigned assignment" constraint violations.
-  // timeslotLabel format: "YYYY-MM-DD HH:MM-HH:MM"
-  const unfilledSlots = new Map<string, number>() // key: "date|HH:MM"
+  // Build unfilled slot counts from "Unassigned assignment" constraint violations, read from
+  // the violation's own structured fields rather than parsed off the display label (OVNT-02/
+  // D-14) -- the label is calendar-date text, and every per-date section in this grid is a
+  // business day, so a post-midnight shortfall used to key under a date no section requested.
+  // A violation missing either field is skipped rather than throwing (unchanged contract).
+  const unfilledSlots = new Map<string, number>() // key: "businessDate|HH:MM"
   for (const cv of violations) {
     if (cv.constraintName !== 'Unassigned assignment') continue
     for (const v of cv.violations || []) {
-      if (!v.timeslotLabel) continue
-      const spaceIdx = v.timeslotLabel.indexOf(' ')
-      if (spaceIdx < 0) continue
-      const vDate = v.timeslotLabel.substring(0, spaceIdx)
-      const vStart = toHHMM(v.timeslotLabel.substring(spaceIdx + 1))
-      const key = `${vDate}|${vStart}`
+      if (!v.businessDate || !v.startTime) continue
+      const key = `${v.businessDate}|${toHHMM(v.startTime)}`
       unfilledSlots.set(key, (unfilledSlots.get(key) || 0) + 1)
     }
   }
@@ -441,18 +440,14 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         for (const entry of dayEntries) {
           for (const a of entry.assignments) slotSet.add(toHHMM(a.startTime))
           for (const b of entry.breaks) {
-            // Break may span multiple slots; derive each slot start from the break range
+            // Break may span multiple slots; derive each slot start from the break range via an
+            // anchored offset cursor (D-15) so a band crossing the day's anchor expands to every
+            // slot it covers, not none.
             const inc = entry.assignments.length > 0
-              ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+              ? dayWindow.anchoredDurationMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
               : 0
-            if (inc > 0) {
-              let t = toHHMM(b.startTime)
-              while (t < toHHMM(b.endTime)) {
-                slotSet.add(t)
-                t = addMinutes(t, inc)
-              }
-            } else {
-              slotSet.add(toHHMM(b.startTime))
+            for (const slot of expandBreakSlots(dayWindow, b.startTime, b.endTime, inc)) {
+              slotSet.add(slot)
             }
           }
         }
@@ -461,7 +456,10 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
           const [d, t] = key.split('|')
           if (d === date) slotSet.add(t)
         }
-        const slots = [...slotSet].sort()
+        // Anchored sort (D-15/D-16): orders by offset from the desk's day start rather than
+        // lexically, so an overnight shift's slots form one contiguous run instead of the
+        // post-midnight slots sorting before the evening ones.
+        const slots = [...slotSet].sort((a, b) => dayWindow.anchoredStartMinute(a) - dayWindow.anchoredStartMinute(b))
 
         // Sort agents by name
         const sortedEntries = [...dayEntries].sort((a, b) => a.agentName.localeCompare(b.agentName))
@@ -524,17 +522,11 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
 
                       const breakSlots = new Set<string>()
                       const inc = entry.assignments.length > 0
-                        ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+                        ? dayWindow.anchoredDurationMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
                         : 0
                       for (const b of entry.breaks) {
-                        if (inc > 0) {
-                          let t = toHHMM(b.startTime)
-                          while (t < toHHMM(b.endTime)) {
-                            breakSlots.add(t)
-                            t = addMinutes(t, inc)
-                          }
-                        } else {
-                          breakSlots.add(toHHMM(b.startTime))
+                        for (const slot of expandBreakSlots(dayWindow, b.startTime, b.endTime, inc)) {
+                          breakSlots.add(slot)
                         }
                       }
 
@@ -653,13 +645,15 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
           }
           group.entries.push(entry)
         }
-        // Groups sort by shift start time ascending, tie-broken alphabetically by template name;
-        // the null ("No shift assigned") bucket always sorts last, regardless of any agent's
-        // actual times — an edge case belongs at the bottom, not hidden mid-list.
+        // Groups sort by anchored start offset ascending (D-15), not by clock -- a night desk's
+        // first shift sorts first rather than wherever its clock time falls -- tie-broken
+        // alphabetically by template name; the null ("No shift assigned") bucket always sorts
+        // last, regardless of any agent's actual times — an edge case belongs at the bottom, not
+        // hidden mid-list.
         const shiftGroups = [...groupsByKey.values()].sort((a, b) => {
           if (a.key === null) return 1
           if (b.key === null) return -1
-          const startCompare = toHHMM(a.startTime).localeCompare(toHHMM(b.startTime))
+          const startCompare = dayWindow.anchoredStartMinute(a.startTime) - dayWindow.anchoredStartMinute(b.startTime)
           if (startCompare !== 0) return startCompare
           return a.templateName.localeCompare(b.templateName)
         })
@@ -673,12 +667,19 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         // untouched.
         const fullDaySlots = new Set(slots)
         if (schedule.incrementMinutes > 0) {
-          const dayEnd = toHHMM(schedule.endTime)
-          for (let t = toHHMM(schedule.startTime); t < dayEnd; t = addMinutes(t, schedule.incrementMinutes)) {
-            fullDaySlots.add(t)
+          // D-15/D-16/T-21-16: an integer offset cursor bounded by the window's anchored END
+          // minute (at most one full day), not a clock value that can wrap past its own
+          // terminating condition. Reading the window's end in an END position is what fixes
+          // the wrapping case -- a schedule whose operating window runs a full day stores the
+          // same value at both ends, and a start-position read of the end made this loop's
+          // condition false immediately, regenerating zero columns.
+          const spanMinutes = dayWindow.anchoredEndMinute(schedule.endTime) - dayWindow.anchoredStartMinute(schedule.startTime)
+          for (let offset = 0; offset < spanMinutes; offset += schedule.incrementMinutes) {
+            fullDaySlots.add(dayWindow.anchoredPlusWithinDay(schedule.startTime, offset))
           }
         }
-        const shiftSlots = [...fullDaySlots].sort()
+        // Anchored sort (D-15/D-16), matching `slots` above.
+        const shiftSlots = [...fullDaySlots].sort((a, b) => dayWindow.anchoredStartMinute(a) - dayWindow.anchoredStartMinute(b))
 
         // Union of this day's shift-group envelope spans, from the group data already
         // assembled above. Envelope-only containment test — deliberately NOT band-aware: a
@@ -687,7 +688,14 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         const envelopeSpans = shiftGroups
           .filter(g => g.key !== null)
           .map(g => [toHHMM(g.startTime), toHHMM(g.endTime)] as const)
-        const isEnvelopeReached = (slot: string) => envelopeSpans.some(([s, e]) => slot >= s && slot < e)
+        // Anchored containment (D-15): the envelope is the outer interval, the slot and its own
+        // end (one increment later) is the inner one. Today an overnight envelope (22:00-06:00)
+        // matches no raw-string slot at all, so every column in the day renders as an hour no
+        // shift reaches; this marks exactly the covered hours instead.
+        const isEnvelopeReached = (slot: string) =>
+          envelopeSpans.some(([s, e]) =>
+            dayWindow.anchoredContains(s, e, slot, dayWindow.anchoredPlusWithinDay(slot, schedule.incrementMinutes))
+          )
 
         return (
           <div key={date} style={{ marginBottom: '2rem' }}>
@@ -742,17 +750,11 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
 
                         const breakSlots = new Set<string>()
                         const inc = entry.assignments.length > 0
-                          ? timeDiffMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
+                          ? dayWindow.anchoredDurationMinutes(entry.assignments[0].startTime, entry.assignments[0].endTime)
                           : 0
                         for (const b of entry.breaks) {
-                          if (inc > 0) {
-                            let t = toHHMM(b.startTime)
-                            while (t < toHHMM(b.endTime)) {
-                              breakSlots.add(t)
-                              t = addMinutes(t, inc)
-                            }
-                          } else {
-                            breakSlots.add(toHHMM(b.startTime))
+                          for (const slot of expandBreakSlots(dayWindow, b.startTime, b.endTime, inc)) {
+                            breakSlots.add(slot)
                           }
                         }
 
@@ -885,6 +887,25 @@ function formatElapsed(totalSeconds: number): string {
 /** Normalize time to "HH:MM" — strips seconds from "HH:MM:SS" */
 function toHHMM(time: string): string {
   return time.substring(0, 5)
+}
+
+/**
+ * Expands a break band into its covered slot-start "HH:MM" strings, using an anchored offset
+ * cursor from the band's anchored start minute to its anchored end minute (OVNT-02/D-15) -- a
+ * band crossing the desk's day-start anchor expands to every slot it covers instead of looping
+ * zero times. The cursor is a plain integer counter bounded by the band's own span (at most one
+ * full day), never a clock value that can wrap past its own terminating condition, so it always
+ * terminates (T-21-16). Falls back to the band's own start when no positive increment is
+ * available -- the existing behaviour for an agent-day with no assignment to infer one from.
+ */
+function expandBreakSlots(window: DayWindow, breakStart: string, breakEnd: string, incrementMinutes: number): string[] {
+  if (incrementMinutes <= 0) return [toHHMM(breakStart)]
+  const spanMinutes = window.anchoredEndMinute(breakEnd) - window.anchoredStartMinute(breakStart)
+  const slots: string[] = []
+  for (let offset = 0; offset < spanMinutes; offset += incrementMinutes) {
+    slots.push(window.anchoredPlusWithinDay(breakStart, offset))
+  }
+  return slots
 }
 
 function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
