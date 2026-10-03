@@ -3,7 +3,7 @@ status: passed
 phase: 21-overnight-shift-templates
 source: [21-VERIFICATION.md]
 started: 2026-10-03T13:20:00Z
-updated: 2026-10-03T15:10:00Z
+updated: 2026-10-03T15:16:00Z
 measured_by: orchestrator session via browser automation (geometry read with browser_evaluate; screenshots deliberately not used — they do not settle on this app)
 environment: throwaway stack — pgvector Postgres :55432, backend :8081, vite :3001; seeded desk at a 21:00 anchor with 60-minute timeslots, one overnight 22:00-06:00 template, and a COMPLETED schedule carrying dayStart 21:00
 ---
@@ -25,7 +25,7 @@ awaiting: none — measured
 test: Open Desk Management, edit a desk's day start to a value entered by keyboard (not the picker) that the backend refuses for one of the two reasons the time picker normally makes unreachable (e.g. a value carrying seconds, or a non-15-minute boundary). Also trigger the stranded-template refusal and the accepted-schedule-lock message, and the D-05 tiling-warning toast, at a narrow (~375px) viewport and with a long desk name.
 expected: Every refusal/advisory renders the backend's own full message without clipping inside the Toast or table cell; the lock explanation wraps rather than overflowing the desk table at real desk-name widths.
 ledger: WINDOWS.md #11
-result: passed (3 of 4 message types exercised; lock explanation not reachable without an accepted schedule)
+result: passed (all 4 message types exercised; lock explanation measured in a second pass against a seeded ACCEPTED schedule)
 evidence: |
   Desk name used throughout: "Night Desk Verification With A Deliberately Long Name" (52 chars).
   Control confirmed live first: the day-start cell renders input[type=time][step=900], enabled,
@@ -48,11 +48,31 @@ evidence: |
   Page-level horizontal scroll does occur at 375px, but it is NOT attributable to this phase: the
   desk table is 760px wide and removing the Day Start column entirely would still leave 609px
   against a 360px client width. Inherent to a 6-column table at phone width, pre-existing.
-not_covered: |
-  The accepted-schedule lock explanation was not exercised — it requires an ACCEPTED schedule on
-  the desk, which this seeded environment did not have. The disclosure helper's text contract was
-  proven by 21-08 at the unit level; only its rendered geometry remains unmeasured. Narrower than
-  the original ledger item, and recorded rather than claimed.
+lock_explanation_measured: |
+  Second pass, 2026-10-03T15:12Z. Seeded a desk named "Overnight Operations Desk — Manila Night
+  Coverage (Tier 2)" (58 chars) at a 21:00 anchor with an ACCEPTED schedule over 2026-01-05–
+  2026-01-18, so all three disclosure fields populated — the LONGEST form, with both optional
+  halves present:
+    dayStartLockedByScheduleId: cccccccc-0000-4000-8000-000000000011
+    dayStartLockedPeriodStart:  2026-01-05
+    dayStartLockedPeriodEnd:    2026-01-18
+
+  Rendered text (en dash intact through JSON transit):
+    "Locked — accepted schedule blocks day start. cccccccc-0000-4000-8000-000000000011
+     (2026-01-05–2026-01-18)."
+
+  | Viewport | Mode | Box | Lines | Clipped H | Clipped V | Within table | Table overflows |
+  |---|---|---|---|---|---|---|---|
+  | 1200 | read | 340x110 | 5 | no | no | yes | no |
+  | 375 | edit (locked) | 152x219 | 9 | no | no | yes | no |
+
+  whiteSpace: normal, overflow: visible at both widths; scrollW == clientW and scrollH == clientH
+  in every case. It WRAPS (5 lines then 9) rather than overflowing the desk table — which is
+  precisely what this item's expectation asked for.
+
+  The disabled render was confirmed in the same pass: on the locked desk in edit mode,
+  input[type=time].disabled === true, and the cell names the blocking schedule id. 21-08's
+  "disabled render that names the schedule permanently blocking the change" verified live.
 
 ### 2. Sticky Agent column survives anchored column re-ordering
 
@@ -126,9 +146,9 @@ blocked: 0
 
 ## Gaps
 
-One sub-case of item 1 remains unmeasured: the accepted-schedule lock explanation's rendered
-geometry, which needs an ACCEPTED schedule. Its text contract was proven at the unit level in
-21-08; only geometry is open, and the item is recorded narrower rather than closed.
+None outstanding. All three ledger items (#11, #12, #13) are measured and closed; item 1's
+fourth sub-case, open after the first pass, was measured in a second pass against a seeded
+ACCEPTED schedule (see lock_explanation_measured above).
 
 One pre-existing defect was found while measuring item 2 — the Agent column's `position: sticky`
 is inert under document-level horizontal scroll. Verified by git diff NOT to be Phase 21's doing,
