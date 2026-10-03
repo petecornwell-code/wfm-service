@@ -1,7 +1,7 @@
 ---
 phase: "22"
 slug: "minimum-rest"
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-10-03"
@@ -139,23 +139,60 @@ table headers.
 
 ## UI Considerations
 
-Applicable state considerations resolved: **11 covered, 2 backstop, 0 unresolved.**
+**Coverage:** 42/42 applicable state considerations resolved · 35 covered · 7 backstop · 0 unresolved · 0 unclassified
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Minimum Rest desk field (`DeskManagement.tsx` new column) | ✅ covered | Unset (`NULL`) renders `—`, the same dash already used for the Description column's empty state; the desk solves exactly as today (REST-04). |
-| error | Minimum Rest desk field | ✅ covered | Inline amber validation for an out-of-range value before submit; the server's own refusal message is shown via the existing error-toast path on reject — see Copywriting Contract. |
-| empty | Rest Waivers table (`AgentExceptions.tsx` new section) | ✅ covered | "No rest waivers" row, literal parallel to the existing "No exceptions" row immediately above it in the same page. |
-| error | Add/Delete Waiver actions | ✅ covered | Reuses `showToast('error', getErrorMessage(err))` verbatim — the identical path the existing Add/Delete Exception actions already use. |
-| loading | Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | Inherits the page's existing single `loading` boolean and "Loading..." text; this phase adds no second, independent fetch-loading state. |
-| zero-one-many | Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | The table renders identically at 0 (empty-copy row), 1, or many rows; no count-dependent singular/plural copy anywhere in this surface. |
-| long-text | Reason column (new Rest Waivers table, and the ScheduleResults Rest Waivers tab) | ✅ covered | Wraps naturally in the cell, never truncated — matches the existing Agent Exceptions Reason column's behavior exactly; no new ellipsis/truncation convention is introduced. |
-| populated | Rest Waivers table (`AgentExceptions.tsx`) | 🧪 backstop | Normal volume (a handful of rows per agent) renders as a plain, unpaginated table, matching every other table on this page; not explicitly load-tested, held out as a visual check. |
-| empty | Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Two distinct empty copies (not-configured vs. configured-but-zero) — both specified verbatim in the Copywriting Contract above. |
-| error | Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | The tab never fetches independently; it reuses the page's existing top-level `if (error && !schedule)` guard and the existing detail-fetch error path. |
-| populated | Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Two sub-tables ("Applied" / "Unused"), seven-column shape specified in full below. |
-| overflow | Rest Waivers tab tables | 🧪 backstop | No pagination or virtualization, matching every other tab in this file (Violations, Allocation, Drift all scroll a plain table); fine at realistic desk scale, not explicitly load-tested here. |
-| zero-one-many | Rest Waivers summary badge (`ScheduleResults.tsx` header) | ✅ covered | The badge always shows a literal count — `"0 applied, 0 unused"` is displayed, not hidden — once the desk has rest configured, so a zero result is explicit rather than an absent UI element (see layout spec below). |
+| Category | Element | Status | Resolution / Reason |
+|----------|---------|--------|---------------------|
+| empty | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | Unset (NULL) renders the em-dash `—`, the same convention as the Description column's `{desk.description \|\| '—'}`; an empty edit input saves as NULL, not 0, and the desk solves exactly as today (REST-04). |
+| loading | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | No independent fetch — the column inherits DeskManagement's existing page-level loading state. |
+| error | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | Inline amber `#92400e` text beneath the input when the typed value is negative or >= 24; a server refusal surfaces through the page's existing getErrorMessage / showToast('error', ...) path, never a second invented client message. |
+| populated | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | The value renders as hours in the normal table row (e.g. `11`, `10.5`) with no new color, weight or size; the Actions column remains the row's rightmost high-contrast element. |
+| partial | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | The minimum-rest PUT fires only when that value changed from `original`, after the main desk-fields PUT succeeds — so editing other fields leaves an unset or existing rest value untouched. |
+| overflow | E1 — Min Rest desk column (`DeskManagement.tsx`) | 🧪 backstop | A sixth column is added to a table that already lives inside the page's existing horizontal scroll; no new truncation convention is introduced. Narrow-viewport row behaviour is not explicitly specified — held out as a visual check. — `verification: backstop` |
+| zero-one-many | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | The column header renders whether the desk list holds zero, one or many desks; there is no count-dependent copy anywhere in this column. |
+| long-text | E1 — Min Rest desk column (`DeskManagement.tsx`) | ✅ covered | The cell holds a short numeric value (at most ~5 characters) and a fixed header string `Min Rest (hrs)`; no operator-supplied free text enters this column. |
+| empty | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | The unfilled form is the resting state: empty date input and empty reason input carrying the placeholder `Reason (required)`. No separate empty-state copy — the form itself is the affordance. |
+| loading | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | The 'Add Waiver' button is disabled from click until the POST settles, and re-enabled on both success and failure, so two fast clicks cannot create two waivers for the same date. |
+| error | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | Reuses showToast('error', getErrorMessage(err)) verbatim — the identical path the existing Add Exception action on this page already uses. |
+| populated | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | Filled state is a chosen date plus a typed reason; the accent-blue 'Add Waiver' button is the only accent-colored element on the card, matching how 'Add' anchors the Add Exception card above it. |
+| partial | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | Reason is mandatory and signalled in the placeholder; a submit missing it is refused by the server and surfaces through the existing error-toast path rather than succeeding silently. |
+| overflow | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | The form row uses `display: flex, gap: 0.5rem, flexWrap: wrap, alignItems: center`, matching the Add Exception form above it, so the three controls wrap rather than overflow at narrow width. |
+| zero-one-many | E2 — Add Waiver form (`AgentExceptions.tsx`) | ✅ covered | Not count-dependent: the add form renders identically regardless of how many waivers already exist for the agent. |
+| long-text | E2 — Add Waiver form (`AgentExceptions.tsx`) | 🧪 backstop | A long reason string scrolls natively within the text input; no truncation, counter or max-length is specified. Held out as a visual check. — `verification: backstop` |
+| empty | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | The no-rows state is the single muted line specified in the Copywriting Contract, a literal parallel to the existing `No exceptions` row immediately above it on the same page; the copy is not restated here. |
+| loading | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | Inherits the page's existing single `loading` boolean and its 'Loading...' text; this phase adds no second, independent fetch-loading state. |
+| error | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | Add and Delete both reuse showToast('error', getErrorMessage(err)) verbatim, the same path the existing exception create/delete actions use. |
+| populated | E3 — Rest Waivers table (`AgentExceptions.tsx`) | 🧪 backstop | Normal volume (a handful of rows per agent) renders as a plain, unpaginated table matching every other table on this page; not explicitly load-tested — held out as a visual check. — `verification: backstop` |
+| partial | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | Every row carries exactly Date \| Reason \| Actions. There is no Standard Hours / Override Hours column (D-07: a rest waiver carries no hours value), so no partial row shape exists. |
+| overflow | E3 — Rest Waivers table (`AgentExceptions.tsx`) | 🧪 backstop | No pagination or virtualization, matching the page's other tables; fine at realistic per-agent scale, not explicitly load-tested — held out as a visual check. — `verification: backstop` |
+| zero-one-many | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | Renders identically at 0 (the empty-copy line), 1, or many rows; no count-dependent singular/plural copy appears in this surface. |
+| long-text | E3 — Rest Waivers table (`AgentExceptions.tsx`) | ✅ covered | The Reason column wraps naturally in the cell and is never truncated — matching the existing Agent Exceptions Reason column exactly; no new ellipsis convention is introduced. |
+| empty | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | Hidden entirely when the schedule's snapshotted `minimumRestMinutes` is null — a desk that never configured rest displays exactly as it does today (REST-04 extends to the display, not only the solve). |
+| loading | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | Sourced from the 2-second `/summary` poll merge (the same `setSchedule(prev => ({ ...prev, status, score, feasible, feasibleAt }))` block), so the counts are live during a RUNNING solve rather than lagging on the 30-second detail fetch. |
+| error | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | The badge performs no independent fetch; it inherits ScheduleResults' existing top-level `if (error && !schedule)` guard. |
+| populated | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | Renders `Rest Waivers: {appliedCount} applied, {unusedCount} unused` as the last span in the header row, in the same muted treatment as the adjacent 'Feasible after…' text, so it reads as an appended fact rather than a new focal point. |
+| partial | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | 🧪 backstop | If the summary DTO carries only one of the two counts, the absent one renders `—`, the null convention used throughout this file. Not stated in the surface spec — held out as a check once the DTO shape is fixed. — `verification: backstop` |
+| overflow | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | 🧪 backstop | The badge is appended to an existing header row and inherits that row's wrap behaviour; narrow-viewport reflow of the header is not specified here. Held out as a visual check. — `verification: backstop` |
+| zero-one-many | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | `0 applied, 0 unused` is displayed, never hidden, so an operator can tell 'rest is enforced and nothing needed waiving' apart from 'rest is not configured at all' — which hiding-at-zero would conflate. |
+| long-text | E4 — Rest Waivers header badge (`ScheduleResults.tsx`) | ✅ covered | Fixed-format copy wrapping two integers; no operator-supplied text enters the badge, so its width is bounded by the count magnitudes alone. |
+| empty | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Two distinct no-rows cases — desk never configured rest, versus configured with both counts zero — each with its own copy, both specified verbatim in the Copywriting Contract and referenced, not restated, here. |
+| loading | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | The tab never fetches independently; it inherits ScheduleResults' existing detail-fetch loading state. |
+| error | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Reuses the page's existing top-level `if (error && !schedule)` guard and the existing detail-fetch error path; no tab-local error surface is introduced. |
+| populated | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Two sub-tables under their own sub-headings — 'Applied' (success `#15803d` / `#f0fdf4`) above 'Unused' (neutral `#6b7280` / `#f3f4f6`) — seven columns, with gaps rendered as decimal hours to one place plus an `h` suffix (e.g. `10.5h`) so they cannot be misread as clock times beside the adjacent date-and-time columns. |
+| partial | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Any of D-13's fields the DTO does not actually carry renders `—`, the same null convention used throughout this file; the contract renders whatever rows the DTO sends. |
+| overflow | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | 🧪 backstop | No pagination or virtualization, inside the standard `overflowX: 'auto'` wrapper every other tab uses (Violations, Allocation and Drift all scroll a plain table); fine at realistic desk scale, not explicitly load-tested — held out as a visual check. — `verification: backstop` |
+| zero-one-many | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | Both sub-headings always render once rest is configured, and an empty one carries its own muted line ('No applied waivers.' / 'No unused waivers.') — so the tab's two-section shape is stable across solves and an empty section is distinguishable from an absent one, consistent with the badge's always-show-zero rule. |
+| long-text | E5 — Rest Waivers tab (`ScheduleResults.tsx`) | ✅ covered | The Reason column wraps in the cell and is never truncated, matching the Agent Exceptions Reason column and this file's existing table convention. |
+| overflow | E6 — Pre-solve refusal banner (`ScheduleResults.tsx`) | ✅ covered | Rendered unmodified and untruncated in the existing red `{schedule.errorMessage}` block — the frontend's only job is to render the backend string whole; it neither clips nor ellipsises it. |
+| long-text | E6 — Pre-solve refusal banner (`ScheduleResults.tsx`) | ✅ covered | A refusal naming an agent and two shifts is a long string by construction and must wrap within the banner rather than clip, matching the existing errorMessage block's behaviour. |
+
+[Generated by the UI-consideration probe (ui-phase Step 9.5) over six elements extracted from the
+surface contracts below. Element kinds were classifier-proposed and user-confirmed: E4 carries an
+authored `static-content` addition; E6 was confirmed static-content-only, so its error state is covered
+by E1/E2/E3 rather than by the banner itself. `covered` rows are explicit truths the planner lifts into
+`must_haves.truths`; `backstop` rows carry `verification: backstop` and must be lifted as held-out visual
+/ UI-state checks. Empty- and error-state COPY lives in `## Copywriting Contract` above and is referenced,
+not restated, here.]
 
 ---
 
@@ -323,12 +360,12 @@ Not applicable — `Tool: none`. No shadcn registry, official or third-party, is
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** APPROVED — gsd-ui-checker, revision 1, 7/7 dimensions PASS, no recommendations (2026-10-03)
