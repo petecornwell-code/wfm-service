@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-06-PLAN.md
-last_updated: "2026-10-03T00:59:45.528Z"
+stopped_at: Completed 21-07-PLAN.md
+last_updated: "2026-10-03T01:30:07.703Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: 1153ca9994b41959612d9942be66d3627aa6ca09
+state_head: f2c9da2786e29331e3dd1ed474ededcc9f31ed3c
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 32
+  completed_plans: 33
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 7 of 12
+Plan: 8 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -335,6 +335,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Generated shift-library suggestions are filtered by the same containment predicate, stricter than the save path: no envelope outside the operating window is ever proposed, overnight or same-day
 - [Phase 21]: Extracted anchoredMinAndMaxMinute(Collection<LocalTime>, DayWindow) in ScheduleConstraintProvider, replacing three clock-ordered TreeSet.first()/last() range-bound reads (getGapLengths, findBreakStart, the break-aware contiguity path) that inverted on a span crossing the anchor.
 - [Phase 21]: MidnightBoundaryScenarioRegistryTest's parseRegistry() throw-on-empty guard removed and EXPECTED_REGISTRY_SIZE updated 2 -> 0 (Rule 3 deviation, file not in plan's files_modified) so the now-deliberately-empty asserts-todays-behaviour registry can be a passing terminal state rather than a build failure.
+- [Phase 21]: OVNT-06's literal 'morning-after cell' annotation is void on the Roster sheet (business-day-keyed); the real fragmentation was the Allocation sheet's clock-ordered columns and rows, fixed by anchored ordering in both dimensions
+- [Phase 21]: P-01 (planner-surfaced, Task 3): writeAgentAllocation's row grouping shared D-13's clock-ordered-string defect; fixed with a new packed-Long anchoredShiftSortKey, leaving shiftSortKey alone since shiftLabel still needs its string form
 
 ### Blockers/Concerns
 
@@ -358,8 +360,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T00:59:45.490Z
-Stopped at: Completed 21-06-PLAN.md
+Last session: 2026-10-03T01:30:07.667Z
+Stopped at: Completed 21-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -443,3 +445,4 @@ Resume file: None
 | Phase 21 P04 | ~25min | 2 tasks | 4 files |
 | Phase 21 P05 | 30 min | 3 tasks | 9 files |
 | Phase 21 P06 | 45min | 3 tasks | 6 files |
+| Phase 21 P07 | ~70 min | 3 tasks | 3 files |
