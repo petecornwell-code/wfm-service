@@ -258,7 +258,7 @@ public class ScheduleExportService {
         if (entries != null) {
             for (AgentScheduleEntry e : entries) {
                 if (e.date() == null) continue;
-                String code = shiftCode(e, window);
+                String code = shiftCode(e, window, detail.getDayStart());
                 if (code == null) continue;
                 dates.add(e.date());
                 shiftByAgent.computeIfAbsent(name(e.agentName()), n -> new HashMap<>())
@@ -335,32 +335,59 @@ public class ScheduleExportService {
             }
         }
 
+        // OVNT-07/D-12: one code/meaning pair per row rather than one horizontal row of eight
+        // cells — the operator's selected rendering is a vertical legend, not an append to the
+        // old row, and it carries a new row for a shift crossing into the next calendar day.
         rowNum++;
-        Row legend = sheet.createRow(rowNum);
-        cell(legend, 0, "Legend", styles.header);
-        cell(legend, 1, "08:00-17:00", styles.working);
-        cell(legend, 2, "assigned shift envelope", null);
-        cell(legend, 3, "PTO", styles.pto);
-        cell(legend, 4, "approved leave", null);
-        cell(legend, 5, "MANDATORY", styles.mandatory);
-        cell(legend, 6, "rostered day off", null);
-        cell(legend, 7, "(blank)", styles.empty);
-        cell(legend, 8, "not scheduled, no leave recorded", null);
+        Row legendTitle = sheet.createRow(rowNum);
+        cell(legendTitle, 0, "Legend", styles.header);
+
+        rowNum++;
+        Row legendEnvelope = sheet.createRow(rowNum);
+        cell(legendEnvelope, 0, "08:00-17:00", styles.working);
+        cell(legendEnvelope, 1, "assigned shift envelope", null);
+
+        rowNum++;
+        Row legendCrossing = sheet.createRow(rowNum);
+        cell(legendCrossing, 0, "Sun 22:00-Mon 06:00", styles.working);
+        cell(legendCrossing, 1, "shift crossing into the next calendar day", null);
+
+        rowNum++;
+        Row legendPto = sheet.createRow(rowNum);
+        cell(legendPto, 0, "PTO", styles.pto);
+        cell(legendPto, 1, "approved leave", null);
+
+        rowNum++;
+        Row legendMandatory = sheet.createRow(rowNum);
+        cell(legendMandatory, 0, "MANDATORY", styles.mandatory);
+        cell(legendMandatory, 1, "rostered day off", null);
+
+        rowNum++;
+        Row legendBlank = sheet.createRow(rowNum);
+        cell(legendBlank, 0, "(blank)", styles.empty);
+        cell(legendBlank, 1, "not scheduled, no leave recorded", null);
 
         sheet.createFreezePane(1, 1);
         sheet.setColumnWidth(0, 30 * 256);
+        // Raised from 16 to 22 POI character units: the 19-character overnight cell
+        // ("Sun 22:00-Mon 06:00") would otherwise truncate (OVNT-07/D-12).
         for (int i = 0; i < dateList.size(); i++) {
-            sheet.setColumnWidth(1 + i, 16 * 256);
+            sheet.setColumnWidth(1 + i, 22 * 256);
         }
     }
 
     /**
      * The code one roster cell carries: the assigned envelope where there is one, otherwise the
      * span actually worked. Returns null for an agent-day with neither, which reads as blank.
+     *
+     * @param dayStart the desk's raw anchor (OVNT-07/D-12) — threaded from {@code detail} at
+     *                 {@code writeRoster}'s single call site rather than re-read from a new
+     *                 {@code DayWindow} accessor, since the caller already holds it.
      */
-    private static String shiftCode(AgentScheduleEntry entry, DayWindow window) {
+    private static String shiftCode(AgentScheduleEntry entry, DayWindow window, LocalTime dayStart) {
         if (entry.shift() != null) {
-            return entry.shift().startTime() + "-" + entry.shift().endTime();
+            return crossingAwareCode(entry.date(), dayStart, window,
+                    entry.shift().startTime(), entry.shift().endTime());
         }
         if (entry.assignments() == null || entry.assignments().isEmpty()) {
             return null;
@@ -375,7 +402,39 @@ public class ScheduleExportService {
             // for the same precedent.
             if (latest == null || window.anchoredEndMinute(ad.endTime()) > window.anchoredEndMinute(latest)) latest = ad.endTime();
         }
-        return earliest + "-" + latest;
+        return crossingAwareCode(entry.date(), dayStart, window, earliest, latest);
+    }
+
+    /**
+     * OVNT-07/D-12: discloses the calendar dates an agent-day's span touches when its start and
+     * end land on different ones — spelling out both as the short weekday abbreviation the Roster
+     * header already uses, e.g. {@code "Sun 22:00-Mon 06:00"}. Returns the plain {@code
+     * start-end} text, byte-identical to today, when the two dates are equal — which is every
+     * same-day cell on every desk, and every cell at all on a {@code 00:00}-anchored desk.
+     */
+    private static String crossingAwareCode(LocalDate businessDate, LocalTime dayStart,
+                                             DayWindow window, LocalTime start, LocalTime end) {
+        int startOffset = window.anchoredStartMinute(start);
+        int endOffset = window.anchoredEndMinute(end);
+        // calendarDateAtDayStartOffset rejects an argument equal to MINUTES_PER_DAY. An envelope
+        // ending exactly at the anchor has anchored end minute 1440 and belongs to the same
+        // calendar date as minute 1439 — the last minute of the business day — so clamp only for
+        // this lookup. The start offset is already inside [0, MINUTES_PER_DAY) and is never
+        // clamped.
+        if (endOffset == DayWindow.MINUTES_PER_DAY) {
+            endOffset = DayWindow.MINUTES_PER_DAY - 1;
+        }
+        LocalDate startDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, startOffset);
+        LocalDate endDate = DayWindow.calendarDateAtDayStartOffset(dayStart, businessDate, endOffset);
+        String plain = start + "-" + end;
+        if (startDate.equals(endDate)) {
+            return plain;
+        }
+        String startAbbrev = startDate.getDayOfWeek().getDisplayName(
+                java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+        String endAbbrev = endDate.getDayOfWeek().getDisplayName(
+                java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+        return startAbbrev + " " + start + "-" + endAbbrev + " " + end;
     }
 
     private static String name(String raw) {

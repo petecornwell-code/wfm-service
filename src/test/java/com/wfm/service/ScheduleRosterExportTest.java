@@ -128,6 +128,10 @@ class ScheduleRosterExportTest {
 
     // --- OVNT-06/OVNT-07/D-12: overnight roster cell discloses both calendar dates ---
 
+    // The period MON..SUN fills all 7 date columns (1..7) regardless of which carry data, so an
+    // agent-day on business date SUN (the 7th day, index 6) lands in column 7, not column 1.
+    private static final int SUN_COL = 7;
+
     @Test
     void overnightEnvelopeCellSpellsOutBothWeekdays() throws Exception {
         // SUN == 2026-09-27, a Sunday — the business date a 21:00-anchored desk's day starts on.
@@ -135,7 +139,7 @@ class ScheduleRosterExportTest {
 
         Sheet sheet = roster(detail(List.of(entry), LocalTime.of(21, 0)), List.of());
 
-        assertThat(text(sheet.getRow(1), 1)).isEqualTo("Sun 22:00-Mon 06:00");
+        assertThat(text(sheet.getRow(1), SUN_COL)).isEqualTo("Sun 22:00-Mon 06:00");
     }
 
     @Test
@@ -144,7 +148,7 @@ class ScheduleRosterExportTest {
 
         Sheet sheet = roster(detail(List.of(entry), LocalTime.of(21, 0)), List.of());
 
-        assertThat(text(sheet.getRow(1), 1)).isEqualTo("22:00-23:00");
+        assertThat(text(sheet.getRow(1), SUN_COL)).isEqualTo("22:00-23:00");
     }
 
     @Test
@@ -164,7 +168,7 @@ class ScheduleRosterExportTest {
         Sheet sheet = roster(detail(List.of(entry), LocalTime.of(21, 0)), List.of());
 
         // Crosses into the business day's own end, which lands on the next calendar day (Monday).
-        assertThat(text(sheet.getRow(1), 1)).isEqualTo("Sun 22:00-Mon 21:00");
+        assertThat(text(sheet.getRow(1), SUN_COL)).isEqualTo("Sun 22:00-Mon 21:00");
     }
 
     @Test
@@ -214,7 +218,7 @@ class ScheduleRosterExportTest {
 
         Sheet sheet = roster(detail(List.of(worked), LocalTime.of(21, 0)), List.of());
 
-        assertThat(text(sheet.getRow(1), 1)).isEqualTo("22:00-23:00");
+        assertThat(text(sheet.getRow(1), SUN_COL)).isEqualTo("22:00-23:00");
     }
 
     // ------------------------------------------------------------------
