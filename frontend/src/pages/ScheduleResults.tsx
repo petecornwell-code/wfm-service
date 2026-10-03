@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
-import { anchoredAt, type DayWindow } from '../utils/dayWindow'
+import { anchoredAt, calendarDateFromBusinessDateAndOffset, MINUTES_PER_DAY, type DayWindow } from '../utils/dayWindow'
 
 const MATCH_COLORS: Record<string, string> = {
   PRIMARY: '#dcfce7',
@@ -487,7 +487,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         if (schedule.schedulingMode !== 'SHIFT') {
           return (
             <div key={date} style={{ marginBottom: '2rem' }}>
-              <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
+              <h4 style={{ marginBottom: '0.5rem', fontWeight: 600 }}>{sectionHeading(date, schedule.dayStart)}</h4>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
                   <thead>
@@ -699,7 +699,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
 
         return (
           <div key={date} style={{ marginBottom: '2rem' }}>
-            <h4 style={{ marginBottom: '0.5rem' }}>{date}</h4>
+            <h4 style={{ marginBottom: '0.5rem', fontWeight: 600 }}>{sectionHeading(date, schedule.dayStart)}</h4>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
                 <thead>
@@ -906,6 +906,33 @@ function expandBreakSlots(window: DayWindow, breakStart: string, breakEnd: strin
     slots.push(window.anchoredPlusWithinDay(breakStart, offset))
   }
   return slots
+}
+
+/** Short English weekday abbreviation ("Sun", "Mon", ...) for an ISO "YYYY-MM-DD" date, computed
+ * in UTC so no local timezone can shift the calendar date by one -- matches the backend export's
+ * own TextStyle.SHORT/Locale.ENGLISH convention (D-12) so the two disclosures cannot drift. */
+function shortWeekday(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(date)
+}
+
+/**
+ * The grid's per-business-day section heading, with OVNT-07/D-17's calendar-span disclosure:
+ * "{date} (business day: {startAbbrev} {dayStart}-{endAbbrev} {dayStart})". Suppressed entirely
+ * -- rendering the bare date, byte-identical to today -- at a 00:00 anchor, where the business
+ * day and the calendar day coincide and the text would be noise, or when the payload carries no
+ * anchor at all (an older schedule from cache, or a summary polled before the field shipped),
+ * where a partial parenthetical would be worse than none. The parenthetical is all-or-nothing.
+ * The start of the business day is offset 0 and its end is the last minute of the day
+ * (MINUTES_PER_DAY - 1), the argument range calendarDateFromBusinessDateAndOffset documents.
+ */
+function sectionHeading(date: string, dayStart: string | undefined): string {
+  if (!dayStart || toHHMM(dayStart) === '00:00') return date
+  const startCalendarDate = calendarDateFromBusinessDateAndOffset(dayStart, date, 0)
+  const endCalendarDate = calendarDateFromBusinessDateAndOffset(dayStart, date, MINUTES_PER_DAY - 1)
+  const anchorHHMM = toHHMM(dayStart)
+  return `${date} (business day: ${shortWeekday(startCalendarDate)} ${anchorHHMM}–${shortWeekday(endCalendarDate)} ${anchorHHMM})`
 }
 
 function StaffingTab({ data }: { data: StaffingSummaryEntry[] }) {
