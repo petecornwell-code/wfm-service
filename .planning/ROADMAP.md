@@ -288,9 +288,10 @@ treats it correctly as one continuous thing belonging to the business day it sta
   3. The shift consumes the contracted hours of the weekday it starts on only, never split across two
      weekday rows (OVNT-04), and shift-library validation refuses an overnight template whose
      envelope does not fit inside its desk's business day (OVNT-05).
-  4. The schedule UI grid and the Excel export render the overnight shift as one continuous block,
-     never two fragments, with a distinct, non-blank, non-duplicate continuation indicator on the
-     morning-after cell (OVNT-06).
+  4. The business-day-keyed schedule UI grid and roster render an overnight shift as one block
+     carrying its calendar-span disclosure, and the per-date slot surfaces — the Excel allocation
+     sheet and the schedule grid, both ordered from the desk's day start — render it as one
+     continuous run of cells, never two fragments (OVNT-06).
   5. The shift is labelled with the calendar dates it spans wherever it is displayed, so a
      business-day-anchored surface still discloses that it runs into the next calendar day (OVNT-07).
 **Notes**: Research flag — genuinely needs a design pass at plan time. The Excel/UI
@@ -300,7 +301,16 @@ cell-code legend before planning locks it in. This phase is also the natural pla
 the pre-existing v1.3 "it will still save" envelope-vs-operating-window gap for the overnight case
 specifically (OVNT-05) — do not let the old advisory-only behaviour persist here. If Phase 20 decides
 `agent_shift_assignment` needs its own `business_date` column, this is the phase that populates and
-reads it for overnight shift assignment.
+reads it for overnight shift assignment. **Amended in plan 21-11 (D-11):** criterion 4's original
+text asked for a distinct, non-blank, non-duplicate continuation indicator on the cell immediately
+following an overnight shift's starting cell — a premise measured void during this phase. The
+agent schedule is keyed on business date, so an overnight shift already occupies exactly one
+Roster cell and there is no following cell on that sheet to annotate; this requirement predates any
+desk being able to hold an overnight template, so the falsity was undiscoverable until this phase
+built one. The real fragmentation lived on the per-date slot grids — the Excel Allocation sheet
+(fixed by plan 21-07) and the schedule grid (fixed by plan 21-10) — both now ordered from the
+desk's day start. Criterion 4 above restates what is actually true and verifiable rather than what
+was originally assumed.
 **Plans**: 12 plans
 Plans:
 
