@@ -462,15 +462,18 @@ class ScheduleAllocationExportTest {
                 assertThat(sheet).isNotNull();
 
                 Row header = sheet.getRow(0);
-                // Slots sorted by time-of-day: 02:00 precedes 22:00.
-                assertThat(header.getCell(3).getStringCellValue()).isEqualTo("02:00");
-                assertThat(header.getCell(4).getStringCellValue()).isEqualTo("22:00");
+                // Plan 21-07 Task 2 (OVNT-06/D-13): slots are ordered by offset from the 21:00
+                // anchor, not by clock, so 22:00 (anchored minute 60) now precedes 02:00
+                // (anchored minute 300) — reversed from this test's pre-21-07 clock-order
+                // assertion, which this task's re-ordering intentionally changes.
+                assertThat(header.getCell(3).getStringCellValue()).isEqualTo("22:00");
+                assertThat(header.getCell(4).getStringCellValue()).isEqualTo("02:00");
 
                 // header(0), one agent(1), totals(2), unfilled(3).
                 Row unfilled = sheet.getRow(3);
                 assertThat(unfilled.getCell(0).getStringCellValue()).isEqualTo("Unfilled");
-                assertThat(unfilled.getCell(3).getNumericCellValue()).isEqualTo(1.0);
-                assertThat(unfilled.getCell(4).getCellType()).isEqualTo(CellType.BLANK);
+                assertThat(unfilled.getCell(3).getCellType()).isEqualTo(CellType.BLANK);
+                assertThat(unfilled.getCell(4).getNumericCellValue()).isEqualTo(1.0);
             }
         }
 

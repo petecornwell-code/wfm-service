@@ -769,6 +769,13 @@ public class ScheduleExportService {
             return;
         }
         List<LocalTime> slots = new ArrayList<>(slotSet);
+        // OVNT-06/D-13: a TreeSet<LocalTime> dedupes in CLOCK order regardless of the desk's
+        // anchor, so a span crossing the anchor (e.g. 22:00-05:00 on a 21:00-anchored desk) would
+        // render as two runs of filled cells at opposite ends of the row. Ordering by offset from
+        // the day start instead makes it one contiguous run; at a 00:00 anchor the anchored
+        // minute equals the clock minute, so this emits the identical sequence every desk in use
+        // today already produces.
+        slots.sort(Comparator.comparingInt(window::anchoredStartMinute));
 
         Sheet sheet = workbook.createSheet(
                 WorkbookUtil.createSafeSheetName("Allocation " + date));
