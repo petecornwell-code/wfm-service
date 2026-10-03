@@ -159,3 +159,9 @@ None - no external service configuration required.
 ---
 *Phase: 21-overnight-shift-templates*
 *Completed: 2026-10-03*
+
+## Self-Check: PASSED
+
+- `frontend/src/pages/DeskManagement.tsx` exists on disk.
+- `.planning/phases/21-overnight-shift-templates/21-08-SUMMARY.md` exists on disk.
+- Commits `bd97d28`, `2322bee` found in `git log --oneline --all`.

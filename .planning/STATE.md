@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 21
 current_phase_name: Overnight Shift Templates
 status: executing
-stopped_at: Completed 21-07-PLAN.md
-last_updated: "2026-10-03T01:30:07.703Z"
+stopped_at: Completed 21-08-PLAN.md
+last_updated: "2026-10-03T01:39:39.247Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 21 execution started
-state_head: f2c9da2786e29331e3dd1ed474ededcc9f31ed3c
+state_head: 10783361801693de745738e4e23314432bb0bce3
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 38
-  completed_plans: 33
+  completed_plans: 34
   percent: 60
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 21 (Overnight Shift Templates) — EXECUTING
-Plan: 8 of 12
+Plan: 9 of 12
 Status: Ready to execute
 Last activity: 2026-10-02 — 21-01 complete (OVNT-01: overnight template creation, D-02/D-08 refusals)
 
@@ -337,6 +337,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: MidnightBoundaryScenarioRegistryTest's parseRegistry() throw-on-empty guard removed and EXPECTED_REGISTRY_SIZE updated 2 -> 0 (Rule 3 deviation, file not in plan's files_modified) so the now-deliberately-empty asserts-todays-behaviour registry can be a passing terminal state rather than a build failure.
 - [Phase 21]: OVNT-06's literal 'morning-after cell' annotation is void on the Roster sheet (business-day-keyed); the real fragmentation was the Allocation sheet's clock-ordered columns and rows, fixed by anchored ordering in both dimensions
 - [Phase 21]: P-01 (planner-surfaced, Task 3): writeAgentAllocation's row grouping shared D-13's clock-ordered-string defect; fixed with a new packed-Long anchoredShiftSortKey, leaving shiftSortKey alone since shiftLabel still needs its string form
+- [Phase 21]: dayStartLockExplanation renders schedule id and period as independent optional halves, never a dangling separator, degrading to the bare sentence when both are absent
+- [Phase 21]: The day-start mutation is called only when the value changed and only after the row's existing name/description/hours update succeeds, so a day-start-only refusal leaves the earlier change saved and the row open for retry
 
 ### Blockers/Concerns
 
@@ -360,8 +362,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T01:30:07.667Z
-Stopped at: Completed 21-07-PLAN.md
+Last session: 2026-10-03T01:39:39.211Z
+Stopped at: Completed 21-08-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -446,3 +448,4 @@ Resume file: None
 | Phase 21 P05 | 30 min | 3 tasks | 9 files |
 | Phase 21 P06 | 45min | 3 tasks | 6 files |
 | Phase 21 P07 | ~70 min | 3 tasks | 3 files |
+| Phase 21 P08 | 30 min | 2 tasks | 1 files |
