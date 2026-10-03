@@ -3,7 +3,7 @@ status: passed
 phase: 21-overnight-shift-templates
 source: [21-VERIFICATION.md]
 started: 2026-10-03T13:20:00Z
-updated: 2026-10-03T15:32:00Z
+updated: 2026-10-03T15:46:00Z
 measured_by: orchestrator session via browser automation (geometry read with browser_evaluate; screenshots deliberately not used — they do not settle on this app)
 environment: throwaway stack — pgvector Postgres :55432, backend :8081, vite :3001; seeded desk at a 21:00 anchor with 60-minute timeslots, one overnight 22:00-06:00 template, and a COMPLETED schedule carrying dayStart 21:00
 ---
@@ -159,6 +159,66 @@ evidence: |
   Page-level X scroll at 375px exists but comes from the app shell plus the 24-column table, the
   same pre-existing cause as item 1.
 
+### 5. Shift-mode branch of AgentAllocationTab (21-10 Task 2, both-branches requirement)
+
+test: Verify 21-10 Task 2's six sub-checks in the SHIFT-mode render branch of AgentAllocationTab, not only the slot-mode branch every prior pass exercised.
+expected: Anchored column order, anchored shift-group ordering, full-day column regeneration on a wrapping window, break-band-crosses-midnight rendering, envelope-reached hour styling, and unfilled-seat-marker placement all correct in the shift-mode branch.
+ledger: WINDOWS.md #17
+result: 5 of 6 measured and correct; the 6th is UNREACHABLE BY CONSTRUCTION, not unmeasured (see below)
+evidence: |
+  Fourth pass, 2026-10-03T15:40Z. Seeded a SHIFT-mode desk at a 21:00 anchor with
+  schedulingMode 'SHIFT' confirmed on the detail payload (the frontend branches on
+  `schedule.schedulingMode !== 'SHIFT'` at ScheduleResults.tsx:487, so this is what selects the
+  previously-unexercised branch). Deliberately used a FULL-DAY WRAPPING window —
+  start_time == end_time == 21:00 — which is the exact input that made the pre-21-10 code
+  regenerate zero columns.
+
+  1. Full-day regeneration on a wrapping window — PASS. 24 slot columns (26 total) regenerated.
+     A start-position read of the window's end would have made spanMinutes 0 and produced zero
+     regenerated columns; 24 is the post-fix behaviour.
+  2. Anchored column order — PASS. 21:00, 22:00, 23:00, 00:00 ... through 20:00, beginning at the
+     desk's own anchor rather than 00:00.
+  3. Anchored shift-group ordering — PASS. "Overnight 22-06 · 22:00–06:00" renders BEFORE
+     "Daytime 09-17 · 09:00–17:00". Anchored minutes at a 21:00 anchor are 60 and 720; by clock
+     order 09:00 < 22:00 would have inverted them.
+  4. Break band crossing midnight — PASS. The night agent's 01:00 cell renders "B" on a distinct
+     grey (rgb(229,231,235)) between worked blue cells (rgb(59,130,246)) at 00:00 and 02:00. The
+     band offset is +180 minutes from a 22:00 start, i.e. PAST midnight, and lands in the correct
+     cell.
+  5. Envelope-reached hour styling, across midnight — PASS. Header colour splits exactly on
+     envelope membership: rgb(107,114,128) for 22:00-05:00 and 09:00-16:00 (reached),
+     rgb(156,163,175) for 21:00, 06:00-08:00 and 17:00-20:00 (not reached). A 22:00-06:00
+     envelope correctly marks 00:00-05:00 as inside with 06:00 excluded — a raw clock comparison
+     would never place 00:00 between 22:00 and 06:00. This is `anchoredContains` +
+     `anchoredPlusWithinDay` proven across the boundary in the live DOM.
+unreachable_sub_check: |
+  6. Unfilled-seat-marker placement — UNREACHABLE IN CURRENT PRODUCTION CODE, and the cause is
+  pre-existing ledger #14, whose significance this pass revises upward.
+
+  Traced end to end rather than inferred:
+  - ScheduleResults.tsx:391-402 builds `unfilledSlots` ONLY from "Unassigned assignment"
+    constraint violations, keyed `${businessDate}|${startTime}` — the structured channel 21-03
+    created and 21-10 re-pointed the parser onto.
+  - Those violations come from ScheduleOutputService.buildConstraintViolations' LIVE-solver path
+    (`solutionManager.explain`), not the accepted-snapshot path — confirmed by flipping the seeded
+    schedule to ACCEPTED, which yielded constraintViolations: 0.
+  - That path's justification loop (ScheduleOutputService.java:683-709) populates businessDate,
+    calendarDate, slotStartTime, slotEndTime and timeslotId ONLY under
+    `if (justification instanceof AgentAssignment aa)`. There is no `instanceof Timeslot` branch.
+  - Ledger #14 records, confirmed empirically against the real solver in plan 21-11, that the
+    "Unassigned assignment" ConstraintMatch indicts Timeslot + int + TimeslotDemandConfig +
+    ScheduleConfig and never an individual AgentAssignment.
+
+  Therefore every ViolationDetail this constraint emits carries a NULL businessDate and NULL
+  startTime, the frontend's map key can never match a real slot, and the unfilled-seat marker
+  cannot render in EITHER branch of the grid — independently of this phase's work.
+
+  This revises #14: it was filed as a cosmetic dead description string, out of scope. It is
+  actually the reason an operator-facing marker never appears. Still not a Phase 21 regression —
+  the constraint's match shape predates the phase, and 21-03/21-10's structured-field work is
+  correct and does populate for every constraint that DOES indict an AgentAssignment — but it is
+  a live gap worth its own fix, not a cosmetic note. Recorded on #14 and cross-referenced from #17.
+
 ### 4. Excel Roster-sheet legend collision (WAIVED by operator)
 
 test: Export a schedule for a 21:00-anchored desk to Excel and open the .xlsx in Excel, checking that the Roster sheet's vertical five-row legend does not collide with or obscure the roster content beside it.
@@ -183,12 +243,13 @@ why_waived: |
 
 ## Summary
 
-total: 4
-passed: 3
+total: 5
+passed: 4
 issues: 0
 pending: 0
 skipped: 0
 waived: 1
+unreachable: 1
 blocked: 0
 
 ## Gaps
