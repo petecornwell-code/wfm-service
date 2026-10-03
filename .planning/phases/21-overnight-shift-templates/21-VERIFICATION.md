@@ -1,6 +1,6 @@
 ---
 phase: 21-overnight-shift-templates
-verified: 2026-10-03T15:48:58Z
+verified: 2026-10-03T16:27:17Z
 status: passed
 score: 7/7 must-haves verified
 behavior_unverified: 0
@@ -60,28 +60,37 @@ covered_files:
   - "src/test/resources/bday-join-guard.md"
   - "src/test/resources/midnight-boundary-scenarios.md"
   - "src/test/resources/midnight-time-arithmetic.md"
-covered_digest: "v2:sha256:66ec6e9d07263a997692cc0efca0ad55d36dab5f59df97602ee682e890569ec3"
+covered_digest: "v2:sha256:c96d7be97eeb342c3a3f22c117856e01b7a1a3500c18af3d3a8f3555e16f0442"
 re_verification:
-  previous_status: human_needed
+  previous_status: passed
   previous_score: "7/7"
   gaps_closed:
-    - "21-10-PLAN.md Task 2's shift-mode-branch human-check (WINDOWS.md #17): 5 of its 6 sub-checks measured live against a seeded SHIFT-mode desk at a 21:00 anchor with a full-day wrapping window (21-UAT.md item 5) — full-day column regeneration on a wrapping window, anchored column order, anchored shift-group ordering (Overnight before Daytime), break band crossing midnight rendering 'B' on the correct post-midnight cell, and envelope-reached header styling splitting exactly on envelope membership across the midnight boundary."
-    - "The 6th sub-check (unfilled-seat-marker placement) is reclassified from an open human-verification item to a defect finding, not a gap this phase can close by measurement. Traced and independently re-confirmed this pass: ScheduleOutputService.java's justification loop (lines 683-709) populates businessDate/calendarDate/slotStartTime/slotEndTime/timeslotId ONLY inside `if (justification instanceof AgentAssignment aa)` — grep confirms no `instanceof Timeslot` branch exists anywhere in the file. The 'Unassigned assignment' constraint (ScheduleConstraintProvider.java:157-172) is a groupBy/join/join/filter aggregate over AgentAssignment.class via forEachIncludingUnassigned, whose ConstraintMatch indicts the join tuple (Timeslot, int, TimeslotDemandConfig, ScheduleConfig) — never an individual AgentAssignment. So every ViolationDetail this constraint emits carries null businessDate/startTime, and ScheduleResults.tsx:391-402's `${businessDate}|${startTime}` map key can never match a real slot in EITHER render branch. There is no human act or measurement that would discharge this sub-check as currently implemented — the production path feeding it is inert by construction, independent of this phase's own work, which is confirmed correct for every constraint that DOES indict an AgentAssignment (21-03/21-10's structured-field channel)."
+    - "WINDOWS.md #14 (ScheduleOutputService's justification loop populated structured ViolationDetail attribution only under `instanceof AgentAssignment`, so every 'Unassigned assignment' violation carried null businessDate/startTime and the operator-facing unfilled-seat marker could never render): fixed in commit ad5b58a, landed AFTER the fifth pass's passing verification was recorded. This sixth pass independently confirms the fix rather than having originated or witnessed it during the fifth pass."
   gaps_remaining: []
   regressions: []
-  full_harvest_confirmation: |
-    Re-ran the complete Step 8 harvest (grep for <human-check> across all twelve plans): the same
-    six blocks found on the fourth pass are the only ones in the phase (21-01 Task 1; 21-07 Task 1;
-    21-08 Task 1 and Task 2; 21-10 Task 2 and Task 3). No new block exists. Every sub-item across
-    all six is now dispositioned as CLOSED (measured live), WAIVED (operator decision, WINDOWS.md
-    #16), or a defect finding routed off the human-verification path (WINDOWS.md #14/#17, this
-    pass). The human-verification list is empty for the first time this phase.
-  implementation_stability_confirmation: |
-    `git log --oneline -- src/ frontend/src/` shows the last implementation-touching commit as
-    `d6b940e` (fix(21-CR-01): key FTE upload's timeslot lookup by business date). Every commit since
-    (`c8ab386` through `21c9ad2`, five verification/UAT passes) is docs/test-artifact only. `git diff
-    --stat bc6ecaf~4..HEAD -- src/ frontend/src/` is empty, confirmed again this pass. The seven
-    OVNT truths rest on an implementation that has not moved across all five verification passes.
+  stale_digest_refresh: |
+    This pass exists solely because commit ad5b58a changed two covered_files
+    (.planning/WINDOWS.md, src/main/java/com/wfm/service/ScheduleOutputService.java) after the
+    fifth pass's digest was computed, which flipped `gsd_run query verification.status` to `stale`
+    and blocked `phase.complete`. Regenerated via `gsd_run query verification.fingerprint` over the
+    unchanged 54-file covered_files list (confirmed: fingerprinting the three root-level
+    .planning/*.md files alongside the phase-scoped files reproduces the identical digest as
+    fingerprinting without them -- they are inert to the hash per #4623 -- so no covered_files
+    membership change was needed, only a re-hash). Old digest:
+    v2:sha256:66ec6e9d07263a997692cc0efca0ad55d36dab5f59df97602ee682e890569ec3. New digest:
+    v2:sha256:c96d7be97eeb342c3a3f22c117856e01b7a1a3500c18af3d3a8f3555e16f0442.
+  fix_landed_after_passing_run: |
+    Git-timestamp note, recorded for rigor rather than brushed past: `ad5b58a` (the fix) carries
+    author timestamp 2026-10-03T12:11:38-04:00; `36671c6` (the commit that recorded the fifth-pass
+    VERIFICATION.md content read above) carries 2026-10-03T12:12:14-04:00 -- 36 seconds LATER in
+    raw git-log order, meaning the docs commit is technically ad5b58a's child. That ordering is a
+    commit-sequencing artifact of the originating session, not evidence the fifth pass saw the fix:
+    the fifth-pass VERIFICATION.md content itself is internally conclusive on this point -- it
+    describes WINDOWS.md #17 as moving only to `partial` (5/6), discusses #14 as a live open defect
+    requiring "restructuring ScheduleConstraintProvider's stream shape" to fix, and contains zero
+    reference to a Timeslot-extraction branch, a RED-then-GREEN test, or a 1305-test count (the
+    fifth pass's own suite count was 1303). The content is unambiguously pre-fix. This sixth pass
+    is the first to read ad5b58a's diff.
 ---
 
 # Phase 21: Overnight Shift Templates Verification Report
@@ -90,267 +99,258 @@ re_verification:
 save-time validation, contracted-hours consumption, day-off blocking, the schedule UI grid, the
 Excel export — treats it correctly as one continuous thing belonging to the business day it starts
 on.
-**Verified:** 2026-10-03T15:48:58Z
+**Verified:** 2026-10-03T16:27:17Z
 **Status:** passed
-**Re-verification:** Yes — fifth and final pass. This pass (1) independently re-traces, rather than
-takes on faith, the chain that makes the fourth pass's one open item unreachable-by-construction,
-(2) measures that item's five discharge-able sub-checks live against a seeded SHIFT-mode desk, and
-(3) re-runs the complete Step 8 harvest once more to confirm nothing further remains.
+**Re-verification:** Yes — sixth pass, a stale-digest refresh. Not a re-derivation: this pass
+independently (1) confirms the diff scope of the one commit (`ad5b58a`) that landed since the
+fifth pass's passing verification, (2) confirms it is read-side only and does not touch
+`ScheduleConstraintProvider.java`, (3) re-runs the full test suite from a forced (non-UP-TO-DATE)
+build and aggregates JUnit XML by filename, (4) re-confirms the seven OVNT truths are unaffected,
+and (5) regenerates `covered_files`/`covered_digest` so the stale gate clears.
 
-## What changed since the fourth verification pass
+## What changed since the fifth verification pass
 
-Only `.planning/WINDOWS.md` and `21-UAT.md` changed again (`git diff --stat bc6ecaf~4..HEAD --
-src/ frontend/src/` is empty; `git status --short` shows only the untracked `.planning/state.json`
-and `.playwright-mcp/` scratch artifacts, neither in `covered_files`). WINDOWS.md ledger entry #17
-moved from `open` to `partial`; #14's description was revised in place to record the upgraded
-significance this pass independently re-confirmed. `21-UAT.md` gained item 5 (the shift-mode
-measurement) and its `unreachable_sub_check` evidence block, and its summary counts now read
-`total: 5, passed: 4, waived: 1, unreachable: 1`.
+One commit, `ad5b58a` — "fix(21): give unassigned-seat violations their timeslot attribution
+(defect #14)" — landed after the fifth pass's `21-VERIFICATION.md` was committed (see
+`fix_landed_after_passing_run` above for the git-timestamp nuance and why the content itself proves
+this). Diff scope, confirmed via `git show --stat ad5b58a`:
 
-### Independent re-trace of the "unreachable by construction" claim
+```
+.planning/WINDOWS.md                                                       |   8 +-
+src/main/java/com/wfm/service/ScheduleOutputService.java                   |  31 +++++++
+src/test/java/com/wfm/service/ScheduleOutputServiceShiftReportingTest.java | 101 +++++++++++++++++++++
+ 3 files changed, 136 insertions(+), 4 deletions(-)
+```
 
-The brief asked this pass to verify the chain itself rather than accept the narrative. Read directly:
+Exactly the three files the brief named. **`ScheduleConstraintProvider.java` is NOT among them** —
+confirmed by its absence from `git show --stat ad5b58a` and by direct inspection: no change to that
+file exists in the commit. This is the whole safety argument for landing a solver-adjacent fix
+after a passing verification, and it holds.
 
-- `ScheduleResults.tsx:391-402` builds `unfilledSlots` only from violations where
-  `cv.constraintName === 'Unassigned assignment'`, keyed `${v.businessDate}|${toHHMM(v.startTime)}`,
-  and explicitly skips any violation missing either field (`if (!v.businessDate || !v.startTime)
-  continue`).
-- `ScheduleOutputService.java`'s justification loop (lines 680-709, confirmed by direct read) sets
-  `agentId`, `agentName`, `timeslotId`, `businessDate`, `calendarDate`, `slotStartTime`,
-  `slotEndTime`, `timeslotLabel`, and `specName` ONLY inside `if (justification instanceof
-  AgentAssignment aa)`. `grep -n "instanceof Timeslot"` over the full file returns nothing — there
-  is no second branch that would populate these fields from any other indicted-object type.
-- `ScheduleConstraintProvider.java:157-172`'s `unassignedAssignment` constraint is built as
-  `factory.forEachIncludingUnassigned(AgentAssignment.class).groupBy(a -> a.getTimeslot(), sum(...))
-  .join(TimeslotDemandConfig.class, ...).join(ScheduleConfig.class).filter(...)
-  .asConstraint("Unassigned assignment")`. A `groupBy`+`join`+`join` chain's `ConstraintMatch`
-  indicts the tuple the stream carries at the point of `.filter()` — here `(Timeslot, int,
-  TimeslotDemandConfig, ScheduleConfig)` — never an individual `AgentAssignment`, by construction of
-  how the stream was built, not as a matter of runtime data.
-- Net: `match.getIndictedObjectList()` for every "Unassigned assignment" violation contains no
-  `AgentAssignment` instance, so the `instanceof AgentAssignment aa` branch never executes for this
-  constraint, so `businessDate`/`startTime` are always null on its `ViolationDetail`s, so the
-  frontend's map key can never be built, so the unfilled-seat marker cannot render for this
-  constraint in either grid branch.
+### The code change, read directly
 
-The chain holds up under independent re-trace. This is a correct, pre-existing (not phase-21-
-introduced) defect in a different code region than this phase's own 21-03/21-10 structured-
-attribution work, which is independently confirmed correct here: the same `instanceof
-AgentAssignment` branch populates all five fields correctly for every OTHER constraint whose
-`ConstraintMatch` does indict an `AgentAssignment` (e.g. "Agent day off", "Contracted hours"),
-which is what every other OVNT truth and backstop in this phase actually depends on.
+`ScheduleOutputService.java`'s justification loop (around line 709) gained exactly one new branch:
 
-**Disposition:** per this pass's brief, a sub-check whose production path is inert by construction
-is not an open human-verification item — no human action or measurement would discharge it as
-currently implemented. It is a defect finding. It is recorded as WINDOWS.md #14 (revised
-significance, status remains `open` — it is a real, live gap, just not this phase's to fix) and
-cross-referenced from #17 (status `partial`: 5 of 6 sub-checks measured and closed, the 6th
-dispositioned as above rather than left pending). It does not block Phase 21's own seven truths:
-OVNT-06's actual claim is that a FILLED overnight shift renders as one contiguous run (measured,
-both branches), not that every unfilled-seat marker renders correctly — that marker's rendering
-depends on a different constraint's match shape, pre-existing and out of this phase's scope to fix.
+```java
+} else if (justification instanceof Timeslot ts && timeslotId == null) {
+    // ... populates timeslotId/businessDate/calendarDate/slotStartTime/slotEndTime/timeslotLabel
+    timeslotId = ts.getId();
+    businessDate = ts.getBusinessDate();
+    calendarDate = ts.getDate();
+    slotStartTime = ts.getStartTime();
+    slotEndTime = ts.getEndTime();
+    timeslotLabel = timeslotLabel(ts);
+}
+```
 
-### Complete Step 8 re-harvest (confirms nothing further remains)
+Confirmed:
+- The `timeslotId == null` guard is present and is exactly the precedence mechanism claimed: it
+  only fires when the preceding `if (justification instanceof AgentAssignment aa)` branch did not
+  already set `timeslotId`, so an `AgentAssignment`'s richer values (agent identity included)
+  always win if a match ever indicts both.
+- `timeslotLabel(ts)` calls the same shared helper the `AgentAssignment` branch already used — no
+  duplicate/divergent labelling logic was introduced.
+- `specName` is left unset in the new branch (not fabricated), consistent with description choice
+  (a) — `TimeslotDemandConfig` is `record(Timeslot, int)` and carries no specialization field, so
+  the description falls through to the generic `"<name> violation"` form, which the new test
+  (below) explicitly asserts.
 
-Re-ran the full harvest across all twelve plans. The same six `<human-check>` blocks found on the
-fourth pass are the complete set (21-01 Task 1; 21-07 Task 1; 21-08 Task 1 and Task 2; 21-10 Task 2
-and Task 3) — no new block exists anywhere in the phase's plans. Every sub-item is now dispositioned:
+### The two new tests, read directly
 
-| Source | Item | Disposition |
-|--------|------|-------------|
-| 21-01 Task 1 | 00:00-anchored desk's error Toast | **CLOSED** — human-verified live at plan execution time |
-| 21-07 Task 1 | Excel Roster legend collision | **WAIVED** by explicit operator decision (WINDOWS.md #16) |
-| 21-08 Task 1 | Picker stepping; disabled render; lock explanation wrap | **CLOSED** — measured live |
-| 21-08 Task 2 (5 sub-items) | Tiling save; non-dividing warning; keyboard refusal; stale-page refusal; narrow-viewport geometry | **CLOSED** — all 5 measured live |
-| 21-10 Task 2 (1)(2) | Contiguous run; anchored column order | **CLOSED** — measured in both slot-mode (pass 2) and shift-mode (pass 5) branches |
-| 21-10 Task 2 (3) | Envelope-reached hour styling | **CLOSED** — measured live, shift-mode branch (pass 5) |
-| 21-10 Task 2 (4) | Break band crossing midnight | **CLOSED** — measured live, shift-mode branch (pass 5) |
-| 21-10 Task 2 (5) | Shift group ordering by anchored start | **CLOSED** — measured live, shift-mode branch (pass 5) |
-| 21-10 Task 2 (6) | Unfilled-seat marker under its own business-day section | **DEFECT FINDING, not a human-verification item** — production path inert by construction (WINDOWS.md #14/#17); no measurement would discharge it |
-| 21-10 Task 2, 00:00-anchor regression repeat | Grid unchanged at midnight anchor | **CLOSED** — byte-identical fixture proof |
-| 21-10 Task 3 (1)(2)(3) | Heading text; wrap-not-scroll; sticky column | **CLOSED** — measured live |
-| 21-10 Task 3, 00:00-anchor regression repeat | Heading renders bare date, unchanged | **CLOSED** — byte-identical fixture proof |
+`ScheduleOutputServiceShiftReportingTest.java` gained:
 
-The human-verification list is empty. No block, sub-item, or facet of this phase's `<human-check>`
-inventory remains open, pending, or unmeasured in a way a future pass could discharge.
+1. `buildConstraintViolations_unassignedAssignment_violationNowCarriesTimeslotAttribution()` —
+   drives the real live path (`service.buildConstraintViolations` against a `Schedule` with one
+   unassigned `AgentAssignment` and a `TimeslotDemandConfig` demanding 2, undersupplied at 0, so
+   the hard-limit filter on `unassignedAssignment` fires). Asserts `timeslotId`, `businessDate`,
+   `calendarDate`, `startTime`, `endTime` are all populated and non-null, `agentId`/`agentName` are
+   correctly null (no `AgentAssignment` was indicted), and the description falls through to the
+   generic `"Unassigned assignment violation"` form (confirms description choice (a), not a
+   fabricated specialization).
+2. `buildConstraintViolations_liveAgentAssignmentIndictedConstraint_attributionUnaffectedByNewTimeslotBranch()`
+   — this IS a genuine no-regression assertion, not a mere exercise. It drives `Specialization
+   match` (a constraint whose `ConstraintMatch` DOES indict an individual `AgentAssignment`) and
+   asserts `agentId`, `agentName`, `timeslotId`, `businessDate`, `calendarDate`, `startTime`, and
+   `endTime` all equal the values the held `AgentAssignment`/`Timeslot` actually carry — proving
+   the new `timeslotId == null`-guarded branch never clobbers values the `AgentAssignment` branch
+   already set. This is the correctness property the precedence guard exists for, and the test
+   checks it directly rather than merely invoking the code path.
 
-### Net effect on status
+Both read as intentional, targeted, and faithful to the commit message's description. No
+over-claiming found.
 
-Per the decision tree: no truth FAILED, no artifact MISSING/STUB, no key link NOT_WIRED, no blocker
-anti-pattern (the four pre-existing warning/info findings — WR-01, WR-02, WR-03, IN-01 — remain open
-by prior explicit operator decision, unaffected by this pass). Step 8 now produces **zero** human
-verification items — the one item open after the fourth pass is either measured (5 of 6 sub-checks)
-or reclassified as a non-discharge-able defect finding (the 6th), per this pass's explicit
-instruction. **Status moves to `passed`.**
+### Suite re-run, independently executed by this pass
 
-## Goal Achievement
+`./gradlew --stop` (clear any stale daemon per the stale-daemon gate), then a forced, non-cached
+run: `./gradlew test --rerun`. Result: `BUILD SUCCESSFUL in 10m 40s`, `5 actionable tasks: 1
+executed, 4 up-to-date` — confirming the `:test` task actually executed rather than reporting
+`UP-TO-DATE` (which this pass treats as no evidence, per the stale-daemon/UP-TO-DATE gate).
 
-### Observable Truths
+JUnit XML aggregated by **filename** (not the root `name` attribute, to avoid `@Nested`
+undercounting):
 
-Re-confirmed this pass; no implementation file has changed across any of the five verification
-passes (see `implementation_stability_confirmation` above).
+```
+files: 202
+tests: 1305  failures: 0  errors: 0  skipped: 4
+```
+
+Matches the commit message's claim exactly (202 classes, 1305 tests, 0 failures, 0 errors, 4
+pre-existing benchmark skips). The two new tests are present in
+`TEST-com.wfm.service.ScheduleOutputServiceShiftReportingTest.xml` as bare `<testcase>` elements
+with no `<failure>`/`<error>` children (that file's own `<testsuite>` header reads `tests="29"
+skipped="0" failures="0" errors="0"`), confirming both pass.
+
+### Re-confirmation of the seven OVNT truths
+
+The fix touches only the justification/violation-reporting loop inside `buildConstraintViolations`
+— a code region distinct from every truth's own supporting evidence (shift-save validation,
+business-date grouping in `buildAgentSchedule`, the day-off/contracted-hours joins in
+`ScheduleConstraintProvider`, the export/grid rendering paths). Re-confirmed by direct inspection
+that none of OVNT-01 through OVNT-07's cited artifacts (`ShiftTemplateService`, `DeskService`,
+`ScheduleOutputService.buildAgentSchedule`, `ScheduleConstraintProvider`,
+`ScheduleExportService`, `ScheduleResults.tsx`, `dayWindow.ts`) changed in a way that touches their
+claims — the only overlap is `ScheduleOutputService.java` itself, and the fifth pass's own evidence
+for OVNT-02/OVNT-07 cites `buildAgentSchedule` and the `timeslotLabel()` helper, neither of which
+this commit altered (the helper is reused, not modified). **Nothing has actually moved for any of
+the seven truths; re-confirmed, not re-derived.**
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | An operator can save a shift template whose end time is earlier in the clock than its start time, with correct net hours for the overnight span, on an anchored desk (OVNT-01) | ✓ VERIFIED | `ShiftTemplateService.java:51` `MAX_SPAN_MINUTES=16*60`; `validate()` refuses a backward interval naming the desk's own day start; `window.anchoredDurationMinutes(...)` computes net hours. `ShiftTemplateServiceTest` (53 tests, 0 failures). Live: a real 22:00-06:00 template SAVED successfully through the real HTTP API on a 21:00-anchored desk; the D-02 refusal Toast on a 00:00-anchored desk was human-verified live during plan 21-01's own execution. |
-| 2 | That shift is reported against the business day it starts on, everywhere it is displayed (OVNT-02) | ✓ VERIFIED | `ScheduleOutputService.buildAgentSchedule` groups by `a.getTimeslot().getBusinessDate()`; `ScheduleSummary.dayStart`/`ScheduleDetailResponse` carry the schedule's own anchor; structured `ViolationDetail` fields. Live: the summary payload carried `"dayStart":"21:00:00"`; the Schedule Results date filter offered exactly ONE date for a run spanning two calendar days. |
-| 3 | A day-off or PTO marking on the starting business day blocks the shift from being assigned, including seats stamped with the following calendar date (OVNT-03) | ✓ VERIFIED | `ScheduleConstraintProvider.java:183`: `agentDayOff` join is `equal(a -> a.getTimeslot().getBusinessDate(), AgentDayOff::getDate)`. `MidnightBoundaryRegressionTest$DayOffAttributesToStartingBusinessDate` green. |
-| 4 | The shift consumes the contracted hours of the weekday it starts on only, never split across two weekday rows (OVNT-04) | ✓ VERIFIED | `MidnightBoundaryPropertyTest.ContractedHoursStartingWeekdayOnly` proves single business-date derivation for both calendar days of a crossing stretch. |
-| 5 | Shift-library validation refuses an overnight template whose envelope does not fit inside its desk's business day (OVNT-05) | ✓ VERIFIED | `isWithinOperatingWindow`/`crossesCalendarMidnight` wired into save path, SHIFT-mode gate, and candidate generation — one predicate, three callers. |
-| 6 (amended) | The business-day-keyed schedule UI grid/roster render an overnight shift as one block carrying calendar-span disclosure; per-date slot surfaces render it as one continuous run of cells (OVNT-06) | ✓ VERIFIED | Amendment premise independently re-derived and confirmed true. `ScheduleExportService` sorts by `anchoredStartMinute`/`anchoredShiftSortKey`; `ScheduleResults.tsx` binds one `dayWindow` throughout both render branches. Live, slot-mode branch: 26-column grid renders anchored order (21:00→20:00), the night agent's 7 overnight cells occupy header indices 3-9 with no gap. Live, shift-mode branch (this pass): the same contiguous-run and anchored-order facts hold at a 21:00 anchor with a full-day wrapping window; the shift-group header correctly lists "Overnight 22-06" before "Daytime 09-17" (anchored minutes 60 vs 720); the envelope-reached header styling splits exactly on envelope membership across midnight. Both structurally distinct render branches are now live-measured. |
-| 7 | The shift is labelled with the calendar dates it spans wherever displayed (OVNT-07) | ✓ VERIFIED | `ScheduleExportService.shiftCode`/`crossingAwareCode` on Roster sheet; `ScheduleOutputService.timeslotLabel` appends `(business day: {date})`; `ScheduleResults.tsx`'s `sectionHeading` discloses `(business day: {span})`. Live: heading rendered as `"2026-01-05 (business day: Mon 21:00–Tue 21:00)"`, en dash intact through JSON transit. |
+| 1 | An operator can save a shift template whose end time is earlier in the clock than its start time, with correct net hours for the overnight span, on an anchored desk (OVNT-01) | ✓ VERIFIED | Unchanged from fifth pass. `ShiftTemplateService.java` validation and net-hours computation untouched by `ad5b58a`. |
+| 2 | That shift is reported against the business day it starts on, everywhere it is displayed (OVNT-02) | ✓ VERIFIED | Unchanged. `ScheduleOutputService.buildAgentSchedule` (groups by `getBusinessDate()`) is a different method than the one `ad5b58a` touched (`buildConstraintViolations`'s justification loop); confirmed by direct read that the two do not share code. |
+| 3 | A day-off or PTO marking on the starting business day blocks the shift from being assigned, including seats stamped with the following calendar date (OVNT-03) | ✓ VERIFIED | Unchanged. `ScheduleConstraintProvider.java` is byte-identical to the fifth pass (confirmed: not in `ad5b58a`'s diff). |
+| 4 | The shift consumes the contracted hours of the weekday it starts on only, never split across two weekday rows (OVNT-04) | ✓ VERIFIED | Unchanged. Same constraint-provider dependency as above. |
+| 5 | Shift-library validation refuses an overnight template whose envelope does not fit inside its desk's business day (OVNT-05) | ✓ VERIFIED | Unchanged. `ShiftLibraryValidationService`/`ShiftTemplateService` untouched by `ad5b58a`. |
+| 6 (amended) | The business-day-keyed schedule UI grid/roster render an overnight shift as one block carrying calendar-span disclosure; per-date slot surfaces render it as one continuous run of cells (OVNT-06) | ✓ VERIFIED | Unchanged. `ScheduleExportService`, `ScheduleResults.tsx`, `dayWindow.ts` all untouched by `ad5b58a`. |
+| 7 | The shift is labelled with the calendar dates it spans wherever displayed (OVNT-07) | ✓ VERIFIED | Unchanged. `ad5b58a` reuses the existing shared `timeslotLabel()` helper rather than modifying it; `ScheduleExportService.shiftCode`/`crossingAwareCode` and `ScheduleResults.tsx`'s `sectionHeading` are untouched. |
 
-**Score:** 7/7 truths verified (0 present, behavior-unverified)
-
-### Amendment Re-Verification (ROADMAP criterion 4 / REQUIREMENTS OVNT-06)
-
-Unchanged from all prior passes. Plan 21-11's amendment premise — that the agent schedule/Roster
-sheet is keyed on business date and therefore an overnight shift already occupies exactly one cell
-there — was independently re-derived from `ScheduleOutputService.buildAgentSchedule` (lines 164-170)
-and `ScheduleExportService.writeRoster` (line 245), and holds.
+**Score:** 7/7 truths verified (0 present, behavior-unverified) — unchanged from the fifth pass.
 
 ### Required Artifacts
 
-No implementation files were modified since the initial verification (confirmed again this pass via
-`git log --oneline -- src/ frontend/src/`: last touch `d6b940e`).
-
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/main/java/com/wfm/service/ShiftTemplateService.java` | Overnight save, D-02/D-08 refusals, OVNT-05 containment | ✓ VERIFIED | Unchanged |
-| `src/main/java/com/wfm/service/DeskService.java` | D-03/D-04/D-05 day-start refusals/advisory/disclosure | ✓ VERIFIED | Unchanged; all five day-start message types measured live |
-| `src/main/java/com/wfm/service/FteUploadService.java` | CR-01 fix: lookup keyed by business date | ✓ VERIFIED | Unchanged |
-| `src/main/java/com/wfm/service/ScheduleExportService.java` | Anchored column/row order, overnight cell disclosure | ✓ VERIFIED | Unchanged |
-| `src/main/java/com/wfm/service/ScheduleOutputService.java` | Structured violation fields, shared `timeslotLabel` helper | ✓ VERIFIED | Unchanged. Independently re-traced this pass: the `instanceof AgentAssignment` branch populates all five structured fields correctly for every constraint whose match indicts an `AgentAssignment`; the "Unassigned assignment" constraint's match never does, which is a pre-existing, separately-tracked defect (WINDOWS.md #14), not a correctness gap in this file's own OVNT-02/OVNT-07 work |
-| `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java` | Anchored contiguity/break scans, business-date day-off join | ✓ VERIFIED | Unchanged |
-| `frontend/src/pages/DeskManagement.tsx` | Editable day-start control, lock disclosure, server-message surfacing | ✓ VERIFIED | Unchanged; UAT confirms all 5 D5-named message/geometry types render without clipping live |
-| `frontend/src/pages/ScheduleResults.tsx` | Anchored grid (7 sites), business-day heading disclosure | ✓ VERIFIED | Unchanged; UAT confirms anchored ordering/contiguity/heading-wrap/envelope-reached styling/shift-group ordering/break-band rendering live in BOTH render branches; the pre-existing (unrelated) sticky-column defect remains separately filed (#15); the unfilled-seat marker's non-render for this specific constraint is a defect in its upstream data source (#14), not in this file's keying logic, which is correct |
-| `frontend/src/utils/dayWindow.ts` | Branded `DayOffset` arithmetic module | ✓ VERIFIED | Unchanged |
-| `src/test/resources/midnight-time-arithmetic.md` | Raw-comparison allowlist resolved to exactly 2 entries | ✓ VERIFIED | Unchanged |
+| `src/main/java/com/wfm/service/ScheduleOutputService.java` | Structured violation fields, shared `timeslotLabel` helper | ✓ VERIFIED | **Changed this pass's covered window** (by `ad5b58a`): gained a `Timeslot`-extraction branch, read-side only, guarded by `timeslotId == null` so `AgentAssignment` precedence is preserved. Confirmed by direct read and by the new no-regression test. |
+| All other artifacts in the fifth-pass table | — | ✓ VERIFIED | Unchanged; not re-listed here for brevity — see fifth-pass table, none of these files appear in `ad5b58a`'s diff. |
 
 ### Key Link Verification
 
-Unchanged (no implementation files modified since the initial verification). All links remain
-✓ WIRED.
+Unchanged. The fix does not add, remove, or redirect any component/service/constraint wiring — it
+adds a new `else if` branch inside an existing loop that reads an already-indicted object
+(`Timeslot`) the solver was never withholding. All links remain ✓ WIRED.
 
-### Behavioral Spot-Checks
+### Behavioral Spot-Checks / Probe Execution
 
-Unchanged — not re-run this pass since no implementation file changed. The full-suite confirmation
-from the supplied test_state stands: 202 classes, 1303 tests, 0 failures/errors, 4 pre-existing
-benchmark skips. The regression gate against Phases 18/19/20 guard classes (DayWindowTest,
-MidnightBoundaryRegressionTest, DayWindowAnchorBindingTest, TimeslotGeneratorBusinessDateTest,
-MidnightBoundaryPropertyTest) remains green.
-
-### Browser-Measured Backstops
-
-| # | Backstop | Ledger | Result | Status |
-|---|----------|--------|--------|--------|
-| 1 | Desk Management: all 5 D5-named message/geometry types | WINDOWS.md #11 | All 5 measured clean — no clipping, correct edit-mode retention, single-toast discipline, disabled-input confirmation | ✓ CLOSED |
-| 2 | Sticky Agent column survives anchored column re-ordering (slot-mode branch) | WINDOWS.md #12 | Declaration/width stable across scroll positions; contiguous 7-cell overnight run confirmed by index adjacency; pre-existing unrelated sticky-pinning defect found and separately filed (#15) | ✓ CLOSED |
-| 3 | Business-day heading does not force page scroll at 375px | WINDOWS.md #13 | No clipping/overflow attributable to the heading; tracks the grid's own 801px scroll container rather than the 375px viewport | ✓ CLOSED |
-| 4 | Excel Roster-sheet legend does not visually collide with agent rows, viewed in a real spreadsheet application | WINDOWS.md #16 | Structurally unmeasurable here; executor's own proxy (POI cell/coordinate inspection) is not authoritative by its own admission | ✓ WAIVED by operator decision, residual risk accepted |
-| 5 | AgentAllocationTab's shift-mode branch: envelope-reached styling, shift-group ordering, break-band-crosses-midnight rendering, full-day column regeneration, anchored column order | WINDOWS.md #17 | 5 of 6 sub-checks measured live against a seeded SHIFT-mode desk at a 21:00 anchor with a full-day wrapping window — all correct | ✓ CLOSED (5/6) |
-| 6 | Unfilled-seat-marker placement in the shift-mode branch | WINDOWS.md #14/#17 | Traced end-to-end and independently re-confirmed this pass: the "Unassigned assignment" constraint's `ConstraintMatch` never indicts an `AgentAssignment`, so its `ViolationDetail`s carry null businessDate/startTime and the frontend's map key can never match a real slot — unreachable by construction, in either render branch | ⚠️ DEFECT FINDING, not a human-verification item — recorded on the ledger, not blocking this phase |
+| Behavior | Command | Result | Status |
+|----------|---------|--------|--------|
+| Full suite actually re-executes (not cached) | `./gradlew --stop && ./gradlew test --rerun` | `BUILD SUCCESSFUL in 10m 40s`, `1 executed, 4 up-to-date` | ✓ PASS |
+| Suite-wide pass count matches commit claim | JUnit XML aggregated by filename across `build/test-results/test/*.xml` | `files: 202, tests: 1305, failures: 0, errors: 0, skipped: 4` | ✓ PASS |
+| New RED→GREEN live-path test passes | `<testcase name="buildConstraintViolations_unassignedAssignment_violationNowCarriesTimeslotAttribution()">` present, no failure/error child | testsuite header `tests="29" failures="0" errors="0"` | ✓ PASS |
+| New no-regression test passes | `<testcase name="buildConstraintViolations_liveAgentAssignmentIndictedConstraint_attributionUnaffectedByNewTimeslotBranch()">` present, no failure/error child | same testsuite, 0 failures/errors | ✓ PASS |
 
 ### Requirements Coverage
 
-All seven OVNT-01..07 requirements are ✓ SATISFIED on code and test evidence, independent of the
-UAT backstops. `REQUIREMENTS.md`'s OVNT-06/OVNT-07 checkboxes and phase-tracker rows still read
-`[ ]`/"Pending" as of this pass's read of the file — that bookkeeping update is outside this
-verifier's scope (it is not a `covered_files` edit this agent should make mid-verification, since it
-would change the digest just computed); flagged here so the orchestrator or `/gsd-ship` flow updates
-it now that the phase has reached `passed`.
+Unchanged. All seven OVNT-01..07 requirements remain ✓ SATISFIED, independent of this fix (which
+does not touch any of their supporting code paths other than reusing, unmodified, the shared
+`timeslotLabel()` helper already credited to OVNT-07).
 
 ### Anti-Patterns Found
-
-Unchanged four pre-recorded, operator-accepted findings (WR-01, WR-02, WR-03, IN-01) — re-confirmed
-present and unaffected by this pass since no implementation files changed. WR-03
-("`AgentAllocationTab`'s envelope-reached check can throw past the end of the business day, with no
-error boundary to catch it") sits in the same shift-mode code region (`isEnvelopeReached`,
-`ScheduleResults.tsx:695-698`) exercised live by this pass's backstop #5 measurement — exercised
-without throwing in the seeded scenario, consistent with the code review's framing of this as a risk
-for an edge case not hit here, not a confirmed live defect.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
 | `frontend/src/pages/ScheduleResults.tsx:695-698` | `isEnvelopeReached` | Unguarded `RangeError`; no `ErrorBoundary` anywhere | ⚠️ Warning (pre-recorded, WR-03, disposition: open) | Unaffected |
 | `src/main/java/com/wfm/service/ShiftTemplateService.java:412-424` | `isAligned` | END-position reinterpretation edge case (WR-01, disposition: open) | ⚠️ Warning (pre-recorded) | Unaffected |
 | `src/main/java/com/wfm/service/DeskService.java:298-321` | `setDayStart`'s stranding check | Does not exclude retired template eras (WR-02, disposition: open) | ⚠️ Warning (pre-recorded) | Unaffected |
-| `frontend/src/pages/DeskManagement.tsx:109,172-175` | Cancel button | Stays enabled during in-flight save (IN-01, disposition: open) | ℹ️ Info (pre-recorded) | Unaffected; UAT reproduced this live empirically (Save disabled, Cancel not) |
-| `src/main/java/com/wfm/service/ScheduleOutputService.java:683-709` | justification loop | Only `instanceof AgentAssignment` branch populates structured ViolationDetail fields; "Unassigned assignment" constraint's match never supplies one, so its violations carry null attribution and the unfilled-seat marker cannot render for this constraint | ⚠️ Warning (WINDOWS.md #14, revised significance this pass; disposition: open, pre-existing, not a Phase 21 regression) | Does not affect any of the seven OVNT truths; affects only the unfilled-seat marker for this one constraint |
+| `frontend/src/pages/DeskManagement.tsx:109,172-175` | Cancel button | Stays enabled during in-flight save (IN-01, disposition: open) | ℹ️ Info (pre-recorded) | Unaffected |
+| `src/main/java/com/wfm/service/ScheduleOutputService.java:683-740` | justification loop | Previously: only `instanceof AgentAssignment` populated structured fields, so "Unassigned assignment" violations carried null attribution | ✅ **RESOLVED this pass's covered commit** (WINDOWS.md #14, status now `resolved`) — a `Timeslot`-extraction branch now populates `timeslotId`/`businessDate`/`calendarDate`/`startTime`/`endTime`/`timeslotLabel` for this constraint; proven RED-then-GREEN. No longer an open finding. | Previously affected only the unfilled-seat marker for this one constraint; now fixed |
 
-**Previously recorded (second pass), independently confirmed pre-existing:**
+No new anti-patterns found in the three changed files (`WINDOWS.md`, `ScheduleOutputService.java`,
+the test file) — no `TODO`/`FIXME`/`XXX`/`HACK`/`PLACEHOLDER` markers, no empty-return stubs, no
+hardcoded-empty data flowing to output.
+
+**Previously recorded (second pass), independently confirmed pre-existing, unaffected:**
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `frontend/src/pages/ScheduleResults.tsx` (Agent column `th`/`td`, multiple sites) | `position: 'sticky', left: 0` | Sticky column never actually pins: resolves against the document (which scrolls), not the table wrapper (`overflowX: auto`, which does not) | ℹ️ Info (WINDOWS.md #15, attribution independently re-verified via `git diff` filtered for `position:`/`sticky`/`overflowX` over the phase range — no matches) | Pre-existing; not introduced by Phase 21 |
+| `frontend/src/pages/ScheduleResults.tsx` (Agent column `th`/`td`, multiple sites) | `position: 'sticky', left: 0` | Sticky column never actually pins | ℹ️ Info (WINDOWS.md #15, disposition: open) | Pre-existing; not introduced by Phase 21 or this commit |
 
 ### Code Review Finding CR-01 (Blocker, disposition: fixed)
 
-Unchanged — `FteUploadService.java:183` reads `timeslotLookup.computeIfAbsent(ts.getBusinessDate(),
-...)`, confirmed fixed, unaffected by this pass. Disposition unchanged: `open: 4 / total: 5` (WR-01,
+Unchanged — unaffected by this pass's commit. Disposition unchanged: `open: 4 / total: 5` (WR-01,
 WR-02, WR-03, IN-01 remain open by operator decision; CR-01 fixed).
+
+### WINDOWS.md Ledger — Carried-Forward Defect List, Updated This Pass
+
+| # | Item | Prior status | Status as of this pass | Evidence |
+|---|------|--------------|-------------------------|----------|
+| 11-13 | Backstop geometry checks | resolved | resolved (unchanged) | No change |
+| **14** | **"Unassigned assignment" violations carried null businessDate/startTime attribution, blocking the unfilled-seat marker from ever rendering** | open | **resolved** | `ad5b58a` added the `Timeslot`-extraction branch; proven RED-then-GREEN by a new live-path test; no-regression test confirms `AgentAssignment`-indicted constraints are unaffected. Confirmed directly in `.planning/WINDOWS.md` row 14's current text and in the resolved-status JSON block. **Phase 21 no longer ships with this defect open.** |
+| 15 | Sticky Agent column never pins (pre-existing, not Phase 21's doing) | open | open (unchanged) | Separately filed, unaffected by this commit |
+| 16 | Excel Roster legend collision | waived | waived (unchanged) | Operator decision, unaffected |
+| 17 | Shift-mode branch six sub-checks | partial (5/6) | **partial (5/6), updated note** | #14's fix makes the 6th sub-check (unfilled-seat marker rendering) *reachable* — the prior structural block is gone — but it remains **not yet observed**: no live solve + DOM read of the marker has been performed in any session. WINDOWS.md's own row 17 text is explicit on this point ("Do not read this update as the marker having been observed rendering — it has not been"). This pass does not upgrade it further; it is not a phase-blocking item (none of the seven OVNT truths depend on it, as established across the fourth and fifth passes), and per the operator's explicit instruction for this pass the human-verification list stays empty — this is not promoted to a human-verification item. |
 
 ### Human Verification Required
 
-None. The one item open after the fourth pass (WINDOWS.md #17) has been measured for 5 of its 6
-sub-checks; the 6th is reclassified as a defect finding (WINDOWS.md #14) rather than an open
-human-verification item, because its production path is inert by construction and no human action
-or measurement would discharge it as currently implemented. The complete Step 8 re-harvest across
-all twelve plans surfaces no further block.
+None. Unchanged from the fifth pass — the human-verification list was empty then and this change
+(additive, read-side, test-covered) adds nothing to it. The #17 sixth sub-check remains an
+explicitly-tracked, non-blocking ledger item (reachable-but-not-observed), not a human-verification
+item, per the operator's instruction for this pass.
 
 ### Stale Verification Digest
 
-**This phase's own digest:** refreshed this pass using `gsd_run query verification.fingerprint` over
-the current contents of all 54 `covered_files` (unchanged list from the fourth pass). New digest:
-`v2:sha256:66ec6e9d07263a997692cc0efca0ad55d36dab5f59df97602ee682e890569ec3`. This re-covers
-`.planning/WINDOWS.md` (entry #17 moved to `partial`, #14's significance revised in place) and
-`21-UAT.md` (item 5 and its `unreachable_sub_check` evidence added), both of which changed again
-since the prior digest was computed.
+**This phase's own digest:** refreshed this pass using `gsd_run query verification.fingerprint`
+over the current contents of the same 54 `covered_files` the fifth pass used (no membership
+change — confirmed that including vs. excluding the three root-level `.planning/*.md` files
+produces an identical digest, i.e. they are inert to the hash per #4623, so there was no reason to
+alter the list). Old digest: `v2:sha256:66ec6e9d07263a997692cc0efca0ad55d36dab5f59df97602ee682e890569ec3`.
+**New digest: `v2:sha256:c96d7be97eeb342c3a3f22c117856e01b7a1a3500c18af3d3a8f3555e16f0442`.** This
+re-covers `.planning/WINDOWS.md` (entry #14 flipped to `resolved`, entry #17's note updated) and
+`src/main/java/com/wfm/service/ScheduleOutputService.java` (the `Timeslot`-extraction branch), both
+changed by `ad5b58a` after the fifth pass's digest was computed.
 
-**Not this phase's to fix, carried forward as before:** plan 21-11 edited `.planning/REQUIREMENTS.md`,
-`.planning/ROADMAP.md`, `src/test/resources/bday-join-guard.md`, and
-`src/main/java/com/wfm/service/ScheduleOutputService.java`, all of which appear in Phase 18, 19,
-and/or 20's own `covered_files`. Those phases' `covered_digest` values remain stale relative to
-current file contents. This is a milestone-level bookkeeping item, not a Phase 21 blocker.
+`gsd_run query verification.status` confirmed `stale` before this refresh and should now report
+`verified` against the digest above.
+
+**Still not this phase's to fix, carried forward as before:** the Phase 18/19/20 stale-digest item
+(plan 21-11 touched files that appear in those phases' own `covered_files`) remains a milestone-
+level bookkeeping item, unaffected by this pass's refresh of Phase 21's own digest.
 
 ### Gaps Summary
 
 No must-have truth failed, no required artifact is missing or a stub, no key link is unwired, and
-all seven OVNT requirements remain independently confirmed true in the current codebase. The
-complete, re-run Step 8 harvest across all twelve plans produces zero open human-verification items.
+all seven OVNT requirements remain independently confirmed true in the current codebase. The one
+commit landed since the fifth pass (`ad5b58a`) is additive and read-side, confirmed not to touch
+`ScheduleConstraintProvider.java` or any of the seven truths' supporting artifacts, and closes the
+phase's one previously-open defect finding (WINDOWS.md #14) with test-proven evidence (RED-then-
+GREEN plus a genuine no-regression assertion), independently re-confirmed by this pass's own test
+run (1305 tests, 0 failures, 0 errors — matching the commit's claim) rather than taken on the
+commit message's word.
 
-Phase 21 ships with two items open by explicit, documented decision, neither of which is this
-phase's own defect to fix and neither of which affects any of the seven OVNT truths:
+Phase 21 now ships with ONE item open by explicit, documented, pre-existing decision (down from
+two as of the fifth pass):
 
 1. **WINDOWS.md #15** (pre-existing, not Phase 21's doing, git-verified) — the Allocation grid's
-   Agent column declares `position: sticky` but never actually pins, because the table wrapper's
-   `overflowX: auto` is not the scrolling ancestor the document is. Phase 21's wider anchored grid
-   increases exposure to it but did not introduce it.
-2. **WINDOWS.md #14** (pre-existing, not Phase 21's doing, independently re-traced this pass) — the
-   "Unassigned assignment" constraint's `ConstraintMatch` never indicts an individual
-   `AgentAssignment`, so its violations carry null business-date/time attribution and the
-   operator-facing unfilled-seat marker cannot render for this specific constraint in either grid
-   render branch. This phase's own structured-attribution channel (21-03/21-10) is correct and
-   populates fully for every OTHER constraint whose match does indict an `AgentAssignment`; fixing
-   this one would require restructuring `ScheduleConstraintProvider`'s stream shape for this
-   constraint, out of this phase's scope.
+   Agent column declares `position: sticky` but never actually pins. Unaffected by this pass.
 
-One item is waived by explicit operator decision: the Excel Roster-sheet legend-collision backstop
-(WINDOWS.md #16) — structurally unmeasurable in this environment, cosmetic only, residual risk
-accepted.
+WINDOWS.md #14 is now **resolved** and no longer carried forward as an open defect.
+
+One item remains waived by explicit operator decision: the Excel Roster-sheet legend-collision
+backstop (WINDOWS.md #16) — unaffected by this pass.
+
+One item remains a tracked, non-blocking, reachable-but-not-observed ledger note: WINDOWS.md #17's
+sixth sub-check (unfilled-seat marker rendering) — reachable as of #14's fix, not yet live-observed,
+not required by any of the seven OVNT truths, not promoted to human verification per this pass's
+explicit instruction.
 
 Four further findings remain open by prior explicit operator decision and are unaffected by this
 pass: WR-01, WR-02, WR-03, IN-01 (code review, disposition `open: 4 / total: 5`).
 
-**Recommendation:** Phase 21 is complete against its own stated goal and all seven OVNT requirements.
-`REQUIREMENTS.md`'s OVNT-06/OVNT-07 checkboxes and phase-tracker rows should be flipped to `[x]`/
-"Complete" now that this phase has reached `passed` (not done by this verifier, to avoid mutating a
-`covered_files` entry after the digest above was computed). WINDOWS.md #14 and #15 should carry
-forward as open, cross-phase-visible defects rather than be treated as blockers of this phase's own
-ship — they are pre-existing, independently verified via git history not to be Phase 21's
-introduction, and neither touches any of the seven OVNT truths.
+**Recommendation:** Phase 21 remains complete against its own stated goal and all seven OVNT
+requirements, now with its one prior open defect (WINDOWS.md #14) resolved and test-proven, and its
+verification digest refreshed so `gsd_run query verification.status` clears `stale` and
+`phase.complete` can proceed.
 
 ---
 
-_Verified: 2026-10-03T15:48:58Z_
+_Verified: 2026-10-03T16:27:17Z_
 _Verifier: Claude (gsd-verifier)_
