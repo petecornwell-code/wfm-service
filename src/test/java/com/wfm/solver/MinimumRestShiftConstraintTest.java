@@ -165,6 +165,18 @@ class MinimumRestShiftConstraintTest {
     }
 
     @Test
+    @DisplayName("an overnight predecessor (22:00-06:00) measures the true 60-minute gap against a 07:00 successor, not the pre-fix 1500, penalised by 600 under a 660-minute minimum")
+    void overnightPredecessor_trueGapMeasuredCorrectly() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(22, 0), LocalTime.of(6, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(7, 0), LocalTime.of(15, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660))
+                .penalizesBy(600);
+    }
+
+    @Test
     @DisplayName("a NULL minimumRestMinutes produces no match, whatever the gap")
     void nullMinimumRestMinutes_noMatch() {
         Agent a = agent();
@@ -259,6 +271,16 @@ class MinimumRestShiftConstraintTest {
         RestSpan next = new RestSpan(agentId, D, LocalTime.of(6, 0), LocalTime.of(14, 0), LocalTime.MIDNIGHT);
 
         assertThat(RestSpan.gapMinutes(prev, next)).isEqualTo(480);
+    }
+
+    @Test
+    @DisplayName("RestSpan.gapMinutes with an overnight predecessor measures the true gap, not the pre-fix 1500")
+    void gapMinutes_overnightPredecessor_matchesTrueGap() {
+        UUID agentId = UUID.randomUUID();
+        RestSpan prev = new RestSpan(agentId, D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0), LocalTime.MIDNIGHT);
+        RestSpan next = new RestSpan(agentId, D, LocalTime.of(7, 0), LocalTime.of(15, 0), LocalTime.MIDNIGHT);
+
+        assertThat(RestSpan.gapMinutes(prev, next)).isEqualTo(60);
     }
 
     // ------------------------------------------------------------------

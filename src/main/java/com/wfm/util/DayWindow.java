@@ -147,6 +147,31 @@ public final class DayWindow {
     }
 
     /**
+     * The day-start-relative minute an interval's END instant truly falls at, allowed to exceed
+     * {@link #MINUTES_PER_DAY} when the interval wraps past the anchor — unlike {@link
+     * #anchoredEndMinute}, which is bounded to {@code (0, 1440]} and therefore cannot distinguish
+     * "ends within this business day" from "ends the calendar day after wrapping past the anchor"
+     * (REST-02). The worked wrapping pair {@code 22:00}&ndash;{@code 06:00} at a {@code 00:00}
+     * anchor returns {@code 1800}.
+     *
+     * <p>Collapses onto {@link #anchoredEndMinute(LocalTime)} exactly whenever the interval does
+     * not wrap: the worked non-wrapping pair {@code 14:00}&ndash;{@code 22:00} returns {@code 1320},
+     * identical to {@code anchoredEndMinute(22:00)} — which is why no existing measurement built on
+     * the non-wrapping case changes when callers switch to this method.
+     *
+     * <p>Wrap detection is delegated entirely to {@link #anchoredDurationMinutes}'s existing
+     * negative-raw branch, never a new hand-rolled comparison — this method exists as a named
+     * member, rather than being inlined as a two-call expression at each call site, because that
+     * exact composition was already inlined twice in this codebase and the second copy drifted into
+     * a defect (REST-02, REST-05). The maximum possible return is {@code 2880} (two values each
+     * bounded at {@link #MINUTES_PER_DAY}), so a caller's {@code MINUTES_PER_DAY} subtraction may
+     * legitimately go negative — that negative is meaningful, not an error to guard away.
+     */
+    public int anchoredWrappedEndMinute(LocalTime start, LocalTime end) {
+        return anchoredStartMinute(start) + anchoredDurationMinutes(start, end);
+    }
+
+    /**
      * Instance equivalent of {@link #isForwardWithinDay(LocalTime, LocalTime)}, bound to this
      * instance's anchor — the non-throwing ordering predicate {@code ShiftTemplateService}'s
      * save-path refusal relies on (D-11). Returns {@code false} on a null argument, exactly as the

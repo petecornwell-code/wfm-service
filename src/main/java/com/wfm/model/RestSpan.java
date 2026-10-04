@@ -103,13 +103,17 @@ public record RestSpan(UUID agentId, LocalDate businessDate, LocalTime startTime
      * enforces set equality over {@code src/main/java} on both families.
      *
      * <p>Binds one {@link DayWindow} to {@code prev}'s anchor and returns
-     * {@link DayWindow#MINUTES_PER_DAY} minus that window's {@link DayWindow#anchoredEndMinute}
-     * of the predecessor's end, plus the window's {@link DayWindow#anchoredStartMinute} of the
-     * successor's start. A predecessor ending exactly at the business-day boundary paired with a
+     * {@link DayWindow#MINUTES_PER_DAY} minus that window's {@link DayWindow#anchoredWrappedEndMinute}
+     * of the predecessor's start and end, plus the window's {@link DayWindow#anchoredStartMinute} of
+     * the successor's start. A predecessor ending exactly at the business-day boundary paired with a
      * successor starting exactly at it yields {@code 0}, never {@code 1440} — this needs no special
-     * branch because {@code anchoredEndMinute} of a time equal to the anchor already returns
-     * {@code MINUTES_PER_DAY}, so the subtraction collapses to zero before the successor's own
-     * (zero) start offset is added.
+     * branch because {@code anchoredWrappedEndMinute} of a non-wrapping interval ending at the anchor
+     * returns {@code MINUTES_PER_DAY} (identical to {@code anchoredEndMinute} in that case), so the
+     * subtraction collapses to zero before the successor's own (zero) start offset is added. A
+     * predecessor that wraps past the anchor (e.g. {@code 22:00}&ndash;{@code 06:00}) makes
+     * {@code remainingInPrevDay} negative by design — that is the corrected behaviour: the
+     * {@code 22:00}-{@code 06:00} predecessor paired with a {@code 07:00} successor measures a true
+     * gap of {@code 60} minutes, where the pre-correction formula produced {@code 1500}.
      *
      * @throws IllegalArgumentException when {@code prev} and {@code next} carry different
      *         {@code dayStart} values. This is unreachable in production because
@@ -124,7 +128,8 @@ public record RestSpan(UUID agentId, LocalDate businessDate, LocalTime startTime
                             + prev.dayStart() + " vs " + next.dayStart());
         }
         DayWindow window = DayWindow.anchoredAt(prev.dayStart());
-        int remainingInPrevDay = DayWindow.MINUTES_PER_DAY - window.anchoredEndMinute(prev.endTime());
+        int remainingInPrevDay = DayWindow.MINUTES_PER_DAY
+                - window.anchoredWrappedEndMinute(prev.startTime(), prev.endTime());
         int elapsedIntoNextDay = window.anchoredStartMinute(next.startTime());
         return remainingInPrevDay + elapsedIntoNextDay;
     }
