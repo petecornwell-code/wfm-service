@@ -341,11 +341,15 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ Post-solve drift reporting: which agents were assigned a shift other than their usual one, on which dates and by how much; an agent with no stored usual shift distinguished from one whose shift was honoured; and the most over-subscribed templates ranked, making the consistency-versus-fairness tension visible without building a mitigation for it — v1.3 Phase 17 (DRFT-01, DRFT-02, DRFT-04)
 - ✓ The drift report is derived from the same distance calculation the consistency constraint uses (`ShiftBandPair.startDeviationMinutes`), not a second implementation — and its Excel sheet headers are byte-identical to the frontend tab's — v1.3 Phase 17 (DRFT-03, XCUT-01)
 
+- ✓ A per-desk minimum rest period between an agent's consecutive shifts, enforced as a hard solver violation on the actual end/start instants (same-day back-to-back included, not only overnight), with a structurally-unavoidable case refused *pre-solve* by a mechanism separate from the in-solve constraint, horizon-edge behaviour defined and tested rather than accidental, a desk that sets no minimum rest solving exactly as before, a per-agent per-business-date waiver carrying a mandatory recorded reason, and every waived violation disclosed in the solved output so a waiver cannot silently hide a roster problem — v1.5 Phase 22 (REST-01…REST-07)
+
 ### Active
 
-**v1.5 Overnight Shifts & Business Dates** — scoped in `.planning/REQUIREMENTS.md`, phased in
-`.planning/ROADMAP.md`. Four requirement groups: business-day model (BDAY), overnight shift
-templates (OVNT), solver business-date correctness (SOLV), minimum rest (REST).
+~~**v1.5 Overnight Shifts & Business Dates**~~ — **all four requirement groups complete as of
+2026-10-04.** Business-day model (BDAY, Phase 18), DayWindow re-anchoring (Phase 19), solver
+business-date correctness (SOLV, Phase 20), overnight shift templates (OVNT, Phase 21) and minimum
+rest (REST, Phase 22) are all shipped; `.planning/REQUIREMENTS.md` records 29/29 mapped requirements
+Complete. The milestone is ready to close — run `/gsd-complete-milestone v1.5`.
 
 #### Carried forward, not in v1.5 — see ROADMAP.md Backlog
 
@@ -474,7 +478,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-02 after Phase 20 (Solver Business-Date Correctness) — all eight requirements
+*Last updated: 2026-10-04 after Phase 22 (Minimum Rest) — v1.5's final phase; all 29 v1.5
+requirements Complete and the milestone ready to close. Previously: 2026-10-02 after Phase 20 — all eight requirements
 (SOLV-01..07, BDAY-07) satisfied, verified 8/8 must-haves after two gap-closure rounds; 12/12 plans.
 Round 2 (plan 20-12) found four repository-level truncation sites that fed business-date period bounds
 into calendar-date finders, and closed them behind one shared `BusinessDayPeriodLoader`; the

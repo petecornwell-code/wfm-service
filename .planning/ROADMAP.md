@@ -27,7 +27,7 @@ than four captured live desks standing in for both jobs at once.
 - [x] **Phase 19: DayWindow Re-anchoring** - `DayWindow`'s interval arithmetic is re-anchored on a caller-supplied day start in one atomic, compiler-forced, revertible change (completed 2026-10-01)
 - [x] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved (completed 2026-10-02)
 - [x] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block (completed 2026-10-03)
-- [ ] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver
+- [x] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver (completed 2026-10-04)
 
 ### Phase 18: Business-Day Foundation & Guards
 
@@ -391,7 +391,7 @@ configured-rest field at all, so the header badge and Rest Waivers tab fall back
 (22-11, 22-12) address both, plus all three open code-review findings (WR-01, WR-02, IN-01). Run
 them with `/gsd-execute-phase 22 --gaps-only`.
 
-**Plans**: 10 plans in 7 waves, plus 2 gap-closure plans
+**Plans**: 12/12 plans complete in 7 waves, plus 2 gap-closure plans
 
 Plans:
 **Wave 1**

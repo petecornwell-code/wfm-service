@@ -4,35 +4,35 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
-status: executing
-stopped_at: Completed 22-12-PLAN.md
-last_updated: "2026-10-04T14:43:15.987Z"
+status: completed
+stopped_at: Phase 22 complete — all phases complete
+last_updated: "2026-10-04T16:45:59.395Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 22 plan 12 executed (REST-07 gap a closed; WR-02 and IN-01 closed)
-state_head: 7ba53ecb3bcf4db837788a6693d2f3e80c3081cb
+last_activity_desc: Phase 22 complete
+state_head: 6f2b880102a17c32c7196a41b83b15d00a7fd570
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 50
   completed_plans: 50
-  percent: 80
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
+See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 22 — Minimum Rest
+**Current focus:** Milestone v1.5 complete — ready to close
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — gap closure plans complete (12 of 12 plans executed)
-Plan: 12 of 12 executed — all plans in Phase 22 now have a SUMMARY.md
-Status: Re-verified 5/5 roadmap success criteria — both REST-07 gaps closed. CR-01 (critical, live-solve lazy-fetch) also closed. 3 advisory review findings open (WR-03, WR-04, IN-02). Phase NOT complete: 3 human UAT items outstanding in 22-UAT.md — run /gsd-verify-work 22.
-Last activity: 2026-10-04 — Phase 22 re-verification passed; human UAT outstanding
+Phase: 22 (Minimum Rest) — 5 of 5 in v1.5
+Plan: Not started
+Status: All phases complete
+Last activity: 2026-10-04 — Phase 22 complete
 
 ## Milestone v1.3 Outcome
 
@@ -376,6 +376,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ### Blockers/Concerns
 
+- **[Phase 22] Concurrent duplicate rest-waiver POST returns a raw 500 — BACKLOGGED as ROADMAP 999.10.** Found at UAT 2026-10-04. Two genuinely simultaneous `POST .../rest-waivers` for the same `(agent, date)` produce one 200 and one unhandled 500 off the `agent_rest_waiver` unique constraint (3/3 reproductions). No data corruption — the constraint holds and exactly one row ever exists — and a genuine browser double-click is correctly guarded, so T-22-24's own property stands and this is not an open threat. The fix is to catch `DataIntegrityViolationException` on the waiver upsert and return the 200 the sequential duplicate already returns.
+- **[Phase 22] UAT checkpoint 3 was verified against a seeded ACCEPTED-schedule fixture, not a live solver run.** The real `buildRestWaiverDisclosure` computation and the reopened-accepted read path (the surface both gap-closure plans fixed) were exercised end to end and pass. What was NOT exercised is the solver itself producing a waived short-rested pair during a live solve; that behaviour rests on plans 22-01..22-03's backend test coverage. Recorded in `22-UAT.md` under test 3's `limitation`. If a live-solve confirmation is ever wanted, it needs a full solvable fixture desk (shift templates, staffing requirements, specializations, multiple agents).
 - **⚠ [Phase 15] G-15-28 — weekend demand forecast under-reports the roster, operator-owned and OPEN.** The live weekend forecast asserts ~1 FTE at hours where ~20 agents are rostered (Sat 2026-01-10 has no demand row before 11:00; Sun 2026-01-11 reads 1 FTE at 10:00). Because `bulkOverallocationLimit` derives its ceiling from demand, this manufactured the seat scarcity behind most of Phase 15's residual-hard symptoms — proven by experiment: raising `overallocationHardLimitPct` 250→500 with everything else held constant took the live desk to hard 0 for the first time. **The 500% ceiling is a workaround for bad data, not a fix, and must not be left in place** — it disables the over-allocation guard for the rest of the week. Once the forecast is corrected, re-run at 250%. Operator committed to the correction on 2026-09-01; not a code defect.
 - **[Phase 15] UAT tests 10 and 18 closed by operator ruling, not by measurement.** Test 10's residual −9 was judged acceptable rather than resolved; test 18 (production migration) was closed because no separate production tier exists and dev *is* the live system. Both rulings are recorded verbatim in `15-UAT.md`. If a production environment is ever stood up, test 18 becomes live again and must be re-run there.
 - BambooHR credential rotation was removed from GSD tracking on 2026-08-25 at operator request; ownership sits with the operator outside this planning system.
@@ -396,8 +398,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T14:43:15.930Z
-Stopped at: Completed 22-12-PLAN.md
+Last session: 2026-10-04T16:46:00.000Z
+Stopped at: Phase 22 complete — all phases complete
 Resume file: None
 
 ## Operator Next Steps
