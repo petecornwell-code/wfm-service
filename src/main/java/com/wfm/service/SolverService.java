@@ -16,6 +16,7 @@ import com.wfm.solver.ScheduleConstraintProvider;
 import com.wfm.repository.AgentPreferenceRepository;
 import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentExceptionRepository;
+import com.wfm.repository.AgentRestWaiverRepository;
 import com.wfm.repository.AgentDayHoursRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.AgentUsualShiftRepository;
@@ -71,6 +72,7 @@ public class SolverService {
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentExceptionRepository agentExceptionRepository;
+    private final AgentRestWaiverRepository agentRestWaiverRepository;
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final AgentEligibilityService agentEligibilityService;
@@ -105,6 +107,7 @@ public class SolverService {
                          AgentPreferenceRepository agentPreferenceRepository,
                          AgentDayOffRepository agentDayOffRepository,
                          AgentExceptionRepository agentExceptionRepository,
+                         AgentRestWaiverRepository agentRestWaiverRepository,
                          AgentDayHoursRepository agentDayHoursRepository,
                          ConstraintWeightsRepository constraintWeightsRepository,
                          AgentEligibilityService agentEligibilityService,
@@ -128,6 +131,7 @@ public class SolverService {
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentExceptionRepository = agentExceptionRepository;
+        this.agentRestWaiverRepository = agentRestWaiverRepository;
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.agentEligibilityService = agentEligibilityService;
@@ -206,6 +210,16 @@ public class SolverService {
 
         // Load exceptions for this desk in the schedule period
         List<AgentException> exceptions = agentExceptionRepository.findByTenantIdAndDeskIdAndDateBetween(
+                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+
+        // Phase 22 (REST-06, D-07): load rest waivers for this desk in the schedule period. One
+        // batched desk-wide call, business-date bounded, mirroring the exception load immediately
+        // above. schedule.getPeriodStartDate()/getPeriodEndDate() are already BUSINESS dates
+        // (18-CONTEXT.md D-22) and AgentRestWaiver.date carries the identical business-date
+        // semantics agent_exception.date already has, so no BusinessDayPeriodLoader indirection is
+        // needed here -- unlike the timeslot and staffing loads above, which do go through that
+        // loader because their underlying repository finders filter a CALENDAR date column.
+        List<AgentRestWaiver> restWaivers = agentRestWaiverRepository.findByTenantIdAndDeskIdAndDateBetween(
                 tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
         // Load per-day contracted hours for this desk (D-09; MDL-02 resolution authority)
@@ -482,6 +496,7 @@ public class SolverService {
         schedule.setAgentPreferences(new ArrayList<>(resolvedPreferences));
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
+        schedule.setAgentRestWaivers(new ArrayList<>(restWaivers));
         schedule.setAgentDayConfigs(agentDayConfigs);
         schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
         schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));

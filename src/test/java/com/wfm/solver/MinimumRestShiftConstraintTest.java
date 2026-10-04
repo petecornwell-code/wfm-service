@@ -4,6 +4,7 @@ import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentDayConfig;
+import com.wfm.model.AgentRestWaiver;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.BreakAlignment;
 import com.wfm.model.RestSpan;
@@ -59,6 +60,17 @@ class MinimumRestShiftConstraintTest {
 
     private static ShiftBandPair pair(LocalTime start, LocalTime end) {
         return new ShiftBandPair(template(start, end), null);
+    }
+
+    private static AgentRestWaiver waiver(Agent agent, LocalDate date) {
+        AgentRestWaiver w = new AgentRestWaiver();
+        w.setId(UUID.randomUUID());
+        w.setTenantId(1L);
+        w.setDeskId(UUID.randomUUID());
+        w.setAgent(agent);
+        w.setDate(date);
+        w.setReason("test");
+        return w;
     }
 
     /** A shift row anchored at {@code dayStart} via its own {@link AgentDayConfig} problem fact —
@@ -247,5 +259,88 @@ class MinimumRestShiftConstraintTest {
         RestSpan next = new RestSpan(agentId, D, LocalTime.of(6, 0), LocalTime.of(14, 0), LocalTime.MIDNIGHT);
 
         assertThat(RestSpan.gapMinutes(prev, next)).isEqualTo(480);
+    }
+
+    // ------------------------------------------------------------------
+    //  Phase 22 (REST-06, D-06/D-08) -- waiver exclusion via RestWaiverLookup
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a waiver on the successor date D waives the violating pair entering D -- zero matches")
+    void waiverOnSuccessorDate_zeroMatches() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660), waiver(a, D))
+                .penalizesBy(0);
+    }
+
+    @Test
+    @DisplayName("D-06: a waiver on the PREDECESSOR date D-1 does not clear the rest coming into D -- one match")
+    void waiverOnPredecessorDate_doesNotClear_oneMatch() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660), waiver(a, D_MINUS_1))
+                .penalizesBy(180);
+    }
+
+    @Test
+    @DisplayName("a waiver on D for a different agent does not clear this agent's violation -- one match")
+    void waiverForDifferentAgent_doesNotClear_oneMatch() {
+        Agent a = agent();
+        Agent other = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660), waiver(other, D))
+                .penalizesBy(180);
+    }
+
+    @Test
+    @DisplayName("one waiver on D clears exactly the D-into-D+1 pair of two consecutive violations, not both")
+    void twoConsecutiveViolatingPairs_oneWaiverOnD_clearsExactlyOnePair() {
+        Agent a = agent();
+        LocalDate dPlus1 = D.plusDays(1);
+        AgentShiftAssignment dMinus1Shift = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment dShift = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment dPlus1Shift = shiftRow(a, dPlus1, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+
+        // gap(D-1 -> D) = 480, gap(D -> D+1) = 480; both violate a 660-minute minimum by 180 each.
+        // Waiving D clears only the pair whose successor business date is D (D-1 -> D); the
+        // D -> D+1 pair's successor date is D+1, so it is untouched and still penalised by 180.
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(dMinus1Shift, dShift, dPlus1Shift,
+                        scheduleConfig(SchedulingMode.SHIFT, 660), waiver(a, D))
+                .penalizesBy(180);
+    }
+
+    @Test
+    @DisplayName("a desk with no waivers at all behaves identically to before this plan -- gap480 fixture unaffected")
+    void emptyWaiverList_behavesIdenticallyToBeforeThisPlan() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660))
+                .penalizesBy(180);
+    }
+
+    @Test
+    @DisplayName("a pair with adequate rest and a waiver on its successor date is still zero matches")
+    void adequateRestWithWaiverOnSuccessorDate_stillZeroMatches() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(14, 0), LocalTime.of(22, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(9, 0), LocalTime.of(17, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660), waiver(a, D))
+                .penalizesBy(0);
     }
 }

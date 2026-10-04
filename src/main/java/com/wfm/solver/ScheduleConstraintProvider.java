@@ -1063,6 +1063,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 // and again in the penalty, matching minimumRestSlot's identical shape.
                 .map((cfg, prev, next) -> new RestGapMatch(cfg, prev, next, RestSpan.gapMinutes(prev, next)))
                 .filter(match -> match.gapMinutes() < match.cfg().minimumRestMinutes())
+                // Phase 22 (REST-06, D-06/D-08): excludes a pair whose successor business date
+                // carries a waiver, through the one shared RestWaiverLookup.waives predicate.
+                // Placed after the gap filter (a pair with adequate rest never consults the waiver
+                // facts at all) and last (keeps the tuple count this clause filters as small as
+                // possible).
+                .ifNotExists(AgentRestWaiver.class,
+                        filtering((match, waiver) -> RestWaiverLookup.waives(
+                                waiver, match.next().agentId(), match.next().businessDate())))
                 .penalizeConfigurable(match -> match.cfg().minimumRestMinutes() - match.gapMinutes())
                 .asConstraint("Minimum rest (shift)");
     }
@@ -1143,6 +1151,12 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 // candidate pair, shared by the filter and the penalty below.
                 .map((cfg, prev, next) -> new RestGapMatch(cfg, prev, next, RestSpan.gapMinutes(prev, next)))
                 .filter(match -> match.gapMinutes() < match.cfg().minimumRestMinutes())
+                // See minimumRestShift's identical waiver-exclusion step: excludes a pair whose
+                // successor business date carries a waiver, through the one shared
+                // RestWaiverLookup.waives predicate, placed after the gap filter and last.
+                .ifNotExists(AgentRestWaiver.class,
+                        filtering((match, waiver) -> RestWaiverLookup.waives(
+                                waiver, match.next().agentId(), match.next().businessDate())))
                 .penalizeConfigurable(match -> match.cfg().minimumRestMinutes() - match.gapMinutes())
                 .asConstraint("Minimum rest (slot)");
     }

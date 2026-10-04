@@ -153,6 +153,13 @@ public class Schedule {
     @Transient
     private List<AgentException> agentExceptions = new ArrayList<>();
 
+    // Phase 22 (REST-06, D-07): per-agent-per-business-date rest waivers. Empty on a desk with no
+    // waivers at all, which is what makes minimumRestShift/minimumRestSlot's exclusion clause match
+    // nothing and keeps a waiver-free desk byte-identical to before this phase (REST-04).
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<AgentRestWaiver> agentRestWaivers = new ArrayList<>();
+
     @ProblemFactCollectionProperty
     @Transient
     private List<AgentDayConfig> agentDayConfigs = new ArrayList<>();
@@ -310,6 +317,9 @@ public class Schedule {
 
     public List<AgentException> getAgentExceptions() { return agentExceptions; }
     public void setAgentExceptions(List<AgentException> agentExceptions) { this.agentExceptions = agentExceptions; }
+
+    public List<AgentRestWaiver> getAgentRestWaivers() { return agentRestWaivers; }
+    public void setAgentRestWaivers(List<AgentRestWaiver> agentRestWaivers) { this.agentRestWaivers = agentRestWaivers; }
 
     public List<AgentDayConfig> getAgentDayConfigs() { return agentDayConfigs; }
     public void setAgentDayConfigs(List<AgentDayConfig> agentDayConfigs) { this.agentDayConfigs = agentDayConfigs; }

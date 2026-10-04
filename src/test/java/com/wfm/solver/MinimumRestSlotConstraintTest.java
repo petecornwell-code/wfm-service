@@ -4,6 +4,7 @@ import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentDayConfig;
+import com.wfm.model.AgentRestWaiver;
 import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.BreakAlignment;
 import com.wfm.model.RestSpan;
@@ -88,6 +89,17 @@ class MinimumRestSlotConstraintTest {
         return new AgentDayConfig(agent.getId(), date, CONTRACTED_HOURS, INCREMENT,
                 BREAK_DURATION_MINUTES, BREAK_MIN_SHIFT_HOURS, BREAK_BLOCKED_HOURS,
                 BreakAlignment.ON_HOUR, 130, 70, dayStart);
+    }
+
+    private static AgentRestWaiver waiver(Agent agent, LocalDate date) {
+        AgentRestWaiver w = new AgentRestWaiver();
+        w.setId(UUID.randomUUID());
+        w.setTenantId(1L);
+        w.setDeskId(UUID.randomUUID());
+        w.setAgent(agent);
+        w.setDate(date);
+        w.setReason("test");
+        return w;
     }
 
     private static ScheduleConfig scheduleConfig(SchedulingMode mode, Integer minimumRestMinutes, LocalTime dayStart) {
@@ -292,6 +304,118 @@ class MinimumRestSlotConstraintTest {
     void noAssignedRows_zeroMatches() {
         verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
                 .given(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT))
+                .penalizesBy(0);
+    }
+
+    // ------------------------------------------------------------------
+    //  Phase 22 (REST-06, D-06/D-08) -- waiver exclusion via RestWaiverLookup
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a waiver on the successor date D waives the violating pair entering D -- zero matches")
+    void waiverOnSuccessorDate_zeroMatches() {
+        Agent a = agent();
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(9, 0))); // ends 18:00
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(4, 0))); // starts 04:00 -- gap 600
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+        facts.add(waiver(a, D));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(0);
+    }
+
+    @Test
+    @DisplayName("D-06: a waiver on the PREDECESSOR date D-1 does not clear the rest coming into D -- still penalised")
+    void waiverOnPredecessorDate_doesNotClear() {
+        Agent a = agent();
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(9, 0)));
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(4, 0)));
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+        facts.add(waiver(a, D_MINUS_1));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(60);
+    }
+
+    @Test
+    @DisplayName("a waiver on D for a different agent does not clear this agent's violation")
+    void waiverForDifferentAgent_doesNotClear() {
+        Agent a = agent();
+        Agent other = agent();
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(9, 0)));
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(4, 0)));
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+        facts.add(waiver(other, D));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(60);
+    }
+
+    @Test
+    @DisplayName("one waiver on D clears exactly the D-into-D+1 pair of two consecutive violations, not both")
+    void twoConsecutiveViolatingPairs_oneWaiverOnD_clearsExactlyOnePair() {
+        Agent a = agent();
+        LocalDate dPlus1 = D.plusDays(1);
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(13, 0))); // ends 22:00
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(6, 0))); // 06:00-15:00 -- gap(D-1,D) 480
+        facts.addAll(compliantDaySeats(a, dPlus1, LocalTime.of(1, 0))); // 01:00-10:00 -- gap(D,D+1) 600
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, dPlus1, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+        facts.add(waiver(a, D));
+
+        // Without the waiver: gap(D-1,D)=480 (shortfall 180) and gap(D,D+1)=600 (shortfall 60),
+        // total 240. Waiving D clears only the pair whose successor business date is D -- the
+        // D-1->D pair -- leaving the D->D+1 pair's 60-minute shortfall penalised.
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(60);
+    }
+
+    @Test
+    @DisplayName("a desk with no waivers at all behaves identically to before this plan -- shortGap fixture unaffected")
+    void emptyWaiverList_behavesIdenticallyToBeforeThisPlan() {
+        Agent a = agent();
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(9, 0)));
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(4, 0)));
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(60);
+    }
+
+    @Test
+    @DisplayName("a pair with adequate rest and a waiver on its successor date is still zero matches")
+    void adequateRestWithWaiverOnSuccessorDate_stillZeroMatches() {
+        Agent a = agent();
+        List<Object> facts = new ArrayList<>();
+        facts.addAll(compliantDaySeats(a, D_MINUS_1, LocalTime.of(9, 0))); // ends 18:00
+        facts.addAll(compliantDaySeats(a, D, LocalTime.of(5, 0))); // starts 05:00 -- gap exactly 660
+        facts.add(dayConfig(a, D_MINUS_1, LocalTime.MIDNIGHT));
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+        facts.add(waiver(a, D));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
                 .penalizesBy(0);
     }
 }
