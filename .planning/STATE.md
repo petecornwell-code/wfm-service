@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 23
 current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
-status: executing
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-10-04T20:30:58.398Z"
+status: verifying
+stopped_at: Completed 23-03-PLAN.md
+last_updated: "2026-10-04T21:02:56.562Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 23 execution started
-state_head: 16083ca2ab536317627557666087bc0775df063f
+state_head: 46de29c538e045b1208d2b8adec3828e141e7faf
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 53
-  completed_plans: 52
+  completed_plans: 53
   percent: 83
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-04 — Phase 23 execution started
 
 ## Milestone v1.3 Outcome
@@ -380,6 +380,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 23]: 23-02: Adopted PF-01 verbatim -- RestHorizonEdgeTest counted as the phase's sixth affected class (not the five 23-RESEARCH.md Finding 5 named), given its own pre-horizon overnight SHIFT/SLOT pair plus the no-successor-row negative
 - [Phase 23]: 23-02: Adopted PF-02 verbatim -- every SLOT-mode wrapping predecessor in this plan is a directly-constructed pre-horizon RestSpan, never a synthesized wrapping slot set; compliantDaySeats and RestSpan.ofSlots were left untouched
 - [Phase 23]: 23-02: Re-derived the 21:00-anchor numbers in RestPredecessorServiceTest's SLOT regression case against the live DayWindow implementation during execution rather than trusting the plan text blindly -- the derivation (1740) matched exactly
+- [Phase 23]: RestGapArithmeticGuardTest's CALL_SITE_ALLOWLIST_HEADING named '### anchoredWrappedEndMinute call sites' (new wording, not copied verbatim from the waiver precedent)
+- [Phase 23]: End-accessor token built by string concatenation (anchored+End+Minute() in the guard matcher so the guard's own source file is never a textual match for the forbidden composition
 
 ### Blockers/Concerns
 
@@ -405,8 +407,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T20:30:58.350Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-10-04T21:02:56.513Z
+Stopped at: Completed 23-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -511,3 +513,4 @@ Resume file: None
 | Phase 22 P12 | 44min | 3 tasks | 8 files |
 | Phase 23 P01 | 25min | 3 tasks | 6 files |
 | Phase 23 P02 | 18min | 3 tasks | 4 files |
+| Phase 23 P03 | 30min | 2 tasks | 2 files |
