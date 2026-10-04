@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
-status: executing
-stopped_at: Completed 22-09-PLAN.md
-last_updated: "2026-10-04T04:09:50.044Z"
+status: verifying
+stopped_at: Completed 22-10-PLAN.md
+last_updated: "2026-10-04T04:21:14.318Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: 02150a3242a21c8985352e761a704b8242f10428
+state_head: b4da6db641d7cb33c966f3a2fdfe52a562592ea3
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 47
+  completed_plans: 48
   percent: 80
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 Phase: 22 (Minimum Rest) — EXECUTING
 Plan: 10 of 10
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-10-03 — Phase 22 execution started
 
 ## Milestone v1.3 Outcome
@@ -365,6 +365,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: appliedRestWaiverCount/unusedRestWaiverCount are accurate only for a live in-memory (RUNNING/COMPLETED) schedule; an ACCEPTED schedule reached via listSchedules or getScheduleSummary's DB-fallback branch reports 0/0 regardless of true state since its transient waiver/assignment collections are never hydrated outside getScheduleDetail -- flagged for 22-09/22-10, not fixed in this plan
 - [Phase 22]: RestWaiverEntry's four pair-derived components all declared optional per plan instruction, even though requiredGapMinutes is never actually null in a populated disclosure per the Java javadoc
 - [Phase 22]: Waiver list reload after Add/Delete uses a dedicated quiet loadWaivers() rather than the shared loadExceptions(), so a single-row action never flashes the page-wide Loading text
+- [Phase 22]: Followed 22-UI-SPEC.md's Section 3(b) normative six-column table over its UI Considerations row's "seven columns" reference (a documented self-contradiction in the approved contract) -- six columns combine each side's date and time, matching the DTO shape and the plan's planner_notes.
+- [Phase 22]: No separate snapshotted-minimum-rest field exists on ScheduleDetail/ScheduleSummary in either DTO contract; used presence of either optional waiver count as the single configured/unconfigured signal for both the header badge and the Rest Waivers tab.
+- [Phase 22]: [Rule 1 - Bug] Switched four optional-field guards from strict !== undefined to loose != null -- the backend serializes an absent Integer DTO field as JSON null, not an omitted key, so the strict check would have left the header badge visible with blank counts for a desk that never configured rest, the inverse of the UI contract's hide-when-unconfigured rule. Matches DeskManagement.tsx's existing == null convention for the identical situation.
 
 ### Blockers/Concerns
 
@@ -388,8 +391,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T04:09:50.000Z
-Stopped at: Completed 22-09-PLAN.md
+Last session: 2026-10-04T04:21:14.276Z
+Stopped at: Completed 22-10-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -488,3 +491,4 @@ Resume file: None
 | Phase 22 P07 | 95min | 2 tasks | 3 files |
 | Phase 22 P08 | 55min | 2 tasks | 9 files |
 | Phase 22 P09 | 14min | 2 tasks | 2 files |
+| Phase 22 P10 | 22min | 2 tasks | 1 files |

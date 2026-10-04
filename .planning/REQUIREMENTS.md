@@ -142,7 +142,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **REST-04**: A desk that sets no minimum rest solves exactly as it does today
 - [x] **REST-05**: Rest at the first and last day of the solving horizon has defined, tested behaviour rather than an accidental one
 - [x] **REST-06**: Operator can waive minimum rest for one agent on one business date, with a recorded reason, through the existing per-agent exception mechanism — and the solver treats a waived pair as legal
-- [ ] **REST-07**: Waived rest violations are visible in the solved schedule's output, so a waiver cannot silently hide a roster problem
+- [x] **REST-07**: Waived rest violations are visible in the solved schedule's output, so a waiver cannot silently hide a roster problem
 
 ## Future Requirements
 
@@ -232,7 +232,7 @@ Populated during roadmap creation.
 | REST-04 | Phase 22 | Complete |
 | REST-05 | Phase 22 | Complete |
 | REST-06 | Phase 22 | Complete |
-| REST-07 | Phase 22 | Pending |
+| REST-07 | Phase 22 | Complete |
 
 **Coverage:**
 
