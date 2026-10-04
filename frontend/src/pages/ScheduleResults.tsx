@@ -243,7 +243,7 @@ export default function ScheduleResults() {
               {formatElapsed(elapsedSeconds)}
             </span>
           )}
-          {/* REST-07/D-15 (plan 22-11, gap closure): hidden entirely when the schedule's own
+          {/* REST-07/D-15: hidden entirely when the schedule's own
               snapshotted minimum rest is null — the gate is schedule.minimumRestMinutes itself,
               carried by ScheduleDetailResponse directly, so loadDetail's setSchedule(data) full
               replace cannot wipe it. That matters because a reopened ACCEPTED schedule never has
@@ -1436,7 +1436,7 @@ function ViolationsTab({
   )
 }
 
-// REST-07/D-15 (plan 22-11, gap closure): two sections (Applied above Unused), not one
+// REST-07/D-15: two sections (Applied above Unused), not one
 // filterable table — D-09's own framing is "two sections," so this deliberately does not reuse
 // ViolationsTab's all/HARD/SOFT filter-chip pattern. The tab issues no fetch of its own; it
 // renders whatever the detail response's restWaiverDisclosure carried, and whether the desk has

@@ -554,7 +554,7 @@ export interface ConstraintViolationEntry {
 }
 
 export interface ScheduleDetail extends ScheduleSummary {
-  // REST-07/D-14 (plan 22-11, gap closure): the schedule's own snapshotted minimum rest, carried
+  // REST-07/D-14: the schedule's own snapshotted minimum rest, carried
   // by this DTO directly rather than only via ScheduleSummary's inherited (and poll-merge-only)
   // appliedRestWaiverCount/unusedRestWaiverCount. This is the configured-or-not signal the badge
   // and RestWaiversTab now gate on, because loadDetail's setSchedule(data) full-replace cannot

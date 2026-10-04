@@ -165,7 +165,7 @@ public class ScheduleService {
                         ? scheduleOutputService.buildDriftReport(schedule)
                         : null);
         response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule, fromDb));
-        // REST-07/D-13 (plan 22-11, gap closure): computed exactly ONCE and reused for both the
+        // REST-07/D-13: computed exactly ONCE and reused for both the
         // list and the two counts below -- never a second buildRestWaiverDisclosure call and
         // never a second walk over the waiver collection -- so the badge's numbers and the tab's
         // row counts can never disagree. Gated on the schedule's own getMinimumRestMinutes(),
@@ -637,7 +637,7 @@ public class ScheduleService {
         r.setStartTime(s.getStartTime());
         r.setEndTime(s.getEndTime());
         r.setDayStart(s.getDayStart());
-        // REST-07/D-14 (plan 22-11, gap closure): a mapped @Column read, populated by JPA on
+        // REST-07/D-14: a mapped @Column read, populated by JPA on
         // every path -- including the DB-fallback path that never runs loadSnapshotData -- which
         // is precisely what the @Transient waiver/pre-horizon collections are not. This is the
         // configured-or-not signal the header badge and Rest Waivers tab gate on.

@@ -21,7 +21,7 @@ public class ScheduleDetailResponse {
     // silently binding midnight. ScheduleExportService reads it from this DTO in plan 19-06, since
     // it receives only this DTO, never a Schedule.
     private LocalTime dayStart;
-    // REST-07/D-14 (plan 22-11, gap closure): the snapshotted minimum rest this schedule was
+    // REST-07/D-14: the snapshotted minimum rest this schedule was
     // actually measured against -- schedule identity, not a live desk read, read the same way
     // dayStart above is (a mapped @Column, populated by JPA on every path, including the
     // DB-fallback path that never runs loadSnapshotData). This is also the configured-or-not
@@ -62,7 +62,7 @@ public class ScheduleDetailResponse {
     // never a null field, so a caller can distinguish "not yet computed" from "rest not
     // configured".
     private RestWaiverDisclosure restWaiverDisclosure;
-    // REST-07/D-13 (plan 22-11, gap closure): derived from the SAME buildRestWaiverDisclosure
+    // REST-07/D-13: derived from the SAME buildRestWaiverDisclosure
     // computation restWaiverDisclosure above uses -- never a second walk over the waiver
     // collection -- so this field and the list sizes above can never disagree. Boxed, not
     // primitive, for the same reason minimumRestMinutes above is: null is the rest-not-configured
