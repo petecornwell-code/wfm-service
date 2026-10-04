@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-08-PLAN.md
-last_updated: "2026-10-04T03:48:37.184Z"
+stopped_at: Completed 22-09-PLAN.md
+last_updated: "2026-10-04T04:09:50.044Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: 157e70a7989f775ccbda2291aee6d20166c4e0e4
+state_head: 02150a3242a21c8985352e761a704b8242f10428
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
   percent: 80
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 9 of 10
+Plan: 10 of 10
 Status: Ready to execute
 Last activity: 2026-10-03 — Phase 22 execution started
 
@@ -363,6 +363,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: buildRestWaiverDisclosure reaches each waiver's agent/date directly rather than calling RestWaiverLookup; ScheduleOutputService/ScheduleService were added only to the predicate guard's entity-reference allowlist, never the call-site allowlist
 - [Phase 22]: The required rest gap is read once from schedule.getMinimumRestMinutes() and reused for every disclosure entry -- the class holds no DeskRepository reference, enforced by both a test and a grep-based verify gate
 - [Phase 22]: appliedRestWaiverCount/unusedRestWaiverCount are accurate only for a live in-memory (RUNNING/COMPLETED) schedule; an ACCEPTED schedule reached via listSchedules or getScheduleSummary's DB-fallback branch reports 0/0 regardless of true state since its transient waiver/assignment collections are never hydrated outside getScheduleDetail -- flagged for 22-09/22-10, not fixed in this plan
+- [Phase 22]: RestWaiverEntry's four pair-derived components all declared optional per plan instruction, even though requiredGapMinutes is never actually null in a populated disclosure per the Java javadoc
+- [Phase 22]: Waiver list reload after Add/Delete uses a dedicated quiet loadWaivers() rather than the shared loadExceptions(), so a single-row action never flashes the page-wide Loading text
 
 ### Blockers/Concerns
 
@@ -386,8 +388,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T03:48:37.103Z
-Stopped at: Completed 22-08-PLAN.md
+Last session: 2026-10-04T04:09:50.000Z
+Stopped at: Completed 22-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -485,3 +487,4 @@ Resume file: None
 | Phase 22 P06 | 52min | 2 tasks | 8 files |
 | Phase 22 P07 | 95min | 2 tasks | 3 files |
 | Phase 22 P08 | 55min | 2 tasks | 9 files |
+| Phase 22 P09 | 14min | 2 tasks | 2 files |
