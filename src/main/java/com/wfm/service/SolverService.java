@@ -1939,6 +1939,113 @@ public class SolverService {
             }
         }
 
+        // SLOT mode (REST-04, D-01/D-02): no shift entity and no per-agent-day value range to take
+        // a product over -- the solver places individual slots, not a chosen shift. The SHIFT
+        // branch's universal-combination predicate above is therefore not expressible here, so a
+        // different, SOUND SUFFICIENT condition for impossibility is computed instead: the maximum
+        // achievable gap, derived purely from the desk's operating window and each day's required
+        // slot minutes, ignoring intra-day breaks. Breaks only ever LENGTHEN a span (they consume
+        // minutes inside the agent's assigned window without producing rest), so ignoring them can
+        // only OVERSTATE the achievable gap -- never understate it -- which is exactly what makes
+        // this a genuine refusal rather than a weaker substitute: a reported impossibility here is
+        // real even though the figure it is based on is optimistic, because a pessimistic
+        // (break-aware) figure could only be smaller still.
+        if (schedulingMode != SchedulingMode.SHIFT) {
+            Map<UUID, Map<LocalDate, AgentDayConfig>> configsByAgentThenDate = new LinkedHashMap<>();
+            for (AgentDayConfig dayConfig : agentDayConfigs == null ? List.<AgentDayConfig>of() : agentDayConfigs) {
+                configsByAgentThenDate
+                        .computeIfAbsent(dayConfig.agentId(), k -> new LinkedHashMap<>())
+                        .put(dayConfig.date(), dayConfig);
+            }
+
+            // The desk's operating window, anchored once -- never re-derived per agent-day. Both
+            // figures come from DayWindow accessors, never raw LocalTime arithmetic (D-05's
+            // MidnightTimeArithmeticGuardTest scope).
+            int windowStartMinute = window.anchoredStartMinute(config.startTime());
+            int windowEndMinute = window.anchoredEndMinute(config.endTime());
+            int windowLengthMinutes = windowEndMinute - windowStartMinute;
+
+            for (Map.Entry<UUID, Map<LocalDate, AgentDayConfig>> agentEntry : configsByAgentThenDate.entrySet()) {
+                UUID agentId = agentEntry.getKey();
+                Map<LocalDate, AgentDayConfig> configsByDate = agentEntry.getValue();
+
+                for (Map.Entry<LocalDate, AgentDayConfig> dateEntry : configsByDate.entrySet()) {
+                    LocalDate d = dateEntry.getKey();
+                    AgentDayConfig dayConfig = dateEntry.getValue();
+
+                    // Required slot minutes come from AgentDayConfig#expectedWorkSlots() -- the
+                    // SAME computation the solver's contracted-hours constraints and
+                    // requireShiftEnvelopeSeatSupply already use. Two rounding rules that must
+                    // agree forever is the failure mode D-02 already refused once in this phase.
+                    int requiredMinutesD = dayConfig.expectedWorkSlots() * dayConfig.incrementMinutes();
+                    if (requiredMinutesD > windowLengthMinutes) {
+                        // This date's contracted hours cannot fit inside the operating window AT
+                        // ALL -- a contracted-hours-versus-window failure with its own pre-existing
+                        // surface. Claiming it here would name the wrong cause.
+                        continue;
+                    }
+
+                    // Hoisted ahead of any further computation (T-22-18 parity with the SHIFT
+                    // branch above): a waived agent-day costs nothing.
+                    if (isAgentDayWaived(restWaivers, agentId, d)) {
+                        continue;
+                    }
+
+                    LocalDate dMinus1 = d.minusDays(1);
+                    AgentDayConfig predecessorConfig = configsByDate.get(dMinus1);
+
+                    int predecessorEndMinute;
+                    if (predecessorConfig != null) {
+                        int requiredMinutesDMinus1 =
+                                predecessorConfig.expectedWorkSlots() * predecessorConfig.incrementMinutes();
+                        if (requiredMinutesDMinus1 > windowLengthMinutes) {
+                            // The PREDECESSOR date cannot hold its own contracted hours either --
+                            // same cause, same "not a rest failure" reasoning; skip rather than
+                            // report a rest refusal against a day that is already structurally
+                            // broken for an unrelated reason.
+                            continue;
+                        }
+                        // Earliest possible end: the agent could, at best, start at the window's
+                        // open and work straight through their required minutes.
+                        predecessorEndMinute = windowStartMinute + requiredMinutesDMinus1;
+                    } else {
+                        RestSpan prior = priorSpanByAgent.get(agentId);
+                        if (prior == null) {
+                            // Neither an in-horizon D-1 agent-day nor a pre-horizon span exists --
+                            // nothing to be impossible against.
+                            continue;
+                        }
+                        // Pre-horizon edge (D-12/REST-05): the predecessor is HISTORY, not a
+                        // choice -- use the accepted span's actual end, never an earliest-possible
+                        // estimate.
+                        predecessorEndMinute = window.anchoredEndMinute(prior.endTime());
+                    }
+
+                    // Latest possible start: the agent could, at best, start as late as the window
+                    // allows and still finish their required minutes before the window closes.
+                    int successorLatestStartMinute = windowEndMinute - requiredMinutesD;
+
+                    // Same structural shape as RestSpan.gapMinutes (D-08: the two must never
+                    // drift) -- minutes remaining in the predecessor's business day, plus minutes
+                    // elapsed into the successor's, at the best-case instants computed above.
+                    int bestGap = DayWindow.MINUTES_PER_DAY - predecessorEndMinute + successorLatestStartMinute;
+
+                    if (bestGap < minimumRestMinutes) {
+                        errors.add(new ErrorDetail("restFeasibility",
+                                "Agent " + agentId + " cannot achieve the required " + minimumRestMinutes
+                                        + "-minute rest between " + dMinus1 + " and " + d + " on this "
+                                        + "SLOT-mode desk -- assuming the earliest possible finish on "
+                                        + dMinus1 + " and the latest possible start on " + d + " within "
+                                        + "the desk's operating window, the best achievable gap is only "
+                                        + bestGap + " minute(s) against a required " + minimumRestMinutes
+                                        + " minute(s). This agent-day is structurally impossible, not "
+                                        + "merely a hard-score matter for the solver to avoid.",
+                                agentId.toString()));
+                    }
+                }
+            }
+        }
+
         if (!errors.isEmpty()) {
             throw new PreSolveValidationException(
                     "Minimum rest feasibility check failed with " + errors.size() + " issue(s)", errors);

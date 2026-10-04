@@ -110,11 +110,25 @@ class RestFeasibilityRefusalTest {
     }
 
     private static ScheduleConfig scheduleConfig(SchedulingMode mode, Integer minimumRestMinutes) {
-        return new ScheduleConfig(15, LocalTime.of(0, 0), LocalTime.of(23, 59),
+        return scheduleConfig(mode, minimumRestMinutes, LocalTime.of(0, 0), LocalTime.of(23, 59));
+    }
+
+    private static ScheduleConfig scheduleConfig(SchedulingMode mode, Integer minimumRestMinutes,
+            LocalTime operatingStart, LocalTime operatingEnd) {
+        return new ScheduleConfig(60, operatingStart, operatingEnd,
                 60, new BigDecimal("4.00"), new BigDecimal("1.00"),
                 BreakAlignment.ON_HOUR, 20, new BigDecimal("8.00"), 130, 70, mode,
                 ScheduleConfig.DEFAULT_CONSISTENCY_TOLERANCE_MINUTES, LocalTime.MIDNIGHT,
                 minimumRestMinutes);
+    }
+
+    /** A SLOT-mode agent-day config with a 60-minute increment, so {@code expectedWorkSlots() *
+     *  incrementMinutes()} equals {@code hours * 60} exactly -- clean hand-computable minute
+     *  figures for every SLOT fixture below. */
+    private static AgentDayConfig slotDayConfig(UUID agentId, LocalDate date, int hours) {
+        return new AgentDayConfig(agentId, date, new BigDecimal(hours), 60, 60,
+                new BigDecimal("4.00"), new BigDecimal("1.00"), BreakAlignment.ON_HOUR, 100, 70,
+                LocalTime.MIDNIGHT);
     }
 
     private static final DayWindow MIDNIGHT_WINDOW = DayWindow.anchoredAt(LocalTime.MIDNIGHT);
@@ -304,6 +318,161 @@ class RestFeasibilityRefusalTest {
         assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
                 MINIMUM_REST_MINUTES, List.of(prev, next), List.of(), List.of(), List.of(),
                 List.<AgentAssignment>of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    // ------------------------------------------------------------------
+    //  SLOT mode (REST-04, D-01/D-02) -- a sound sufficient condition, never a false refusal
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SLOT: 08:00-20:00 window, 8h contracted both days, minimum 660 -- best achievable gap is 20h, not refused")
+    void slot_eightHourWindow_eightHourContract_minimum660_notRefused() {
+        Agent a = agent("Morgan");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 8);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 8);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                MINIMUM_REST_MINUTES, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES,
+                        LocalTime.of(8, 0), LocalTime.of(20, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SLOT: window narrowed to 08:00-18:00, 9h contracted both days, minimum 660 -- best gap is 16h, not refused")
+    void slot_narrowedWindow_nineHourContract_minimum660_notRefused() {
+        Agent a = agent("Noor");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 9);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 9);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                MINIMUM_REST_MINUTES, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES,
+                        LocalTime.of(8, 0), LocalTime.of(18, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SLOT: identical narrowed-window fixture, minimum raised to 1000 -- refused, reporting the exact 960-minute best gap")
+    void slot_narrowedWindow_nineHourContract_minimum1000_refusedWithExactFigure() {
+        Agent a = agent("Oakley");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 9);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 9);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                1000, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, 1000,
+                        LocalTime.of(8, 0), LocalTime.of(18, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).value()).isEqualTo(a.getId().toString());
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains(D_MINUS_1.toString()).contains(D.toString())
+                            .contains("960").contains("1000");
+                });
+    }
+
+    @Test
+    @DisplayName("SLOT: a day whose required slot minutes exceed the operating window produces no rest refusal")
+    void slot_requiredMinutesExceedWindow_noRestRefusal() {
+        Agent a = agent("Peyton");
+        // 8h (480 min) required, but the window is only 08:00-12:00 (240 min) -- this date cannot
+        // hold the agent's contracted hours at all, a contracted-hours-versus-window failure with
+        // its own surface, never a rest failure.
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 8);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                MINIMUM_REST_MINUTES, List.of(), List.of(dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES,
+                        LocalTime.of(8, 0), LocalTime.of(12, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SLOT: a waiver on the successor date suppresses the refusal through the same shared predicate")
+    void slot_waiverOnSuccessorDate_suppressesRefusal() {
+        Agent a = agent("Quinn");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 9);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 9);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                1000, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(waiver(a, D)),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, 1000,
+                        LocalTime.of(8, 0), LocalTime.of(18, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SLOT: pre-horizon edge uses the accepted span's actual end, not an earliest-possible estimate, and the refusal reports the exact figure")
+    void slot_preHorizonEdge_usesAcceptedActualEnd_refusedWithExactFigure() {
+        Agent a = agent("Reese");
+        // No AgentDayConfig for D_MINUS_1 at all -- this agent's predecessor is pre-horizon. The
+        // accepted span's actual end (19:00) is what must be used, never an earliest-possible
+        // figure computed from a D-1 AgentDayConfig that does not exist here.
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(10, 0), LocalTime.of(19, 0),
+                LocalTime.MIDNIGHT);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 8);
+        List<String> warnings = new ArrayList<>();
+
+        // window 08:00-20:00 (480-1200), requiredMinutesD = 480, successorLatestStart = 1200-480=720.
+        // predecessorEndMinute = anchoredEndMinute(19:00) = 1140. bestGap = 1440-1140+720 = 1020.
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                1080, List.of(), List.of(dConfig), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, 1080,
+                        LocalTime.of(8, 0), LocalTime.of(20, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains("1020").contains("1080");
+                });
+    }
+
+    @Test
+    @DisplayName("SLOT: a null minimumRestMinutes is a structural no-op -- no work, no refusal")
+    void slot_nullMinimumRestMinutes_structuralNoOp() {
+        Agent a = agent("Sage");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 9);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 9);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                null, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, null,
+                        LocalTime.of(8, 0), LocalTime.of(18, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+        assertThat(warnings).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SLOT: a SHIFT-mode desk never runs the SLOT branch, even with agentDayConfigs that would otherwise refuse")
+    void slot_shiftModeDesk_slotBranchDoesNotRun() {
+        Agent a = agent("Tatum");
+        AgentDayConfig dMinus1 = slotDayConfig(a.getId(), D_MINUS_1, 9);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 9);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SHIFT,
+                1000, List.of(), List.of(dMinus1, dConfig), List.of(), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SHIFT, 1000,
+                        LocalTime.of(8, 0), LocalTime.of(18, 0)),
                 warnings, MIDNIGHT_WINDOW))
                 .doesNotThrowAnyException();
     }
