@@ -17,7 +17,7 @@ findings:
     title: "`DeskManagement.tsx`'s `hoursStringToMinutes`/`handleUpdate` could yield `NaN`, which `JSON.stringify` serialises as `null`, silently clearing a configured minimum rest"
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "The live (RUNNING, in-memory) schedule path still loads rest waivers without fetching `agent`, so polling a schedule with configured rest can throw `LazyInitializationException`"
   - id: WR-03
     severity: warning
@@ -31,7 +31,7 @@ findings:
     severity: info
     disposition: open
     title: "The reused inline-validation message is inaccurate for a non-finite parse"
-open: 4
+open: 3
 total: 7
 recorded: 2026-10-04T14:57:56.265Z
 ---
@@ -43,7 +43,7 @@ recorded: 2026-10-04T14:57:56.265Z
 | WR-01 | warning | fixed | 22-11 Task 2 — `706bbfd` |
 | WR-02 | warning | fixed | 22-12 Task 1 — `b345f1b` |
 | IN-01 | info | fixed | 22-12 Task 3 — `1214718` |
-| CR-01 | critical | open | 22-REVIEW.md (incremental review of 22-11/22-12) |
+| CR-01 | critical | fixed | `f8f131d` — fetching finder + `RestWaiverFetchingFinderGuardTest` |
 | WR-03 | warning | open | 22-REVIEW.md (incremental review of 22-11/22-12) |
 | WR-04 | warning | open | 22-REVIEW.md (incremental review of 22-11/22-12) |
 | IN-02 | info | open | 22-REVIEW.md (incremental review of 22-11/22-12) |
