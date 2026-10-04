@@ -28,6 +28,7 @@ than four captured live desks standing in for both jobs at once.
 - [x] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved (completed 2026-10-02)
 - [x] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block (completed 2026-10-03)
 - [x] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver (completed 2026-10-04)
+- [ ] **Phase 23: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor** - The hard minimum-rest constraint measures the true gap when the predecessor shift spans midnight, closing v1.5 audit gap G-1
 
 ### Phase 18: Business-Day Foundation & Guards
 
@@ -425,6 +426,47 @@ Plans:
 - [x] 22-12-PLAN.md — The DB-fallback summary paths report the true counts under three cost gates; one `ScheduleSummary` construction site with a structural guard (WR-02); IN-01 (REST-07)
 
 **UI hint**: yes
+
+### Phase 23: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
+
+**Goal:** `RestSpan.gapMinutes` measures the true rest gap when the PREDECESSOR shift itself spans
+midnight, so the hard minimum-rest constraint fires on the illegal rosters Phase 21's overnight
+templates made reachable — closing v1.5 audit gap G-1 (critical) and flow F-1.
+
+**Requirements**: REST-01, REST-02, REST-05 (transitively OVNT-01, OVNT-03)
+
+**Depends on**: Phase 21 (overnight templates are what make an overnight predecessor reachable),
+Phase 22 (the constraint and its test suite are what this corrects)
+
+**Context**: `RestSpan.java:120-130` derives `remainingInPrevDay` from
+`DayWindow.endMinuteFromDayStart(prev.endTime())`, which receives a bare `LocalTime` and cannot tell
+"ends 06:00 on the same business day" from "ends 06:00 the calendar day after a 22:00 start".
+Measured against the compiled production class at a `00:00` anchor: prev 22:00–06:00 → next 07:00
+computes 1500 minutes for a 60-minute real rest, so an 11-hour minimum reports NO violation. The
+error direction is unsafe — it overstates rest, the hard constraint under-fires, and the illegal
+roster scores `0hard`. Reachable in live solving via the in-horizon predecessor stream at
+`ScheduleConstraintProvider.java:1052`, not only the historical-lookback path.
+
+**Why no test caught it**: both direct `gapMinutes` tests
+(`MinimumRestShiftConstraintTest.java:245, :256`) use a non-wrapping prev of 14:00–22:00, and the
+one overnight template in these suites (`:156-157`, 20:00–05:00) sits only in the SUCCESSOR
+position, where the formula is accidentally correct because `anchoredStartMinute` needs no wrap
+information. No test anywhere builds an overnight prev and asserts the gap. This is a real defect
+AND, separately, a coverage gap — recorded distinctly because this project has a documented history
+of a review conflating the two.
+
+**Fix direction** (from the audit, not yet a plan): compute `remainingInPrevDay` from prev's wrapped
+end offset — `startMinuteFromDayStart(prev.startTime()) + anchoredDurationMinutes(prev.startTime(),
+prev.endTime())` — rather than reading `endMinuteFromDayStart(prev.endTime())` in isolation. Add an
+overnight-prev case to `MinimumRestShiftConstraintTest` and to `RestPredecessorServiceTest`'s
+lookback path.
+
+**Plans:** 3 plans
+
+Plans:
+- [ ] 23-01-PLAN.md — Tracer: the one wrap-aware `DayWindow` primitive, `RestSpan.gapMinutes` switched onto it, and `requireRestFeasibility`'s SLOT pre-horizon branch pointed at the same primitive (D-01)
+- [ ] 23-02-PLAN.md — Overnight-predecessor fixtures across the four remaining affected test classes, including `RestHorizonEdgeTest` (a sixth class the research did not enumerate)
+- [ ] 23-03-PLAN.md — The `rest-gap-arithmetic-guard` registry and scanner (D-02), plus the single full-suite phase gate
 
 <details>
 <summary>✅ v1.3 Shift-Based Scheduling & Consistency (Phases 14–17) — SHIPPED 2026-09-21</summary>
