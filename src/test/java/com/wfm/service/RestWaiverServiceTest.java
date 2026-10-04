@@ -1,8 +1,10 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.controller.DeskAgentController;
 import com.wfm.dto.RestWaiverResponse;
 import com.wfm.exception.EntityNotFoundException;
+import com.wfm.integration.BambooRefreshService;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentRestWaiver;
 import com.wfm.repository.AgentDayOffRepository;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -278,5 +281,61 @@ class RestWaiverServiceTest {
                 .isInstanceOf(EntityNotFoundException.class);
 
         verify(agentRestWaiverRepository, never()).delete(any());
+    }
+
+    // ---------- DeskAgentController delegation (Task 2) ----------
+    //
+    // No MockMvc harness here, deliberately: this package's existing guard tests (e.g.
+    // ConstraintWeightsControllerTest) prove delegation by direct handler invocation against a
+    // controller built with mocked collaborators, and 22-RESEARCH.md records no need for a new
+    // test harness for this controller.
+
+    private static DeskAgentController controllerWithMockedRestWaiverService(RestWaiverService restWaiverService) {
+        return new DeskAgentController(
+                mock(DeskAgentService.class),
+                mock(DeskAgentExportService.class),
+                mock(AgentPreferenceService.class),
+                mock(AgentExceptionService.class),
+                restWaiverService,
+                mock(BambooRefreshService.class),
+                mock(PreferenceUploadService.class),
+                mock(UsualShiftService.class));
+    }
+
+    @Test
+    void listRestWaivers_delegatesToRestWaiverServiceWithPathVariablesInOrder() {
+        RestWaiverService mockService = mock(RestWaiverService.class);
+        DeskAgentController controller = controllerWithMockedRestWaiverService(mockService);
+        List<RestWaiverResponse> expected = List.of(new RestWaiverResponse(UUID.randomUUID(), DATE, "reason"));
+        when(mockService.listWaivers(DESK_ID, AGENT_ID, "2026-10-01", "2026-10-31")).thenReturn(expected);
+
+        List<RestWaiverResponse> result = controller.listRestWaivers(DESK_ID, AGENT_ID, "2026-10-01", "2026-10-31");
+
+        assertThat(result).isSameAs(expected);
+        verify(mockService).listWaivers(DESK_ID, AGENT_ID, "2026-10-01", "2026-10-31");
+    }
+
+    @Test
+    void saveRestWaivers_delegatesToRestWaiverServiceWithPathVariablesAndBody() {
+        RestWaiverService mockService = mock(RestWaiverService.class);
+        DeskAgentController controller = controllerWithMockedRestWaiverService(mockService);
+        List<RestWaiverResponse> body = List.of(new RestWaiverResponse(null, DATE, "Late cover for X"));
+        List<RestWaiverResponse> expected = List.of(new RestWaiverResponse(UUID.randomUUID(), DATE, "Late cover for X"));
+        when(mockService.saveWaivers(DESK_ID, AGENT_ID, body)).thenReturn(expected);
+
+        List<RestWaiverResponse> result = controller.saveRestWaivers(DESK_ID, AGENT_ID, body);
+
+        assertThat(result).isSameAs(expected);
+        verify(mockService).saveWaivers(DESK_ID, AGENT_ID, body);
+    }
+
+    @Test
+    void deleteRestWaiver_delegatesToRestWaiverServiceWithPathVariablesAndDate() {
+        RestWaiverService mockService = mock(RestWaiverService.class);
+        DeskAgentController controller = controllerWithMockedRestWaiverService(mockService);
+
+        controller.deleteRestWaiver(DESK_ID, AGENT_ID, DATE);
+
+        verify(mockService).deleteWaiver(DESK_ID, AGENT_ID, DATE);
     }
 }

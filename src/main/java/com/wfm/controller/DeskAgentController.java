@@ -7,6 +7,7 @@ import com.wfm.service.AgentPreferenceService;
 import com.wfm.service.DeskAgentExportService;
 import com.wfm.service.DeskAgentService;
 import com.wfm.service.PreferenceUploadService;
+import com.wfm.service.RestWaiverService;
 import com.wfm.service.UsualShiftService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ public class DeskAgentController {
     private final DeskAgentExportService deskAgentExportService;
     private final AgentPreferenceService agentPreferenceService;
     private final AgentExceptionService agentExceptionService;
+    private final RestWaiverService restWaiverService;
     private final BambooRefreshService bambooRefreshService;
     private final PreferenceUploadService preferenceUploadService;
     private final UsualShiftService usualShiftService;
@@ -36,6 +38,7 @@ public class DeskAgentController {
                                DeskAgentExportService deskAgentExportService,
                                AgentPreferenceService agentPreferenceService,
                                AgentExceptionService agentExceptionService,
+                               RestWaiverService restWaiverService,
                                BambooRefreshService bambooRefreshService,
                                PreferenceUploadService preferenceUploadService,
                                UsualShiftService usualShiftService) {
@@ -43,6 +46,7 @@ public class DeskAgentController {
         this.deskAgentExportService = deskAgentExportService;
         this.agentPreferenceService = agentPreferenceService;
         this.agentExceptionService = agentExceptionService;
+        this.restWaiverService = restWaiverService;
         this.bambooRefreshService = bambooRefreshService;
         this.preferenceUploadService = preferenceUploadService;
         this.usualShiftService = usualShiftService;
@@ -176,6 +180,35 @@ public class DeskAgentController {
                                                  @PathVariable UUID agentId,
                                                  @PathVariable LocalDate date) {
         agentExceptionService.deleteException(deskId, agentId, date);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Rest Waivers ---
+
+    @GetMapping("/{agentId}/rest-waivers")
+    public List<RestWaiverResponse> listRestWaivers(@PathVariable UUID deskId,
+                                                      @PathVariable UUID agentId,
+                                                      @RequestParam(required = false) String from,
+                                                      @RequestParam(required = false) String to) {
+        return restWaiverService.listWaivers(deskId, agentId, from, to);
+    }
+
+    // POST rather than PUT, deliberately: 22-UI-SPEC.md Section 2 specifies the waiver surface is
+    // immediate single-row Add and Delete with no batch save step, unlike the exceptions table's
+    // local-optimistic-then-Save All model. A List body keeps the service signature uniform with
+    // saveExceptions while the UI sends exactly one element.
+    @PostMapping("/{agentId}/rest-waivers")
+    public List<RestWaiverResponse> saveRestWaivers(@PathVariable UUID deskId,
+                                                      @PathVariable UUID agentId,
+                                                      @RequestBody List<RestWaiverResponse> waivers) {
+        return restWaiverService.saveWaivers(deskId, agentId, waivers);
+    }
+
+    @DeleteMapping("/{agentId}/rest-waivers/{date}")
+    public ResponseEntity<Void> deleteRestWaiver(@PathVariable UUID deskId,
+                                                  @PathVariable UUID agentId,
+                                                  @PathVariable LocalDate date) {
+        restWaiverService.deleteWaiver(deskId, agentId, date);
         return ResponseEntity.noContent().build();
     }
 }
