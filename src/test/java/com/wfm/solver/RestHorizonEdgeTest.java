@@ -214,6 +214,61 @@ class RestHorizonEdgeTest {
     }
 
     // ------------------------------------------------------------------
+    //  Pre-horizon OVERNIGHT predecessor (PF-01, this plan's sixth affected class) -- every
+    //  fixture above uses a non-wrapping 14:00-22:00 priorSpan. These three cases are the
+    //  wrapping 22:00-06:00 shape: the pre-correction formula measured a 1500-minute gap (above
+    //  any configurable minimum, so zero matches); the corrected formula measures the true
+    //  60-minute gap, penalised by 600 against a 660-minute minimum.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("SHIFT: a pre-horizon OVERNIGHT predecessor (22:00-06:00) pairs with the period's first shift and scores the true 600-point shortfall -- before the fix this scored zero")
+    void shift_preHorizonOvernightPredecessor_firstDayConstrained_oneMatch() {
+        Agent a = agent();
+        // The pre-horizon shift WRAPPED past the business-day anchor: the true rest is 60
+        // minutes (22:00-06:00 into 07:00), not the pre-correction formula's 1500, which
+        // produced no match at all against any configurable minimum (REST-05, the audit gap).
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        AgentShiftAssignment dShift = shiftRow(a, D, pair(LocalTime.of(7, 0), LocalTime.of(15, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(priorSpan, dShift, scheduleConfig(SchedulingMode.SHIFT, MINIMUM_REST_MINUTES))
+                .penalizesBy(600);
+    }
+
+    @Test
+    @DisplayName("SLOT: a pre-horizon OVERNIGHT predecessor (22:00-06:00) pairs with the period's first slot-span and scores the true 600-point shortfall -- before the fix this scored zero")
+    void slot_preHorizonOvernightPredecessor_firstDayConstrained_oneMatch() {
+        Agent a = agent();
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        Timeslot ts = timeslot(D, LocalTime.of(7, 0), LocalTime.of(15, 0));
+        AgentAssignment dSeat = seat(a, ts);
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(priorSpan, dSeat, slotDayConfig(a, D),
+                        scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES))
+                .penalizesBy(600);
+    }
+
+    @Test
+    @DisplayName("an agent marked off on D (day-off/PTO shape) has no successor span against the overnight pre-horizon predecessor -- nothing to measure, nothing to penalise, in either mode (OVNT-03 regression safety)")
+    void overnightPriorSpanWithNoSuccessorRowOnD_zeroMatches() {
+        Agent a = agent();
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(priorSpan, scheduleConfig(SchedulingMode.SHIFT, MINIMUM_REST_MINUTES))
+                .penalizesBy(0);
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(priorSpan, scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES))
+                .penalizesBy(0);
+    }
+
+    // ------------------------------------------------------------------
     //  No ACCEPTED predecessor -- the explicit D-10 decision, not an accident
     // ------------------------------------------------------------------
 
