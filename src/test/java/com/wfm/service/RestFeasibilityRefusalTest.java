@@ -224,6 +224,28 @@ class RestFeasibilityRefusalTest {
     }
 
     @Test
+    @DisplayName("SHIFT: pre-horizon overnight predecessor (22:00-06:00) refused on the true 60-minute gap, not the pre-fix false-large figure")
+    void shift_preHorizonOvernightSpan_refusedOnTheTrueGap() {
+        Agent a = agent("Uma");
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        AgentShiftAssignment dRow = shiftRow(a, D, pair(LocalTime.of(7, 0), LocalTime.of(15, 0)));
+        List<String> warnings = new ArrayList<>();
+
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SHIFT,
+                MINIMUM_REST_MINUTES, List.of(dRow), List.of(), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SHIFT, MINIMUM_REST_MINUTES), warnings,
+                MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains("achieves only 60 minute(s)").contains("required 660");
+                });
+    }
+
+    @Test
     @DisplayName("pre-horizon edge cleared by a waiver on the period's first business date -- not refused")
     void preHorizonEdge_withWaiverOnFirstBusinessDate_noRefusal() {
         Agent a = agent("Gray");
@@ -441,6 +463,36 @@ class RestFeasibilityRefusalTest {
                     assertThat(pve.getDetails()).hasSize(1);
                     assertThat(pve.getDetails().get(0).message())
                             .contains("1020").contains("1080");
+                });
+    }
+
+    @Test
+    @DisplayName("SLOT: pre-horizon overnight span (22:00-06:00) refused on the true wrapped end, not the pre-fix false-large best gap")
+    void slot_preHorizonOvernightSpan_refusedOnTheTrueWrappedEnd() {
+        Agent a = agent("Val");
+        // No AgentDayConfig for D_MINUS_1 at all -- this agent's predecessor is pre-horizon, and the
+        // accepted span wrapped past the anchor (22:00-06:00).
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 8);
+        List<String> warnings = new ArrayList<>();
+
+        // window 08:00-20:00 (480-1200), requiredMinutesD = 480, successorLatestStart = 1200-480=720.
+        // predecessorEndMinute = anchoredWrappedEndMinute(22:00,06:00) = anchoredStartMinute(22:00)
+        // 1320 plus the 480-minute wrapped duration = 1800. bestGap = 1440-1800+720 = 360. Before
+        // this fix, predecessorEndMinute read the isolated anchoredEndMinute(06:00) = 360, giving a
+        // falsely-large bestGap of 1800, and nothing was refused.
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                660, List.of(), List.of(dConfig), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, 660,
+                        LocalTime.of(8, 0), LocalTime.of(20, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains("only 360 minute(s)").contains("required 660");
                 });
     }
 

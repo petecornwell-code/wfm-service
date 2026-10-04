@@ -2031,8 +2031,11 @@ public class SolverService {
                         }
                         // Pre-horizon edge (D-12/REST-05): the predecessor is HISTORY, not a
                         // choice -- use the accepted span's actual end, never an earliest-possible
-                        // estimate.
-                        predecessorEndMinute = window.anchoredEndMinute(prior.endTime());
+                        // estimate. Read through the shared wrap-aware primitive (REST-05) so this
+                        // branch and RestSpan.gapMinutes cannot diverge: a historical span that
+                        // itself wrapped past the anchor must report its TRUE end, not the isolated
+                        // end-of-day reading anchoredEndMinute alone would give.
+                        predecessorEndMinute = window.anchoredWrappedEndMinute(prior.startTime(), prior.endTime());
                     }
 
                     // Latest possible start: the agent could, at best, start as late as the window
