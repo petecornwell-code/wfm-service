@@ -399,7 +399,10 @@ class RestWaiverDisclosureTest {
         TenantContext.setTenantId(TENANT_ID);
         scheduleService.getScheduleDetail(DESK_ID, scheduleId, null);
 
-        verify(waiverRepo, never()).findByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any());
+        // REST-07/P-03 (22-12): loadSnapshotData is re-pointed at the relations-fetching finder
+        // too, so the disclosure's waiver input is loaded exactly one way on every path.
+        verify(waiverRepo, never())
+                .findWithAgentByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any());
         verify(predecessorService, never())
                 .resolvePriorSpans(anyLong(), any(), any(), any(), any(), any());
     }
@@ -415,7 +418,7 @@ class RestWaiverDisclosureTest {
         Schedule persisted = acceptedBaseSchedule(scheduleId, MINIMUM_REST_MINUTES);
         when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
                 .thenReturn(Optional.of(persisted));
-        when(waiverRepo.findByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
                 persisted.getPeriodStartDate(), persisted.getPeriodEndDate()))
                 .thenReturn(List.of());
         when(predecessorService.resolvePriorSpans(eq(TENANT_ID), eq(DESK_ID),
@@ -425,10 +428,195 @@ class RestWaiverDisclosureTest {
         TenantContext.setTenantId(TENANT_ID);
         scheduleService.getScheduleDetail(DESK_ID, scheduleId, null);
 
-        verify(waiverRepo, times(1)).findByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+        // REST-07/P-03 (22-12): loadSnapshotData is re-pointed at the relations-fetching finder
+        // too, so the disclosure's waiver input is loaded exactly one way on every path.
+        verify(waiverRepo, times(1)).findWithAgentByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
                 persisted.getPeriodStartDate(), persisted.getPeriodEndDate());
         verify(predecessorService, times(1)).resolvePriorSpans(eq(TENANT_ID), eq(DESK_ID),
                 eq(persisted.getPeriodStartDate()), eq(MINIMUM_REST_MINUTES), any(), any());
+    }
+
+    // ------------------------------------------------------------------
+    //  Plan 22-12 Task 2 (REST-07/22-VERIFICATION.md gap (a)) -- listSchedules and
+    //  getScheduleSummary build a ScheduleSummary for a DB-fetched Schedule without ever calling
+    //  loadSnapshotData, so the transient waiver/pre-horizon collections are empty and the
+    //  disclosure silently reports a false 0 applied / 0 unused for any ACCEPTED schedule's true
+    //  waiver state. Test 1 is the runnable RED proof: against the tree as it stood after plan
+    //  22-11, it fails with both counts at 0 -- the exact defect 22-VERIFICATION.md records.
+    // ------------------------------------------------------------------
+
+    @Test
+    void acceptedSchedule_dbFallbackSummary_reportsTheTrueCountsNotZero() {
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentAssignmentRepository assignmentRepository = mock(AgentAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        ScheduleService scheduleService = scheduleServiceForDbFallbackSummary(
+                scheduleRepository, shiftAssignmentRepository, assignmentRepository, waiverRepo, predecessorService);
+
+        UUID scheduleId = UUID.randomUUID();
+        Schedule persisted = acceptedBaseSchedule(scheduleId, MINIMUM_REST_MINUTES);
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(persisted));
+        // Ana: D1 end 20:00 -> D2 start 4:00, an 8h gap -- short-rested against the 660-minute
+        // (11h) minimum, so her D2 waiver is APPLIED.
+        // Ben: D1 end 9:00 -> D2 start 0:00, adequately rested (15h), so his D2 waiver is UNUSED.
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+                persisted.getPeriodStartDate(), persisted.getPeriodEndDate()))
+                .thenReturn(List.of(waiver(ana, D2, "Cover"), waiver(ben, D2, "Speculative")));
+        when(shiftAssignmentRepository.findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(
+                TENANT_ID, DESK_ID, scheduleId, D1))
+                .thenReturn(List.of(
+                        shiftRowAccepted(ana, D1, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                        shiftRowAccepted(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0))));
+        when(shiftAssignmentRepository.findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(
+                TENANT_ID, DESK_ID, scheduleId, D2))
+                .thenReturn(List.of(
+                        shiftRowAccepted(ana, D2, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                        shiftRowAccepted(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))));
+
+        TenantContext.setTenantId(TENANT_ID);
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, scheduleId);
+
+        assertThat(summary.appliedRestWaiverCount()).isEqualTo(1);
+        assertThat(summary.unusedRestWaiverCount()).isEqualTo(1);
+    }
+
+    @Test
+    void acceptedSchedule_noWaiversInPeriod_issuesNoSpanQueryAndReportsZero() {
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentAssignmentRepository assignmentRepository = mock(AgentAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        ScheduleService scheduleService = scheduleServiceForDbFallbackSummary(
+                scheduleRepository, shiftAssignmentRepository, assignmentRepository, waiverRepo, predecessorService);
+
+        UUID scheduleId = UUID.randomUUID();
+        Schedule persisted = acceptedBaseSchedule(scheduleId, MINIMUM_REST_MINUTES);
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(persisted));
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+                persisted.getPeriodStartDate(), persisted.getPeriodEndDate()))
+                .thenReturn(List.of());
+
+        TenantContext.setTenantId(TENANT_ID);
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, scheduleId);
+
+        assertThat(summary.appliedRestWaiverCount()).isZero();
+        assertThat(summary.unusedRestWaiverCount()).isZero();
+        // Cost gate 3: an empty waiver set reaches the true (0, 0) answer with zero span queries.
+        verify(shiftAssignmentRepository, never())
+                .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(anyLong(), any(), any(), any());
+        verify(assignmentRepository, never())
+                .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndBusinessDate(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void nullMinimumRest_dbFallbackSummary_issuesNoWaiverQueryAtAll() {
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentAssignmentRepository assignmentRepository = mock(AgentAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        ScheduleService scheduleService = scheduleServiceForDbFallbackSummary(
+                scheduleRepository, shiftAssignmentRepository, assignmentRepository, waiverRepo, predecessorService);
+
+        UUID scheduleId = UUID.randomUUID();
+        Schedule persisted = acceptedBaseSchedule(scheduleId, null);
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(persisted));
+
+        TenantContext.setTenantId(TENANT_ID);
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, scheduleId);
+
+        assertThat(summary.appliedRestWaiverCount()).isNull();
+        assertThat(summary.unusedRestWaiverCount()).isNull();
+        // Cost gate 1: an unconfigured schedule issues ZERO waiver queries, through either finder.
+        verify(waiverRepo, never())
+                .findWithAgentByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any());
+        verify(waiverRepo, never())
+                .findByTenantIdAndDeskIdAndDateBetween(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void listSchedules_manyAcceptedSchedules_issuesExactlyOneWaiverQuery() {
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        DeskRepository deskRepository = mock(DeskRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentAssignmentRepository assignmentRepository = mock(AgentAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        ScheduleService scheduleService = scheduleServiceForListSchedules(
+                scheduleRepository, deskRepository, shiftAssignmentRepository, assignmentRepository,
+                waiverRepo, predecessorService);
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+        Schedule s1 = acceptedBaseSchedule(id1, MINIMUM_REST_MINUTES);
+        s1.setPeriodStartDate(D1);
+        s1.setPeriodEndDate(D1);
+        Schedule s2 = acceptedBaseSchedule(id2, MINIMUM_REST_MINUTES);
+        s2.setPeriodStartDate(D2);
+        s2.setPeriodEndDate(D2);
+        Schedule s3 = acceptedBaseSchedule(id3, MINIMUM_REST_MINUTES);
+        s3.setPeriodStartDate(D3);
+        s3.setPeriodEndDate(D3);
+        when(scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(eq(TENANT_ID), eq(DESK_ID), any()))
+                .thenReturn(List.of(s1, s2, s3));
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(eq(TENANT_ID), eq(DESK_ID), any(), any()))
+                .thenReturn(List.of());
+
+        TenantContext.setTenantId(TENANT_ID);
+        scheduleService.listSchedules(DESK_ID, null, 50);
+
+        verify(waiverRepo, times(1))
+                .findWithAgentByTenantIdAndDeskIdAndDateBetween(eq(TENANT_ID), eq(DESK_ID), any(), any());
+    }
+
+    @Test
+    void listSchedules_doesNotMutateTheInMemorySchedule() {
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        DeskRepository deskRepository = mock(DeskRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentAssignmentRepository assignmentRepository = mock(AgentAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        ScheduleService scheduleService = new ScheduleService(scheduleRepository,
+                mock(AcceptedScheduleDateRepository.class), deskRepository, store,
+                mock(TimeslotRepository.class), mock(StaffingRequirementRepository.class),
+                assignmentRepository, shiftAssignmentRepository, mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
+                waiverRepo, predecessorService, service, mock(EntityManager.class));
+
+        // The in-memory schedule carries a non-null snapshotted minimum rest and deliberately
+        // EMPTY transient collections -- exactly the state a running solve's own Schedule holds
+        // before any assignment exists. InMemoryScheduleStore hands this object back BY
+        // REFERENCE, so hydration must never reach it.
+        Schedule inMemory = acceptedBaseSchedule(UUID.randomUUID(), MINIMUM_REST_MINUTES);
+        inMemory.setStatus(ScheduleStatus.RUNNING);
+        inMemory.setTenantId(TENANT_ID);
+        inMemory.setDeskId(DESK_ID);
+        store.put(inMemory);
+
+        Schedule dbOther = acceptedBaseSchedule(UUID.randomUUID(), MINIMUM_REST_MINUTES);
+        when(scheduleRepository.findByTenantIdAndDeskIdOrderByCreatedAtDesc(eq(TENANT_ID), eq(DESK_ID), any()))
+                .thenReturn(List.of(dbOther));
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(eq(TENANT_ID), eq(DESK_ID), any(), any()))
+                .thenReturn(List.of(waiver(agent("Ana"), D2, "n/a")));
+
+        TenantContext.setTenantId(TENANT_ID);
+        scheduleService.listSchedules(DESK_ID, null, 50);
+
+        assertThat(inMemory.getAgentRestWaivers()).isEmpty();
+        assertThat(inMemory.getShiftAssignments()).isEmpty();
+        assertThat(inMemory.getAssignments()).isEmpty();
+        assertThat(inMemory.getPriorRestSpans()).isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -635,7 +823,7 @@ class RestWaiverDisclosureTest {
                         shiftRowAccepted(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0)),
                         shiftRowAccepted(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))
                 ));
-        when(waiverRepo.findByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+        when(waiverRepo.findWithAgentByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
                 persisted.getPeriodStartDate(), persisted.getPeriodEndDate()))
                 .thenReturn(List.of(waiver(ana, D2, "Cover"), waiver(ben, D2, "Speculative")));
 
@@ -837,6 +1025,48 @@ class RestWaiverDisclosureTest {
         return new ScheduleService(scheduleRepository, mock(AcceptedScheduleDateRepository.class),
                 mock(DeskRepository.class), new InMemoryScheduleStore(), mock(TimeslotRepository.class),
                 mock(StaffingRequirementRepository.class), mock(AgentAssignmentRepository.class),
+                agentShiftAssignmentRepository, mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
+                waiverRepo, predecessorService, service, mock(EntityManager.class));
+    }
+
+    /** Plan 22-12 Task 2 -- the full DB-fallback wiring {@code getScheduleSummary} needs: a mocked
+     * {@code ScheduleRepository}, {@code AgentShiftAssignmentRepository},
+     * {@code AgentAssignmentRepository} and {@code AgentRestWaiverRepository}, all
+     * caller-controlled via stubs, plus the REAL {@code ScheduleOutputService} field
+     * ({@code service}) so the hydration-then-disclosure path runs against actual production
+     * logic rather than a mock. A third, narrower sibling of {@link #scheduleService} and
+     * {@link #scheduleServiceForDetailWithRealOutputService} -- added rather than widening either
+     * existing helper's signature. {@code RestPredecessorService} is passed through uninvoked
+     * unless a test stubs it; every fixture here waives a D2 pair against in-horizon D1 data, so
+     * the pre-horizon lookback is never consulted by default. */
+    private ScheduleService scheduleServiceForDbFallbackSummary(
+            ScheduleRepository scheduleRepository,
+            AgentShiftAssignmentRepository agentShiftAssignmentRepository,
+            AgentAssignmentRepository agentAssignmentRepository,
+            AgentRestWaiverRepository waiverRepo,
+            RestPredecessorService predecessorService) {
+        return new ScheduleService(scheduleRepository, mock(AcceptedScheduleDateRepository.class),
+                mock(DeskRepository.class), new InMemoryScheduleStore(), mock(TimeslotRepository.class),
+                mock(StaffingRequirementRepository.class), agentAssignmentRepository,
+                agentShiftAssignmentRepository, mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
+                waiverRepo, predecessorService, service, mock(EntityManager.class));
+    }
+
+    /** Plan 22-12 Task 2 -- the {@code listSchedules} wiring, identical in shape to
+     * {@link #scheduleServiceForDbFallbackSummary} but with a caller-supplied
+     * {@code DeskRepository} mock so {@code listSchedules}' own desk-name lookup does not NPE. */
+    private ScheduleService scheduleServiceForListSchedules(
+            ScheduleRepository scheduleRepository,
+            DeskRepository deskRepository,
+            AgentShiftAssignmentRepository agentShiftAssignmentRepository,
+            AgentAssignmentRepository agentAssignmentRepository,
+            AgentRestWaiverRepository waiverRepo,
+            RestPredecessorService predecessorService) {
+        return new ScheduleService(scheduleRepository, mock(AcceptedScheduleDateRepository.class),
+                deskRepository, new InMemoryScheduleStore(), mock(TimeslotRepository.class),
+                mock(StaffingRequirementRepository.class), agentAssignmentRepository,
                 agentShiftAssignmentRepository, mock(AgentPreferenceRepository.class),
                 mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
                 waiverRepo, predecessorService, service, mock(EntityManager.class));
