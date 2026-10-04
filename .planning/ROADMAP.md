@@ -396,7 +396,7 @@ Plans:
 - [x] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
+- [x] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 22-07-PLAN.md — Pre-solve refusal for the structurally unavoidable case, both modes, naming agent and both shifts (REST-03)
