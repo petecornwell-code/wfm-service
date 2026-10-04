@@ -34,12 +34,19 @@ public interface AgentRestWaiverRepository extends JpaRepository<AgentRestWaiver
      * for dead surface.
      *
      * <p>REST-07/P-03 (22-12): superseded as a waiver-loading call site by
-     * {@link #findWithAgentByTenantIdAndDeskIdAndDateBetween} on every production path (including
-     * this method's own former caller, {@code ScheduleService.loadSnapshotData}) — the agent
+     * {@link #findWithAgentByTenantIdAndDeskIdAndDateBetween} on every production path — the agent
      * association is {@code @ManyToOne(fetch = FetchType.LAZY)} and
      * {@code spring.jpa.open-in-view} is {@code false}, so this non-fetching finder yields a lazy
      * proxy that throws on initialisation outside a transaction. Left declared (not removed) as a
      * directly-testable repository method in its own right.
+     *
+     * <p><strong>Zero production callers, and that is enforced.</strong> 22-12 re-pointed
+     * {@code ScheduleService.loadSnapshotData}, and CR-01 (code review) caught the one call site it
+     * missed — {@code SolverService}'s live problem-fact load, whose Schedule outlives its
+     * transaction in {@code InMemoryScheduleStore} and is read by the poll paths. The claim in the
+     * paragraph above is now a build-enforced invariant rather than a comment:
+     * {@code RestWaiverFetchingFinderGuardTest} fails if any class under {@code src/main/java}
+     * calls this method.
      */
     List<AgentRestWaiver> findByTenantIdAndDeskIdAndDateBetween(
             long tenantId, UUID deskId, LocalDate from, LocalDate to);

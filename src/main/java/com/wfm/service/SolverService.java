@@ -222,8 +222,22 @@ public class SolverService {
         // semantics agent_exception.date already has, so no BusinessDayPeriodLoader indirection is
         // needed here -- unlike the timeslot and staffing loads above, which do go through that
         // loader because their underlying repository finders filter a CALENDAR date column.
-        List<AgentRestWaiver> restWaivers = agentRestWaiverRepository.findByTenantIdAndDeskIdAndDateBetween(
-                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+        //
+        // REST-07 (CR-01, code review): the RELATIONS-FETCHING finder, not the plain one. These
+        // waivers are handed to schedule.setAgentRestWaivers below and the Schedule then outlives
+        // this @Transactional(readOnly = true) block in InMemoryScheduleStore for the whole solve,
+        // while ScheduleOutputService.buildRestWaiverDisclosure reads each waiver's agent's NAME on
+        // the /summary and detail poll paths. AgentRestWaiver.agent is @ManyToOne(fetch = LAZY) and
+        // spring.jpa.open-in-view is false, so a lazy proxy that was never initialised inside this
+        // transaction throws LazyInitializationException when a poll touches it. The plain finder
+        // survived here only by accident: allAgents above loads every desk agent into the same
+        // persistence context, so Hibernate usually satisfies the proxy from the first-level cache
+        // -- but a waiver whose agent is no longer assigned to this desk is not in that set, and
+        // then it throws. Loading one way on every path is the point of the fetching finder's own
+        // javadoc; this is the call site that was still contradicting it.
+        List<AgentRestWaiver> restWaivers = agentRestWaiverRepository
+                .findWithAgentByTenantIdAndDeskIdAndDateBetween(
+                        tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
 
         // Phase 22 (REST-05, D-10): resolve the agent's real pre-horizon rest span(s) for the
         // business date immediately before this period's start, from ACCEPTED history only. At
