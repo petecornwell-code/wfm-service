@@ -393,7 +393,7 @@ Plans:
 - [x] 22-04-PLAN.md — The Min Rest (hrs) column on the desk configuration table, plus its client contract (REST-01, REST-04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
+- [x] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
