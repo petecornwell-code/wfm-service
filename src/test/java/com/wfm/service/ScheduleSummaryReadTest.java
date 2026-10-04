@@ -209,7 +209,8 @@ class ScheduleSummaryReadTest {
         SolverService solverService = mock(SolverService.class);
         when(solverService.stopSolve(DESK, id)).thenReturn(s);
         ScheduleController controller = new ScheduleController(service, solverService,
-                mock(ScheduleExportService.class), deskRepository, mock(AgentDayOffService.class));
+                mock(ScheduleExportService.class), deskRepository, mock(AgentDayOffService.class),
+                outputService);
 
         var fromController = controller.stopSolve(DESK, id).getBody();
 

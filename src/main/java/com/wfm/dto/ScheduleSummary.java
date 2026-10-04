@@ -21,6 +21,18 @@ public record ScheduleSummary(
         // the detail response, so the allocation grid can order columns during the fast 2s poll
         // without a second fetch for the slower detail payload.
         LocalTime dayStart,
+        // REST-07/D-13: derived from the SAME buildRestWaiverDisclosure computation the detail
+        // response's restWaiverDisclosure field uses -- never a second walk over the waiver
+        // collection -- so the fast two-second poll and the slow detail payload can never
+        // disagree about how many waivers were applied/unused. Boxed, not primitive: null is the
+        // rest-not-configured signal (the schedule's snapshotted minimumRestMinutes is null) and
+        // 0 means configured with nothing waived -- a primitive would collapse those two states
+        // to the same number. Ride the summary specifically because the detail payload is
+        // roughly 4 MB and must never be polled (see ScheduleService.getScheduleSummary's own
+        // javadoc) -- a disclosure living only in detail would be invisible to an operator during
+        // a running solve.
+        Integer appliedRestWaiverCount,
+        Integer unusedRestWaiverCount,
         ScoreDto score,
         Boolean feasible,
         OffsetDateTime feasibleAt,

@@ -11,9 +11,11 @@ import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.SolveRequest;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
+import com.wfm.model.ScheduleStatus;
 import com.wfm.repository.DeskRepository;
 import com.wfm.service.AgentDayOffService;
 import com.wfm.service.ScheduleExportService;
+import com.wfm.service.ScheduleOutputService;
 import com.wfm.service.ScheduleService;
 import com.wfm.service.SolverService;
 import org.springframework.http.HttpHeaders;
@@ -36,17 +38,20 @@ public class ScheduleController {
     private final ScheduleExportService scheduleExportService;
     private final DeskRepository deskRepository;
     private final AgentDayOffService agentDayOffService;
+    private final ScheduleOutputService scheduleOutputService;
 
     public ScheduleController(ScheduleService scheduleService,
                               SolverService solverService,
                               ScheduleExportService scheduleExportService,
                               DeskRepository deskRepository,
-                              AgentDayOffService agentDayOffService) {
+                              AgentDayOffService agentDayOffService,
+                              ScheduleOutputService scheduleOutputService) {
         this.scheduleService = scheduleService;
         this.solverService = solverService;
         this.scheduleExportService = scheduleExportService;
         this.deskRepository = deskRepository;
         this.agentDayOffService = agentDayOffService;
+        this.scheduleOutputService = scheduleOutputService;
     }
 
     @PostMapping("/solve")
@@ -143,10 +148,21 @@ public class ScheduleController {
         }
         String deskName = deskRepository.findByIdAndTenantId(s.getDeskId(), TenantContext.getTenantId())
                 .map(Desk::getName).orElse(null);
+        // REST-07/D-13: the sibling construction site to ScheduleService.toSummary -- same
+        // buildRestWaiverDisclosure computation, same null-when-unconfigured rule, so the two
+        // construction sites can never disagree about these counts for the same schedule.
+        Integer appliedRestWaiverCount = null;
+        Integer unusedRestWaiverCount = null;
+        if (s.getMinimumRestMinutes() != null) {
+            var disclosure = scheduleOutputService.buildRestWaiverDisclosure(s, s.getStatus() == ScheduleStatus.ACCEPTED);
+            appliedRestWaiverCount = disclosure.applied().size();
+            unusedRestWaiverCount = disclosure.unused().size();
+        }
         return new ScheduleSummary(
                 s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(), s.getDayStart(),
+                appliedRestWaiverCount, unusedRestWaiverCount,
                 scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }

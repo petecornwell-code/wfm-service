@@ -2,8 +2,10 @@ package com.wfm.service;
 
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.config.TenantContext;
+import com.wfm.controller.ScheduleController;
 import com.wfm.dto.ScheduleDetailResponse.RestWaiverDisclosure;
 import com.wfm.dto.ScheduleDetailResponse.RestWaiverEntry;
+import com.wfm.dto.ScheduleSummary;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentAssignment;
 import com.wfm.model.AgentRestWaiver;
@@ -42,6 +44,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -423,8 +426,180 @@ class RestWaiverDisclosureTest {
     }
 
     // ------------------------------------------------------------------
+    //  Plan 22-08 Task 2 -- the two counts on the summary the page already polls, derived from
+    //  the SAME buildRestWaiverDisclosure computation the detail response uses.
+    // ------------------------------------------------------------------
+
+    @Test
+    void summaryCounts_twoAppliedOneUnused_matchesTwoAndOne() {
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        Schedule schedule = inMemorySummarySchedule(List.of(
+                shiftRowLive(ana, D1, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                shiftRowLive(ana, D2, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                shiftRowLive(ana, D3, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                shiftRowLive(ana, D4, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                shiftRowLive(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0)),
+                shiftRowLive(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))
+        ), List.of(waiver(ana, D2, "Applied1"), waiver(ana, D4, "Applied2"), waiver(ben, D2, "Unused1")));
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, service);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+
+        assertThat(summary.appliedRestWaiverCount()).isEqualTo(2);
+        assertThat(summary.unusedRestWaiverCount()).isEqualTo(1);
+    }
+
+    @Test
+    void summaryCounts_noWaiversAtAll_bothZeroNotAbsent() {
+        Agent ana = agent("Ana");
+        Schedule schedule = inMemorySummarySchedule(List.of(
+                shiftRowLive(ana, D1, LocalTime.of(8, 0), LocalTime.of(16, 0))
+        ), List.of());
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, service);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+
+        assertThat(summary.appliedRestWaiverCount()).isZero();
+        assertThat(summary.unusedRestWaiverCount()).isZero();
+    }
+
+    @Test
+    void summaryCounts_nullMinimumRest_bothCountsNullNotZero() {
+        Agent ana = agent("Ana");
+        Schedule schedule = inMemorySummarySchedule(List.of(
+                shiftRowLive(ana, D1, LocalTime.of(8, 0), LocalTime.of(16, 0))
+        ), List.of(waiver(ana, D2, "n/a")));
+        schedule.setMinimumRestMinutes(null);
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, service);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+
+        assertThat(summary.appliedRestWaiverCount()).isNull();
+        assertThat(summary.unusedRestWaiverCount()).isNull();
+    }
+
+    @Test
+    void summaryCounts_bothConstructionSitesAgree() {
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        Schedule schedule = inMemorySummarySchedule(List.of(
+                shiftRowLive(ana, D1, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                shiftRowLive(ana, D2, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                shiftRowLive(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0)),
+                shiftRowLive(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))
+        ), List.of(waiver(ana, D2, "Applied"), waiver(ben, D2, "Unused")));
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, service);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary fromService = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+
+        SolverService solverServiceMock = mock(SolverService.class);
+        when(solverServiceMock.stopSolve(DESK_ID, schedule.getId())).thenReturn(schedule);
+        ScheduleController controller = new ScheduleController(scheduleService, solverServiceMock,
+                mock(ScheduleExportService.class), mock(DeskRepository.class),
+                mock(AgentDayOffService.class), service);
+
+        ScheduleSummary fromController = controller.stopSolve(DESK_ID, schedule.getId()).getBody();
+
+        assertThat(fromController).isNotNull();
+        assertThat(fromController.appliedRestWaiverCount()).isEqualTo(fromService.appliedRestWaiverCount());
+        assertThat(fromController.unusedRestWaiverCount()).isEqualTo(fromService.unusedRestWaiverCount());
+        assertThat(fromController.appliedRestWaiverCount()).isEqualTo(1);
+        assertThat(fromController.unusedRestWaiverCount()).isEqualTo(1);
+    }
+
+    @Test
+    void summaryCounts_equalTheDetailResponsesListSizes() {
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        Schedule schedule = inMemorySummarySchedule(List.of(
+                shiftRowLive(ana, D1, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                shiftRowLive(ana, D2, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                shiftRowLive(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0)),
+                shiftRowLive(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))
+        ), List.of(waiver(ana, D2, "Applied"), waiver(ben, D2, "Unused")));
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, service);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+        var detail = scheduleService.getScheduleDetail(DESK_ID, schedule.getId(), null);
+
+        assertThat(summary.appliedRestWaiverCount())
+                .isEqualTo(detail.getRestWaiverDisclosure().applied().size());
+        assertThat(summary.unusedRestWaiverCount())
+                .isEqualTo(detail.getRestWaiverDisclosure().unused().size());
+    }
+
+    @Test
+    void summaryPath_staysCheap_doesNotInvokeTheHeavyOutputBuilders() {
+        ScheduleOutputService mockedOutputService = mock(ScheduleOutputService.class);
+        RestWaiverEntry fakeEntry = new RestWaiverEntry(UUID.randomUUID(), "Ana", D1, D2,
+                LocalTime.of(20, 0), LocalTime.of(4, 0), 480, MINIMUM_REST_MINUTES, "Cover");
+        when(mockedOutputService.buildRestWaiverDisclosure(any(), anyBoolean()))
+                .thenReturn(new RestWaiverDisclosure(List.of(fakeEntry), List.of()));
+
+        Schedule schedule = inMemorySummarySchedule(List.of(), List.of());
+
+        InMemoryScheduleStore store = new InMemoryScheduleStore();
+        store.put(schedule);
+        ScheduleService scheduleService = scheduleServiceWith(store, mockedOutputService);
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleSummary summary = scheduleService.getScheduleSummary(DESK_ID, schedule.getId());
+
+        assertThat(summary.appliedRestWaiverCount()).isEqualTo(1);
+        assertThat(summary.unusedRestWaiverCount()).isEqualTo(0);
+        verify(mockedOutputService, times(1)).buildRestWaiverDisclosure(any(), anyBoolean());
+        verify(mockedOutputService, never()).buildAgentSchedule(any());
+        verify(mockedOutputService, never()).buildStaffingSummary(any());
+        verify(mockedOutputService, never()).buildPreferenceReport(any());
+        verify(mockedOutputService, never()).buildDriftReport(any());
+        verify(mockedOutputService, never()).buildConstraintViolations(any(), anyBoolean());
+    }
+
+    // ------------------------------------------------------------------
     //  Fixture helpers
     // ------------------------------------------------------------------
+
+    /** Same shape as {@link #shiftSchedule}, plus the identity fields {@code getScheduleSummary}/
+     * {@code getScheduleDetail} need to resolve an in-memory schedule by id/tenant/desk. */
+    private Schedule inMemorySummarySchedule(List<AgentShiftAssignment> shiftRows, List<AgentRestWaiver> waivers) {
+        Schedule schedule = shiftSchedule(shiftRows, waivers);
+        schedule.setId(UUID.randomUUID());
+        schedule.setTenantId(TENANT_ID);
+        schedule.setDeskId(DESK_ID);
+        schedule.setStatus(ScheduleStatus.COMPLETED);
+        return schedule;
+    }
+
+    private ScheduleService scheduleServiceWith(InMemoryScheduleStore store, ScheduleOutputService outputServiceToUse) {
+        return new ScheduleService(mock(ScheduleRepository.class), mock(AcceptedScheduleDateRepository.class),
+                mock(DeskRepository.class), store, mock(TimeslotRepository.class),
+                mock(StaffingRequirementRepository.class), mock(AgentAssignmentRepository.class),
+                mock(AgentShiftAssignmentRepository.class), mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
+                mock(AgentRestWaiverRepository.class), mock(RestPredecessorService.class),
+                outputServiceToUse, mock(EntityManager.class));
+    }
 
     private Schedule shiftSchedule(List<AgentShiftAssignment> shiftRows, List<AgentRestWaiver> waivers) {
         Schedule schedule = new Schedule();

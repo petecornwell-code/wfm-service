@@ -694,10 +694,26 @@ public class ScheduleService {
             scoreDto = new ScheduleSummary.ScoreDto(s.getScore().hardScore(), s.getScore().softScore());
             feasible = s.getScore().hardScore() >= 0;
         }
+        // REST-07/D-13: derived from buildRestWaiverDisclosure -- the SAME computation the detail
+        // response's restWaiverDisclosure field uses -- rather than a second walk over the waiver
+        // collection, so the two can never disagree. This single call is the only
+        // ScheduleOutputService work this method does: it must NOT build the staffing summary,
+        // the agent schedule, the preference report or the drift report, which is the whole
+        // reason getScheduleSummary exists as a separate, cheap endpoint (see that method's own
+        // javadoc) -- computing a disclosure here looks like a first step toward computing
+        // everything here, and it must stay the only step.
+        Integer appliedRestWaiverCount = null;
+        Integer unusedRestWaiverCount = null;
+        if (s.getMinimumRestMinutes() != null) {
+            var disclosure = scheduleOutputService.buildRestWaiverDisclosure(s, s.getStatus() == ScheduleStatus.ACCEPTED);
+            appliedRestWaiverCount = disclosure.applied().size();
+            unusedRestWaiverCount = disclosure.unused().size();
+        }
         return new ScheduleSummary(
                 s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
                 s.getPeriodStartDate(), s.getPeriodEndDate(),
                 s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(), s.getDayStart(),
+                appliedRestWaiverCount, unusedRestWaiverCount,
                 scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }

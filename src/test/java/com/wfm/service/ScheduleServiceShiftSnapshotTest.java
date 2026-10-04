@@ -78,7 +78,7 @@ import static org.mockito.Mockito.when;
  * no solved schedule, only the plain POJO graph it reads.
  */
 @DataJpaTest
-@Import({ScheduleService.class, InMemoryScheduleStore.class, ShiftTemplateService.class})
+@Import({ScheduleService.class, InMemoryScheduleStore.class, ShiftTemplateService.class, RestPredecessorService.class})
 @ActiveProfiles("test")
 class ScheduleServiceShiftSnapshotTest {
 
