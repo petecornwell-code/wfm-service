@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +40,27 @@ public interface AgentShiftAssignmentRepository extends JpaRepository<AgentShift
            "ORDER BY sa.date, a.name")
     List<AgentShiftAssignment> findWithRelationsByTenantIdAndDeskIdAndScheduleId(
             long tenantId, UUID deskId, UUID scheduleId);
+
+    /**
+     * REST-05/D-10: the date-filtered read the horizon-edge lookback needs —
+     * {@link #findByTenantIdAndDeskIdAndScheduleId} and
+     * {@link #findWithRelationsByTenantIdAndDeskIdAndScheduleId} both fetch a WHOLE schedule's
+     * rows, which on a multi-week prior period is unsuitable for a one-day question. Filters on
+     * all four of {@code tenantId}, {@code deskId}, {@code scheduleId} AND {@code date} so the
+     * lookback never loads more than one business date's worth of rows regardless of the
+     * predecessor period's length. {@code JOIN FETCH}es {@code agent} exactly as the existing
+     * relations finder does — the caller reads {@code getAgent().getId()} outside any
+     * transaction, and a lazy proxy would fail there. Ordered by agent name for determinism.
+     * Tenant- and desk-scoped like every other method here — there is no database row-level
+     * security, so this is the mitigation (see this class's own javadoc).
+     */
+    @Query("SELECT sa FROM AgentShiftAssignment sa " +
+           "JOIN FETCH sa.agent a " +
+           "WHERE sa.tenantId = :tenantId AND sa.deskId = :deskId AND sa.scheduleId = :scheduleId " +
+           "AND sa.date = :date " +
+           "ORDER BY a.name")
+    List<AgentShiftAssignment> findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(
+            long tenantId, UUID deskId, UUID scheduleId, LocalDate date);
 
     /**
      * CR-03 gap closure: {@code ScheduleService.deleteSchedule} deletes {@code agent_assignment},
