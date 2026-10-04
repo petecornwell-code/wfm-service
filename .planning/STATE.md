@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 23
 current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
 status: executing
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-10-04T20:11:25.500Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-10-04T20:30:58.398Z"
 last_activity: 2026-10-04
 last_activity_desc: Phase 23 execution started
-state_head: a6c9210d8fc922d5dc86fb3bd5eeadcc842e3849
+state_head: 16083ca2ab536317627557666087bc0775df063f
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 53
-  completed_plans: 51
+  completed_plans: 52
   percent: 83
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 ## Current Position
 
 Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-10-04 — Phase 23 execution started
 
@@ -377,6 +377,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 23]: DayWindow.anchoredWrappedEndMinute lands as a public instance method (never static), placed immediately after anchoredDurationMinutes, preserving DayWindowTest's frozen public-static set
 - [Phase 23]: RestSpan.gapMinutes: only the remainingInPrevDay line changes; successor-side elapsedIntoNextDay and the dayStart guard clause are untouched (Pitfall 3)
 - [Phase 23]: SolverService.requireRestFeasibility's SLOT pre-horizon branch: only the predecessorEndMinute assignment changes; the synthetic in-horizon estimate and the D-08 drift comment are left in place
+- [Phase 23]: 23-02: Adopted PF-01 verbatim -- RestHorizonEdgeTest counted as the phase's sixth affected class (not the five 23-RESEARCH.md Finding 5 named), given its own pre-horizon overnight SHIFT/SLOT pair plus the no-successor-row negative
+- [Phase 23]: 23-02: Adopted PF-02 verbatim -- every SLOT-mode wrapping predecessor in this plan is a directly-constructed pre-horizon RestSpan, never a synthesized wrapping slot set; compliantDaySeats and RestSpan.ofSlots were left untouched
+- [Phase 23]: 23-02: Re-derived the 21:00-anchor numbers in RestPredecessorServiceTest's SLOT regression case against the live DayWindow implementation during execution rather than trusting the plan text blindly -- the derivation (1740) matched exactly
 
 ### Blockers/Concerns
 
@@ -402,8 +405,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T20:11:25.449Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-10-04T20:30:58.350Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -507,3 +510,4 @@ Resume file: None
 | Phase 22 P11 | 33min | 2 tasks | 6 files |
 | Phase 22 P12 | 44min | 3 tasks | 8 files |
 | Phase 23 P01 | 25min | 3 tasks | 6 files |
+| Phase 23 P02 | 18min | 3 tasks | 4 files |
