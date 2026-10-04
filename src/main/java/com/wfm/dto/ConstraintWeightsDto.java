@@ -62,6 +62,12 @@ public class ConstraintWeightsDto {
     // by Jackson with a deserialisation error naming the enum's constants.
     private String shiftStartMixMode;
 
+    // Phase 22 (REST-02/REST-04): the hard constraint penalising a short-rested shift-to-shift
+    // gap on a SHIFT-mode desk. Exposed here for the same reason every other weight above is --
+    // ConstraintWeightDtoParityTest fails the build otherwise, and an unreachable weight is an
+    // untunable one.
+    private ScoreDto minimumRestShiftWeight;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -122,4 +128,7 @@ public class ConstraintWeightsDto {
 
     public String getShiftStartMixMode() { return shiftStartMixMode; }
     public void setShiftStartMixMode(String v) { this.shiftStartMixMode = v; }
+
+    public ScoreDto getMinimumRestShiftWeight() { return minimumRestShiftWeight; }
+    public void setMinimumRestShiftWeight(ScoreDto v) { this.minimumRestShiftWeight = v; }
 }

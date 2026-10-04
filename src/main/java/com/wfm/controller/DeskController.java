@@ -3,6 +3,7 @@ package com.wfm.controller;
 import com.wfm.dto.DayStartRequest;
 import com.wfm.dto.DeskRequest;
 import com.wfm.dto.DeskResponse;
+import com.wfm.dto.MinimumRestRequest;
 import com.wfm.dto.SchedulingModeRequest;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
@@ -73,6 +74,14 @@ public class DeskController {
         return toResponse(updated, lockFor(deskId), tilingWarning);
     }
 
+    @PutMapping("/{deskId}/minimum-rest")
+    public DeskResponse setMinimumRest(@PathVariable UUID deskId, @RequestBody MinimumRestRequest request) {
+        Desk updated = deskService.setMinimumRest(deskId, request.minimumRestMinutes());
+        // No tiling-warning equivalent: D-04 names no such concern for this endpoint, and the
+        // third toResponse argument is the day-start tiling advisory specifically.
+        return toResponse(updated, lockFor(deskId), null);
+    }
+
     /** One per-desk lookup through the same batch finder {@link #listDesks} uses -- never a second finder shape. */
     private Schedule lockFor(UUID deskId) {
         return deskService.dayStartLocksByDeskId().get(deskId);
@@ -84,6 +93,7 @@ public class DeskController {
                 lock != null ? lock.getId() : null,
                 lock != null ? lock.getPeriodStartDate() : null,
                 lock != null ? lock.getPeriodEndDate() : null,
-                tilingWarning);
+                tilingWarning,
+                desk.getMinimumRestMinutes());
     }
 }

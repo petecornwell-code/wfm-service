@@ -25,5 +25,6 @@ public record DeskResponse(
         UUID dayStartLockedByScheduleId,
         LocalDate dayStartLockedPeriodStart,
         LocalDate dayStartLockedPeriodEnd,
-        String dayStartTilingWarning
+        String dayStartTilingWarning,
+        Integer minimumRestMinutes
 ) {}

@@ -325,6 +325,44 @@ public class DeskService {
     }
 
     /**
+     * Sets a desk's minimum shift-to-shift rest floor, in minutes (REST-01, D-04). Built from
+     * {@link #setDayStart}'s range-validation-then-save shape, with three deliberate divergences:
+     *
+     * <p>No null guard at the top. {@code setDayStart} refuses null; here {@code null} is a legal
+     * value that CLEARS the setting (D-04, REST-04) — the bound below is validated only when the
+     * value is non-null.
+     *
+     * <p>Bound: rejects a value below {@code 0} or at or above {@code 1440} (24 hours), naming the
+     * ceiling in the thrown message (D-05; 22-RESEARCH.md Discretion Resolution 1 fixes this exact
+     * wording because the approved 22-UI-SPEC.md already ships it verbatim in its Copywriting
+     * Contract — see the single throw site below for the literal). No other numeric ceiling is
+     * introduced.
+     *
+     * <p>No ACCEPTED-schedule refusal and no scheduling-mode interaction, unlike
+     * {@code setDayStart}'s unconditional lock. D-14 explicitly declined mirroring that lock: rest
+     * is ordinary desk policy an operator may change mid-quarter, and 22-RESEARCH.md Discretion
+     * Resolution 3 extends that to a mode switch too, which leaves the stored value untouched and
+     * fully effective in either mode. This is a decision, not an omission.
+     */
+    @Transactional
+    public Desk setMinimumRest(UUID deskId, Integer minimumRestMinutes) {
+        if (minimumRestMinutes != null && (minimumRestMinutes < 0 || minimumRestMinutes >= 1440)) {
+            throw new IllegalArgumentException("Minimum rest must be less than 24 hours");
+        }
+
+        long tenantId = TenantContext.getTenantId();
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+
+        if (java.util.Objects.equals(minimumRestMinutes, desk.getMinimumRestMinutes())) {
+            return desk;
+        }
+
+        desk.setMinimumRestMinutes(minimumRestMinutes);
+        return deskRepository.save(desk);
+    }
+
+    /**
      * Whether a proposed day start will tile cleanly against this desk's already-generated live
      * timeslots (OVNT-01, D-05). Read-only and purely advisory -- the caller invokes this AFTER a
      * successful {@link #setDayStart}, never from inside it, which is what makes "the desk still
