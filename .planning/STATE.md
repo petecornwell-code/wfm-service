@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 23
 current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
-status: ready_to_execute
-stopped_at: Phase 23 planned — 3 plans in 3 waves, ready to execute
-last_updated: "2026-10-04T19:56:51.411Z"
+status: executing
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-10-04T20:11:25.500Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 23 planned — 3 plans, 3 waves
-state_head: ee3507a9ce1500d1b9d20518aafe6fbc3377d784
+last_activity_desc: Phase 23 execution started
+state_head: a6c9210d8fc922d5dc86fb3bd5eeadcc842e3849
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 53
-  completed_plans: 50
+  completed_plans: 51
   percent: 83
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Milestone v1.5 phases 18–22 shipped; Phase 23 planned (3 plans) to close the audit's one critical cross-phase gap (G-1) before the milestone closes
+**Current focus:** Phase 23 — Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
 
 ## Current Position
 
-Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute — 3 plans in 3 serialized waves
-Last activity: 2026-10-04 — Phase 23 planned
+Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-10-04 — Phase 23 execution started
 
 ## Milestone v1.3 Outcome
 
@@ -374,6 +374,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: Plan 22-12: hydrate on read, never persist waiver counts at accept time (P-02) -- persisting would reintroduce the exact silent-disagreement class D-08 exists to prevent (a frozen count above a live-recomputed detail list), and is rated one-way (Flyway migration against dev) vs. the chosen reversible route.
 - [Phase 22]: Plan 22-12: WR-02's fix is collapse-plus-structural-guard (D-08 applied a second time) -- ScheduleController.toSummary deleted, ScheduleService.toSummary(Schedule) is the sole public entry point, and ScheduleSummaryConstructionSiteGuardTest (not a wider parity test) now prevents a second construction site from reappearing.
 - [Phase 22]: Plan 22-12: IN-01's non-finite minimum-rest parse (DeskManagement.tsx hoursStringToMinutes) returns undefined, never null -- null already means operator-deliberately-cleared on this wire contract, so collapsing a parse failure into it would make a bug indistinguishable from a deliberate action; handleUpdate checks undefined before the change comparison since NaN's self-inequality would otherwise fire the clearing PUT with certainty.
+- [Phase 23]: DayWindow.anchoredWrappedEndMinute lands as a public instance method (never static), placed immediately after anchoredDurationMinutes, preserving DayWindowTest's frozen public-static set
+- [Phase 23]: RestSpan.gapMinutes: only the remainingInPrevDay line changes; successor-side elapsedIntoNextDay and the dayStart guard clause are untouched (Pitfall 3)
+- [Phase 23]: SolverService.requireRestFeasibility's SLOT pre-horizon branch: only the predecessorEndMinute assignment changes; the synthetic in-horizon estimate and the D-08 drift comment are left in place
 
 ### Blockers/Concerns
 
@@ -399,8 +402,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T16:46:00.000Z
-Stopped at: Phase 23 added — not planned yet
+Last session: 2026-10-04T20:11:25.449Z
+Stopped at: Completed 23-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -503,3 +506,4 @@ Resume file: None
 | Phase 22 P10 | 22min | 2 tasks | 1 files |
 | Phase 22 P11 | 33min | 2 tasks | 6 files |
 | Phase 22 P12 | 44min | 3 tasks | 8 files |
+| Phase 23 P01 | 25min | 3 tasks | 6 files |
