@@ -3,6 +3,27 @@ import { Link } from 'react-router-dom'
 import { desks, type Desk, type CreateDeskRequest, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 
+// Minutes -> display string. Exact division, no rounding mode: a decimal place is shown only
+// when the quotient is not a whole number, so 660 reads `11` and 630 reads `10.5`. No
+// unconditional `toFixed` — that would turn `11` into `11.0`, a format the UI-SPEC's populated
+// row does not specify.
+const minutesToHoursDisplay = (minutes: number): string => {
+  const hours = minutes / 60
+  if (Number.isInteger(hours)) return String(hours)
+  // Exact for any 15-minute-aligned value (the input's 0.25-hour step produces only these);
+  // trailing zeros trimmed so 10.50 reads 10.5 while 10.25 and 10.75 keep both digits.
+  return hours.toFixed(2).replace(/0+$/, '')
+}
+
+// Edited hours string -> minutes, or null to clear. Exact multiplication, no rounding mode: the
+// input's 0.25 step makes every legal entry a whole number of minutes, so there is no rounding
+// decision to make here.
+const hoursStringToMinutes = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  return Number(trimmed) * 60
+}
+
 export default function DeskManagement() {
   const [deskList, setDeskList] = useState<Desk[]>([])
   const [loading, setLoading] = useState(true)
@@ -15,6 +36,8 @@ export default function DeskManagement() {
   const [editHours, setEditHours] = useState(8)
   const [editDayStart, setEditDayStart] = useState('')
   const [savingDayStart, setSavingDayStart] = useState(false)
+  // Held as a string so an empty input is representable and distinguishable from 0 (REST-04).
+  const [editMinimumRestHours, setEditMinimumRestHours] = useState('')
 
   useEffect(() => {
     desks.list()
@@ -55,6 +78,7 @@ export default function DeskManagement() {
     setEditDescription(desk.description || '')
     setEditHours(desk.defaultContractedHoursPerDay)
     setEditDayStart(desk.dayStart)
+    setEditMinimumRestHours(desk.minimumRestMinutes == null ? '' : minutesToHoursDisplay(desk.minimumRestMinutes))
   }
 
   // The locked disclosure (OVNT-01/D-04) treats the schedule id and the period as independent
@@ -89,6 +113,16 @@ export default function DeskManagement() {
       let latest = updated
       if (original && editDayStart !== original.dayStart) {
         latest = await desks.setDayStart(editingId, editDayStart)
+        setDeskList(prev => prev.map(d => d.id === editingId ? latest : d))
+      }
+
+      // Null-safe comparison so the null-to-null and unset-to-unset cases both short-circuit.
+      // Fires after the day-start PUT, per the UI-SPEC's ordering: a failed main save never
+      // leaves a rest value applied against stale desk fields.
+      const editedMinimumRestMinutes = hoursStringToMinutes(editMinimumRestHours)
+      const originalMinimumRestMinutes = original?.minimumRestMinutes ?? null
+      if (original && editedMinimumRestMinutes !== originalMinimumRestMinutes) {
+        latest = await desks.setMinimumRest(editingId, editedMinimumRestMinutes)
         setDeskList(prev => prev.map(d => d.id === editingId ? latest : d))
       }
 
@@ -129,7 +163,7 @@ export default function DeskManagement() {
 
       <table>
         <thead>
-          <tr><th>Name</th><th>Description</th><th>Default Hours/Day</th><th>Scheduling Mode</th><th>Day Start</th><th>Actions</th></tr>
+          <tr><th>Name</th><th>Description</th><th>Default Hours/Day</th><th>Scheduling Mode</th><th>Day Start</th><th>Min Rest (hrs)</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {deskList.map(desk => (
@@ -169,6 +203,28 @@ export default function DeskManagement() {
                       />
                     )}
                   </td>
+                  {/* No lock or disabled state here, unlike Day Start two columns over — D-14
+                      explicitly declined mirroring the day-start accepted-schedule refusal for
+                      rest, reasoning that rest is ordinary desk policy an operator may change
+                      mid-quarter. This is deliberate, not an oversight. */}
+                  <td>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={editMinimumRestHours}
+                      onChange={e => setEditMinimumRestHours(e.target.value)}
+                      style={{ width: '90px' }}
+                    />
+                    {(() => {
+                      const parsed = editMinimumRestHours.trim() === '' ? null : Number(editMinimumRestHours)
+                      return parsed !== null && (parsed < 0 || parsed >= 24)
+                    })() && (
+                      <div style={{ color: '#92400e', fontSize: '13px', fontWeight: 400, marginTop: '2px' }}>
+                        Minimum rest must be less than 24 hours.
+                      </div>
+                    )}
+                  </td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button className="primary" onClick={handleUpdate} disabled={savingDayStart}>Save</button>
                     <button onClick={() => setEditingId(null)}>Cancel</button>
@@ -192,6 +248,11 @@ export default function DeskManagement() {
                       </div>
                     )}
                   </td>
+                  {/* Plain table cell, exactly like the five before it — no new color, weight or
+                      size, which is what keeps Actions the row's rightmost high-contrast element.
+                      Strict null-or-undefined check: 0 is a legal, meaningfully different value
+                      from unset and must render `0`, never the dash. */}
+                  <td>{desk.minimumRestMinutes == null ? '—' : minutesToHoursDisplay(desk.minimumRestMinutes)}</td>
                   <td style={{ display: 'flex', gap: '0.25rem' }}>
                     <button onClick={() => startEdit(desk)}>Edit</button>
                     <button className="danger" onClick={() => handleDelete(desk.id)}>Delete</button>
