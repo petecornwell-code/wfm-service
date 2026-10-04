@@ -381,7 +381,17 @@ D-05's sub-24-hour cap makes a single step provably sufficient — strictly tigh
 above, and satisfying it. Ten plans across seven waves is in line with this project's own precedent
 (Phases 20 and 21 ran to twelve each, Phase 15 to twenty).
 
-**Plans**: 10 plans in 7 waves
+**Gap closure (2026-10-04):** `/gsd-verify-work` returned `gaps_found` — four of five success
+criteria verified, criterion 5 (REST-07) failed for two independent, confirmed reasons recorded in
+`22-VERIFICATION.md`. (a) `ScheduleService.listSchedules`/`getScheduleSummary` build a summary for
+a DB-fetched schedule without hydrating the `@Transient` waiver and span collections, so the
+disclosure returns a false `0 applied / 0 unused`; (b) `ScheduleDetailResponse` carries no count or
+configured-rest field at all, so the header badge and Rest Waivers tab fall back to hidden /
+"not configured" for every finished solve and every reopened ACCEPTED schedule. Two closure plans
+(22-11, 22-12) address both, plus all three open code-review findings (WR-01, WR-02, IN-01). Run
+them with `/gsd-execute-phase 22 --gaps-only`.
+
+**Plans**: 10 plans in 7 waves, plus 2 gap-closure plans
 
 Plans:
 **Wave 1**
@@ -407,6 +417,12 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
+
+**Gap closure — Wave 1**
+- [ ] 22-11-PLAN.md — Tracer: the detail response carries its own snapshotted-rest signal and both waiver counts; the badge and tab read them; WR-01 (REST-07)
+
+**Gap closure — Wave 2** *(blocked on gap-closure Wave 1)*
+- [ ] 22-12-PLAN.md — The DB-fallback summary paths report the true counts under three cost gates; one `ScheduleSummary` construction site with a structural guard (WR-02); IN-01 (REST-07)
 
 **UI hint**: yes
 
