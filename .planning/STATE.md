@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-10-04T00:09:32.315Z"
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-10-04T00:42:37.090Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: 31135edd423b3c0f6180002342d2b7660b9b75ac
+state_head: 03856da6dc719de59c3c676eeae6adf83b47a870
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 39
+  completed_plans: 40
   percent: 80
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
 Last activity: 2026-10-03 — Phase 22 execution started
 
@@ -350,6 +350,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: 21-12: operator chose convert-seven-amend-two for the nine-entry raw-comparison allowlist; seven operator-visible sites converted to anchored-minute comparisons (incl. the preferred-start soft constraint, the one genuine scoring change), two solver move-ordering tie-breaks left unconverted with amended justifications; comparison fence now 2 entries
 - [Phase 22]: RestSpan carries its own dayStart per span so gapMinutes can refuse a cross-anchor comparison loudly (IllegalArgumentException), rather than threading the anchor separately
 - [Phase 22]: DeskService.setMinimumRest carries no ACCEPTED-schedule refusal and no scheduling-mode interaction (D-14's deliberately declined mirror of setDayStart's lock)
+- [Phase 22]: Shared RestGapMatch record so both mode-gated rest constraints call RestSpan.gapMinutes exactly once per candidate pair (required to satisfy the plan's literal gapMinutes-occurrence acceptance criterion; zero behavior change)
+- [Phase 22]: Followed 22-01's established per-task single-commit precedent for tdd=true tasks in this phase (no workflow.tdd_mode gate configured)
 
 ### Blockers/Concerns
 
@@ -373,8 +375,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T00:09:32.264Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-10-04T00:42:37.045Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -465,3 +467,4 @@ Resume file: None
 | Phase 21 P11 | 55 min | 2 tasks | 5 files |
 | Phase 21 P12 | ~90min | 2 tasks | 12 files |
 | Phase 22 P01 | 47min | 2 tasks | 19 files |
+| Phase 22 P02 | 48min | 2 tasks | 9 files |
