@@ -4,16 +4,16 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
-status: verifying
-stopped_at: Completed 22-10-PLAN.md
-last_updated: "2026-10-04T04:21:14.318Z"
-last_activity: 2026-10-03
-last_activity_desc: Phase 22 execution started
-state_head: b4da6db641d7cb33c966f3a2fdfe52a562592ea3
+status: executing
+stopped_at: Phase 22 gap-closure planned (22-11, 22-12)
+last_updated: "2026-10-04T13:01:39.001Z"
+last_activity: 2026-10-04
+last_activity_desc: Phase 22 gap-closure plans created for the REST-07 gap
+state_head: c6ce430c107661793f29025742e197c1e291a2a0
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 48
+  total_plans: 50
   completed_plans: 48
   percent: 80
 ---
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 10 of 10
-Status: Phase complete — ready for verification
-Last activity: 2026-10-03 — Phase 22 execution started
+Phase: 22 (Minimum Rest) — READY TO EXECUTE (gap closure)
+Plan: 10 of 10 executed; 22-11 and 22-12 planned, not yet executed
+Status: Ready to execute — gap closure for the REST-07 verification gap
+Last activity: 2026-10-04 — Phase 22 gap-closure plans created
 
 ## Milestone v1.3 Outcome
 
