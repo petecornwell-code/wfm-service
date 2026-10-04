@@ -115,6 +115,73 @@ class DayWindowTest {
     }
 
     @Nested
+    @DisplayName("anchoredWrappedEndMinute: the wrap-aware end offset, collapsing onto anchoredEndMinute "
+            + "whenever the interval does not wrap (REST-02, REST-05)")
+    class WrappedEndMinute {
+
+        private final DayWindow anchor2100 = DayWindow.anchoredAt(LocalTime.of(21, 0));
+
+        @Test
+        @DisplayName("the non-wrapping collapse at the 00:00 anchor: 14:00-22:00 is 1320, equal to anchoredEndMinute(22:00)")
+        void nonWrappingCollapseAtMidnightAnchor() {
+            int result = MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(14, 0), LocalTime.of(22, 0));
+            assertThat(result).isEqualTo(1320);
+            assertThat(result).isEqualTo(MIDNIGHT_WINDOW.anchoredEndMinute(LocalTime.of(22, 0)));
+        }
+
+        @Test
+        @DisplayName("the wrapping case at the 00:00 anchor: 22:00-06:00 is 1800 -- the lost day is restored")
+        void wrappingCaseAtMidnightAnchor() {
+            assertThat(MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(22, 0), LocalTime.of(6, 0)))
+                    .isEqualTo(1800);
+        }
+
+        @Test
+        @DisplayName("the wrap threshold: 22:00-00:00 ends exactly at the anchor and does NOT wrap -- 1440, equal to anchoredEndMinute(00:00)")
+        void wrapThresholdDoesNotWrap() {
+            int result = MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(22, 0), MIDNIGHT);
+            assertThat(result).isEqualTo(1440);
+            assertThat(result).isEqualTo(MIDNIGHT_WINDOW.anchoredEndMinute(MIDNIGHT));
+        }
+
+        @Test
+        @DisplayName("one minute past the wrap threshold: 22:00-00:01 wraps by exactly one minute -- 1441")
+        void oneMinutePastWrapThreshold() {
+            assertThat(MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(22, 0), LocalTime.of(0, 1)))
+                    .isEqualTo(1441);
+        }
+
+        @Test
+        @DisplayName("the degenerate anchor pair MIDNIGHT-MIDNIGHT is a whole day, matching anchoredDurationMinutes' own rule")
+        void degenerateAnchorPairIsAWholeDay() {
+            assertThat(MIDNIGHT_WINDOW.anchoredWrappedEndMinute(MIDNIGHT, MIDNIGHT)).isEqualTo(1440);
+        }
+
+        @Test
+        @DisplayName("at a 21:00 anchor, 23:00-04:00 crosses calendar midnight but not the anchor -- NOT a wrap, 420, equal to anchoredEndMinute(04:00)")
+        void crossingCalendarMidnightButNotTheAnchorIsNotAWrap() {
+            int result = anchor2100.anchoredWrappedEndMinute(LocalTime.of(23, 0), LocalTime.of(4, 0));
+            assertThat(result).isEqualTo(420);
+            assertThat(result).isEqualTo(anchor2100.anchoredEndMinute(LocalTime.of(4, 0)));
+        }
+
+        @Test
+        @DisplayName("at a 21:00 anchor, 19:00-22:00 crosses the anchor and therefore exceeds MINUTES_PER_DAY")
+        void crossingTheAnchorAt2100ExceedsMinutesPerDay() {
+            assertThat(anchor2100.anchoredWrappedEndMinute(LocalTime.of(19, 0), LocalTime.of(22, 0)))
+                    .isGreaterThan(DayWindow.MINUTES_PER_DAY);
+        }
+
+        @Test
+        @DisplayName("purity: calling anchoredWrappedEndMinute twice with the same arguments returns the same value")
+        void purityAcrossRepeatedCalls() {
+            int first = MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(22, 0), LocalTime.of(6, 0));
+            int second = MIDNIGHT_WINDOW.anchoredWrappedEndMinute(LocalTime.of(22, 0), LocalTime.of(6, 0));
+            assertThat(first).isEqualTo(second);
+        }
+    }
+
+    @Nested
     @DisplayName("isForwardWithinDay")
     class Forward {
 

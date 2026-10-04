@@ -165,6 +165,23 @@ class MinimumRestShiftConstraintTest {
     }
 
     @Test
+    @DisplayName("an overnight SUCCESSOR (20:00-05:00) paired with a non-wrapping predecessor is numerically "
+            + "unchanged by this fix -- the successor side was deliberately not touched")
+    void overnightSuccessorWithNonWrappingPredecessor_unchangedByTheFix() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(20, 0), LocalTime.of(5, 0)));
+
+        // remainingInPrevDay = 1440 - anchoredWrappedEndMinute(06:00,14:00) = 1440 - 840 = 600
+        // elapsedIntoNextDay = anchoredStartMinute(20:00) = 1200
+        // gap = 1800 -- identical before and after this phase's change, since the successor side
+        // (next.startTime() only) never needed wrap information and was not touched.
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660))
+                .penalizesBy(0);
+    }
+
+    @Test
     @DisplayName("an overnight predecessor (22:00-06:00) measures the true 60-minute gap against a 07:00 successor, not the pre-fix 1500, penalised by 600 under a 660-minute minimum")
     void overnightPredecessor_trueGapMeasuredCorrectly() {
         Agent a = agent();
@@ -174,6 +191,30 @@ class MinimumRestShiftConstraintTest {
         verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
                 .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 660))
                 .penalizesBy(600);
+    }
+
+    @Test
+    @DisplayName("an overnight predecessor's gap exactly at a 60-minute minimum is not penalised -- the exact-equality boundary")
+    void overnightPredecessor_gapExactlyAtMinimum_notPenalised() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(22, 0), LocalTime.of(6, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(7, 0), LocalTime.of(15, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 60))
+                .penalizesBy(0);
+    }
+
+    @Test
+    @DisplayName("an overnight predecessor's gap one minute short of the minimum is penalised by exactly one")
+    void overnightPredecessor_gapOneMinuteShortOfMinimum_penalisedByOne() {
+        Agent a = agent();
+        AgentShiftAssignment prev = shiftRow(a, D_MINUS_1, pair(LocalTime.of(22, 0), LocalTime.of(6, 0)));
+        AgentShiftAssignment next = shiftRow(a, D, pair(LocalTime.of(7, 0), LocalTime.of(15, 0)));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestShift)
+                .given(prev, next, scheduleConfig(SchedulingMode.SHIFT, 61))
+                .penalizesBy(1);
     }
 
     @Test
