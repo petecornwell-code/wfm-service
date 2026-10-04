@@ -15,13 +15,20 @@ const minutesToHoursDisplay = (minutes: number): string => {
   return hours.toFixed(2).replace(/0+$/, '')
 }
 
-// Edited hours string -> minutes, or null to clear. Exact multiplication, no rounding mode: the
-// input's 0.25 step makes every legal entry a whole number of minutes, so there is no rounding
-// decision to make here.
-const hoursStringToMinutes = (value: string): number | null => {
+// Edited hours string -> minutes, null to clear, or undefined for a non-finite parse (REST-01/
+// REST-04). Exact multiplication, no rounding mode: the input's 0.25 step makes every legal entry
+// a whole number of minutes, so there is no rounding decision to make here.
+//
+// A non-finite parse (e.g. a non-numeric string, or "Infinity") must NEVER return null: null is
+// indistinguishable from the operator deliberately clearing the field, and null on
+// PUT /desks/{deskId}/minimum-rest means "clear the desk's minimum rest". Serialising a stray
+// keystroke's NaN as null via JSON.stringify would silently remove a configured compliance
+// setting -- the undefined third outcome is what lets callers refuse to send instead.
+const hoursStringToMinutes = (value: string): number | null | undefined => {
   const trimmed = value.trim()
   if (trimmed === '') return null
-  return Number(trimmed) * 60
+  const minutes = Number(trimmed) * 60
+  return Number.isFinite(minutes) ? minutes : undefined
 }
 
 export default function DeskManagement() {
@@ -119,9 +126,19 @@ export default function DeskManagement() {
       // Null-safe comparison so the null-to-null and unset-to-unset cases both short-circuit.
       // Fires after the day-start PUT, per the UI-SPEC's ordering: a failed main save never
       // leaves a rest value applied against stale desk fields.
+      //
+      // The undefined (non-finite parse) check is ordered BEFORE the change comparison
+      // deliberately (IN-01): NaN is unequal to everything including itself, so
+      // `editedMinimumRestMinutes !== originalMinimumRestMinutes` is guaranteed -- not merely
+      // likely -- to be true for a non-finite parse, which would otherwise fire the clearing PUT
+      // with certainty. Short-circuit evaluation of `&&` means the undefined check below is
+      // evaluated first and skips the whole block -- the desk's stored value is left untouched
+      // and the inline validation text already rendered beneath the input (see the "Min Rest"
+      // column's JSX) is what surfaces the problem, never a new message or toast variant.
       const editedMinimumRestMinutes = hoursStringToMinutes(editMinimumRestHours)
       const originalMinimumRestMinutes = original?.minimumRestMinutes ?? null
-      if (original && editedMinimumRestMinutes !== originalMinimumRestMinutes) {
+      if (original && editedMinimumRestMinutes !== undefined
+          && editedMinimumRestMinutes !== originalMinimumRestMinutes) {
         latest = await desks.setMinimumRest(editingId, editedMinimumRestMinutes)
         setDeskList(prev => prev.map(d => d.id === editingId ? latest : d))
       }
@@ -217,8 +234,14 @@ export default function DeskManagement() {
                       style={{ width: '90px' }}
                     />
                     {(() => {
-                      const parsed = editMinimumRestHours.trim() === '' ? null : Number(editMinimumRestHours)
-                      return parsed !== null && (parsed < 0 || parsed >= 24)
+                      // IN-01: reuses hoursStringToMinutes (the same parse handleUpdate acts on)
+                      // rather than a second, independent Number(...) derivation, so the two can
+                      // never disagree about what counts as invalid. A non-finite parse
+                      // (undefined) surfaces here too -- the same existing inline text, never a
+                      // new message -- so the operator sees why nothing was saved.
+                      const parsed = hoursStringToMinutes(editMinimumRestHours)
+                      if (parsed === undefined) return true
+                      return parsed !== null && (parsed < 0 || parsed >= 24 * 60)
                     })() && (
                       <div style={{ color: '#92400e', fontSize: '13px', fontWeight: 400, marginTop: '2px' }}>
                         Minimum rest must be less than 24 hours.
