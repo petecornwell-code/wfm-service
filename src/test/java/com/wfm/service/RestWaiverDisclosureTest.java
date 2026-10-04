@@ -3,6 +3,7 @@ package com.wfm.service;
 import ai.timefold.solver.core.api.solver.SolverFactory;
 import com.wfm.config.TenantContext;
 import com.wfm.controller.ScheduleController;
+import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleDetailResponse.RestWaiverDisclosure;
 import com.wfm.dto.ScheduleDetailResponse.RestWaiverEntry;
 import com.wfm.dto.ScheduleSummary;
@@ -35,12 +36,17 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.RecordComponent;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -574,6 +580,30 @@ class RestWaiverDisclosureTest {
         verify(mockedOutputService, never()).buildPreferenceReport(any());
         verify(mockedOutputService, never()).buildDriftReport(any());
         verify(mockedOutputService, never()).buildConstraintViolations(any(), anyBoolean());
+    }
+
+    // ------------------------------------------------------------------
+    //  Plan 22-11 (REST-07 gap closure, 22-VERIFICATION.md missing: items 2 and 3) -- gap (b):
+    //  ScheduleDetailResponse carried no configured-rest signal and no waiver counts, so
+    //  ScheduleResults.tsx's header badge and Rest Waivers tab fell back to hidden / "not
+    //  configured" for every finished solve and every reopened ACCEPTED schedule outside the
+    //  narrow RUNNING-poll window. The first test below is the runnable RED proof the
+    //  verification named as missing: it compiles and fails against HEAD because none of
+    //  minimumRestMinutes/appliedRestWaiverCount/unusedRestWaiverCount exist as declared fields.
+    // ------------------------------------------------------------------
+
+    @Test
+    void detailResponse_declaresEveryRestWaiverCountFieldTheSummaryHas_plusTheSnapshottedRestSignal() {
+        Set<String> detailFieldNames = Arrays.stream(ScheduleDetailResponse.class.getDeclaredFields())
+                .map(Field::getName)
+                .collect(Collectors.toSet());
+        Set<String> summaryCountComponents = Arrays.stream(ScheduleSummary.class.getRecordComponents())
+                .map(RecordComponent::getName)
+                .filter(name -> name.endsWith("RestWaiverCount"))
+                .collect(Collectors.toSet());
+
+        assertThat(detailFieldNames).containsAll(summaryCountComponents);
+        assertThat(detailFieldNames).contains("minimumRestMinutes");
     }
 
     // ------------------------------------------------------------------
