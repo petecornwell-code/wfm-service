@@ -222,6 +222,53 @@ class MinimumRestSlotConstraintTest {
                 .penalizesBy(0);
     }
 
+    // ------------------------------------------------------------------
+    //  Pre-horizon OVERNIGHT predecessor against real in-horizon seats (PF-02) -- the wrapping
+    //  side is a directly-constructed pre-horizon RestSpan (the genuine production route;
+    //  RestSpan.ofSlots cannot itself emit a wrapping span from grid-aligned slots, see PF-02),
+    //  paired with real compliantDaySeats on D. The predecessor wrapped past the MIDNIGHT anchor:
+    //  its true end offset is 1800 (1320 plus the 480-minute wrapped duration), the in-horizon
+    //  span starts 07:00 for 420 elapsed minutes, so the gap is 60. Before the fix, the
+    //  predecessor's end offset read as 360, producing a gap of 1500 -- above any configurable
+    //  minimum, so this fixture scored zero.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("an overnight pre-horizon predecessor measures the true 60-minute gap against real in-horizon seats, penalised by 600 -- before the fix this scored zero")
+    void overnightPreHorizonPredecessor_trueGapMeasuredCorrectly() {
+        Agent a = agent();
+        RestSpan prev = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        List<AgentAssignment> dSeats = compliantDaySeats(a, D, LocalTime.of(7, 0));
+        List<Object> facts = new ArrayList<>();
+        facts.add(prev);
+        facts.addAll(dSeats);
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 660, LocalTime.MIDNIGHT));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(600);
+    }
+
+    @Test
+    @DisplayName("the identical overnight pre-horizon fixture against a 60-minute minimum is the exact-equality boundary -- not penalised")
+    void overnightPreHorizonPredecessor_gapExactlyAtMinimum_notPenalised() {
+        Agent a = agent();
+        RestSpan prev = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(22, 0), LocalTime.of(6, 0),
+                LocalTime.MIDNIGHT);
+        List<AgentAssignment> dSeats = compliantDaySeats(a, D, LocalTime.of(7, 0));
+        List<Object> facts = new ArrayList<>();
+        facts.add(prev);
+        facts.addAll(dSeats);
+        facts.add(dayConfig(a, D, LocalTime.MIDNIGHT));
+        facts.add(scheduleConfig(SchedulingMode.SLOT, 60, LocalTime.MIDNIGHT));
+
+        verifier.verifyThat(ScheduleConstraintProvider::minimumRestSlot)
+                .given(facts.toArray())
+                .penalizesBy(0);
+    }
+
     /**
      * The load-bearing regression (D-02's trap): two consecutive agent-days, each genuinely
      * compliant under {@code exactlyOneBreak} with its own mandated one-hour break, produce ZERO
