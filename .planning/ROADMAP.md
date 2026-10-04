@@ -419,7 +419,7 @@ Plans:
 - [x] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
 
 **Gap closure — Wave 1**
-- [ ] 22-11-PLAN.md — Tracer: the detail response carries its own snapshotted-rest signal and both waiver counts; the badge and tab read them; WR-01 (REST-07)
+- [x] 22-11-PLAN.md — Tracer: the detail response carries its own snapshotted-rest signal and both waiver counts; the badge and tab read them; WR-01 (REST-07)
 
 **Gap closure — Wave 2** *(blocked on gap-closure Wave 1)*
 - [ ] 22-12-PLAN.md — The DB-fallback summary paths report the true counts under three cost gates; one `ScheduleSummary` construction site with a structural guard (WR-02); IN-01 (REST-07)

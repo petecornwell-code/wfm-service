@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Phase 22 gap-closure planned (22-11, 22-12)
-last_updated: "2026-10-04T13:01:39.001Z"
+stopped_at: Completed 22-11-PLAN.md
+last_updated: "2026-10-04T13:55:58.318Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 22 gap-closure plans created for the REST-07 gap
-state_head: c6ce430c107661793f29025742e197c1e291a2a0
+last_activity_desc: Phase 22 plan 11 executed (REST-07 gap b closed; WR-01 closed)
+state_head: e496fb28a08cb6ab8f8ec742d58aaa5ed8642b15
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 50
-  completed_plans: 48
+  completed_plans: 49
   percent: 80
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — READY TO EXECUTE (gap closure)
-Plan: 10 of 10 executed; 22-11 and 22-12 planned, not yet executed
-Status: Ready to execute — gap closure for the REST-07 verification gap
-Last activity: 2026-10-04 — Phase 22 gap-closure plans created
+Phase: 22 (Minimum Rest) — EXECUTING (gap closure)
+Plan: 11 of 12 executed; 22-12 remains
+Status: Executing — gap closure for the REST-07 verification gap (gap (b) closed by 22-11; gap (a), WR-02, IN-01 open, carried by 22-12)
+Last activity: 2026-10-04 — Phase 22 plan 11 executed (REST-07 gap (b) closed; WR-01 closed)
 
 ## Milestone v1.3 Outcome
 
@@ -368,6 +368,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: Followed 22-UI-SPEC.md's Section 3(b) normative six-column table over its UI Considerations row's "seven columns" reference (a documented self-contradiction in the approved contract) -- six columns combine each side's date and time, matching the DTO shape and the plan's planner_notes.
 - [Phase 22]: No separate snapshotted-minimum-rest field exists on ScheduleDetail/ScheduleSummary in either DTO contract; used presence of either optional waiver count as the single configured/unconfigured signal for both the header badge and the Rest Waivers tab.
 - [Phase 22]: [Rule 1 - Bug] Switched four optional-field guards from strict !== undefined to loose != null -- the backend serializes an absent Integer DTO field as JSON null, not an omitted key, so the strict check would have left the header badge visible with blank counts for a desk that never configured rest, the inverse of the UI contract's hide-when-unconfigured rule. Matches DeskManagement.tsx's existing == null convention for the identical situation.
+- [Phase 22]: [Phase 22] Plan 11: re-pointed the frontend configured-or-not gate at schedule.minimumRestMinutes itself (P-01) rather than adding only the two counts to the detail response -- restores the UI-SPEC's literal wording instead of leaving a count-presence proxy in place.
+- [Phase 22]: Plan 11 closed REST-07 gap (b) only (ScheduleDetailResponse's missing configured-rest signal) and WR-01; gap (a) (listSchedules/getScheduleSummary's DB-fallback false 0/0), WR-02 and IN-01 remain open, carried by 22-12-PLAN.md.
 
 ### Blockers/Concerns
 
@@ -391,8 +393,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T04:21:14.276Z
-Stopped at: Completed 22-10-PLAN.md
+Last session: 2026-10-04T13:55:58.271Z
+Stopped at: Completed 22-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -492,3 +494,4 @@ Resume file: None
 | Phase 22 P08 | 55min | 2 tasks | 9 files |
 | Phase 22 P09 | 14min | 2 tasks | 2 files |
 | Phase 22 P10 | 22min | 2 tasks | 1 files |
+| Phase 22 P11 | 33min | 2 tasks | 6 files |
