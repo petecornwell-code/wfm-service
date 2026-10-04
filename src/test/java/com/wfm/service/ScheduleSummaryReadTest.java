@@ -196,9 +196,15 @@ class ScheduleSummaryReadTest {
     }
 
     @Test
-    @DisplayName("the fast poll (ScheduleService) and the slow fetch's sibling construction site "
-            + "(ScheduleController.toSummary) cannot disagree about the anchor")
+    @DisplayName("the fast poll (ScheduleService.getScheduleSummary) and the controller path "
+            + "(which now delegates to ScheduleService.toSummary, the single construction site) "
+            + "cannot disagree about the anchor")
     void bothConstructionSitesAgreeOnTheAnchor() {
+        // REST-07/WR-02: ScheduleController.toSummary is deleted -- there is now exactly one
+        // ScheduleSummary construction site (ScheduleService), enforced by
+        // ScheduleSummaryConstructionSiteGuardTest rather than by this parity test alone. Kept as
+        // an endpoint-level regression that the controller path still returns the same anchor the
+        // direct service call does.
         UUID id = UUID.randomUUID();
         Schedule s = schedule(id, ScheduleStatus.RUNNING, 0, 0);
         s.setDayStart(LocalTime.of(21, 0));
@@ -209,8 +215,7 @@ class ScheduleSummaryReadTest {
         SolverService solverService = mock(SolverService.class);
         when(solverService.stopSolve(DESK, id)).thenReturn(s);
         ScheduleController controller = new ScheduleController(service, solverService,
-                mock(ScheduleExportService.class), deskRepository, mock(AgentDayOffService.class),
-                outputService);
+                mock(ScheduleExportService.class), mock(AgentDayOffService.class));
 
         var fromController = controller.stopSolve(DESK, id).getBody();
 

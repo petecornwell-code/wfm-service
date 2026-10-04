@@ -704,6 +704,31 @@ public class ScheduleService {
         return toSummary(schedule, deskName);
     }
 
+    /**
+     * REST-07/WR-02: the single public entry point for turning a {@link Schedule} into a
+     * {@link ScheduleSummary} — resolves the desk name itself (identically to the deleted
+     * {@code ScheduleController.toSummary}'s own lookup) and delegates to the private two-argument
+     * form, which stays the ONLY expression in this file that constructs a {@code ScheduleSummary}.
+     * {@code ScheduleSummaryConstructionSiteGuardTest} fails the build if a second construction
+     * site appears anywhere in {@code src/main/java}.
+     *
+     * <p>This replaces a parity test with a structural guard for the same reason D-08 already made
+     * that trade once in this phase for the waived-pair predicate: a parity test only catches a
+     * divergence someone remembered to write a fixture for, and the rest-waiver counts this method
+     * derives are exactly the kind of field two independently-maintained copies drift on without
+     * either copy's own tests ever noticing.
+     *
+     * <p>{@code listSchedules} deliberately does NOT call this one-argument form per row — it keeps
+     * calling the private two-argument form directly with the one desk name it already resolved
+     * for the whole page, so this single-entry-point guarantee never costs a page an extra desk
+     * lookup per schedule.
+     */
+    public ScheduleSummary toSummary(Schedule s) {
+        String deskName = deskRepository.findByIdAndTenantId(s.getDeskId(), TenantContext.getTenantId())
+                .map(Desk::getName).orElse(null);
+        return toSummary(s, deskName);
+    }
+
     private ScheduleSummary toSummary(Schedule s, String deskName) {
         ScheduleSummary.ScoreDto scoreDto = null;
         Boolean feasible = null;

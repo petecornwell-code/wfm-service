@@ -1,6 +1,5 @@
 package com.wfm.controller;
 
-import com.wfm.config.TenantContext;
 import com.wfm.dto.PaginatedResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,13 +8,9 @@ import com.wfm.dto.AgentDayOffResponse;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.SolveRequest;
-import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
-import com.wfm.model.ScheduleStatus;
-import com.wfm.repository.DeskRepository;
 import com.wfm.service.AgentDayOffService;
 import com.wfm.service.ScheduleExportService;
-import com.wfm.service.ScheduleOutputService;
 import com.wfm.service.ScheduleService;
 import com.wfm.service.SolverService;
 import org.springframework.http.HttpHeaders;
@@ -36,29 +31,23 @@ public class ScheduleController {
     private final ScheduleService scheduleService;
     private final SolverService solverService;
     private final ScheduleExportService scheduleExportService;
-    private final DeskRepository deskRepository;
     private final AgentDayOffService agentDayOffService;
-    private final ScheduleOutputService scheduleOutputService;
 
     public ScheduleController(ScheduleService scheduleService,
                               SolverService solverService,
                               ScheduleExportService scheduleExportService,
-                              DeskRepository deskRepository,
-                              AgentDayOffService agentDayOffService,
-                              ScheduleOutputService scheduleOutputService) {
+                              AgentDayOffService agentDayOffService) {
         this.scheduleService = scheduleService;
         this.solverService = solverService;
         this.scheduleExportService = scheduleExportService;
-        this.deskRepository = deskRepository;
         this.agentDayOffService = agentDayOffService;
-        this.scheduleOutputService = scheduleOutputService;
     }
 
     @PostMapping("/solve")
     public ResponseEntity<ScheduleSummary> startSolve(@PathVariable UUID deskId,
                                                        @RequestBody SolveRequest solveRequest) {
         Schedule schedule = solverService.startSolve(deskId, solveRequest);
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(toSummary(schedule));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(scheduleService.toSummary(schedule));
     }
 
     @GetMapping
@@ -90,7 +79,7 @@ public class ScheduleController {
     @PutMapping("/{id}/stop")
     public ResponseEntity<ScheduleSummary> stopSolve(@PathVariable UUID deskId, @PathVariable UUID id) {
         Schedule schedule = solverService.stopSolve(deskId, id);
-        return ResponseEntity.ok(toSummary(schedule));
+        return ResponseEntity.ok(scheduleService.toSummary(schedule));
     }
 
     @PutMapping("/{id}/accept")
@@ -98,7 +87,7 @@ public class ScheduleController {
                                                            @PathVariable UUID id,
                                                            @RequestParam int version) {
         Schedule schedule = scheduleService.acceptSchedule(deskId, id, version);
-        return ResponseEntity.ok(toSummary(schedule));
+        return ResponseEntity.ok(scheduleService.toSummary(schedule));
     }
 
     @PutMapping("/{id}/reject")
@@ -137,32 +126,5 @@ public class ScheduleController {
                 .contentType(MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
-    }
-
-    private ScheduleSummary toSummary(Schedule s) {
-        ScheduleSummary.ScoreDto scoreDto = null;
-        Boolean feasible = null;
-        if (s.getScore() != null) {
-            scoreDto = new ScheduleSummary.ScoreDto(s.getScore().hardScore(), s.getScore().softScore());
-            feasible = s.getScore().hardScore() >= 0;
-        }
-        String deskName = deskRepository.findByIdAndTenantId(s.getDeskId(), TenantContext.getTenantId())
-                .map(Desk::getName).orElse(null);
-        // REST-07/D-13: the sibling construction site to ScheduleService.toSummary -- same
-        // buildRestWaiverDisclosure computation, same null-when-unconfigured rule, so the two
-        // construction sites can never disagree about these counts for the same schedule.
-        Integer appliedRestWaiverCount = null;
-        Integer unusedRestWaiverCount = null;
-        if (s.getMinimumRestMinutes() != null) {
-            var disclosure = scheduleOutputService.buildRestWaiverDisclosure(s, s.getStatus() == ScheduleStatus.ACCEPTED);
-            appliedRestWaiverCount = disclosure.applied().size();
-            unusedRestWaiverCount = disclosure.unused().size();
-        }
-        return new ScheduleSummary(
-                s.getId(), s.getDeskId(), deskName, s.getStatus().name(),
-                s.getPeriodStartDate(), s.getPeriodEndDate(),
-                s.getStartTime(), s.getEndTime(), s.getIncrementMinutes(), s.getDayStart(),
-                appliedRestWaiverCount, unusedRestWaiverCount,
-                scoreDto, feasible, s.getFeasibleAt(), s.getCreatedAt(), s.getVersion());
     }
 }

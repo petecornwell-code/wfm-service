@@ -498,7 +498,12 @@ class RestWaiverDisclosureTest {
     }
 
     @Test
-    void summaryCounts_bothConstructionSitesAgree() {
+    void summaryCounts_controllerDelegatesToTheSingleServiceConstructionSite() {
+        // REST-07/WR-02: this test previously proved two independent construction sites agreed.
+        // ScheduleController.toSummary is now deleted -- ScheduleSummaryConstructionSiteGuardTest
+        // is what enforces that there is exactly one construction site in src/main/java. This test
+        // remains useful as an endpoint-level regression that the controller path, which now
+        // delegates to ScheduleService.toSummary, still returns the correct counts.
         Agent ana = agent("Ana");
         Agent ben = agent("Ben");
         Schedule schedule = inMemorySummarySchedule(List.of(
@@ -518,8 +523,7 @@ class RestWaiverDisclosureTest {
         SolverService solverServiceMock = mock(SolverService.class);
         when(solverServiceMock.stopSolve(DESK_ID, schedule.getId())).thenReturn(schedule);
         ScheduleController controller = new ScheduleController(scheduleService, solverServiceMock,
-                mock(ScheduleExportService.class), mock(DeskRepository.class),
-                mock(AgentDayOffService.class), service);
+                mock(ScheduleExportService.class), mock(AgentDayOffService.class));
 
         ScheduleSummary fromController = controller.stopSolve(DESK_ID, schedule.getId()).getBody();
 
