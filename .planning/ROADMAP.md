@@ -388,9 +388,9 @@ Plans:
 - [x] 22-01-PLAN.md — Tracer: a SHIFT desk's minimum rest is a hard violation end to end, plus the operator PUT endpoint (REST-01, REST-02, REST-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 22-02-PLAN.md — SLOT-mode rest enforcement over the whole assigned span, with the compliant-break-gap regression proof (REST-02, REST-04)
-- [ ] 22-03-PLAN.md — The `agent_rest_waiver` table, its service and its three endpoints beside the Agent Exceptions endpoints (REST-06)
-- [ ] 22-04-PLAN.md — The Min Rest (hrs) column on the desk configuration table, plus its client contract (REST-01, REST-04)
+- [x] 22-02-PLAN.md — SLOT-mode rest enforcement over the whole assigned span, with the compliant-break-gap regression proof (REST-02, REST-04)
+- [x] 22-03-PLAN.md — The `agent_rest_waiver` table, its service and its three endpoints beside the Agent Exceptions endpoints (REST-06)
+- [x] 22-04-PLAN.md — The Min Rest (hrs) column on the desk configuration table, plus its client contract (REST-01, REST-04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 22-05-PLAN.md — The single waived-pair predicate, its structural guard, and both constraints honouring it (REST-02, REST-06)
