@@ -491,6 +491,15 @@ public class SolverService {
                 timeslots, assignments, schedule.getOverallocationHardLimitPct(), schedule.getWarnings(),
                 weights, window);
 
+        // Phase 22 (REST-03, D-12): the rest-feasibility pre-solve refusal. Placed immediately
+        // after the seat-supply gate above so it reasons about the same NARROWED eligible
+        // shift-band-pair value ranges that gate just validated (after any
+        // ShiftStartMixMode.ENFORCE narrowing at 10d-bis) -- see requireRestFeasibility's own
+        // javadoc for why this placement, not step 7's runPreSolveValidation, is load-bearing.
+        requireRestFeasibility(desk.getSchedulingMode(), schedule.getMinimumRestMinutes(),
+                shiftAssignments, agentDayConfigs, priorRestSpans, restWaivers, assignments,
+                schedule.getScheduleConfig(), schedule.getWarnings(), window);
+
         log.debug("Solver input — schedule={}, agents={}, timeslots={}, staffingRequirements={}, assignments={}, agentDayConfigs={}, preferences={}",
                 schedule.getId(), detachedAgents.size(), timeslots.size(),
                 staffingRequirements.size(), assignments.size(), agentDayConfigs.size(),
@@ -1735,6 +1744,279 @@ public class SolverService {
                     });
         }
     }
+
+    /**
+     * (Phase 22, REST-03/REST-04, D-12) The rest-feasibility pre-solve refusal — the mechanism
+     * REST-03 requires to be genuinely SEPARATE from the in-solve hard constraints ({@code
+     * ScheduleConstraintProvider.minimumRestShift}/{@code minimumRestSlot}), never a hoped-for side
+     * effect of them. Built on {@link #requireShiftEnvelopeSeatSupply}'s proven shape: a structural
+     * early return, per-agent/per-date analysis, an accumulated {@link ErrorDetail} list naming
+     * entities, one {@link PreSolveValidationException} carrying all of them, and a separate
+     * non-blocking warnings channel alongside — the same list {@link #requireShiftEnvelopeSeatSupply}
+     * already writes into, not a second channel.
+     *
+     * <p><strong>Why this cannot live inside {@link #runPreSolveValidation}</strong> — the identical
+     * reason {@link #requireShiftEnvelopeSeatSupply}'s own javadoc gives for itself: this check
+     * needs the shift rows, their narrowed eligible value ranges ({@link
+     * AgentShiftAssignment#getEligibleShiftBandPairs()}), the waiver facts and the pre-horizon
+     * spans — none of which exist at {@code runPreSolveValidation}'s step 7. The shift rows and
+     * their eligible pairs are not built until step 9c, and {@code ShiftStartMixMode.ENFORCE}'s
+     * value-range narrowing (when active) does not happen until step 10d-bis — both well after
+     * step 7. Moving this check back there would validate ranges the solver will never actually
+     * receive, silently defeating it exactly as {@link #requireShiftEnvelopeSeatSupply}'s own
+     * javadoc warns against for itself.
+     *
+     * <p><strong>The predicate is harder than the seat-supply precedent, and that difference is the
+     * whole plan.</strong> The seat-supply gate asks a per-date EXISTENCE question (does the
+     * library reach this date at all, does this row have any eligible pair at all). This asks a
+     * cross-date PRODUCT question: does EVERY combination of (eligible pair on business date D-1,
+     * eligible pair on D) violate the configured minimum? A single satisfying combination means the
+     * agent-day is feasible and the in-solve hard constraint is the right instrument to leave it to
+     * — refusing on "any combination violates" instead would refuse almost every tight desk, which
+     * is the tempting wrong predicate this method's SHIFT branch deliberately does not implement.
+     *
+     * <p><strong>The pre-horizon predecessor (D-12, REST-05).</strong> When business date D is the
+     * period's first business date and the agent has no in-horizon row on D-1, the predecessor
+     * candidate set is the single ACCEPTED pre-horizon {@link RestSpan} {@code
+     * RestPredecessorService} already resolved for that agent — one fixed instant, not a product of
+     * candidates, since that day already happened and cannot be chosen differently.
+     *
+     * <p><strong>Accepted consequence, taken deliberately, in 22-CONTEXT.md D-12's own terms:
+     * accepting one period can newly refuse the next period's solve.</strong> The argument for
+     * paying that cost is {@link #requireShiftEnvelopeSeatSupply}'s own comment about its
+     * weekday-invalid case — refusing "is what converts that silent, near-feasible wrong answer
+     * into an up-front, actionable refusal". Without this edge, the case most likely to be
+     * structurally impossible — a night shift rolling into a new period — is exactly the one case
+     * that would otherwise surface only as residual hard score, indistinguishable from ordinary
+     * difficulty on a desk that does not reliably solve to hard 0 anyway. A genuinely impossible
+     * agent-day also burns the entire solve, and solver state here is heap-only.
+     * <strong>Considered and declined:</strong> (1) in-horizon pairs only, which keeps the refusal
+     * independent of prior-period accept state (the genuine attraction of that alternative) but
+     * leaves the single most likely impossible case unreachable; (2) treating the pre-horizon edge
+     * as a non-blocking advisory only, declined for the same heap-only-solver-state reason above.
+     *
+     * <p><strong>The waived-pair exclusion runs before accumulation, through the one shared
+     * predicate (REST-03, D-08).</strong> {@link RestWaiverLookup#isWaived}, via this method's own
+     * {@link #isAgentDayWaived} wrapper — never a local iteration — so this refusal can never
+     * disagree with the two in-solve constraints about what "waived" means. {@code
+     * RestWaiverPredicateGuardTest} enforces that {@link RestWaiverLookup#isWaived} has exactly one
+     * call site in this file.
+     *
+     * <p><strong>SLOT mode (REST-04)</strong> has no discrete per-agent-day value range to take a
+     * product over — the solver places individual slots, not a chosen shift — so a different,
+     * sound sufficient condition is computed there instead; see that branch's own inline
+     * commentary for why ignoring intra-day breaks keeps that condition unable to produce a false
+     * refusal.
+     *
+     * @param schedulingMode the desk's scheduling mode — gates which branch below runs.
+     * @param minimumRestMinutes the desk's configured minimum, or {@code null} when unset (REST-04):
+     *         a {@code null} is a structural early return before any grouping, query or product —
+     *         not merely a cheap check whose result is discarded.
+     * @param shiftAssignments this period's SHIFT-mode rows (empty in SLOT mode).
+     * @param agentDayConfigs every working agent-day's contracted-hours configuration, consumed
+     *         only by the SLOT branch, for {@link AgentDayConfig#expectedWorkSlots()}.
+     * @param priorRestSpans the agent's real pre-horizon predecessor span(s), already resolved by
+     *         {@code RestPredecessorService} from ACCEPTED history only — at most one per agent.
+     * @param restWaivers this desk's waivers for the period, checked through the one shared
+     *         predicate before either branch accumulates anything for an agent-day.
+     * @param assignments this solve's seats — present for signature parity with {@link
+     *         #requireShiftEnvelopeSeatSupply}'s seat-counting precedent; unused by this method's
+     *         own logic, which reasons entirely from {@code agentDayConfigs}'s own required-slot
+     *         computation rather than from actual seat counts.
+     * @param config the desk's operating window ({@link ScheduleConfig#startTime()}/{@link
+     *         ScheduleConfig#endTime()}), consumed only by the SLOT branch.
+     * @param warnings the schedule's shared warnings collection.
+     * @param window the one {@link DayWindow} bound to this desk's real anchor (BDAY-04), threaded
+     *         through rather than re-derived.
+     */
+    static void requireRestFeasibility(
+            SchedulingMode schedulingMode,
+            Integer minimumRestMinutes,
+            List<AgentShiftAssignment> shiftAssignments,
+            List<AgentDayConfig> agentDayConfigs,
+            List<RestSpan> priorRestSpans,
+            List<AgentRestWaiver> restWaivers,
+            List<AgentAssignment> assignments,
+            ScheduleConfig config,
+            List<String> warnings,
+            DayWindow window) {
+
+        if (minimumRestMinutes == null) {
+            return;
+        }
+
+        List<ErrorDetail> errors = new ArrayList<>();
+        Map<UUID, RestSpan> priorSpanByAgent = indexPriorSpansByAgent(priorRestSpans);
+
+        // Per successor business date, the smallest best-achievable gap among agent-days that are
+        // NOT refused -- a non-blocking advisory (written below only if nothing was refused) so an
+        // operator sees which agent-day is closest to becoming impossible before it actually is.
+        Map<LocalDate, TightestAgentDay> tightestByDate = new LinkedHashMap<>();
+
+        if (schedulingMode == SchedulingMode.SHIFT
+                && shiftAssignments != null && !shiftAssignments.isEmpty()) {
+            // One row per (agent, date) in SHIFT mode (D-04) -- indexed the same way so the D-1
+            // lookup below is a map get, not a scan.
+            Map<UUID, Map<LocalDate, AgentShiftAssignment>> rowsByAgentThenDate = new LinkedHashMap<>();
+            for (AgentShiftAssignment row : shiftAssignments) {
+                rowsByAgentThenDate
+                        .computeIfAbsent(row.getAgent().getId(), k -> new LinkedHashMap<>())
+                        .put(row.getDate(), row);
+            }
+
+            for (Map.Entry<UUID, Map<LocalDate, AgentShiftAssignment>> agentEntry : rowsByAgentThenDate.entrySet()) {
+                UUID agentId = agentEntry.getKey();
+                Map<LocalDate, AgentShiftAssignment> rowsByDate = agentEntry.getValue();
+
+                for (Map.Entry<LocalDate, AgentShiftAssignment> dateEntry : rowsByDate.entrySet()) {
+                    LocalDate d = dateEntry.getKey();
+                    AgentShiftAssignment successorRow = dateEntry.getValue();
+
+                    // Hoisted ahead of the product (T-22-18): a waived agent-day costs nothing.
+                    if (isAgentDayWaived(restWaivers, agentId, d)) {
+                        continue;
+                    }
+
+                    LocalDate dMinus1 = d.minusDays(1);
+                    AgentShiftAssignment predecessorRow = rowsByDate.get(dMinus1);
+                    List<RestSpan> predecessorCandidates = predecessorRow != null
+                            ? shiftCandidateSpans(predecessorRow)
+                            // Pre-horizon edge (D-12/REST-05): the single ACCEPTED instant, not a
+                            // product of candidates -- that day already happened.
+                            : priorSpanCandidates(priorSpanByAgent.get(agentId));
+                    if (predecessorCandidates.isEmpty()) {
+                        // Neither an in-horizon D-1 row nor a pre-horizon span exists -- nothing to
+                        // be impossible against.
+                        continue;
+                    }
+
+                    List<RestSpan> successorCandidates = shiftCandidateSpans(successorRow);
+                    if (successorCandidates.isEmpty()) {
+                        // An empty eligible range is requireShiftEnvelopeSeatSupply's own refusal
+                        // (named date, hours mismatch or weekday-invalid library) -- claiming it
+                        // here would name the wrong cause.
+                        continue;
+                    }
+
+                    // The universal claim ("every combination violates") is exactly "the BEST
+                    // achievable combination still violates" -- a single pass tracking the maximum
+                    // gap proves both the claim and, when it fails, the pair that comes closest to
+                    // satisfying it, with no second pass and no early-exit bookkeeping.
+                    int bestGap = Integer.MIN_VALUE;
+                    RestSpan bestPredecessor = null;
+                    RestSpan bestSuccessor = null;
+                    for (RestSpan predecessor : predecessorCandidates) {
+                        for (RestSpan successor : successorCandidates) {
+                            int gap = RestSpan.gapMinutes(predecessor, successor);
+                            if (gap > bestGap) {
+                                bestGap = gap;
+                                bestPredecessor = predecessor;
+                                bestSuccessor = successor;
+                            }
+                        }
+                    }
+
+                    if (bestGap < minimumRestMinutes) {
+                        errors.add(new ErrorDetail("restFeasibility",
+                                "Agent " + successorRow.getAgent().getName() + " cannot achieve the "
+                                        + "required " + minimumRestMinutes + "-minute rest between "
+                                        + dMinus1 + " and " + d + " under any eligible shift "
+                                        + "combination on these two dates — even the best available "
+                                        + "pairing (the " + dMinus1 + " shift ending "
+                                        + bestPredecessor.endTime() + ", the " + d + " shift starting "
+                                        + bestSuccessor.startTime() + ") achieves only " + bestGap
+                                        + " minute(s) of rest against a required " + minimumRestMinutes
+                                        + " minute(s). This agent-day is structurally impossible, not "
+                                        + "merely a hard-score matter for the solver to avoid.",
+                                agentId.toString()));
+                    } else {
+                        TightestAgentDay current = tightestByDate.get(d);
+                        if (current == null || bestGap < current.bestGapMinutes()) {
+                            tightestByDate.put(d, new TightestAgentDay(agentId, bestGap));
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new PreSolveValidationException(
+                    "Minimum rest feasibility check failed with " + errors.size() + " issue(s)", errors);
+        }
+
+        for (Map.Entry<LocalDate, TightestAgentDay> entry : tightestByDate.entrySet()) {
+            TightestAgentDay tightest = entry.getValue();
+            warnings.add("Minimum rest on " + entry.getKey() + " is tightest for agent "
+                    + tightest.agentId() + " at " + tightest.bestGapMinutes()
+                    + " minute(s) of best achievable rest.");
+        }
+    }
+
+    /**
+     * One candidate {@link RestSpan} per entry in {@code row}'s own eligible pairs ({@link
+     * AgentShiftAssignment#getEligibleShiftBandPairs()}) — built directly from each candidate
+     * {@link ShiftBandPair}'s template instants, exactly what {@link RestSpan#ofShift} would
+     * compute if {@code row}'s solved {@code shiftBandPair} happened to equal that candidate. This
+     * is deliberately NOT {@link RestSpan#ofShift}, which reads {@code row.getShiftBandPair()} —
+     * the solver has not chosen one yet at this pre-solve point, and {@link #requireRestFeasibility}
+     * needs every candidate the solver COULD choose, not the one it eventually will. An empty or
+     * null eligible range, or a missing {@code dayConfig}, returns an empty list rather than
+     * throwing — requireShiftEnvelopeSeatSupply's own refusal names that case, not this one.
+     */
+    private static List<RestSpan> shiftCandidateSpans(AgentShiftAssignment row) {
+        AgentDayConfig dayConfig = row.getDayConfig();
+        if (dayConfig == null) {
+            return List.of();
+        }
+        List<ShiftBandPair> eligible = row.getEligibleShiftBandPairs();
+        if (eligible == null || eligible.isEmpty()) {
+            return List.of();
+        }
+        List<RestSpan> spans = new ArrayList<>(eligible.size());
+        for (ShiftBandPair pair : eligible) {
+            spans.add(new RestSpan(row.getAgent().getId(), row.getDate(),
+                    pair.template().getStartTime(), pair.template().getEndTime(), dayConfig.dayStart()));
+        }
+        return spans;
+    }
+
+    /** A pre-horizon predecessor is one fixed, already-happened instant, not a product of
+     *  candidates — this wraps it as a singleton list so the SHIFT branch's product loop above
+     *  treats it identically to an in-horizon candidate list, with no special-cased branch there. */
+    private static List<RestSpan> priorSpanCandidates(RestSpan prior) {
+        return prior == null ? List.of() : List.of(prior);
+    }
+
+    /** Indexes {@code priorRestSpans} by agent id — {@code RestPredecessorService} resolves at
+     *  most one business date back per agent, so one entry per agent is all this ever holds. */
+    private static Map<UUID, RestSpan> indexPriorSpansByAgent(List<RestSpan> priorRestSpans) {
+        if (priorRestSpans == null || priorRestSpans.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, RestSpan> byAgent = new LinkedHashMap<>();
+        for (RestSpan span : priorRestSpans) {
+            byAgent.put(span.agentId(), span);
+        }
+        return byAgent;
+    }
+
+    /**
+     * The single call site in this file for {@link RestWaiverLookup#isWaived} (D-08) — both the
+     * SHIFT and SLOT branches of {@link #requireRestFeasibility} call this wrapper rather than
+     * {@code RestWaiverLookup.isWaived} directly, so the predicate-guard registry
+     * ({@code rest-waiver-predicate-guard.md}) sees exactly one call site for this class even
+     * though two branches need the check. Delegates with no comparison of its own.
+     */
+    private static boolean isAgentDayWaived(List<AgentRestWaiver> restWaivers, UUID agentId,
+            LocalDate businessDateEntered) {
+        return RestWaiverLookup.isWaived(restWaivers, agentId, businessDateEntered);
+    }
+
+    /** One successor business date's tightest-but-still-feasible agent-day (REST-03's advisory
+     *  channel) — the agent whose best achievable combination has the smallest margin above the
+     *  configured minimum, so an operator sees which agent-day is closest to becoming impossible
+     *  before it actually is. */
+    private record TightestAgentDay(UUID agentId, int bestGapMinutes) {}
 
     /**
      * Which of {@code date}'s timeslots the live shift library actually reaches ON THAT DATE.

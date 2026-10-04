@@ -27,7 +27,7 @@ silent.
 |---|---|---|---|
 | `minimumRestShift`'s waiver exclusion | `com.wfm.solver.ScheduleConstraintProvider` | Excludes a pair via `ifNotExists(AgentRestWaiver.class, Joiners.filtering(...))` calling `RestWaiverLookup.waives(waiver, next.agentId(), next.businessDate())` — the successor side, per D-06 — placed after the gap filter and before the penalty | `MinimumRestShiftConstraintTest` |
 | `minimumRestSlot`'s waiver exclusion | `com.wfm.solver.ScheduleConstraintProvider` | Identical shape to the row above, for the SLOT-mode sibling constraint | `MinimumRestSlotConstraintTest` |
-| REST-03's pre-solve refusal (plan 22-07) — **expected, not yet landed** | — | Calls `RestWaiverLookup.isWaived(waivers, agentId, businessDateEntered)` rather than iterating and comparing for itself. This row is intentionally present before the call site exists: plan 22-07 adding the call site without updating this registry's allowlists below is the deliberate coupling this guard enforces — it will turn red until the allowlist entry is added alongside the real call site | *(plan 22-07)* |
+| `requireRestFeasibility`'s waiver exclusion | `com.wfm.service.SolverService` | Calls `RestWaiverLookup.isWaived(waivers, agentId, businessDateEntered)` through this file's own `isAgentDayWaived` wrapper — never a local iteration — the same shared predicate the two constraints above use, hoisted so one call site serves both the SHIFT and SLOT branches | `RestFeasibilityRefusalTest` |
 
 ## Guard Allowlists
 
@@ -61,6 +61,7 @@ call SITES, not the implementation.
 
 ```
 com.wfm.solver.ScheduleConstraintProvider
+com.wfm.service.SolverService
 ```
 
 ## Known scope boundaries — deliberate, not gaps
