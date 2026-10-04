@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-11-PLAN.md
-last_updated: "2026-10-04T13:55:58.318Z"
+stopped_at: Completed 22-12-PLAN.md
+last_updated: "2026-10-04T14:43:15.987Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 22 plan 11 executed (REST-07 gap b closed; WR-01 closed)
-state_head: e496fb28a08cb6ab8f8ec742d58aaa5ed8642b15
+last_activity_desc: Phase 22 plan 12 executed (REST-07 gap a closed; WR-02 and IN-01 closed)
+state_head: 7ba53ecb3bcf4db837788a6693d2f3e80c3081cb
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 50
-  completed_plans: 49
+  completed_plans: 50
   percent: 80
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — EXECUTING (gap closure)
-Plan: 11 of 12 executed; 22-12 remains
-Status: Executing — gap closure for the REST-07 verification gap (gap (b) closed by 22-11; gap (a), WR-02, IN-01 open, carried by 22-12)
-Last activity: 2026-10-04 — Phase 22 plan 11 executed (REST-07 gap (b) closed; WR-01 closed)
+Phase: 22 (Minimum Rest) — gap closure plans complete (12 of 12 plans executed)
+Plan: 12 of 12 executed — all plans in Phase 22 now have a SUMMARY.md
+Status: Gap closure complete — gap (a) closed by 22-12, gap (b) closed by 22-11; WR-01 (22-11), WR-02 and IN-01 (22-12) all closed. Phase 22 ready for re-verification via /gsd-verify-work.
+Last activity: 2026-10-04 — Phase 22 plan 12 executed (REST-07 gap (a) closed; WR-02 and IN-01 closed)
 
 ## Milestone v1.3 Outcome
 
@@ -370,6 +370,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: [Rule 1 - Bug] Switched four optional-field guards from strict !== undefined to loose != null -- the backend serializes an absent Integer DTO field as JSON null, not an omitted key, so the strict check would have left the header badge visible with blank counts for a desk that never configured rest, the inverse of the UI contract's hide-when-unconfigured rule. Matches DeskManagement.tsx's existing == null convention for the identical situation.
 - [Phase 22]: [Phase 22] Plan 11: re-pointed the frontend configured-or-not gate at schedule.minimumRestMinutes itself (P-01) rather than adding only the two counts to the detail response -- restores the UI-SPEC's literal wording instead of leaving a count-presence proxy in place.
 - [Phase 22]: Plan 11 closed REST-07 gap (b) only (ScheduleDetailResponse's missing configured-rest signal) and WR-01; gap (a) (listSchedules/getScheduleSummary's DB-fallback false 0/0), WR-02 and IN-01 remain open, carried by 22-12-PLAN.md.
+- [Phase 22]: Plan 22-12: hydrate on read, never persist waiver counts at accept time (P-02) -- persisting would reintroduce the exact silent-disagreement class D-08 exists to prevent (a frozen count above a live-recomputed detail list), and is rated one-way (Flyway migration against dev) vs. the chosen reversible route.
+- [Phase 22]: Plan 22-12: WR-02's fix is collapse-plus-structural-guard (D-08 applied a second time) -- ScheduleController.toSummary deleted, ScheduleService.toSummary(Schedule) is the sole public entry point, and ScheduleSummaryConstructionSiteGuardTest (not a wider parity test) now prevents a second construction site from reappearing.
+- [Phase 22]: Plan 22-12: IN-01's non-finite minimum-rest parse (DeskManagement.tsx hoursStringToMinutes) returns undefined, never null -- null already means operator-deliberately-cleared on this wire contract, so collapsing a parse failure into it would make a bug indistinguishable from a deliberate action; handleUpdate checks undefined before the change comparison since NaN's self-inequality would otherwise fire the clearing PUT with certainty.
 
 ### Blockers/Concerns
 
@@ -393,8 +396,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T13:55:58.271Z
-Stopped at: Completed 22-11-PLAN.md
+Last session: 2026-10-04T14:43:15.930Z
+Stopped at: Completed 22-12-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -495,3 +498,4 @@ Resume file: None
 | Phase 22 P09 | 14min | 2 tasks | 2 files |
 | Phase 22 P10 | 22min | 2 tasks | 1 files |
 | Phase 22 P11 | 33min | 2 tasks | 6 files |
+| Phase 22 P12 | 44min | 3 tasks | 8 files |
