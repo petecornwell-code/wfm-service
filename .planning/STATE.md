@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-04-PLAN.md
-last_updated: "2026-10-04T01:10:55.426Z"
+stopped_at: Completed 22-05-PLAN.md
+last_updated: "2026-10-04T01:52:01.012Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: 796325d9f246d21e3e3f5c12dd862008ab3d331c
+state_head: b46af7dbc992507f0a402b7101969a2ea57613ce
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 42
+  completed_plans: 43
   percent: 80
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
 Last activity: 2026-10-03 — Phase 22 execution started
 
@@ -354,6 +354,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: Followed 22-01's established per-task single-commit precedent for tdd=true tasks in this phase (no workflow.tdd_mode gate configured)
 - [Phase 22]: 22-03: AgentRestWaiver/Repository/Service copy AgentException's shape verbatim minus the hours field and its two checks; no migration, no change to agent_exception
 - [Phase 22]: minutesToHoursDisplay trims trailing zeros from toFixed(2) rather than forcing one decimal, so quarter-hour values (10.25, 10.75) render exactly with no rounding while still matching the plan's 660->11/630->10.5 examples
+- [Phase 22]: D-06's direction pinned behaviourally (predecessor-date waiver does not clear; one waiver clears exactly one of two consecutive pairs), not just by comment
+- [Phase 22]: Second-implementation guard matcher is deliberately narrow (getAgent()+getDate()+comparison on one line) so the correct call-site shape never trips it; boundary documented in the registry
+- [Phase 22]: Registry's call-site table carries a row for plan 22-07's pre-solve refusal marked expected-but-not-yet-landed, so 22-07 adding that call site without updating the allowlist turns the guard red by design
 
 ### Blockers/Concerns
 
@@ -377,8 +380,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T01:10:55.384Z
-Stopped at: Completed 22-04-PLAN.md
+Last session: 2026-10-04T01:52:00.962Z
+Stopped at: Completed 22-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -472,3 +475,4 @@ Resume file: None
 | Phase 22 P02 | 48min | 2 tasks | 9 files |
 | Phase 22 P03 | 20min | 2 tasks | 6 files |
 | Phase 22 P04 | 7min | 2 tasks | 2 files |
+| Phase 22 P05 | 55min | 2 tasks | 8 files |
