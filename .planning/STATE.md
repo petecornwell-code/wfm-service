@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-03-PLAN.md
-last_updated: "2026-10-04T01:03:53.124Z"
+stopped_at: Completed 22-04-PLAN.md
+last_updated: "2026-10-04T01:10:55.426Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: ef6d2b21c6c2a25bf6e57ad6e5ef207527859e43
+state_head: 796325d9f246d21e3e3f5c12dd862008ab3d331c
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 41
+  completed_plans: 42
   percent: 80
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Last activity: 2026-10-03 — Phase 22 execution started
 
@@ -353,6 +353,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: Shared RestGapMatch record so both mode-gated rest constraints call RestSpan.gapMinutes exactly once per candidate pair (required to satisfy the plan's literal gapMinutes-occurrence acceptance criterion; zero behavior change)
 - [Phase 22]: Followed 22-01's established per-task single-commit precedent for tdd=true tasks in this phase (no workflow.tdd_mode gate configured)
 - [Phase 22]: 22-03: AgentRestWaiver/Repository/Service copy AgentException's shape verbatim minus the hours field and its two checks; no migration, no change to agent_exception
+- [Phase 22]: minutesToHoursDisplay trims trailing zeros from toFixed(2) rather than forcing one decimal, so quarter-hour values (10.25, 10.75) render exactly with no rounding while still matching the plan's 660->11/630->10.5 examples
 
 ### Blockers/Concerns
 
@@ -376,8 +377,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T01:03:53.082Z
-Stopped at: Completed 22-03-PLAN.md
+Last session: 2026-10-04T01:10:55.384Z
+Stopped at: Completed 22-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -470,3 +471,4 @@ Resume file: None
 | Phase 22 P01 | 47min | 2 tasks | 19 files |
 | Phase 22 P02 | 48min | 2 tasks | 9 files |
 | Phase 22 P03 | 20min | 2 tasks | 6 files |
+| Phase 22 P04 | 7min | 2 tasks | 2 files |

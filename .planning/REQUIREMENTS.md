@@ -136,7 +136,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 
 ### Minimum Rest (REST)
 
-- [ ] **REST-01**: Operator can set a minimum rest period between an agent's consecutive shifts, per desk
+- [x] **REST-01**: Operator can set a minimum rest period between an agent's consecutive shifts, per desk
 - [x] **REST-02**: The solver treats insufficient rest as a hard violation, measured between the actual end and start instants — including same-day back-to-back shifts, not only overnight ones — unless that occurrence is waived per REST-06
 - [ ] **REST-03**: A rest violation is refused pre-solve where it is structurally unavoidable, naming the agent and the two shifts, by a mechanism separate from the in-solve constraint — and a waived occurrence does not trigger that refusal
 - [x] **REST-04**: A desk that sets no minimum rest solves exactly as it does today
@@ -226,7 +226,7 @@ Populated during roadmap creation.
 | SOLV-05 | Phase 20 | Complete |
 | SOLV-06 | Phase 20 | Complete |
 | SOLV-07 | Phase 20 | Complete |
-| REST-01 | Phase 22 | Pending |
+| REST-01 | Phase 22 | Complete |
 | REST-02 | Phase 22 | Complete |
 | REST-03 | Phase 22 | Pending |
 | REST-04 | Phase 22 | Complete |
