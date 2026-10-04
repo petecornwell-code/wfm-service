@@ -95,9 +95,38 @@ public class ScheduleService {
                 merged.add(s);
             }
         });
+        // REST-07/T-22-35: dbSourced tracks exactly the entries that came from dbSchedules, never
+        // the in-memory entry above -- InMemoryScheduleStore hands that object back BY REFERENCE
+        // and a running solve owns it, so hydration below must never reach it.
+        List<Schedule> dbSourced = new ArrayList<>();
         for (Schedule db : dbSchedules) {
             if (merged.stream().noneMatch(s -> s.getId().equals(db.getId()))) {
                 merged.add(db);
+                dbSourced.add(db);
+            }
+        }
+
+        // REST-07/P-02 (22-VERIFICATION.md gap (a)): cost gate 1 -- narrow to the DB-sourced
+        // entries that actually carry a snapshotted minimum rest. Per D-04/D-14 the column is
+        // nullable with no baked-in default, so on the overwhelming majority of desks this
+        // narrowed set is empty and the page issues zero extra queries, exactly as before this
+        // closure.
+        List<Schedule> needsHydration = dbSourced.stream()
+                .filter(s -> s.getMinimumRestMinutes() != null)
+                .toList();
+        if (!needsHydration.isEmpty()) {
+            // Cost gate 2: ONE desk-wide, date-ranged waiver query spanning every narrowed
+            // schedule's period, never one query per row. hydrateRestWaiverInputsFromDb's own
+            // per-schedule period filter is what keeps this shared result list correct for each
+            // entry it is passed to.
+            LocalDate minStart = needsHydration.stream().map(Schedule::getPeriodStartDate)
+                    .min(LocalDate::compareTo).orElseThrow();
+            LocalDate maxEnd = needsHydration.stream().map(Schedule::getPeriodEndDate)
+                    .max(LocalDate::compareTo).orElseThrow();
+            List<AgentRestWaiver> candidateWaivers = agentRestWaiverRepository
+                    .findWithAgentByTenantIdAndDeskIdAndDateBetween(tenantId, deskId, minStart, maxEnd);
+            for (Schedule s : needsHydration) {
+                hydrateRestWaiverInputsFromDb(s, tenantId, deskId, candidateWaivers);
             }
         }
 
@@ -546,10 +575,106 @@ public class ScheduleService {
         // same two facts (Phase 22, 22-05/22-06), so buildRestWaiverDisclosure can compute the
         // identical result on both paths from the same shape of input.
         if (schedule.getMinimumRestMinutes() != null) {
-            List<AgentRestWaiver> restWaivers = agentRestWaiverRepository.findByTenantIdAndDeskIdAndDateBetween(
-                    tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+            // REST-07/P-03 (22-12): re-pointed at the relations-fetching finder so the
+            // disclosure's waiver input is loaded exactly one way on every path -- the
+            // non-fetching finder would yield a lazy agent proxy that throws outside a
+            // transaction (spring.jpa.open-in-view: false).
+            List<AgentRestWaiver> restWaivers = agentRestWaiverRepository
+                    .findWithAgentByTenantIdAndDeskIdAndDateBetween(
+                            tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
             schedule.setAgentRestWaivers(restWaivers);
 
+            List<RestSpan> priorRestSpans = restPredecessorService.resolvePriorSpans(
+                    tenantId, deskId, schedule.getPeriodStartDate(), schedule.getMinimumRestMinutes(),
+                    schedule.getDayStart(), schedule.getWarnings());
+            schedule.setPriorRestSpans(priorRestSpans);
+        }
+    }
+
+    /**
+     * REST-07/P-02 (22-VERIFICATION.md gap (a)): hydrates the minimal subset of {@code schedule}'s
+     * transient waiver/pre-horizon inputs that {@code ScheduleOutputService.buildRestWaiverDisclosure}
+     * needs, for a DB-fetched {@link Schedule} reached from {@link #listSchedules} or
+     * {@link #getScheduleSummary} -- the two paths that never call {@link #loadSnapshotData}.
+     * Never called at all unless the caller has already confirmed {@code
+     * schedule.getMinimumRestMinutes() != null} (cost gate 1); {@code candidateWaivers} is a
+     * shared, pre-fetched list the caller is responsible for batching into at most one desk-wide
+     * query (cost gate 2) -- this method itself never queries the waiver repository.
+     *
+     * <p><b>Cost gate 3, this method's own contract.</b> {@code candidateWaivers} is first
+     * narrowed to the dates inside {@code schedule}'s own inclusive period. If that narrowed list
+     * is empty, this method returns immediately after assigning the empty list -- no span query,
+     * no predecessor query. A schedule with no in-period waiver is correctly {@code (empty,
+     * empty)}, which is the true answer {@code buildRestWaiverDisclosure} needs, not a degraded
+     * one.
+     *
+     * <p>Per D-06, a waiver on business date D concerns the gap from D-1's end to D's start, so
+     * the business-date set this method loads spans is {@code {D, D-1}} for each distinct waiver
+     * date D -- never {@code {D, D+1}}. Getting this backwards would load the wrong two dates and
+     * silently report every applied waiver as unused.
+     *
+     * <p>The collections this method assigns are deliberately PARTIAL -- scoped to exactly the
+     * business dates the filtered waivers reference -- and must never be read by anything other
+     * than {@code buildRestWaiverDisclosure}. The {@link Schedule} instances this method touches
+     * are DB-fetched locals used only to build one {@code ScheduleSummary} and then discarded:
+     * never put into {@link InMemoryScheduleStore}, never persisted, never handed to another
+     * output builder.
+     *
+     * <p>{@link #loadSnapshotData} is deliberately NOT reused here: it issues seven loads
+     * including a whole-schedule assignment read, which {@code AgentAssignmentRepository}'s own
+     * javadoc measures at six figures of rows on a large SLOT desk -- calling it per row in
+     * {@link #listSchedules} would be exactly the N+1 {@code 22-VERIFICATION.md} warned against.
+     */
+    private void hydrateRestWaiverInputsFromDb(Schedule schedule, long tenantId, UUID deskId,
+            List<AgentRestWaiver> candidateWaivers) {
+        List<AgentRestWaiver> inPeriod = candidateWaivers.stream()
+                .filter(w -> w.getDate() != null
+                        && !w.getDate().isBefore(schedule.getPeriodStartDate())
+                        && !w.getDate().isAfter(schedule.getPeriodEndDate()))
+                .toList();
+        schedule.setAgentRestWaivers(inPeriod);
+
+        if (inPeriod.isEmpty()) {
+            return;
+        }
+
+        // D-06: {D, D-1} per distinct waiver date D -- the successor side is the waiver's own
+        // date, the predecessor side is one business date back. Clamped to the schedule's own
+        // period so this never reaches outside what loadSnapshotData itself would load.
+        Set<LocalDate> businessDates = new TreeSet<>();
+        for (AgentRestWaiver w : inPeriod) {
+            LocalDate waiverDate = w.getDate();
+            businessDates.add(waiverDate);
+            LocalDate predecessorDate = waiverDate.minusDays(1);
+            if (!predecessorDate.isBefore(schedule.getPeriodStartDate())) {
+                businessDates.add(predecessorDate);
+            }
+        }
+
+        if (schedule.getSchedulingMode() == SchedulingMode.SHIFT) {
+            List<AgentShiftAssignment> shiftRows = new ArrayList<>();
+            for (LocalDate date : businessDates) {
+                shiftRows.addAll(agentShiftAssignmentRepository
+                        .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(
+                                tenantId, deskId, schedule.getId(), date));
+            }
+            schedule.setShiftAssignments(shiftRows);
+        } else {
+            List<AgentAssignment> seatRows = new ArrayList<>();
+            for (LocalDate date : businessDates) {
+                seatRows.addAll(agentAssignmentRepository
+                        .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndBusinessDate(
+                                tenantId, deskId, schedule.getId(), date));
+            }
+            schedule.setAssignments(seatRows);
+        }
+
+        // Pre-horizon lookback is needed only when a waiver sits on the period's FIRST business
+        // date -- any other waiver's predecessor date is itself inside the period and was already
+        // loaded into shiftRows/seatRows above.
+        boolean needsPreHorizon = inPeriod.stream()
+                .anyMatch(w -> w.getDate().equals(schedule.getPeriodStartDate()));
+        if (needsPreHorizon) {
             List<RestSpan> priorRestSpans = restPredecessorService.resolvePriorSpans(
                     tenantId, deskId, schedule.getPeriodStartDate(), schedule.getMinimumRestMinutes(),
                     schedule.getDayStart(), schedule.getWarnings());
@@ -694,10 +819,32 @@ public class ScheduleService {
     public ScheduleSummary getScheduleSummary(UUID deskId, UUID scheduleId) {
         long tenantId = TenantContext.getTenantId();
 
+        // REST-07/P-02 (22-VERIFICATION.md gap (a)): provenance is resolved explicitly -- mirroring
+        // getScheduleDetail's own fromDb shape exactly -- so the hydration call below runs only for
+        // a DB-fetched schedule. A live (in-memory) schedule's transients are already populated by
+        // the solve path; re-loading them would both cost queries and risk disagreeing with what
+        // the solver holds.
         Schedule schedule = inMemoryStore.get(scheduleId)
                 .filter(s -> s.getTenantId() == tenantId && s.getDeskId().equals(deskId))
-                .or(() -> scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, tenantId, deskId))
-                .orElseThrow(() -> new EntityNotFoundException("Schedule", scheduleId));
+                .orElse(null);
+        boolean fromDb = false;
+
+        if (schedule == null) {
+            schedule = scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, tenantId, deskId)
+                    .orElseThrow(() -> new EntityNotFoundException("Schedule", scheduleId));
+            fromDb = true;
+        }
+
+        // Cost gate 1: zero extra queries unless this DB-fetched schedule carries a snapshotted
+        // minimum rest. This is the only ScheduleOutputService-adjacent work this method does
+        // beyond what toSummary itself already triggers (see that method's own javadoc) --
+        // getScheduleSummary must stay cheap, never growing into a second getScheduleDetail.
+        if (fromDb && schedule.getMinimumRestMinutes() != null) {
+            List<AgentRestWaiver> candidateWaivers = agentRestWaiverRepository
+                    .findWithAgentByTenantIdAndDeskIdAndDateBetween(
+                            tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+            hydrateRestWaiverInputsFromDb(schedule, tenantId, deskId, candidateWaivers);
+        }
 
         String deskName = deskRepository.findByIdAndTenantId(deskId, tenantId)
                 .map(Desk::getName).orElse(null);
