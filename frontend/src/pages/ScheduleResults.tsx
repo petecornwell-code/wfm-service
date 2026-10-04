@@ -250,12 +250,12 @@ export default function ScheduleResults() {
               Both counts always render once shown, even at zero (never hidden at zero), so an
               operator can tell "rest is enforced and nothing needed waiving" apart from "rest is
               not configured at all" — hiding at zero would conflate the two. */}
-          {(schedule.appliedRestWaiverCount !== undefined || schedule.unusedRestWaiverCount !== undefined) && (
+          {(schedule.appliedRestWaiverCount != null || schedule.unusedRestWaiverCount != null) && (
             <span
               style={{ color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer' }}
               onClick={() => setActiveTab('restWaivers')}
             >
-              Rest Waivers: {schedule.appliedRestWaiverCount !== undefined ? schedule.appliedRestWaiverCount : '—'} applied, {schedule.unusedRestWaiverCount !== undefined ? schedule.unusedRestWaiverCount : '—'} unused
+              Rest Waivers: {schedule.appliedRestWaiverCount != null ? schedule.appliedRestWaiverCount : '—'} applied, {schedule.unusedRestWaiverCount != null ? schedule.unusedRestWaiverCount : '—'} unused
             </span>
           )}
         </div>
@@ -1438,7 +1438,7 @@ function ViolationsTab({
 // read off the same two summary-poll counts the header badge uses (REST-04/D-14: there is no
 // separate snapshotted-minimum-rest field on either DTO — see the badge's comment above).
 function RestWaiversTab({ schedule }: { schedule: ScheduleDetail }) {
-  const configured = schedule.appliedRestWaiverCount !== undefined || schedule.unusedRestWaiverCount !== undefined
+  const configured = schedule.appliedRestWaiverCount != null || schedule.unusedRestWaiverCount != null
   if (!configured) {
     return <p style={{ color: '#6b7280' }}>Minimum rest is not configured for this desk.</p>
   }
@@ -1492,10 +1492,10 @@ function RestWaiverTable({ entries, tone }: { entries: RestWaiverEntry[]; tone: 
             <td style={{ padding: '4px 8px' }}>{e.priorBusinessDate} {e.priorShiftEnd ?? '—'}</td>
             <td style={{ padding: '4px 8px' }}>{e.nextBusinessDate} {e.nextShiftStart ?? '—'}</td>
             <td style={{ textAlign: 'right', padding: '4px 8px' }}>
-              {e.requiredGapMinutes !== undefined ? `${(e.requiredGapMinutes / 60).toFixed(1)}h` : '—'}
+              {e.requiredGapMinutes != null ? `${(e.requiredGapMinutes / 60).toFixed(1)}h` : '—'}
             </td>
             <td style={{ textAlign: 'right', padding: '4px 8px' }}>
-              {e.measuredGapMinutes !== undefined ? `${(e.measuredGapMinutes / 60).toFixed(1)}h` : '—'}
+              {e.measuredGapMinutes != null ? `${(e.measuredGapMinutes / 60).toFixed(1)}h` : '—'}
             </td>
             <td style={{ padding: '4px 8px' }}>{e.reason}</td>
           </tr>
