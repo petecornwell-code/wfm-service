@@ -955,20 +955,19 @@ public class ScheduleOutputService {
             return new RestWaiverDisclosure(List.of(), List.of());
         }
 
-        // WR-01 (22-REVIEW-DISPOSITION.md, closed by plan 22-11 Task 2): the codebase's
-        // null-coalescing anchor shape, identical to ScheduleConstraintProvider.resolveAnchor and
-        // ShiftLibraryGenerationService's own in-service idiom — not a raw schedule.getDayStart()
-        // read. Two reasons, both load-bearing: (i) a null anchor on a schedule carrying a
-        // non-null snapshotted minimum rest is not reachable through the live or accept paths
-        // today, since the anchor column (V54) landed in an earlier migration than the rest
-        // column (V55) — so this is a defensive same-as-before default, not a second anchor rule
-        // (Rule 2), exactly as the code review recorded; (ii) the set of Schedule instances
-        // reaching this method is about to widen — plan 22-12 begins calling it for DB-fetched
-        // schedules on the list and summary paths, which never run loadSnapshotData, and
-        // DayWindow.anchoredAt throws NullPointerException on a null anchor, so an unmigrated or
-        // partially-populated Schedule would surface as a 500 on a list endpoint rather than as a
-        // degraded (midnight-anchored) waiver report. No DeskRepository read is introduced — this
-        // method and this class hold none, deliberately.
+        // REST-07 (WR-01, code review): the codebase's null-coalescing anchor shape, identical
+        // to ScheduleConstraintProvider.resolveAnchor and ShiftLibraryGenerationService's own
+        // in-service idiom — not a raw schedule.getDayStart() read. Two reasons, both
+        // load-bearing: (i) a null anchor on a schedule carrying a non-null snapshotted minimum
+        // rest is not reachable through the live or accept paths today, since the anchor column
+        // landed in an earlier migration than the rest column — so this is a defensive
+        // same-as-before default, not a second anchor rule (Rule 2), exactly as the code review
+        // recorded; (ii) the set of Schedule instances reaching this method is about to widen to
+        // DB-fetched schedules on list and summary paths that never run loadSnapshotData's guard,
+        // and DayWindow.anchoredAt throws NullPointerException on a null anchor, so an unmigrated
+        // or partially-populated Schedule would surface as a 500 on a list endpoint rather than
+        // as a degraded (midnight-anchored) waiver report. No DeskRepository read is introduced —
+        // this method and this class hold none, deliberately.
         LocalTime dayStart = schedule.getDayStart() != null ? schedule.getDayStart() : LocalTime.MIDNIGHT;
 
         // Per-(agent, business date) span the agent actually holds in THIS solution — one source
