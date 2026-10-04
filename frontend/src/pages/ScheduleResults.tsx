@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, getErrorMessage } from '../api/client'
+import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, type RestWaiverEntry, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 import { anchoredAt, calendarDateFromBusinessDateAndOffset, MINUTES_PER_DAY, type DayWindow } from '../utils/dayWindow'
 
@@ -330,10 +330,10 @@ export default function ScheduleResults() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {(['staffing', 'agents', 'allocation', 'preferences', 'drift', 'violations', 'pto'] as const).map(tab => (
+        {(['staffing', 'agents', 'allocation', 'preferences', 'drift', 'violations', 'restWaivers', 'pto'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             style={{ background: activeTab === tab ? '#3b82f6' : '#e5e7eb', color: activeTab === tab ? '#fff' : '#374151', borderRadius: 0, padding: '0.5rem 1.25rem' }}>
-            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'drift' ? 'Drift Report' : tab === 'violations' ? 'Constraint Violations' : 'PTO'}
+            {tab === 'staffing' ? 'Staffing Summary' : tab === 'agents' ? 'Agent Schedule' : tab === 'allocation' ? 'Agent Allocation' : tab === 'preferences' ? 'Preference Report' : tab === 'drift' ? 'Drift Report' : tab === 'violations' ? 'Constraint Violations' : tab === 'restWaivers' ? 'Rest Waivers' : 'PTO'}
           </button>
         ))}
       </div>
@@ -354,6 +354,7 @@ export default function ScheduleResults() {
             onToggle={c => setExpandedConstraint(expandedConstraint === c ? null : c)}
           />
         )}
+        {activeTab === 'restWaivers' && <RestWaiversTab schedule={schedule} />}
         {activeTab === 'pto' && <PtoTab data={ptoData} dateFilter={dateFilter} dates={dates} />}
       </div>
     </>
@@ -1427,5 +1428,79 @@ function ViolationsTab({
         </tbody>
       </table>
     </>
+  )
+}
+
+// REST-07/D-15: two sections (Applied above Unused), not one filterable table — D-09's own
+// framing is "two sections," so this deliberately does not reuse ViolationsTab's all/HARD/SOFT
+// filter-chip pattern. The tab issues no fetch of its own; it renders whatever the detail
+// response's restWaiverDisclosure carried, and whether the desk has rest configured at all is
+// read off the same two summary-poll counts the header badge uses (REST-04/D-14: there is no
+// separate snapshotted-minimum-rest field on either DTO — see the badge's comment above).
+function RestWaiversTab({ schedule }: { schedule: ScheduleDetail }) {
+  const configured = schedule.appliedRestWaiverCount !== undefined || schedule.unusedRestWaiverCount !== undefined
+  if (!configured) {
+    return <p style={{ color: '#6b7280' }}>Minimum rest is not configured for this desk.</p>
+  }
+
+  const applied = schedule.restWaiverDisclosure?.applied || []
+  const unused = schedule.restWaiverDisclosure?.unused || []
+
+  if (applied.length === 0 && unused.length === 0) {
+    return <p style={{ color: '#6b7280' }}>No rest waivers recorded for this schedule.</p>
+  }
+
+  return (
+    <>
+      <h4 style={{ marginBottom: '0.5rem' }}>Applied</h4>
+      {applied.length === 0
+        ? <p style={{ color: '#6b7280' }}>No applied waivers.</p>
+        : <RestWaiverTable entries={applied} tone="applied" />}
+      <h4 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>Unused</h4>
+      {unused.length === 0
+        ? <p style={{ color: '#6b7280' }}>No unused waivers.</p>
+        : <RestWaiverTable entries={unused} tone="unused" />}
+    </>
+  )
+}
+
+// This table renders whatever rows the DTO sends and derives nothing: no gap is recomputed, no
+// required value is looked up, and no time is compared (dividing a DTO-carried minute count by 60
+// is a format, not a comparison). Should a comparison ever become necessary here, it must route
+// through frontend/src/utils/dayWindow.ts's branded DayOffset type rather than a raw string or
+// number comparison, which would not compile in this codebase.
+function RestWaiverTable({ entries, tone }: { entries: RestWaiverEntry[]; tone: 'applied' | 'unused' }) {
+  const color = tone === 'applied' ? '#15803d' : '#6b7280'
+  const background = tone === 'applied' ? '#f0fdf4' : '#f3f4f6'
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+      <thead>
+        <tr>
+          <th style={{ textAlign: 'left', padding: '6px 8px' }}>Agent</th>
+          <th style={{ textAlign: 'left', padding: '6px 8px' }}>Prior shift</th>
+          <th style={{ textAlign: 'left', padding: '6px 8px' }}>Next shift</th>
+          <th style={{ textAlign: 'right', padding: '6px 8px' }}>Required gap</th>
+          <th style={{ textAlign: 'right', padding: '6px 8px' }}>Measured gap</th>
+          <th style={{ textAlign: 'left', padding: '6px 8px' }}>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map((e, i) => (
+          <tr key={`${e.agentId}-${e.priorBusinessDate}-${e.nextBusinessDate}-${i}`} style={{ background }}>
+            <td style={{ padding: '4px 8px', fontWeight: 500, color }}>{e.agentName}</td>
+            <td style={{ padding: '4px 8px' }}>{e.priorBusinessDate} {e.priorShiftEnd ?? '—'}</td>
+            <td style={{ padding: '4px 8px' }}>{e.nextBusinessDate} {e.nextShiftStart ?? '—'}</td>
+            <td style={{ textAlign: 'right', padding: '4px 8px' }}>
+              {e.requiredGapMinutes !== undefined ? `${(e.requiredGapMinutes / 60).toFixed(1)}h` : '—'}
+            </td>
+            <td style={{ textAlign: 'right', padding: '4px 8px' }}>
+              {e.measuredGapMinutes !== undefined ? `${(e.measuredGapMinutes / 60).toFixed(1)}h` : '—'}
+            </td>
+            <td style={{ padding: '4px 8px' }}>{e.reason}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
