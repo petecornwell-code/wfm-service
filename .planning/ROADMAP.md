@@ -403,7 +403,7 @@ Plans:
 - [x] 22-08-PLAN.md — Applied and unused waiver disclosure on the detail response, plus both counts on the summary (REST-07)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
+- [x] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
