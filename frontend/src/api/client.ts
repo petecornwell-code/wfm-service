@@ -329,6 +329,23 @@ export const exceptions = {
     request<void>(`/desks/${deskId}/agents/${agentId}/exceptions/${date}`, { method: 'DELETE' }),
 }
 
+// --- Rest Waivers (REST-06) ---
+// Deliberately different interaction model from `exceptions` above: Add and Delete each call the
+// server immediately (POST / DELETE), with no batch save step -- a rest waiver is rare, single-row
+// and mandatory-reason, the opposite shape to editing several exception dates at once.
+export const restWaivers = {
+  list: (deskId: string, agentId: string, from?: string, to?: string) => {
+    const query = new URLSearchParams()
+    if (from) query.set('from', from)
+    if (to) query.set('to', to)
+    return request<RestWaiver[]>(`/desks/${deskId}/agents/${agentId}/rest-waivers?${query}`)
+  },
+  save: (deskId: string, agentId: string, waivers: RestWaiver[]) =>
+    request<RestWaiver[]>(`/desks/${deskId}/agents/${agentId}/rest-waivers`, { method: 'POST', body: JSON.stringify(waivers) }),
+  delete: (deskId: string, agentId: string, date: string) =>
+    request<void>(`/desks/${deskId}/agents/${agentId}/rest-waivers/${date}`, { method: 'DELETE' }),
+}
+
 // --- Types ---
 export interface Desk { id: string; name: string; description?: string; defaultContractedHoursPerDay: number; schedulingMode: 'SLOT' | 'SHIFT'; dayStart: string; minimumRestMinutes?: number; dayStartLockedByScheduleId?: string; dayStartLockedPeriodStart?: string; dayStartLockedPeriodEnd?: string; dayStartTilingWarning?: string }
 export interface CreateDeskRequest { name: string; description?: string; defaultContractedHoursPerDay?: number }
@@ -392,6 +409,7 @@ export interface DayOff { id: string; date: string; type: string; status: string
 export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }
 export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
+export interface RestWaiver { id?: string; date: string; reason: string }
 export interface Score { hardScore: number; softScore: number }
 // Phase 18 (MIX-03): widened to admit `string` for shiftStartMixMode (OFF | REPORT | ENFORCE).
 // ConstraintWeightsPage's isScore() guard already refuses to render a non-Score through the
@@ -400,7 +418,16 @@ export interface Score { hardScore: number; softScore: number }
 // visibly dropped.
 export interface ConstraintWeightsData { [key: string]: Score | number | string }
 export interface SolveRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; [key: string]: unknown }
-export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; dayStart?: string; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
+// REST-07/D-13: the four pair-derived components (priorShiftEnd, nextShiftStart,
+// measuredGapMinutes, requiredGapMinutes) are optional -- the Java record components are boxed,
+// and an unused entry for a day off, an unrostered agent or a missing predecessor carries nulls
+// there.
+export interface RestWaiverEntry { agentId: string; agentName: string; priorBusinessDate: string; nextBusinessDate: string; priorShiftEnd?: string; nextShiftStart?: string; measuredGapMinutes?: number; requiredGapMinutes?: number; reason: string }
+export interface RestWaiverDisclosure { applied: RestWaiverEntry[]; unused: RestWaiverEntry[] }
+// appliedRestWaiverCount/unusedRestWaiverCount are optional, never defaulted to 0 here: null
+// means the schedule's snapshotted minimumRestMinutes is null (rest not configured), which must
+// stay distinguishable from "configured, nothing waived" (0) -- plan 22-10's badge depends on it.
+export interface ScheduleSummary { id: string; deskId: string; deskName?: string; status: string; periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number; dayStart?: string; appliedRestWaiverCount?: number; unusedRestWaiverCount?: number; score?: Score; feasible?: boolean; feasibleAt?: string; createdAt: string; version: number }
 
 export interface StaffingSummaryEntry {
   date: string | null
@@ -534,6 +561,7 @@ export interface ScheduleDetail extends ScheduleSummary {
   driftReport: DriftReport | null
   constraintViolations: ConstraintViolationEntry[]
   violatedHardConstraints: string[]
+  restWaiverDisclosure?: RestWaiverDisclosure
   warnings?: string[]
   errorMessage?: string
 }
