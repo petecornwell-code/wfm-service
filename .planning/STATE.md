@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Completed 22-05-PLAN.md
-last_updated: "2026-10-04T01:52:01.012Z"
+stopped_at: Completed 22-06-PLAN.md
+last_updated: "2026-10-04T02:29:01.539Z"
 last_activity: 2026-10-03
 last_activity_desc: Phase 22 execution started
-state_head: b46af7dbc992507f0a402b7101969a2ea57613ce
+state_head: dd2f825a6054963106e45b57e2cc237fba3ab7f9
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 43
+  completed_plans: 44
   percent: 80
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 ## Current Position
 
 Phase: 22 (Minimum Rest) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Last activity: 2026-10-03 — Phase 22 execution started
 
@@ -357,6 +357,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 22]: D-06's direction pinned behaviourally (predecessor-date waiver does not clear; one waiver clears exactly one of two consecutive pairs), not just by comment
 - [Phase 22]: Second-implementation guard matcher is deliberately narrow (getAgent()+getDate()+comparison on one line) so the correct call-site shape never trips it; boundary documented in the registry
 - [Phase 22]: Registry's call-site table carries a row for plan 22-07's pre-solve refusal marked expected-but-not-yet-landed, so 22-07 adding that call site without updating the allowlist turns the guard red by design
+- [Phase 22]: resolvePriorSpans takes a currentDayStart parameter (6 args, not the plan's documented 5) so the D-14 anchor-mismatch degradation is directly testable without a DeskRepository dependency
 
 ### Blockers/Concerns
 
@@ -380,8 +381,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T01:52:00.962Z
-Stopped at: Completed 22-05-PLAN.md
+Last session: 2026-10-04T02:29:01.496Z
+Stopped at: Completed 22-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -476,3 +477,4 @@ Resume file: None
 | Phase 22 P03 | 20min | 2 tasks | 6 files |
 | Phase 22 P04 | 7min | 2 tasks | 2 files |
 | Phase 22 P05 | 55min | 2 tasks | 8 files |
+| Phase 22 P06 | 52min | 2 tasks | 8 files |

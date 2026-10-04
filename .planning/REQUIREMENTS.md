@@ -140,7 +140,7 @@ disclosure through calendar-span labelling, not a second day-boundary mechanism.
 - [x] **REST-02**: The solver treats insufficient rest as a hard violation, measured between the actual end and start instants — including same-day back-to-back shifts, not only overnight ones — unless that occurrence is waived per REST-06
 - [ ] **REST-03**: A rest violation is refused pre-solve where it is structurally unavoidable, naming the agent and the two shifts, by a mechanism separate from the in-solve constraint — and a waived occurrence does not trigger that refusal
 - [x] **REST-04**: A desk that sets no minimum rest solves exactly as it does today
-- [ ] **REST-05**: Rest at the first and last day of the solving horizon has defined, tested behaviour rather than an accidental one
+- [x] **REST-05**: Rest at the first and last day of the solving horizon has defined, tested behaviour rather than an accidental one
 - [ ] **REST-06**: Operator can waive minimum rest for one agent on one business date, with a recorded reason, through the existing per-agent exception mechanism — and the solver treats a waived pair as legal
 - [ ] **REST-07**: Waived rest violations are visible in the solved schedule's output, so a waiver cannot silently hide a roster problem
 
@@ -230,7 +230,7 @@ Populated during roadmap creation.
 | REST-02 | Phase 22 | Complete |
 | REST-03 | Phase 22 | Pending |
 | REST-04 | Phase 22 | Complete |
-| REST-05 | Phase 22 | Pending |
+| REST-05 | Phase 22 | Complete |
 | REST-06 | Phase 22 | Pending |
 | REST-07 | Phase 22 | Pending |
 
