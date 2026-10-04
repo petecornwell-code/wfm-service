@@ -1051,9 +1051,18 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .filter(sa -> sa.getShiftBandPair() != null)
                 .map(sa -> RestSpan.ofShift(sa, anchorFor(sa).dayStart()));
 
+        // Phase 22 (REST-05, D-10): the PREDECESSOR side only concats the pre-horizon spans
+        // Schedule.priorRestSpans registers as problem facts. The successor stream (`spans`,
+        // below) stays in-horizon-only -- pre-horizon spans only ever appear as a predecessor,
+        // which is what makes the lookback one-directional and is why D-11's horizon end edge
+        // needs no code at all. One filter, one measurement and one waiver-exclusion clause below
+        // now serve both the in-horizon and the pre-horizon pair sources, so there is no separate
+        // horizon-edge constraint, no second weight and no second gap formula.
+        UniConstraintStream<RestSpan> predecessorSpans = spans.concat(factory.forEach(RestSpan.class));
+
         return factory.forEach(ScheduleConfig.class)
                 .filter(cfg -> cfg.minimumRestMinutes() != null && cfg.schedulingMode() == SchedulingMode.SHIFT)
-                .join(spans)
+                .join(predecessorSpans)
                 .join(spans,
                         equal((cfg, prev) -> prev.agentId(), RestSpan::agentId),
                         equal((cfg, prev) -> prev.businessDate().plusDays(1), RestSpan::businessDate))
@@ -1141,9 +1150,14 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .map((daId, date, assignments, dayConfig) ->
                         RestSpan.ofSlots(daId, date, assignments, dayConfig.dayStart()));
 
+        // See minimumRestShift's identical concat: the PREDECESSOR side only concats the
+        // pre-horizon spans Schedule.priorRestSpans registers; the successor stream (`spans`)
+        // stays in-horizon-only (Phase 22, REST-05, D-10/D-11).
+        UniConstraintStream<RestSpan> predecessorSpans = spans.concat(factory.forEach(RestSpan.class));
+
         return factory.forEach(ScheduleConfig.class)
                 .filter(cfg -> cfg.minimumRestMinutes() != null && cfg.schedulingMode() != SchedulingMode.SHIFT)
-                .join(spans)
+                .join(predecessorSpans)
                 .join(spans,
                         equal((cfg, prev) -> prev.agentId(), RestSpan::agentId),
                         equal((cfg, prev) -> prev.businessDate().plusDays(1), RestSpan::businessDate))

@@ -160,6 +160,22 @@ public class Schedule {
     @Transient
     private List<AgentRestWaiver> agentRestWaivers = new ArrayList<>();
 
+    // Phase 22 (REST-05, D-10): the agent's real pre-horizon rest span(s) for the business date
+    // immediately before this schedule's period start, resolved from ACCEPTED history only by
+    // RestPredecessorService.resolvePriorSpans and set by SolverService alongside every other
+    // problem-fact collection. Empty by default, which is what keeps a desk with no ACCEPTED
+    // predecessor -- or no configured minimum rest at all -- structurally unconstrained (REST-04,
+    // D-10).
+    //
+    // IMPORTANT: a forEach(RestSpan.class) in ScheduleConstraintProvider reaches ONLY the facts
+    // registered here -- never the in-horizon spans both minimumRestShift and minimumRestSlot
+    // build, which are .map()-produced stream tuples, not problem facts. A test
+    // (RestHorizonEdgeTest) asserts that count equality so this claim is enforced, not merely
+    // stated.
+    @ProblemFactCollectionProperty
+    @Transient
+    private List<RestSpan> priorRestSpans = new ArrayList<>();
+
     @ProblemFactCollectionProperty
     @Transient
     private List<AgentDayConfig> agentDayConfigs = new ArrayList<>();
@@ -320,6 +336,9 @@ public class Schedule {
 
     public List<AgentRestWaiver> getAgentRestWaivers() { return agentRestWaivers; }
     public void setAgentRestWaivers(List<AgentRestWaiver> agentRestWaivers) { this.agentRestWaivers = agentRestWaivers; }
+
+    public List<RestSpan> getPriorRestSpans() { return priorRestSpans; }
+    public void setPriorRestSpans(List<RestSpan> priorRestSpans) { this.priorRestSpans = priorRestSpans; }
 
     public List<AgentDayConfig> getAgentDayConfigs() { return agentDayConfigs; }
     public void setAgentDayConfigs(List<AgentDayConfig> agentDayConfigs) { this.agentDayConfigs = agentDayConfigs; }

@@ -73,6 +73,7 @@ public class SolverService {
     private final AgentDayOffRepository agentDayOffRepository;
     private final AgentExceptionRepository agentExceptionRepository;
     private final AgentRestWaiverRepository agentRestWaiverRepository;
+    private final RestPredecessorService restPredecessorService;
     private final AgentDayHoursRepository agentDayHoursRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
     private final AgentEligibilityService agentEligibilityService;
@@ -108,6 +109,7 @@ public class SolverService {
                          AgentDayOffRepository agentDayOffRepository,
                          AgentExceptionRepository agentExceptionRepository,
                          AgentRestWaiverRepository agentRestWaiverRepository,
+                         RestPredecessorService restPredecessorService,
                          AgentDayHoursRepository agentDayHoursRepository,
                          ConstraintWeightsRepository constraintWeightsRepository,
                          AgentEligibilityService agentEligibilityService,
@@ -132,6 +134,7 @@ public class SolverService {
         this.agentDayOffRepository = agentDayOffRepository;
         this.agentExceptionRepository = agentExceptionRepository;
         this.agentRestWaiverRepository = agentRestWaiverRepository;
+        this.restPredecessorService = restPredecessorService;
         this.agentDayHoursRepository = agentDayHoursRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
         this.agentEligibilityService = agentEligibilityService;
@@ -221,6 +224,16 @@ public class SolverService {
         // loader because their underlying repository finders filter a CALENDAR date column.
         List<AgentRestWaiver> restWaivers = agentRestWaiverRepository.findByTenantIdAndDeskIdAndDateBetween(
                 tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+
+        // Phase 22 (REST-05, D-10): resolve the agent's real pre-horizon rest span(s) for the
+        // business date immediately before this period's start, from ACCEPTED history only. At
+        // most three queries total regardless of agent count -- see RestPredecessorService's own
+        // javadoc. schedule.getWarnings() is the same operator-facing channel
+        // requireShiftEnvelopeSeatSupply already writes advisories into, so a degraded lookback
+        // surfaces on one surface rather than a second one.
+        List<RestSpan> priorRestSpans = restPredecessorService.resolvePriorSpans(
+                tenantId, deskId, schedule.getPeriodStartDate(), schedule.getMinimumRestMinutes(),
+                schedule.getDayStart(), schedule.getWarnings());
 
         // Load per-day contracted hours for this desk (D-09; MDL-02 resolution authority)
         List<AgentDayHours> agentDayHours = agentDayHoursRepository.findByTenantIdAndDeskId(tenantId, deskId);
@@ -497,6 +510,7 @@ public class SolverService {
         schedule.setAgentDaysOff(new ArrayList<>(allDaysOff));
         schedule.setAgentExceptions(new ArrayList<>(exceptions));
         schedule.setAgentRestWaivers(new ArrayList<>(restWaivers));
+        schedule.setPriorRestSpans(new ArrayList<>(priorRestSpans));
         schedule.setAgentDayConfigs(agentDayConfigs);
         schedule.setShiftBandPairs(new ArrayList<>(shiftBandPairs));
         schedule.setShiftAssignments(new ArrayList<>(shiftAssignments));
