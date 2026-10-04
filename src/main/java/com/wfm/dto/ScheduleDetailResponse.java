@@ -42,6 +42,14 @@ public class ScheduleDetailResponse {
     private PreferenceReport preferenceReport;
     private DriftReport driftReport;
     private List<ConstraintViolationEntry> constraintViolations;
+    // REST-07/D-09/D-13: the applied/unused rest-waiver disclosure for this schedule, computed
+    // by ScheduleOutputService.buildRestWaiverDisclosure from this solution's own rows on both
+    // the live and accepted paths. null only in the structurally-impossible case of neither path
+    // having run (mirrors constraintViolations' own absence-only-before-population contract); a
+    // schedule whose snapshotted minimum rest is null carries an instance with two empty lists,
+    // never a null field, so a caller can distinguish "not yet computed" from "rest not
+    // configured".
+    private RestWaiverDisclosure restWaiverDisclosure;
     private List<String> warnings;
     private int version;
 
@@ -213,6 +221,45 @@ public class ScheduleDetailResponse {
     ) {}
 
     /**
+     * REST-07/D-13 — one rest waiver's disclosure row, extending the same typed-field channel
+     * {@link ViolationDetail} established rather than a parsed label. {@code priorBusinessDate}
+     * and {@code nextBusinessDate} are always present — they are computed from the waiver's own
+     * date ({@code nextBusinessDate}) and the date immediately before it, regardless of whether a
+     * pair actually exists. {@code priorShiftEnd}, {@code nextShiftStart} and
+     * {@code measuredGapMinutes} are the three PAIR-DERIVED components and are boxed and nullable
+     * ON PURPOSE: an unused entry for a day off, an unrostered agent, or a missing predecessor has
+     * no pair at all, and rendering a zero there would read as "no rest at all" rather than "no
+     * pair to measure". {@code requiredGapMinutes} is never null in a populated disclosure — it is
+     * the schedule's own snapshotted {@code minimumRestMinutes} (D-14), independent of whether
+     * this particular pair exists.
+     */
+    public record RestWaiverEntry(
+            UUID agentId,
+            String agentName,
+            LocalDate priorBusinessDate,
+            LocalDate nextBusinessDate,
+            LocalTime priorShiftEnd,
+            LocalTime nextShiftStart,
+            Integer measuredGapMinutes,
+            Integer requiredGapMinutes,
+            String reason
+    ) {}
+
+    /**
+     * REST-07/D-09 — two structurally separate sections, not one filterable list. A waiver that
+     * waived nothing is inert and belongs under {@code unused}, never silently absent; keeping the
+     * two sections structurally separate (rather than a single list with an "applied" flag) is
+     * what keeps an unused pile visible rather than diluted into one list an operator has to
+     * filter to notice. All four inert causes (adequate rest, a day off, an unrostered agent, or
+     * no predecessor at all) reach {@code unused} through the same one path — never branched into
+     * separate messages.
+     */
+    public record RestWaiverDisclosure(
+            List<RestWaiverEntry> applied,
+            List<RestWaiverEntry> unused
+    ) {}
+
+    /**
      * {@code businessDate}, {@code calendarDate}, {@code startTime} and {@code endTime} are the
      * structured data channel {@code timeslotLabel} used to be the only way to recover (OVNT-07,
      * D-14) — two independent parsers ({@code ScheduleExportService.unfilledSeatsByDateAndSlot}
@@ -300,6 +347,8 @@ public class ScheduleDetailResponse {
     public void setDriftReport(DriftReport v) { this.driftReport = v; }
     public List<ConstraintViolationEntry> getConstraintViolations() { return constraintViolations; }
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
+    public RestWaiverDisclosure getRestWaiverDisclosure() { return restWaiverDisclosure; }
+    public void setRestWaiverDisclosure(RestWaiverDisclosure v) { this.restWaiverDisclosure = v; }
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> v) { this.warnings = v; }
     public int getVersion() { return version; }

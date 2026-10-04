@@ -21,6 +21,7 @@ import com.wfm.repository.AcceptedScheduleDateRepository;
 import com.wfm.repository.AgentAssignmentRepository;
 import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentPreferenceRepository;
+import com.wfm.repository.AgentRestWaiverRepository;
 import com.wfm.repository.AgentShiftAssignmentRepository;
 import com.wfm.repository.AgentUsualShiftRepository;
 import com.wfm.repository.ConstraintWeightsRepository;
@@ -605,6 +606,8 @@ class DriftReportTest {
                 mock(AgentPreferenceRepository.class),
                 mock(AgentDayOffRepository.class),
                 mock(ConstraintWeightsRepository.class),
+                mock(AgentRestWaiverRepository.class),
+                mock(RestPredecessorService.class),
                 scheduleOutputServiceMock,
                 mock(EntityManager.class));
     }

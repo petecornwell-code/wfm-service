@@ -67,7 +67,8 @@ class ScheduleSummaryReadTest {
                 mock(TimeslotRepository.class), mock(StaffingRequirementRepository.class),
                 mock(AgentAssignmentRepository.class), mock(AgentShiftAssignmentRepository.class),
                 mock(AgentPreferenceRepository.class), mock(AgentDayOffRepository.class),
-                mock(ConstraintWeightsRepository.class), outputService, mock(EntityManager.class));
+                mock(ConstraintWeightsRepository.class), mock(AgentRestWaiverRepository.class),
+                mock(RestPredecessorService.class), outputService, mock(EntityManager.class));
     }
 
     @AfterEach

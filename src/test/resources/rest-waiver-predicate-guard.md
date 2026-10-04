@@ -48,6 +48,8 @@ com.wfm.model.RestWaiverLookup
 com.wfm.model.Schedule
 com.wfm.repository.AgentRestWaiverRepository
 com.wfm.service.RestWaiverService
+com.wfm.service.ScheduleOutputService
+com.wfm.service.ScheduleService
 com.wfm.service.SolverService
 com.wfm.solver.ScheduleConstraintProvider
 ```

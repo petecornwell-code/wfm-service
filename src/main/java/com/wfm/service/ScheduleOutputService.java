@@ -905,6 +905,157 @@ public class ScheduleOutputService {
                 "HARD", weightDto, violationCount, totalPenalty, violations));
     }
 
+    /**
+     * REST-07/D-09/D-13 — the applied and unused rest-waiver sections, computed deterministically
+     * from this solution's own rows on BOTH the live and accepted paths.
+     *
+     * <p><b>Never the solver's score-explanation channel — two independent reasons.</b> A waived
+     * pair is legal to the solver by construction ({@code minimumRestShift}/{@code
+     * minimumRestSlot}'s {@code ifNotExists(AgentRestWaiver.class, ...)} exclusion clause), so it
+     * produces no {@code ConstraintMatch} at all — there is nothing there to read even on the live
+     * path. And the accepted path ({@code isAcceptedSnapshot == true}) never calls {@code
+     * solutionManager.explain} in the first place — see {@link #buildConstraintViolations}'s own
+     * javadoc for the identical argument on the general violation report, and {@link
+     * #buildAcceptedConstraintViolations} for the gap a prior phase already hit and closed by
+     * deriving from the persisted snapshot instead. This method follows that same precedent: it
+     * reads only {@code schedule}'s own rows (assignments, shift assignments, waivers and
+     * pre-horizon spans), never {@code solutionManager}.
+     *
+     * <p><b>{@code isAcceptedSnapshot} is threaded from the caller</b> exactly as {@link
+     * #buildConstraintViolations} already does — never inferred from whether some other field
+     * happens to be populated, which is the proxy that has already broken once in this codebase
+     * (G-15-32). It is unused by this method's OWN logic: the live-vs-accepted shift envelope
+     * split is already handled, uniformly, by {@link #resolveShiftDescriptor} (reused here rather
+     * than re-derived), so there is nothing left for this method itself to branch on. Kept in the
+     * signature for parity with the rest of this class's provenance-threading convention and so a
+     * future need for it does not require a second signature change.
+     *
+     * <p><b>The required gap is read once, from the schedule's own snapshot, never a desk.</b>
+     * {@code schedule.getMinimumRestMinutes()} is part of what this schedule was actually measured
+     * against (D-14) — reading a desk's live value here would let a later desk edit silently
+     * rewrite what an already-solved or already-accepted schedule is reported to have been
+     * measured against. This method holds no {@code DeskRepository} reference at all, so there is
+     * nothing to retrofit that read onto by accident.
+     *
+     * <p><b>Unused is not merely "not applied".</b> Every waiver whose date falls inside this
+     * schedule's inclusive period and does not match a sub-minimum pair reaches the identical
+     * {@code unused} section, regardless of WHY it did not match: adequate rest, a day off, an
+     * unrostered agent, or no predecessor at all. All four are structurally identical here — a
+     * null predecessor span, a null successor span, or a measured gap at or above the minimum —
+     * and are never branched into separate messages (D-09's contract is two sections, not four).
+     *
+     * <p><b>Period-scoped, deliberately (22-RESEARCH.md Discretion Resolution 4).</b> A waiver
+     * outside {@code [schedule.getPeriodStartDate(), schedule.getPeriodEndDate()]} is skipped
+     * entirely — this disclosure is computed from THIS solution, and a desk-wide listing would mix
+     * in waivers this schedule's period says nothing about.
+     */
+    public RestWaiverDisclosure buildRestWaiverDisclosure(Schedule schedule, boolean isAcceptedSnapshot) {
+        Integer requiredGapMinutes = schedule.getMinimumRestMinutes();
+        if (requiredGapMinutes == null) {
+            return new RestWaiverDisclosure(List.of(), List.of());
+        }
+
+        LocalTime dayStart = schedule.getDayStart();
+
+        // Per-(agent, business date) span the agent actually holds in THIS solution — one source
+        // per scheduling mode, mirroring minimumRestShift/minimumRestSlot's own span derivation
+        // exactly (D-02/D-03), never a second one invented for this report.
+        Map<AgentDateKey, RestSpan> inHorizonSpans = new HashMap<>();
+        if (schedule.getSchedulingMode() == SchedulingMode.SHIFT) {
+            for (AgentShiftAssignment sa : schedule.getShiftAssignments()) {
+                if (sa.getAgent() == null) continue;
+                // Same live-vs-accepted split every other builder in this class already uses —
+                // the transient shiftBandPair when present, the D-07 denormalised scalars
+                // otherwise. A row with neither (an unassigned shift envelope) contributes no
+                // span, matching buildAgentSchedule's own fallback.
+                ShiftDescriptor descriptor = resolveShiftDescriptor(sa);
+                if (descriptor == null) continue;
+                RestSpan span = new RestSpan(sa.getAgent().getId(), sa.getDate(),
+                        descriptor.startTime(), descriptor.endTime(), dayStart);
+                inHorizonSpans.put(new AgentDateKey(span.agentId(), span.businessDate()), span);
+            }
+        } else {
+            Map<AgentDateKey, List<AgentAssignment>> grouped = new LinkedHashMap<>();
+            for (AgentAssignment a : schedule.getAssignments()) {
+                if (a.getAgent() == null) continue;
+                grouped.computeIfAbsent(
+                        new AgentDateKey(a.getAgent().getId(), a.getTimeslot().getBusinessDate()),
+                        k -> new ArrayList<>()).add(a);
+            }
+            for (var entry : grouped.entrySet()) {
+                AgentDateKey key = entry.getKey();
+                inHorizonSpans.put(key, RestSpan.ofSlots(key.agentId(), key.date(), entry.getValue(), dayStart));
+            }
+        }
+
+        // Predecessor candidates widen with the pre-horizon spans (REST-05/D-10) so a waiver on
+        // the period's FIRST business date can still find its predecessor. The successor side
+        // (inHorizonSpans, above) never widens this way — a pre-horizon span is never itself a
+        // reportable waiver target (D-11's one-directional lookback).
+        Map<AgentDateKey, RestSpan> predecessorSpans = new HashMap<>(inHorizonSpans);
+        for (RestSpan prior : schedule.getPriorRestSpans()) {
+            predecessorSpans.put(new AgentDateKey(prior.agentId(), prior.businessDate()), prior);
+        }
+
+        List<ViolationCandidate> appliedCandidates = new ArrayList<>();
+        List<ViolationCandidate> unusedCandidates = new ArrayList<>();
+
+        for (AgentRestWaiver waiver : schedule.getAgentRestWaivers()) {
+            LocalDate waiverDate = waiver.getDate();
+            if (waiverDate == null
+                    || waiverDate.isBefore(schedule.getPeriodStartDate())
+                    || waiverDate.isAfter(schedule.getPeriodEndDate())) {
+                continue;
+            }
+            Agent agent = waiver.getAgent();
+            if (agent == null || agent.getId() == null) {
+                continue;
+            }
+            UUID agentId = agent.getId();
+            LocalDate priorBusinessDate = waiverDate.minusDays(1);
+
+            RestSpan next = inHorizonSpans.get(new AgentDateKey(agentId, waiverDate));
+            RestSpan prev = predecessorSpans.get(new AgentDateKey(agentId, priorBusinessDate));
+
+            if (prev != null && next != null) {
+                int measuredGapMinutes = RestSpan.gapMinutes(prev, next);
+                RestWaiverEntry entry = new RestWaiverEntry(agentId, agent.getName(),
+                        priorBusinessDate, waiverDate, prev.endTime(), next.startTime(),
+                        measuredGapMinutes, requiredGapMinutes, waiver.getReason());
+                if (measuredGapMinutes < requiredGapMinutes) {
+                    appliedCandidates.add(new ViolationCandidate(waiverDate, agent.getName(), entry));
+                } else {
+                    unusedCandidates.add(new ViolationCandidate(waiverDate, agent.getName(), entry));
+                }
+            } else {
+                // One of the three remaining inert causes — a day off, an unrostered agent, or no
+                // predecessor at all — reaching the same unused section through this one path.
+                RestWaiverEntry entry = new RestWaiverEntry(agentId, agent.getName(),
+                        priorBusinessDate, waiverDate, null, null, null, requiredGapMinutes,
+                        waiver.getReason());
+                unusedCandidates.add(new ViolationCandidate(waiverDate, agent.getName(), entry));
+            }
+        }
+
+        // Deterministic order — by business date then agent name — so two renders of the same
+        // schedule are byte-identical, matching the sibling report builders' own ordering.
+        Comparator<ViolationCandidate> order = Comparator
+                .comparing(ViolationCandidate::businessDate)
+                .thenComparing(ViolationCandidate::agentName);
+        List<RestWaiverEntry> applied = appliedCandidates.stream().sorted(order)
+                .map(ViolationCandidate::entry).toList();
+        List<RestWaiverEntry> unused = unusedCandidates.stream().sorted(order)
+                .map(ViolationCandidate::entry).toList();
+
+        return new RestWaiverDisclosure(applied, unused);
+    }
+
+    /** Key for the (agent, business date) span maps {@link #buildRestWaiverDisclosure} builds. */
+    private record AgentDateKey(UUID agentId, LocalDate date) {}
+
+    /** Carries the sort key alongside the entry so the comparator need not re-derive it. */
+    private record ViolationCandidate(LocalDate businessDate, String agentName, RestWaiverEntry entry) {}
+
     // --- Helpers ---
 
     /**

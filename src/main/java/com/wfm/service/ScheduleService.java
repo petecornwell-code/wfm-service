@@ -38,6 +38,8 @@ public class ScheduleService {
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentDayOffRepository agentDayOffRepository;
     private final ConstraintWeightsRepository constraintWeightsRepository;
+    private final AgentRestWaiverRepository agentRestWaiverRepository;
+    private final RestPredecessorService restPredecessorService;
     private final ScheduleOutputService scheduleOutputService;
     private final EntityManager entityManager;
 
@@ -52,6 +54,8 @@ public class ScheduleService {
                            AgentPreferenceRepository agentPreferenceRepository,
                            AgentDayOffRepository agentDayOffRepository,
                            ConstraintWeightsRepository constraintWeightsRepository,
+                           AgentRestWaiverRepository agentRestWaiverRepository,
+                           RestPredecessorService restPredecessorService,
                            ScheduleOutputService scheduleOutputService,
                            EntityManager entityManager) {
         this.scheduleRepository = scheduleRepository;
@@ -65,6 +69,8 @@ public class ScheduleService {
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentDayOffRepository = agentDayOffRepository;
         this.constraintWeightsRepository = constraintWeightsRepository;
+        this.agentRestWaiverRepository = agentRestWaiverRepository;
+        this.restPredecessorService = restPredecessorService;
         this.scheduleOutputService = scheduleOutputService;
         this.entityManager = entityManager;
     }
@@ -159,6 +165,7 @@ public class ScheduleService {
                         ? scheduleOutputService.buildDriftReport(schedule)
                         : null);
         response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule, fromDb));
+        response.setRestWaiverDisclosure(scheduleOutputService.buildRestWaiverDisclosure(schedule, fromDb));
 
         // Derive violatedHardConstraints from constraint violations (deduplicated). This
         // derivation is correct once constraintViolations is correct (G-15-32) — the invariant it
@@ -520,6 +527,22 @@ public class ScheduleService {
         // Load constraint weights so buildConstraintViolations can explain the score
         constraintWeightsRepository.findByTenantIdAndDeskId(tenantId, deskId)
                 .ifPresent(schedule::setConstraintWeights);
+
+        // REST-07/D-13/T-22-21: the accepted-path waiver and pre-horizon loads, gated on the
+        // schedule's own snapshotted minimum rest being non-null so an unconfigured desk's
+        // accepted schedule issues no extra query. Mirrors SolverService's live-path loads of the
+        // same two facts (Phase 22, 22-05/22-06), so buildRestWaiverDisclosure can compute the
+        // identical result on both paths from the same shape of input.
+        if (schedule.getMinimumRestMinutes() != null) {
+            List<AgentRestWaiver> restWaivers = agentRestWaiverRepository.findByTenantIdAndDeskIdAndDateBetween(
+                    tenantId, deskId, schedule.getPeriodStartDate(), schedule.getPeriodEndDate());
+            schedule.setAgentRestWaivers(restWaivers);
+
+            List<RestSpan> priorRestSpans = restPredecessorService.resolvePriorSpans(
+                    tenantId, deskId, schedule.getPeriodStartDate(), schedule.getMinimumRestMinutes(),
+                    schedule.getDayStart(), schedule.getWarnings());
+            schedule.setPriorRestSpans(priorRestSpans);
+        }
     }
 
     /**
