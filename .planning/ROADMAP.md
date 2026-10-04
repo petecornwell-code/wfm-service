@@ -636,3 +636,11 @@ while a second reachable entry point violates it).
 - [ ] TBD
 
 Full analysis: `.planning/milestones/v1.2-MILESTONE-AUDIT.md`
+
+### Phase 999.10: Follow-up — Phase 22 deferred UAT follow-up: Test 2 (BACKLOG)
+
+**Goal:** Resolve the UAT checkpoint deferred during Phase 22 verification
+**Source phase:** 22
+**Deferred at:** 2026-10-04 during /gsd-verify-work 22 session completion
+**Follow-ups:**
+- [ ] Test 2: A concurrent duplicate rest-waiver POST returns a raw 500 — two genuinely simultaneous `POST /desks/{deskId}/agents/{agentId}/rest-waivers` calls for the same (agent, date) produce one 200 and one unhandled 500 off the `agent_rest_waiver` unique constraint (reproduced 3/3; row count correctly stays at 1, so no data corruption). A SEQUENTIAL duplicate is already a clean idempotent upsert, and a genuine browser double-click is correctly guarded by the disable-on-click window — only the concurrent race is affected, reachable from two tabs on the same agent or a retried in-flight request. Fix: catch `DataIntegrityViolationException` on the waiver upsert and return the same 200 the sequential path returns (or a 409), instead of letting it reach the generic 500 handler. (deferred 2026-10-04)

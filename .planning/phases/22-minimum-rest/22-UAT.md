@@ -134,6 +134,14 @@ blocked: 0
 
 [none]
 
+## Deferred Follow-Ups
+
+```yaml
+- test: 2
+  idea: "A concurrent duplicate rest-waiver POST returns a raw 500 instead of the clean 200 the sequential duplicate already returns. Catch DataIntegrityViolationException on the waiver upsert (or return 409). Promoted to ROADMAP Phase 999.10."
+  deferred_at: 2026-10-04
+```
+
 ## Observations
 
 Not a failure of any checkpoint above, recorded because it was found while exercising them.
