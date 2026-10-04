@@ -385,7 +385,7 @@ above, and satisfying it. Ten plans across seven waves is in line with this proj
 
 Plans:
 **Wave 1**
-- [ ] 22-01-PLAN.md — Tracer: a SHIFT desk's minimum rest is a hard violation end to end, plus the operator PUT endpoint (REST-01, REST-02, REST-04)
+- [x] 22-01-PLAN.md — Tracer: a SHIFT desk's minimum rest is a hard violation end to end, plus the operator PUT endpoint (REST-01, REST-02, REST-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 22-02-PLAN.md — SLOT-mode rest enforcement over the whole assigned span, with the compliant-break-gap regression proof (REST-02, REST-04)
