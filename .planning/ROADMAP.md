@@ -399,8 +399,8 @@ Plans:
 - [x] 22-06-PLAN.md — Horizon-edge lookback at the agent's real ACCEPTED pre-horizon span; last day unconstrained by decision (REST-05)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 22-07-PLAN.md — Pre-solve refusal for the structurally unavoidable case, both modes, naming agent and both shifts (REST-03)
-- [ ] 22-08-PLAN.md — Applied and unused waiver disclosure on the detail response, plus both counts on the summary (REST-07)
+- [x] 22-07-PLAN.md — Pre-solve refusal for the structurally unavoidable case, both modes, naming agent and both shifts (REST-03)
+- [x] 22-08-PLAN.md — Applied and unused waiver disclosure on the detail response, plus both counts on the summary (REST-07)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
