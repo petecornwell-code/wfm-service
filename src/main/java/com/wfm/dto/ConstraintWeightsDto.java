@@ -68,6 +68,10 @@ public class ConstraintWeightsDto {
     // untunable one.
     private ScoreDto minimumRestShiftWeight;
 
+    // Phase 22 plan 22-02 (REST-02/REST-04): the SLOT-mode sibling of minimumRestShiftWeight.
+    // Exposed here for the same reason -- ConstraintWeightDtoParityTest fails the build otherwise.
+    private ScoreDto minimumRestSlotWeight;
+
     // Getters and setters
     public ScoreDto getUnassignedAssignmentWeight() { return unassignedAssignmentWeight; }
     public void setUnassignedAssignmentWeight(ScoreDto v) { this.unassignedAssignmentWeight = v; }
@@ -131,4 +135,7 @@ public class ConstraintWeightsDto {
 
     public ScoreDto getMinimumRestShiftWeight() { return minimumRestShiftWeight; }
     public void setMinimumRestShiftWeight(ScoreDto v) { this.minimumRestShiftWeight = v; }
+
+    public ScoreDto getMinimumRestSlotWeight() { return minimumRestSlotWeight; }
+    public void setMinimumRestSlotWeight(ScoreDto v) { this.minimumRestSlotWeight = v; }
 }

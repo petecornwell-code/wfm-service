@@ -349,6 +349,23 @@ public final class ScheduleConstraintClassification {
                         + "REST-04 holds even though D-01 chose to enforce rest in BOTH modes.",
                 null));
 
+        map.put("Minimum rest (slot)", new Entry(
+                ModeClassification.MODE_GATED,
+                "Phase 22 plan 22-02 (REST-02/REST-04, D-02): the SLOT-mode sibling of 'Minimum "
+                        + "rest (shift)' -- leads with the same filtered forEach(ScheduleConfig.class) "
+                        + "singleton, requiring a non-null minimumRestMinutes AND a scheduling mode that "
+                        + "is NOT SHIFT (the same != SHIFT gate direction exactlyOneBreak already uses), "
+                        + "then self-joins RestSpan.ofSlots's per-agent-day span derivation on (agentId, "
+                        + "businessDate -> businessDate.plusDays(1)), penalising a gap below the "
+                        + "configured minimum. D-02 defines 'a shift' in SLOT mode for the first time as "
+                        + "the agent's whole assigned span on a business date, ignoring the intra-day "
+                        + "break gap, specifically to avoid false-positiving on exactlyOneBreak's "
+                        + "mandated break. The explicit != SHIFT gate on the leading singleton is what "
+                        + "makes an unset OR SHIFT-mode desk produce zero tuples at the first stream "
+                        + "node, the same structural-inertness argument 'Minimum rest (shift)' "
+                        + "established.",
+                null));
+
         return java.util.Collections.unmodifiableMap(map);
     }
 }

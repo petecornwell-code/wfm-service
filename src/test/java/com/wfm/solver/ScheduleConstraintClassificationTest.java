@@ -212,7 +212,10 @@ class ScheduleConstraintClassificationTest {
                 // Phase 22 plan 22-01 (REST-02/REST-04): leads with a filtered
                 // forEach(ScheduleConfig.class) requiring SchedulingMode.SHIFT explicitly, the same
                 // structural-inertness argument as "Shift envelope compliance" above.
-                "Minimum rest (shift)");
+                "Minimum rest (shift)",
+                // Phase 22 plan 22-02 (REST-02/REST-04, D-02): the SLOT-mode sibling, gated the
+                // opposite direction (!= SHIFT) -- the same structural-inertness argument, mirrored.
+                "Minimum rest (slot)");
 
         Map<String, ScheduleConstraintClassification.Entry> classifications =
                 ScheduleConstraintClassification.classifications();
@@ -225,11 +228,12 @@ class ScheduleConstraintClassificationTest {
         }
 
         assertThat(actual)
-                .as("MODE_GATED must be exactly the fifteen constraints whose behaviour depends "
+                .as("MODE_GATED must be exactly the sixteen constraints whose behaviour depends "
                         + "on SchedulingMode after Phase 15 (plans 15-06 and 15-09), its G-15-27 "
                         + "follow-up, Phase 17 plan 17-01's 'Usual shift consistency', plan "
                         + "17-02's 'Preferred start (shift mode)', Phase 18 MIX-02's "
-                        + "'Shift start mix', and Phase 22 plan 22-01's 'Minimum rest (shift)'")
+                        + "'Shift start mix', Phase 22 plan 22-01's 'Minimum rest (shift)', and "
+                        + "plan 22-02's 'Minimum rest (slot)'")
                 .containsExactlyInAnyOrderElementsOf(expected);
 
         for (String name : Set.of("Honour preferred start time", "Honour preferred break time")) {

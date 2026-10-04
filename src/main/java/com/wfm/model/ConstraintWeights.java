@@ -327,6 +327,27 @@ public class ConstraintWeights {
     @Column(name = "minimum_rest_shift_weight")
     private HardSoftScore minimumRestShiftWeight = HardSoftScore.ofHard(1000);
 
+    /**
+     * Weight for "Minimum rest (slot)" (Phase 22, REST-02/REST-04) — the SLOT-mode sibling of
+     * {@link #minimumRestShiftWeight}, penalising an agent whose whole assigned span on business
+     * date D starts too soon after their whole assigned span on D-1 (D-02's span definition), on a
+     * SLOT-mode desk with a configured {@code minimum_rest_minutes}.
+     *
+     * <p>Deliberately identical to {@link #minimumRestShiftWeight}'s {@code ofHard(1000)} — D-08's
+     * "the two constraints must never disagree" argument extends to severity, not only to the
+     * waived-pair predicate: one rest violation costs the same whichever mode the desk runs in.
+     *
+     * <p>This weight has no bearing on REST-04's structural inertness: a {@code NULL}
+     * {@code Desk.minimumRestMinutes} means the constraint's leading filtered
+     * {@code forEach(ScheduleConfig.class)} produces zero tuples, so no downstream self-join is
+     * even built — not merely a penalty scaled to zero by this column. The column itself
+     * (V55's {@code minimum_rest_slot_weight}) was created in plan 22-01, unread until now.
+     */
+    @ConstraintWeight("Minimum rest (slot)")
+    @Convert(converter = HardSoftScoreConverter.class)
+    @Column(name = "minimum_rest_slot_weight")
+    private HardSoftScore minimumRestSlotWeight = HardSoftScore.ofHard(1000);
+
     public ConstraintWeights() {}
 
     public UUID getId() { return id; }
@@ -424,4 +445,7 @@ public class ConstraintWeights {
 
     public HardSoftScore getMinimumRestShiftWeight() { return minimumRestShiftWeight; }
     public void setMinimumRestShiftWeight(HardSoftScore minimumRestShiftWeight) { this.minimumRestShiftWeight = minimumRestShiftWeight; }
+
+    public HardSoftScore getMinimumRestSlotWeight() { return minimumRestSlotWeight; }
+    public void setMinimumRestSlotWeight(HardSoftScore minimumRestSlotWeight) { this.minimumRestSlotWeight = minimumRestSlotWeight; }
 }

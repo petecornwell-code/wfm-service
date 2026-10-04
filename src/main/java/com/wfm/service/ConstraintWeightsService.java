@@ -129,6 +129,9 @@ public class ConstraintWeightsService {
         if (updates.getMinimumRestShiftWeight() != null) {
             weights.setMinimumRestShiftWeight(toScore(updates.getMinimumRestShiftWeight()));
         }
+        if (updates.getMinimumRestSlotWeight() != null) {
+            weights.setMinimumRestSlotWeight(toScore(updates.getMinimumRestSlotWeight()));
+        }
 
         // Phase 17 (D-07/D-08/T-17-04): validated against the MERGED entity, after every
         // partial-update block above and before persist, inside this same @Transactional method.
@@ -197,6 +200,7 @@ public class ConstraintWeightsService {
         dto.setShiftStartMixWeight(fromScore(w.getShiftStartMixWeight()));
         dto.setShiftStartMixMode(w.getShiftStartMixMode() == null ? null : w.getShiftStartMixMode().name());
         dto.setMinimumRestShiftWeight(fromScore(w.getMinimumRestShiftWeight()));
+        dto.setMinimumRestSlotWeight(fromScore(w.getMinimumRestSlotWeight()));
         return dto;
     }
 

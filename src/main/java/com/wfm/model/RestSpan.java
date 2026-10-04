@@ -4,6 +4,7 @@ import com.wfm.util.DayWindow;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,6 +35,64 @@ public record RestSpan(UUID agentId, LocalDate businessDate, LocalTime startTime
         ShiftTemplate template = sa.getShiftBandPair().template();
         return new RestSpan(sa.getAgent().getId(), sa.getDate(),
                 template.getStartTime(), template.getEndTime(), dayStart);
+    }
+
+    /**
+     * Builds a span from a SLOT-mode agent-day's assigned seats (REST-02, D-02). In SLOT mode
+     * there is no shift entity and no contiguity constraint, so "a shift" is defined here for the
+     * first time: the agent's whole assigned span on a business date, the start of their first
+     * assigned slot to the end of their last, with the intra-day break gap deliberately IGNORED.
+     *
+     * <p><b>Why the gap is ignored, not split on.</b> {@code exactlyOneBreak} is gated
+     * {@code != SchedulingMode.SHIFT}, so it is the SLOT-mode break rule, and in SLOT mode the
+     * break IS a gap in assignment — an agent compliant under that rule holds a contiguous run of
+     * slots, one gap of exactly the break duration, then the rest of the run. A maximal-
+     * contiguous-run definition of "shift" would therefore split every compliant SLOT agent-day in
+     * two at its own mandated break, and any realistic rest minimum would fire on every compliant
+     * agent-day on every SLOT desk. Exempting the break duration from a contiguous-run scan was
+     * also rejected: it avoids that false positive but ties the rest rule to break geometry — two
+     * rules that would then have to agree forever, with no shared predicate. Ignoring the gap
+     * entirely (this method) needs neither.
+     *
+     * <p><b>Ordering is by ANCHORED minute, never clock time</b> — the same idiom
+     * {@code ScheduleConstraintProvider.countContiguousGaps} already uses for a day's slot order.
+     * On a desk anchored after midnight, a {@code 23:45} slot and a {@code 00:15} slot in the same
+     * business day compare in the opposite order by clock time; the anchored integer minute keeps
+     * the ordering correct on either side of the anchor. No raw {@link LocalTime} comparison of
+     * any kind is used here — only the integer anchored minutes from {@code window}.
+     *
+     * @throws IllegalArgumentException if {@code slots} is empty. The only caller is a
+     *         {@code groupBy} node that only ever emits an agent-day with at least one assignment,
+     *         so this is unreachable in production; a loud failure here is better than silently
+     *         returning a degenerate span.
+     */
+    public static RestSpan ofSlots(UUID agentId, LocalDate businessDate, List<AgentAssignment> slots,
+            LocalTime dayStart) {
+        if (slots == null || slots.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Cannot derive a RestSpan from an empty slot list for agent " + agentId
+                            + " on business date " + businessDate);
+        }
+        DayWindow window = DayWindow.anchoredAt(dayStart);
+        LocalTime start = null;
+        LocalTime end = null;
+        int minStartMinute = Integer.MAX_VALUE;
+        int maxEndMinute = Integer.MIN_VALUE;
+        for (AgentAssignment slot : slots) {
+            LocalTime slotStart = slot.getTimeslot().getStartTime();
+            LocalTime slotEnd = slot.getTimeslot().getEndTime();
+            int startMinute = window.anchoredStartMinute(slotStart);
+            int endMinute = window.anchoredEndMinute(slotEnd);
+            if (startMinute < minStartMinute) {
+                minStartMinute = startMinute;
+                start = slotStart;
+            }
+            if (endMinute > maxEndMinute) {
+                maxEndMinute = endMinute;
+                end = slotEnd;
+            }
+        }
+        return new RestSpan(agentId, businessDate, start, end, dayStart);
     }
 
     /**

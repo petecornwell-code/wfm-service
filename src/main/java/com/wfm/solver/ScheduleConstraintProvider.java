@@ -136,6 +136,7 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
             preferredStartShiftMode(factory),
             shiftStartMix(factory),
             minimumRestShift(factory),
+            minimumRestSlot(factory),
         };
     }
 
@@ -1056,9 +1057,94 @@ public class ScheduleConstraintProvider implements ConstraintProvider {
                 .join(spans,
                         equal((cfg, prev) -> prev.agentId(), RestSpan::agentId),
                         equal((cfg, prev) -> prev.businessDate().plusDays(1), RestSpan::businessDate))
-                .filter((cfg, prev, next) -> RestSpan.gapMinutes(prev, next) < cfg.minimumRestMinutes())
-                .penalizeConfigurable((cfg, prev, next) -> cfg.minimumRestMinutes() - RestSpan.gapMinutes(prev, next))
+                // One RestGapMatch per candidate pair, computed ONCE here -- D-08's "one shared
+                // gap implementation" extended to the stream shape itself, so RestSpan.gapMinutes
+                // is called exactly once per candidate pair rather than once in the filter below
+                // and again in the penalty, matching minimumRestSlot's identical shape.
+                .map((cfg, prev, next) -> new RestGapMatch(cfg, prev, next, RestSpan.gapMinutes(prev, next)))
+                .filter(match -> match.gapMinutes() < match.cfg().minimumRestMinutes())
+                .penalizeConfigurable(match -> match.cfg().minimumRestMinutes() - match.gapMinutes())
                 .asConstraint("Minimum rest (shift)");
+    }
+
+    /**
+     * One candidate (predecessor, successor) rest pair alongside its pre-computed
+     * {@link RestSpan#gapMinutes} value (Phase 22, D-08) — shared by both mode-gated rest
+     * constraints so the single shared gap implementation is called exactly once per candidate
+     * pair, not once to decide whether to penalise and again to size the penalty.
+     */
+    private record RestGapMatch(ScheduleConfig cfg, RestSpan prev, RestSpan next, int gapMinutes) {}
+
+    /**
+     * (Phase 22, REST-02/REST-04, D-01/D-02/D-03) Minimum rest (slot) — the SLOT-mode sibling of
+     * {@link #minimumRestShift}, penalising an agent whose whole assigned span on business date D
+     * starts too soon after their whole assigned span on business date D-1, on a SLOT-mode desk
+     * that has configured a {@code minimumRestMinutes} floor.
+     *
+     * <p><b>D-02: what "a shift" means in SLOT mode.</b> SLOT mode has no shift entity and no
+     * contiguity constraint, so a shift is defined here for the first time as the agent's whole
+     * assigned span on a business date — first slot start to last slot end — via
+     * {@link RestSpan#ofSlots}, with the intra-day break gap deliberately ignored. {@code
+     * exactlyOneBreak} is gated {@code != SchedulingMode.SHIFT}, so it is the SLOT-mode break rule,
+     * and the break IS a gap in assignment there: a maximal-contiguous-run definition of "shift"
+     * would split every compliant SLOT agent-day in two at its own mandated break and fire this
+     * constraint on every compliant agent-day on every SLOT desk. See {@link RestSpan#ofSlots}'s
+     * own javadoc for the full reasoning, including the rejected break-duration-exemption
+     * alternative.
+     *
+     * <p><b>Two mode-gated constraints, not one fused stream (D-03).</b> This body is deliberately
+     * NOT merged with {@link #minimumRestShift} even though the two read near-identically — the
+     * operator chose the split after its divergence cost was named, so D-08's single shared
+     * {@link RestSpan#gapMinutes} implementation (never a second gap formula) is what stops the two
+     * constraints drifting apart, not a re-fusion at implementation time.
+     *
+     * <p><b>The mode gate direction is {@code != SHIFT}, not {@code == SLOT}</b> — the same
+     * direction {@code exactlyOneBreak} already uses and for the same reason: a never-set
+     * {@code ScheduleConfig.schedulingMode()} on a pre-Phase-15 test fixture resolves to "active",
+     * matching this constraint's SLOT-mode behaviour rather than silently disabling it.
+     *
+     * <p><b>The leading filtered {@code forEach(ScheduleConfig.class)} is what makes REST-04
+     * structural</b>, identically to {@link #minimumRestShift}: filtering the
+     * {@code @ProblemFactProperty} singleton to a non-null {@code minimumRestMinutes} and a
+     * non-SHIFT mode means an unset or SHIFT-mode desk produces ZERO tuples at the very first
+     * stream node — the self-join below is never built.
+     *
+     * <p><b>An indexed self-join, never {@code forEachUniquePair}</b>, built exactly like
+     * {@link #minimumRestShift}'s: {@code spans} is a local {@code UniConstraintStream<RestSpan>}
+     * used on both sides, joined via two {@code Joiners.equal} positions — same {@code agentId()},
+     * and the predecessor's {@code businessDate().plusDays(1)} equal to the successor's
+     * {@code businessDate()}. D-05's sub-24h bound on the configured minimum is what makes a
+     * single one-day step provably sufficient here too.
+     *
+     * <p>Penalises configurably by the shortfall in minutes, identical to {@link #minimumRestShift}.
+     *
+     * <p>Structurally inert on a SHIFT desk (explicit {@code != SHIFT} gate above) and on any desk
+     * with no configured minimum (the leading filter) — the same double-inertness shape as
+     * {@link #minimumRestShift} and {@link #shiftEnvelopeCompliance}.
+     */
+    // Package-private so ConstraintVerifier can target this constraint in isolation.
+    Constraint minimumRestSlot(ConstraintFactory factory) {
+        UniConstraintStream<RestSpan> spans = factory.forEach(AgentAssignment.class)
+                .filter(a -> a.getAgent() != null)
+                .groupBy(AGENT_ID, DATE, TO_LIST)
+                .join(AgentDayConfig.class,
+                        equal((daId, date, assignments) -> daId, AgentDayConfig::agentId),
+                        equal((daId, date, assignments) -> date, AgentDayConfig::date))
+                .map((daId, date, assignments, dayConfig) ->
+                        RestSpan.ofSlots(daId, date, assignments, dayConfig.dayStart()));
+
+        return factory.forEach(ScheduleConfig.class)
+                .filter(cfg -> cfg.minimumRestMinutes() != null && cfg.schedulingMode() != SchedulingMode.SHIFT)
+                .join(spans)
+                .join(spans,
+                        equal((cfg, prev) -> prev.agentId(), RestSpan::agentId),
+                        equal((cfg, prev) -> prev.businessDate().plusDays(1), RestSpan::businessDate))
+                // See minimumRestShift's identical RestGapMatch step: one gapMinutes call per
+                // candidate pair, shared by the filter and the penalty below.
+                .map((cfg, prev, next) -> new RestGapMatch(cfg, prev, next, RestSpan.gapMinutes(prev, next)))
+                .filter(match -> match.gapMinutes() < match.cfg().minimumRestMinutes())
+                .penalizeConfigurable(match -> match.cfg().minimumRestMinutes() - match.gapMinutes())
+                .asConstraint("Minimum rest (slot)");
     }
 
     /**

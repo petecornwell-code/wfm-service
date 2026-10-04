@@ -157,6 +157,11 @@ class ConstraintMatchCountNonVacuityTest {
         // constraint's leading filtered forEach(ScheduleConfig.class) produces no tuples and the
         // self-join below it is never built.
         expected.put("Minimum rest (shift)", 0);
+        // REST-04 (plan 22-02): zero here is the same structural evidence as "Minimum rest
+        // (shift)" above -- MidnightBoundaryFixture's baseline desk sets no minimum rest at all,
+        // so this constraint's own leading filtered forEach(ScheduleConfig.class) produces no
+        // tuples and the self-join below it is never built.
+        expected.put("Minimum rest (slot)", 0);
         return java.util.Collections.unmodifiableMap(expected);
     }
 
