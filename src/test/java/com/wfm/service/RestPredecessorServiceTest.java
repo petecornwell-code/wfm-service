@@ -183,6 +183,45 @@ class RestPredecessorServiceTest {
     }
 
     @Test
+    @DisplayName("a SHIFT-mode overnight accepted row resolves to a span carrying the wrapped end, and that span measures a true 60-minute gap against a 07:00 successor -- before the fix this measured 1500")
+    void shiftModeOvernightRow_spanCarriesTheWrappedEnd_gapMeasuredCorrectly() {
+        UUID scheduleId = UUID.randomUUID();
+        Agent a = agent();
+        List<String> warnings = new ArrayList<>();
+
+        when(acceptedScheduleDateRepository.findByTenantIdAndDeskIdAndDateInAndStatus(
+                eq(TENANT_ID), eq(DESK_ID), any(), eq(AcceptedScheduleDateStatus.ACCEPTED)))
+                .thenReturn(List.of(acceptedDate(scheduleId)));
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(predecessorSchedule(SchedulingMode.SHIFT, DAY_START)));
+        when(agentShiftAssignmentRepository.findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(
+                TENANT_ID, DESK_ID, scheduleId, LOOKBACK_DATE))
+                .thenReturn(List.of(shiftRow(a, LocalTime.of(22, 0), LocalTime.of(6, 0))));
+
+        List<RestSpan> result = service.resolvePriorSpans(
+                TENANT_ID, DESK_ID, PERIOD_START, 660, DAY_START, warnings);
+
+        assertThat(result).hasSize(1);
+        RestSpan span = result.get(0);
+        assertThat(span.startTime()).isEqualTo(LocalTime.of(22, 0));
+        assertThat(span.endTime()).isEqualTo(LocalTime.of(6, 0));
+        assertThat(span.businessDate()).isEqualTo(LOOKBACK_DATE);
+        assertThat(span.dayStart()).isEqualTo(DAY_START);
+        assertThat(warnings).isEmpty();
+
+        // Proves the resolved span is usable, not merely well-shaped: before the correction this
+        // same assertion would have produced 1500, the overstated gap REST-05 names.
+        assertThat(RestSpan.gapMinutes(span,
+                new RestSpan(a.getId(), PERIOD_START, LocalTime.of(7, 0), LocalTime.of(15, 0),
+                        LocalTime.MIDNIGHT)))
+                .isEqualTo(60);
+
+        verify(agentAssignmentRepository, never())
+                .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndBusinessDate(
+                        anyLong(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("a SLOT-mode predecessor groups that date's accepted rows by agent, one RestSpan per agent spanning first-slot-start to last-slot-end")
     void slotModePredecessor_groupsByAgent_oneSpanPerAgent() {
         UUID scheduleId = UUID.randomUUID();
@@ -211,6 +250,47 @@ class RestPredecessorServiceTest {
         assertThat(span.endTime()).isEqualTo(LocalTime.of(17, 0));
         verify(agentShiftAssignmentRepository, never())
                 .findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndDate(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a SLOT-mode span crossing calendar midnight but NOT the desk's 21:00 anchor is numerically unchanged by this phase -- its wrapped end offset collapses onto the single-argument anchored end offset (PF-02)")
+    void slotModeSpanCrossingMidnightButNotTheAnchor_unchangedByTheFix() {
+        // PF-02: RestSpan.ofSlots orders slots by anchored start minute and takes the first start
+        // and last end, so it cannot emit a span wrapping past the anchor unless an individual
+        // timeslot itself crosses the anchor -- which grid generation from the day start does not
+        // produce. At a 21:00 anchor this fixture's span starts offset 120 and ends offset 420,
+        // so the interval does NOT cross the anchor, and anchoredWrappedEndMinute collapses onto
+        // the single-argument anchored end offset at 420 -- the gap of 1740 is byte-identical
+        // before and after this phase's change.
+        UUID scheduleId = UUID.randomUUID();
+        Agent a = agent();
+        LocalTime anchor = LocalTime.of(21, 0);
+        List<String> warnings = new ArrayList<>();
+
+        when(acceptedScheduleDateRepository.findByTenantIdAndDeskIdAndDateInAndStatus(
+                eq(TENANT_ID), eq(DESK_ID), any(), eq(AcceptedScheduleDateStatus.ACCEPTED)))
+                .thenReturn(List.of(acceptedDate(scheduleId)));
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(predecessorSchedule(SchedulingMode.SLOT, anchor)));
+        when(agentAssignmentRepository.findWithRelationsByTenantIdAndDeskIdAndScheduleIdAndBusinessDate(
+                TENANT_ID, DESK_ID, scheduleId, LOOKBACK_DATE))
+                .thenReturn(List.of(
+                        slotRow(a, LocalTime.of(23, 0), LocalTime.MIDNIGHT),
+                        slotRow(a, LocalTime.of(3, 0), LocalTime.of(4, 0))));
+
+        List<RestSpan> result = service.resolvePriorSpans(
+                TENANT_ID, DESK_ID, PERIOD_START, 660, anchor, warnings);
+
+        assertThat(result).hasSize(1);
+        RestSpan span = result.get(0);
+        assertThat(span.startTime()).isEqualTo(LocalTime.of(23, 0));
+        assertThat(span.endTime()).isEqualTo(LocalTime.of(4, 0));
+        assertThat(span.dayStart()).isEqualTo(anchor);
+        assertThat(warnings).isEmpty();
+
+        assertThat(RestSpan.gapMinutes(span,
+                new RestSpan(a.getId(), PERIOD_START, LocalTime.of(9, 0), LocalTime.of(17, 0), anchor)))
+                .isEqualTo(1740);
     }
 
     @Test

@@ -214,6 +214,32 @@ class RestWaiverDisclosureTest {
     }
 
     @Test
+    void waiverOnFirstBusinessDateWithOvernightAcceptedPredecessor_reportsTheTrueGap() {
+        // The "fixed for free" report path (REST-05/REST-07 regression safety): ScheduleOutputService
+        // calls RestSpan.gapMinutes directly, so this needed no production edit of its own. Before
+        // the correction, this same fixture reported a measured gap of 1500 -- which exceeds the
+        // 660-minute minimum, so the waiver appeared under unused() and an operator reading the
+        // report would have been told the waiver was not needed, when the true rest was only 60
+        // minutes.
+        Agent dana = agent("Dana");
+        Schedule schedule = shiftSchedule(List.of(
+                shiftRowLive(dana, D1, LocalTime.of(7, 0), LocalTime.of(15, 0))
+        ), List.of(waiver(dana, D1, "Edge case")));
+        schedule.setPriorRestSpans(new ArrayList<>(List.of(
+                new RestSpan(dana.getId(), D1.minusDays(1), LocalTime.of(22, 0), LocalTime.of(6, 0),
+                        LocalTime.MIDNIGHT))));
+
+        RestWaiverDisclosure disclosure = service.buildRestWaiverDisclosure(schedule, false);
+
+        assertThat(disclosure.unused()).isEmpty();
+        assertThat(disclosure.applied()).hasSize(1);
+        RestWaiverEntry entry = disclosure.applied().get(0);
+        assertThat(entry.priorShiftEnd()).isEqualTo(LocalTime.of(6, 0));
+        assertThat(entry.measuredGapMinutes()).isEqualTo(60);
+        assertThat(entry.requiredGapMinutes()).isEqualTo(MINIMUM_REST_MINUTES);
+    }
+
+    @Test
     void waiverOutsidePeriod_absentFromBothSections() {
         Agent ana = agent("Ana");
         Schedule schedule = shiftSchedule(List.of(
