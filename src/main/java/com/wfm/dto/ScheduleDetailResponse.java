@@ -21,6 +21,18 @@ public class ScheduleDetailResponse {
     // silently binding midnight. ScheduleExportService reads it from this DTO in plan 19-06, since
     // it receives only this DTO, never a Schedule.
     private LocalTime dayStart;
+    // REST-07/D-14 (plan 22-11, gap closure): the snapshotted minimum rest this schedule was
+    // actually measured against -- schedule identity, not a live desk read, read the same way
+    // dayStart above is (a mapped @Column, populated by JPA on every path, including the
+    // DB-fallback path that never runs loadSnapshotData). This is also the configured-or-not
+    // signal the header badge and the Rest Waivers tab gate on: null means the rest-not-configured
+    // signal (this schedule's snapshotted minimum rest is null, mirroring ScheduleSummary's own
+    // dayStart/count javadoc contract); a non-null value means configured, whether or not anything
+    // was waived. These fields exist here, not only on the sibling ScheduleSummary, because the
+    // summary is reached only via the /summary endpoint, which the results page polls only while
+    // status === 'RUNNING' -- a disclosure signal living only there is absent for every finished
+    // solve and every reopened ACCEPTED schedule, which is exactly the gap this field closes.
+    private Integer minimumRestMinutes;
     private int incrementMinutes;
     private int breakDurationMinutes;
     private BigDecimal breakBlockedHours;
@@ -50,6 +62,14 @@ public class ScheduleDetailResponse {
     // never a null field, so a caller can distinguish "not yet computed" from "rest not
     // configured".
     private RestWaiverDisclosure restWaiverDisclosure;
+    // REST-07/D-13 (plan 22-11, gap closure): derived from the SAME buildRestWaiverDisclosure
+    // computation restWaiverDisclosure above uses -- never a second walk over the waiver
+    // collection -- so this field and the list sizes above can never disagree. Boxed, not
+    // primitive, for the same reason minimumRestMinutes above is: null is the rest-not-configured
+    // signal (gated on this schedule's own minimumRestMinutes being null) and 0 means configured
+    // with nothing waived -- a primitive would collapse those two states to the same number.
+    private Integer appliedRestWaiverCount;
+    private Integer unusedRestWaiverCount;
     private List<String> warnings;
     private int version;
 
@@ -305,6 +325,8 @@ public class ScheduleDetailResponse {
     public void setEndTime(LocalTime v) { this.endTime = v; }
     public LocalTime getDayStart() { return dayStart; }
     public void setDayStart(LocalTime v) { this.dayStart = v; }
+    public Integer getMinimumRestMinutes() { return minimumRestMinutes; }
+    public void setMinimumRestMinutes(Integer v) { this.minimumRestMinutes = v; }
     public int getIncrementMinutes() { return incrementMinutes; }
     public void setIncrementMinutes(int v) { this.incrementMinutes = v; }
     public int getBreakDurationMinutes() { return breakDurationMinutes; }
@@ -349,6 +371,10 @@ public class ScheduleDetailResponse {
     public void setConstraintViolations(List<ConstraintViolationEntry> v) { this.constraintViolations = v; }
     public RestWaiverDisclosure getRestWaiverDisclosure() { return restWaiverDisclosure; }
     public void setRestWaiverDisclosure(RestWaiverDisclosure v) { this.restWaiverDisclosure = v; }
+    public Integer getAppliedRestWaiverCount() { return appliedRestWaiverCount; }
+    public void setAppliedRestWaiverCount(Integer v) { this.appliedRestWaiverCount = v; }
+    public Integer getUnusedRestWaiverCount() { return unusedRestWaiverCount; }
+    public void setUnusedRestWaiverCount(Integer v) { this.unusedRestWaiverCount = v; }
     public List<String> getWarnings() { return warnings; }
     public void setWarnings(List<String> v) { this.warnings = v; }
     public int getVersion() { return version; }

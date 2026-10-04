@@ -243,14 +243,19 @@ export default function ScheduleResults() {
               {formatElapsed(elapsedSeconds)}
             </span>
           )}
-          {/* REST-07/D-15: hidden entirely when the schedule's snapshotted minimum rest is null —
-              the backend sends both counts if and only if that snapshot is non-null, so their
-              presence is the configured-or-not signal on both the poll-merged and full-detail
-              schedule object (there is no separate snapshotted-minimum-rest field on either DTO).
-              Both counts always render once shown, even at zero (never hidden at zero), so an
-              operator can tell "rest is enforced and nothing needed waiving" apart from "rest is
-              not configured at all" — hiding at zero would conflate the two. */}
-          {(schedule.appliedRestWaiverCount != null || schedule.unusedRestWaiverCount != null) && (
+          {/* REST-07/D-15 (plan 22-11, gap closure): hidden entirely when the schedule's own
+              snapshotted minimum rest is null — the gate is schedule.minimumRestMinutes itself,
+              carried by ScheduleDetailResponse directly, so loadDetail's setSchedule(data) full
+              replace cannot wipe it. That matters because a reopened ACCEPTED schedule never has
+              a summary poll to merge a signal back from — the two counts below still only land on
+              `schedule` state while tickSummary's 2-second poll is merging them in, so gating on
+              their presence (as this comment used to say) left the badge hidden for every
+              finished solve and every reopened schedule outside that narrow polling window. Both
+              counts still render through their existing != null ? count : '—' expression and
+              still render at zero (never hidden at zero), so an operator can tell "rest is
+              enforced and nothing needed waiving" apart from "rest is not configured at all" —
+              hiding at zero would conflate the two. */}
+          {schedule.minimumRestMinutes != null && (
             <span
               style={{ color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer' }}
               onClick={() => setActiveTab('restWaivers')}
@@ -1431,14 +1436,16 @@ function ViolationsTab({
   )
 }
 
-// REST-07/D-15: two sections (Applied above Unused), not one filterable table — D-09's own
-// framing is "two sections," so this deliberately does not reuse ViolationsTab's all/HARD/SOFT
-// filter-chip pattern. The tab issues no fetch of its own; it renders whatever the detail
-// response's restWaiverDisclosure carried, and whether the desk has rest configured at all is
-// read off the same two summary-poll counts the header badge uses (REST-04/D-14: there is no
-// separate snapshotted-minimum-rest field on either DTO — see the badge's comment above).
+// REST-07/D-15 (plan 22-11, gap closure): two sections (Applied above Unused), not one
+// filterable table — D-09's own framing is "two sections," so this deliberately does not reuse
+// ViolationsTab's all/HARD/SOFT filter-chip pattern. The tab issues no fetch of its own; it
+// renders whatever the detail response's restWaiverDisclosure carried, and whether the desk has
+// rest configured at all is read off the schedule's own snapshotted minimum rest
+// (schedule.minimumRestMinutes), carried by ScheduleDetailResponse directly — see the header
+// badge's comment above for why gating on the two counts' presence (as this comment used to say)
+// left this tab reporting "not configured" for every finished solve and every reopened schedule.
 function RestWaiversTab({ schedule }: { schedule: ScheduleDetail }) {
-  const configured = schedule.appliedRestWaiverCount != null || schedule.unusedRestWaiverCount != null
+  const configured = schedule.minimumRestMinutes != null
   if (!configured) {
     return <p style={{ color: '#6b7280' }}>Minimum rest is not configured for this desk.</p>
   }

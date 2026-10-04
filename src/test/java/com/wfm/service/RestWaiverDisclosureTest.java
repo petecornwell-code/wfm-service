@@ -606,6 +606,70 @@ class RestWaiverDisclosureTest {
         assertThat(detailFieldNames).contains("minimumRestMinutes");
     }
 
+    @Test
+    void acceptedSchedule_reopenedFromHistory_detailResponseCarriesBothCountsAndTheConfiguredSignal() {
+        Agent ana = agent("Ana");
+        Agent ben = agent("Ben");
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        ScheduleService scheduleService = scheduleServiceForDetailWithRealOutputService(
+                scheduleRepository, shiftAssignmentRepository, waiverRepo);
+
+        UUID scheduleId = UUID.randomUUID();
+        Schedule persisted = acceptedBaseSchedule(scheduleId, MINIMUM_REST_MINUTES);
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(persisted));
+        // Ana: D1 end 20:00 -> D2 start 4:00, an 8h gap -- short-rested against the 660-minute
+        // (11h) minimum, so her D2 waiver is APPLIED.
+        // Ben: D1 end 9:00 -> D2 start 0:00, adequately rested, so his D2 waiver is UNUSED.
+        when(shiftAssignmentRepository.findWithRelationsByTenantIdAndDeskIdAndScheduleId(
+                TENANT_ID, DESK_ID, scheduleId))
+                .thenReturn(List.of(
+                        shiftRowAccepted(ana, D1, LocalTime.of(12, 0), LocalTime.of(20, 0)),
+                        shiftRowAccepted(ana, D2, LocalTime.of(4, 0), LocalTime.of(12, 0)),
+                        shiftRowAccepted(ben, D1, LocalTime.of(1, 0), LocalTime.of(9, 0)),
+                        shiftRowAccepted(ben, D2, LocalTime.of(0, 0), LocalTime.of(8, 0))
+                ));
+        when(waiverRepo.findByTenantIdAndDeskIdAndDateBetween(TENANT_ID, DESK_ID,
+                persisted.getPeriodStartDate(), persisted.getPeriodEndDate()))
+                .thenReturn(List.of(waiver(ana, D2, "Cover"), waiver(ben, D2, "Speculative")));
+
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleDetailResponse detail = scheduleService.getScheduleDetail(DESK_ID, scheduleId, null);
+
+        assertThat(detail.getMinimumRestMinutes()).isEqualTo(MINIMUM_REST_MINUTES);
+        assertThat(detail.getAppliedRestWaiverCount()).isEqualTo(1);
+        assertThat(detail.getUnusedRestWaiverCount()).isEqualTo(1);
+        assertThat(detail.getAppliedRestWaiverCount())
+                .isEqualTo(detail.getRestWaiverDisclosure().applied().size());
+        assertThat(detail.getUnusedRestWaiverCount())
+                .isEqualTo(detail.getRestWaiverDisclosure().unused().size());
+    }
+
+    @Test
+    void unconfiguredSchedule_detailResponse_allThreeRestFieldsNullNotZero() {
+        ScheduleRepository scheduleRepository = mock(ScheduleRepository.class);
+        AgentShiftAssignmentRepository shiftAssignmentRepository = mock(AgentShiftAssignmentRepository.class);
+        AgentRestWaiverRepository waiverRepo = mock(AgentRestWaiverRepository.class);
+        ScheduleService scheduleService = scheduleServiceForDetailWithRealOutputService(
+                scheduleRepository, shiftAssignmentRepository, waiverRepo);
+
+        UUID scheduleId = UUID.randomUUID();
+        Schedule persisted = acceptedBaseSchedule(scheduleId, null);
+        when(scheduleRepository.findByIdAndTenantIdAndDeskId(scheduleId, TENANT_ID, DESK_ID))
+                .thenReturn(Optional.of(persisted));
+
+        TenantContext.setTenantId(TENANT_ID);
+
+        ScheduleDetailResponse detail = scheduleService.getScheduleDetail(DESK_ID, scheduleId, null);
+
+        assertThat(detail.getMinimumRestMinutes()).isNull();
+        assertThat(detail.getAppliedRestWaiverCount()).isNull();
+        assertThat(detail.getUnusedRestWaiverCount()).isNull();
+    }
+
     // ------------------------------------------------------------------
     //  Fixture helpers
     // ------------------------------------------------------------------
@@ -731,12 +795,47 @@ class RestWaiverDisclosureTest {
 
     private ScheduleService scheduleService(ScheduleRepository scheduleRepository,
             AgentRestWaiverRepository waiverRepo, RestPredecessorService predecessorService) {
+        // Plan 22-11: a bare Mockito mock's unstubbed buildRestWaiverDisclosure returns null
+        // (it is not a collection-returning method), which the real implementation never does --
+        // it always returns a RestWaiverDisclosure instance. getScheduleDetail's new count
+        // derivation reads that instance's own list sizes when minimumRestMinutes is non-null, so
+        // this mock must honour the same never-null invariant the production
+        // ScheduleOutputService upholds, or every caller of this helper that reaches
+        // getScheduleDetail with a non-null minimumRestMinutes NPEs on a production invariant
+        // this fixture alone was violating.
+        ScheduleOutputService mockedOutputService = mock(ScheduleOutputService.class);
+        when(mockedOutputService.buildRestWaiverDisclosure(any(), anyBoolean()))
+                .thenReturn(new RestWaiverDisclosure(List.of(), List.of()));
         return new ScheduleService(scheduleRepository, mock(AcceptedScheduleDateRepository.class),
                 mock(DeskRepository.class), new InMemoryScheduleStore(), mock(TimeslotRepository.class),
                 mock(StaffingRequirementRepository.class), mock(AgentAssignmentRepository.class),
                 mock(AgentShiftAssignmentRepository.class), mock(AgentPreferenceRepository.class),
                 mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
-                waiverRepo, predecessorService, mock(ScheduleOutputService.class), mock(EntityManager.class));
+                waiverRepo, predecessorService, mockedOutputService, mock(EntityManager.class));
+    }
+
+    /** Plan 22-11 Tests 2/3 -- the one wiring shape neither existing helper provides: a mocked
+     * {@code ScheduleRepository}, a mocked {@code AgentShiftAssignmentRepository} and a mocked
+     * {@code AgentRestWaiverRepository}, all caller-controlled via stubs, plus the REAL {@code
+     * ScheduleOutputService} field ({@code service}) so {@code getScheduleDetail}'s disclosure/
+     * count derivation runs against actual production logic rather than a mock. Modelled on
+     * {@link #scheduleService} and {@link #scheduleServiceWith}; does not widen either existing
+     * helper's signature. {@code RestPredecessorService} is mocked and stubbed to return no
+     * pre-horizon spans -- these fixtures' waived pairs are always in-horizon (D1-&gt;D2), so the
+     * predecessor lookback is never consulted. */
+    private ScheduleService scheduleServiceForDetailWithRealOutputService(
+            ScheduleRepository scheduleRepository,
+            AgentShiftAssignmentRepository agentShiftAssignmentRepository,
+            AgentRestWaiverRepository waiverRepo) {
+        RestPredecessorService predecessorService = mock(RestPredecessorService.class);
+        when(predecessorService.resolvePriorSpans(anyLong(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+        return new ScheduleService(scheduleRepository, mock(AcceptedScheduleDateRepository.class),
+                mock(DeskRepository.class), new InMemoryScheduleStore(), mock(TimeslotRepository.class),
+                mock(StaffingRequirementRepository.class), mock(AgentAssignmentRepository.class),
+                agentShiftAssignmentRepository, mock(AgentPreferenceRepository.class),
+                mock(AgentDayOffRepository.class), mock(ConstraintWeightsRepository.class),
+                waiverRepo, predecessorService, service, mock(EntityManager.class));
     }
 
     private Schedule acceptedBaseSchedule(UUID id, Integer minimumRestMinutes) {

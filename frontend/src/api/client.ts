@@ -554,6 +554,13 @@ export interface ConstraintViolationEntry {
 }
 
 export interface ScheduleDetail extends ScheduleSummary {
+  // REST-07/D-14 (plan 22-11, gap closure): the schedule's own snapshotted minimum rest, carried
+  // by this DTO directly rather than only via ScheduleSummary's inherited (and poll-merge-only)
+  // appliedRestWaiverCount/unusedRestWaiverCount. This is the configured-or-not signal the badge
+  // and RestWaiversTab now gate on, because loadDetail's setSchedule(data) full-replace cannot
+  // wipe a field this response itself carries -- unlike the two inherited counts, which only land
+  // on `schedule` state while the 2-second /summary poll is merging them in.
+  minimumRestMinutes?: number
   schedulingMode: 'SLOT' | 'SHIFT'
   staffingSummary: StaffingSummaryEntry[]
   agentSchedule: AgentScheduleEntry[]

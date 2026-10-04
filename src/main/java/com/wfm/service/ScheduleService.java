@@ -165,7 +165,19 @@ public class ScheduleService {
                         ? scheduleOutputService.buildDriftReport(schedule)
                         : null);
         response.setConstraintViolations(scheduleOutputService.buildConstraintViolations(schedule, fromDb));
-        response.setRestWaiverDisclosure(scheduleOutputService.buildRestWaiverDisclosure(schedule, fromDb));
+        // REST-07/D-13 (plan 22-11, gap closure): computed exactly ONCE and reused for both the
+        // list and the two counts below -- never a second buildRestWaiverDisclosure call and
+        // never a second walk over the waiver collection -- so the badge's numbers and the tab's
+        // row counts can never disagree. Gated on the schedule's own getMinimumRestMinutes(),
+        // matching toSummary's existing gate verbatim in condition and in meaning: both counts
+        // stay null (never 0) when rest is not configured, which is the REST-04 display extension
+        // this gap closure restores to the detail response.
+        var disclosure = scheduleOutputService.buildRestWaiverDisclosure(schedule, fromDb);
+        response.setRestWaiverDisclosure(disclosure);
+        if (schedule.getMinimumRestMinutes() != null) {
+            response.setAppliedRestWaiverCount(disclosure.applied().size());
+            response.setUnusedRestWaiverCount(disclosure.unused().size());
+        }
 
         // Derive violatedHardConstraints from constraint violations (deduplicated). This
         // derivation is correct once constraintViolations is correct (G-15-32) — the invariant it
@@ -625,6 +637,11 @@ public class ScheduleService {
         r.setStartTime(s.getStartTime());
         r.setEndTime(s.getEndTime());
         r.setDayStart(s.getDayStart());
+        // REST-07/D-14 (plan 22-11, gap closure): a mapped @Column read, populated by JPA on
+        // every path -- including the DB-fallback path that never runs loadSnapshotData -- which
+        // is precisely what the @Transient waiver/pre-horizon collections are not. This is the
+        // configured-or-not signal the header badge and Rest Waivers tab gate on.
+        r.setMinimumRestMinutes(s.getMinimumRestMinutes());
         r.setIncrementMinutes(s.getIncrementMinutes());
         r.setBreakDurationMinutes(s.getBreakDurationMinutes());
         r.setBreakBlockedHours(s.getBreakBlockedHours());
