@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 22
 current_phase_name: Minimum Rest
 status: executing
-stopped_at: Phase 22 planned — 10 plans in 7 waves, verification passed
-last_updated: "2026-10-03T23:21:10.625Z"
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-10-04T00:09:32.315Z"
 last_activity: 2026-10-03
-last_activity_desc: Phase 22 planned — 10 plans in 7 waves
-state_head: f2d94fda365e214cfb384ce31ca6c4c1498de40f
+last_activity_desc: Phase 22 execution started
+state_head: 31135edd423b3c0f6180002342d2b7660b9b75ac
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 48
-  completed_plans: 38
+  completed_plans: 39
   percent: 80
 ---
 
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 21 — Overnight Shift Templates
+**Current focus:** Phase 22 — Minimum Rest
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — READY TO EXECUTE
-Plan: Not started
+Phase: 22 (Minimum Rest) — EXECUTING
+Plan: 2 of 10
 Status: Ready to execute
-Last activity: 2026-10-03 — Phase 22 planned (10 plans, 7 waves)
+Last activity: 2026-10-03 — Phase 22 execution started
 
 ## Milestone v1.3 Outcome
 
@@ -348,6 +348,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 21]: Plan 21-11: found (not fixed) that the 'Unassigned assignment' constraint's live-path ConstraintMatch never indicts an AgentAssignment, making its 'No agent assigned for X at Y' description branch pre-existing dead code; documented as WINDOWS.md #14, Rule 4 architectural, out of scope to fix
 - [Phase 21]: Plan 21-11: amended ROADMAP.md Phase 21 criterion 4 and REQUIREMENTS.md OVNT-06 text to describe the business-day-keyed roster's calendar-span disclosure, locating the never-two-fragments property on the per-date slot grids fixed by 21-07/21-10; the original 'continuation indicator' premise was measured void (D-11)
 - [Phase 21]: 21-12: operator chose convert-seven-amend-two for the nine-entry raw-comparison allowlist; seven operator-visible sites converted to anchored-minute comparisons (incl. the preferred-start soft constraint, the one genuine scoring change), two solver move-ordering tie-breaks left unconverted with amended justifications; comparison fence now 2 entries
+- [Phase 22]: RestSpan carries its own dayStart per span so gapMinutes can refuse a cross-anchor comparison loudly (IllegalArgumentException), rather than threading the anchor separately
+- [Phase 22]: DeskService.setMinimumRest carries no ACCEPTED-schedule refusal and no scheduling-mode interaction (D-14's deliberately declined mirror of setDayStart's lock)
 
 ### Blockers/Concerns
 
@@ -371,9 +373,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-03T22:00:32.883Z
-Stopped at: Phase 22 UI-SPEC approved
-Resume file: .planning/phases/22-minimum-rest/22-UI-SPEC.md
+Last session: 2026-10-04T00:09:32.264Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
@@ -462,3 +464,4 @@ Resume file: .planning/phases/22-minimum-rest/22-UI-SPEC.md
 | Phase 21 P10 | 50 min | 3 tasks | 1 files |
 | Phase 21 P11 | 55 min | 2 tasks | 5 files |
 | Phase 21 P12 | ~90min | 2 tasks | 12 files |
+| Phase 22 P01 | 47min | 2 tasks | 19 files |
