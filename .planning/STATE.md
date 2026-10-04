@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-10-02 after Phase 20)
 
 Phase: 22 (Minimum Rest) — gap closure plans complete (12 of 12 plans executed)
 Plan: 12 of 12 executed — all plans in Phase 22 now have a SUMMARY.md
-Status: Gap closure complete — gap (a) closed by 22-12, gap (b) closed by 22-11; WR-01 (22-11), WR-02 and IN-01 (22-12) all closed. Phase 22 ready for re-verification via /gsd-verify-work.
-Last activity: 2026-10-04 — Phase 22 plan 12 executed (REST-07 gap (a) closed; WR-02 and IN-01 closed)
+Status: Re-verified 5/5 roadmap success criteria — both REST-07 gaps closed. CR-01 (critical, live-solve lazy-fetch) also closed. 3 advisory review findings open (WR-03, WR-04, IN-02). Phase NOT complete: 3 human UAT items outstanding in 22-UAT.md — run /gsd-verify-work 22.
+Last activity: 2026-10-04 — Phase 22 re-verification passed; human UAT outstanding
 
 ## Milestone v1.3 Outcome
 
