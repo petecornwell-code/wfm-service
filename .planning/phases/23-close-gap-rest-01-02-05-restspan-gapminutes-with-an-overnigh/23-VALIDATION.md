@@ -50,9 +50,11 @@ replaces these rows with one row per task once PLAN.md files exist.*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| TBD | TBD | TBD | REST-02 | — | The new wrap-aware `DayWindow` primitive is pinned directly: a 22:00–06:00 shift's wrapped end offset at a `00:00` anchor, and the collapse onto the existing single-argument offset in every non-wrapping case | unit | `./gradlew test --tests "com.wfm.util.DayWindowTest"` | ✅ class exists, new nested block | ⬜ pending |
 | TBD | TBD | TBD | REST-02 | — | `RestSpan.gapMinutes` measures the true gap when the PREDECESSOR is overnight, SHIFT mode | unit (`ConstraintVerifier`) + direct unit | `./gradlew test --tests "com.wfm.solver.MinimumRestShiftConstraintTest"` | ✅ class exists, new methods | ⬜ pending |
 | TBD | TBD | TBD | REST-02 | — | Same, SLOT mode | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.MinimumRestSlotConstraintTest"` | ✅ class exists, new methods | ⬜ pending |
 | TBD | TBD | TBD | REST-05 | — | Pre-horizon lookback builds and measures an overnight predecessor correctly, SHIFT mode | unit | `./gradlew test --tests "com.wfm.service.RestPredecessorServiceTest"` | ✅ class exists, new methods | ⬜ pending |
+| TBD | TBD | TBD | REST-05 / OVNT-03 | — | **Planner finding PF-01 (sixth affected class):** pre-horizon lookback measures an overnight predecessor correctly in BOTH modes at the horizon's first day, plus the no-successor-row negative that a day-off/PTO marking produces | unit (`ConstraintVerifier`) | `./gradlew test --tests "com.wfm.solver.RestHorizonEdgeTest"` | ✅ class exists, new methods | ⬜ pending |
 | TBD | TBD | TBD | REST-05 | — | Pre-solve refusal fires against an overnight pre-horizon predecessor, SHIFT mode | unit | `./gradlew test --tests "com.wfm.service.RestFeasibilityRefusalTest"` | ✅ class exists, new methods | ⬜ pending |
 | TBD | TBD | TBD | REST-05 | — | **Finding 2 (in scope):** pre-solve refusal fires against an overnight pre-horizon predecessor, **SLOT mode** — the one case that proves the `SolverService.requireRestFeasibility` sibling fix | unit | `./gradlew test --tests "com.wfm.service.RestFeasibilityRefusalTest"` | ✅ class exists, new method | ⬜ pending |
 | TBD | TBD | TBD | REST-01 | — | Per-desk minimum rest continues to drive both corrected call sites (regression safety; no new operator surface in this phase) | unit | `./gradlew test --tests "com.wfm.solver.MinimumRestShiftConstraintTest" --tests "com.wfm.solver.MinimumRestSlotConstraintTest"` | ✅ class exists | ⬜ pending |
@@ -66,12 +68,18 @@ replaces these rows with one row per task once PLAN.md files exist.*
 
 ## Wave 0 Requirements
 
-- [ ] **No new fixture scaffolding is needed for the fixture-level proof.** All five affected test
+- [ ] **No new fixture scaffolding is needed for the fixture-level proof.** All **six** affected test
       classes (`MinimumRestShiftConstraintTest`, `MinimumRestSlotConstraintTest`,
-      `RestPredecessorServiceTest`, `RestFeasibilityRefusalTest`, `RestWaiverDisclosureTest`) already
-      carry a `shiftRow` / `slotRow` / `compliantDaySeats` / `priorSpan`-shaped builder the new
-      overnight-predecessor cases can call directly. Confirmed by exhaustive read/grep of all five at
-      HEAD, not sampled.
+      `RestPredecessorServiceTest`, `RestFeasibilityRefusalTest`, `RestWaiverDisclosureTest` and
+      `RestHorizonEdgeTest`) already carry a `shiftRow` / `slotRow` / `compliantDaySeats` /
+      `priorSpan`-shaped builder the new overnight-predecessor cases can call directly, and
+      `DayWindowTest` already has the nested-class shape the new primitive's block follows. Confirmed
+      by exhaustive read/grep at HEAD, not sampled.
+      *Corrected 2026-10-04, after planning:* 23-RESEARCH.md's Finding 5 enumerated FIVE classes. The
+      planner found a sixth — `src/test/java/com/wfm/solver/RestHorizonEdgeTest.java` (345 lines), all
+      four of whose `priorSpan` fixtures are the same non-wrapping 14:00–22:00 shape, carrying the
+      identical gap. `DayWindowTest` was likewise unlisted. Both are now rows above. This widens the
+      coverage deliverable from five classes to six and changes no locked decision.
 - [ ] **Genuinely new infrastructure (the one Wave 0 item):** `src/test/resources/rest-gap-arithmetic-guard.md`
       registry file mirroring `rest-waiver-predicate-guard.md`'s exact structure, plus its scanner
       test class `src/test/java/com/wfm/service/RestGapArithmeticGuardTest.java`. This exists because
