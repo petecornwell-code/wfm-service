@@ -1,67 +1,43 @@
 ---
 phase: 22-minimum-rest
-verified: 2026-10-04T04:51:29Z
-status: gaps_found
-score: 4/5 roadmap success criteria verified (1 failed: REST-07)
+verified: 2026-10-04T15:57:58Z
+status: human_needed
+score: 5/5 roadmap success criteria verified
 behavior_unverified: 0
 overrides_applied: 0
-covered_files: [".planning/phases/22-minimum-rest/22-01-PLAN.md", ".planning/phases/22-minimum-rest/22-01-SUMMARY.md", ".planning/phases/22-minimum-rest/22-02-PLAN.md", ".planning/phases/22-minimum-rest/22-02-SUMMARY.md", ".planning/phases/22-minimum-rest/22-03-PLAN.md", ".planning/phases/22-minimum-rest/22-03-SUMMARY.md", ".planning/phases/22-minimum-rest/22-04-PLAN.md", ".planning/phases/22-minimum-rest/22-04-SUMMARY.md", ".planning/phases/22-minimum-rest/22-05-PLAN.md", ".planning/phases/22-minimum-rest/22-05-SUMMARY.md", ".planning/phases/22-minimum-rest/22-06-PLAN.md", ".planning/phases/22-minimum-rest/22-06-SUMMARY.md", ".planning/phases/22-minimum-rest/22-07-PLAN.md", ".planning/phases/22-minimum-rest/22-07-SUMMARY.md", ".planning/phases/22-minimum-rest/22-08-PLAN.md", ".planning/phases/22-minimum-rest/22-08-SUMMARY.md", ".planning/phases/22-minimum-rest/22-09-PLAN.md", ".planning/phases/22-minimum-rest/22-09-SUMMARY.md", ".planning/phases/22-minimum-rest/22-10-PLAN.md", ".planning/phases/22-minimum-rest/22-10-SUMMARY.md", "frontend/src/api/client.ts", "frontend/src/pages/AgentExceptions.tsx", "frontend/src/pages/DeskManagement.tsx", "frontend/src/pages/ScheduleResults.tsx", "src/main/java/com/wfm/controller/DeskAgentController.java", "src/main/java/com/wfm/controller/DeskController.java", "src/main/java/com/wfm/controller/ScheduleController.java", "src/main/java/com/wfm/dto/DeskResponse.java", "src/main/java/com/wfm/dto/MinimumRestRequest.java", "src/main/java/com/wfm/dto/RestWaiverResponse.java", "src/main/java/com/wfm/dto/ScheduleDetailResponse.java", "src/main/java/com/wfm/dto/ScheduleSummary.java", "src/main/java/com/wfm/model/AgentRestWaiver.java", "src/main/java/com/wfm/model/ConstraintWeights.java", "src/main/java/com/wfm/model/Desk.java", "src/main/java/com/wfm/model/RestSpan.java", "src/main/java/com/wfm/model/RestWaiverLookup.java", "src/main/java/com/wfm/model/Schedule.java", "src/main/java/com/wfm/model/ScheduleConfig.java", "src/main/java/com/wfm/repository/AgentAssignmentRepository.java", "src/main/java/com/wfm/repository/AgentRestWaiverRepository.java", "src/main/java/com/wfm/repository/AgentShiftAssignmentRepository.java", "src/main/java/com/wfm/service/DeskService.java", "src/main/java/com/wfm/service/RestPredecessorService.java", "src/main/java/com/wfm/service/RestWaiverService.java", "src/main/java/com/wfm/service/ScheduleOutputService.java", "src/main/java/com/wfm/service/ScheduleService.java", "src/main/java/com/wfm/service/SolverService.java", "src/main/java/com/wfm/solver/ScheduleConstraintProvider.java", "src/main/resources/db/migration/V55__add_minimum_rest.sql", "src/test/java/com/wfm/service/DeskServiceMinimumRestTest.java", "src/test/java/com/wfm/service/RestFeasibilityRefusalTest.java", "src/test/java/com/wfm/service/RestPredecessorServiceTest.java", "src/test/java/com/wfm/service/RestWaiverDisclosureTest.java", "src/test/java/com/wfm/service/RestWaiverPredicateGuardTest.java", "src/test/java/com/wfm/service/RestWaiverServiceTest.java", "src/test/java/com/wfm/solver/ConstraintMatchCountNonVacuityTest.java", "src/test/java/com/wfm/solver/MinimumRestShiftConstraintTest.java", "src/test/java/com/wfm/solver/MinimumRestSlotConstraintTest.java", "src/test/java/com/wfm/solver/RestHorizonEdgeTest.java", "src/test/java/com/wfm/solver/ScheduleConstraintClassification.java", "src/test/resources/rest-waiver-predicate-guard.md"]
-covered_digest: "v2:sha256:7e1efd6f547fe11109b78208e8a747c8cfc7591aeb78d7df63df7f31e6b3182f"
-gaps:
-  - truth: "REST-07: Waived rest violations are visible in the solved schedule's output, so a waiver cannot silently hide a roster problem (ROADMAP Success Criterion 5)"
-    status: failed
-    reason: >
-      Two independent, confirmed defects make the disclosure invisible or wrong for the schedule
-      views an operator actually uses, outside a narrow RUNNING-poll window.
-      (a) Backend DB-fallback paths. ScheduleService.listSchedules and ScheduleService.getScheduleSummary
-      fetch an ACCEPTED schedule straight from scheduleRepository and pass it to toSummary ->
-      buildRestWaiverDisclosure WITHOUT ever calling loadSnapshotData. Schedule.agentRestWaivers,
-      .priorRestSpans, .assignments and .shiftAssignments are all @Transient fields defaulting to
-      empty lists; only loadSnapshotData (called from getScheduleDetail, and from nowhere else)
-      populates them for a DB-fetched Schedule. Schedule.minimumRestMinutes IS a real mapped @Column,
-      so buildRestWaiverDisclosure's early-return-on-null guard does NOT fire; it proceeds to walk the
-      (empty) transient collections and silently returns 0 applied / 0 unused regardless of the
-      schedule's true waiver state. This was already flagged in 22-08-SUMMARY.md, re-flagged in
-      22-10-SUMMARY.md, and is confirmed here by direct inspection of ScheduleService.java (lines
-      ~80-129, ~483-546, ~677-718) and Schedule.java (lines ~156-197, carrying the @Transient
-      annotations).
-      (b) Frontend detail-response contract gap (newly identified by this verification, not
-      previously documented in SUMMARY/REVIEW/DISPOSITION). ScheduleDetailResponse.java carries
-      ONLY a `restWaiverDisclosure` field (the full applied/unused lists) -- it has no
-      appliedRestWaiverCount/unusedRestWaiverCount fields at all; those two count fields exist only
-      on ScheduleSummary (returned by the /summary endpoint). ScheduleResults.tsx's header badge
-      (line 253) and the Rest Waivers tab's `configured` gate (line 1441) both key off
-      `schedule.appliedRestWaiverCount != null || schedule.unusedRestWaiverCount != null`. These two
-      fields are populated on the `schedule` state object ONLY while tickSummary's 2-second
-      /summary poll is active, which runs ONLY while status === 'RUNNING' (ScheduleResults.tsx line
-      90). The moment a solve stops, `tickSummary` calls `loadDetail(false)` which does
-      `setSchedule(data)` -- a full state REPLACE with the detail response, wiping the two count
-      fields back to undefined because ScheduleDetailResponse never carries them. The same
-      overwrite happens on every 30-second periodic detail refresh even while still RUNNING. Net
-      effect: for every schedule that is not, at this exact instant, being polled mid-solve -- i.e.
-      every finished solve the moment it finishes, and every previously-ACCEPTED schedule reopened
-      from history -- the header badge is hidden and the Rest Waivers tab renders "Minimum rest is
-      not configured for this desk.", even when rest IS configured and `restWaiverDisclosure.applied`/
-      `.unused` ARE correctly populated in that same detail response. This directly contradicts the
-      UI-SPEC's and the code's own comment ("their presence is the configured-or-not signal on both
-      the poll-merged and full-detail schedule object") -- that claim is false for the full-detail
-      object, confirmed by reading ScheduleDetailResponse.java's field list and ScheduleResults.tsx's
-      loadDetail/tickSummary functions directly.
-      Both defects independently violate REST-07's stated purpose ("a waiver cannot silently hide a
-      roster problem") -- (a) misreports a false "nothing to see" for the list/summary surface, and
-      (b) hides the fully-correct detail-response disclosure behind "not configured" for the surface
-      an operator would actually open to check it.
-    artifacts:
-      - path: "src/main/java/com/wfm/service/ScheduleService.java"
-        issue: "listSchedules (line ~80) and getScheduleSummary (line ~677) build ScheduleSummary via toSummary() for a DB-fetched Schedule without calling loadSnapshotData first, so buildRestWaiverDisclosure computes over empty transient collections and returns a false 0/0"
-      - path: "src/main/java/com/wfm/dto/ScheduleDetailResponse.java"
-        issue: "Carries no appliedRestWaiverCount/unusedRestWaiverCount fields, so the frontend's configured-or-not signal is never true on the detail response"
-      - path: "frontend/src/pages/ScheduleResults.tsx"
-        issue: "Header badge (line 253) and RestWaiversTab's `configured` check (line 1441) depend on fields the detail response never sends; loadDetail's setSchedule(data) (line 48) replaces, rather than merges, state on every detail refresh, wiping any counts the live poll previously merged in"
-    missing:
-      - "Backend: have listSchedules/getScheduleSummary call loadSnapshotData (or an equivalent targeted load of agentRestWaivers/priorRestSpans/assignments/shiftAssignments) before computing a summary for a DB-fetched (non-in-memory) schedule, OR persist the disclosure counts at accept time instead of recomputing them transiently."
-      - "Frontend/backend contract: add appliedRestWaiverCount/unusedRestWaiverCount to ScheduleDetailResponse (mirroring ScheduleSummary), or change the frontend's configured-or-not signal to derive from the detail response's own restWaiverDisclosure field (e.g. a dedicated snapshotted-minimum-rest-is-non-null signal) so the badge/tab do not depend on fields that only exist on a different DTO reached only during RUNNING polling."
-      - "A test that opens an ALREADY-ACCEPTED or ALREADY-COMPLETED schedule's detail response directly (not via the RUNNING-poll path) and asserts the header badge/tab would show non-hidden content when rest is configured with real waiver data -- none of RestWaiverDisclosureTest's assertions target ScheduleDetailResponse's actual field set or the frontend's reliance on it, which is why this went undetected through 1437 passing backend tests and a clean tsc build."
+covered_files: [".planning/phases/22-minimum-rest/22-01-PLAN.md",".planning/phases/22-minimum-rest/22-01-SUMMARY.md",".planning/phases/22-minimum-rest/22-02-PLAN.md",".planning/phases/22-minimum-rest/22-02-SUMMARY.md",".planning/phases/22-minimum-rest/22-03-PLAN.md",".planning/phases/22-minimum-rest/22-03-SUMMARY.md",".planning/phases/22-minimum-rest/22-04-PLAN.md",".planning/phases/22-minimum-rest/22-04-SUMMARY.md",".planning/phases/22-minimum-rest/22-05-PLAN.md",".planning/phases/22-minimum-rest/22-05-SUMMARY.md",".planning/phases/22-minimum-rest/22-06-PLAN.md",".planning/phases/22-minimum-rest/22-06-SUMMARY.md",".planning/phases/22-minimum-rest/22-07-PLAN.md",".planning/phases/22-minimum-rest/22-07-SUMMARY.md",".planning/phases/22-minimum-rest/22-08-PLAN.md",".planning/phases/22-minimum-rest/22-08-SUMMARY.md",".planning/phases/22-minimum-rest/22-09-PLAN.md",".planning/phases/22-minimum-rest/22-09-SUMMARY.md",".planning/phases/22-minimum-rest/22-10-PLAN.md",".planning/phases/22-minimum-rest/22-10-SUMMARY.md",".planning/phases/22-minimum-rest/22-11-PLAN.md",".planning/phases/22-minimum-rest/22-11-SUMMARY.md",".planning/phases/22-minimum-rest/22-12-PLAN.md",".planning/phases/22-minimum-rest/22-12-SUMMARY.md",".planning/phases/22-minimum-rest/22-REVIEW-DISPOSITION.md",".planning/phases/22-minimum-rest/22-REVIEW.md","frontend/src/api/client.ts","frontend/src/pages/AgentExceptions.tsx","frontend/src/pages/DeskManagement.tsx","frontend/src/pages/ScheduleResults.tsx","src/main/java/com/wfm/controller/DeskAgentController.java","src/main/java/com/wfm/controller/DeskController.java","src/main/java/com/wfm/controller/ScheduleController.java","src/main/java/com/wfm/dto/DeskResponse.java","src/main/java/com/wfm/dto/MinimumRestRequest.java","src/main/java/com/wfm/dto/RestWaiverResponse.java","src/main/java/com/wfm/dto/ScheduleDetailResponse.java","src/main/java/com/wfm/dto/ScheduleSummary.java","src/main/java/com/wfm/model/AgentRestWaiver.java","src/main/java/com/wfm/model/ConstraintWeights.java","src/main/java/com/wfm/model/Desk.java","src/main/java/com/wfm/model/RestSpan.java","src/main/java/com/wfm/model/RestWaiverLookup.java","src/main/java/com/wfm/model/Schedule.java","src/main/java/com/wfm/model/ScheduleConfig.java","src/main/java/com/wfm/repository/AgentAssignmentRepository.java","src/main/java/com/wfm/repository/AgentRestWaiverRepository.java","src/main/java/com/wfm/repository/AgentShiftAssignmentRepository.java","src/main/java/com/wfm/service/DeskService.java","src/main/java/com/wfm/service/RestPredecessorService.java","src/main/java/com/wfm/service/RestWaiverService.java","src/main/java/com/wfm/service/ScheduleOutputService.java","src/main/java/com/wfm/service/ScheduleService.java","src/main/java/com/wfm/service/SolverService.java","src/main/java/com/wfm/solver/ScheduleConstraintProvider.java","src/main/resources/db/migration/V55__add_minimum_rest.sql","src/test/java/com/wfm/repository/RestWaiverFetchingFinderGuardTest.java","src/test/java/com/wfm/service/DeskServiceMinimumRestTest.java","src/test/java/com/wfm/service/RestFeasibilityRefusalTest.java","src/test/java/com/wfm/service/RestPredecessorServiceTest.java","src/test/java/com/wfm/service/RestWaiverDisclosureTest.java","src/test/java/com/wfm/service/RestWaiverPredicateGuardTest.java","src/test/java/com/wfm/service/RestWaiverServiceTest.java","src/test/java/com/wfm/service/ScheduleSummaryConstructionSiteGuardTest.java","src/test/java/com/wfm/service/ScheduleSummaryReadTest.java","src/test/java/com/wfm/solver/ConstraintMatchCountNonVacuityTest.java","src/test/java/com/wfm/solver/MinimumRestShiftConstraintTest.java","src/test/java/com/wfm/solver/MinimumRestSlotConstraintTest.java","src/test/java/com/wfm/solver/RestHorizonEdgeTest.java","src/test/java/com/wfm/solver/ScheduleConstraintClassification.java","src/test/resources/rest-waiver-predicate-guard.md","src/test/resources/schedule-summary-construction-site.md"]
+covered_digest: "v2:sha256:8efbdec5d8807e138b16d39efd9f2a629cebc180c7ef1ae168a00540ed940c07"
+re_verification:
+  previous_status: gaps_found
+  previous_score: "4/5 roadmap success criteria verified (1 failed: REST-07)"
+  gaps_closed:
+    - "Gap (a): ScheduleService.listSchedules and getScheduleSummary reported a false 0 applied / 0 unused for a DB-fetched ACCEPTED schedule, because buildRestWaiverDisclosure walked empty @Transient collections that neither path ever hydrated. Closed by plan 22-12: a new relations-fetching finder (AgentRestWaiverRepository.findWithAgentByTenantIdAndDeskIdAndDateBetween) plus a new private ScheduleService.hydrateRestWaiverInputsFromDb, gated by three independently-tested cost gates (zero queries when minimumRestMinutes is null, exactly one batched waiver query per listSchedules page, zero span queries when no in-period waiver exists), and never calling the expensive loadSnapshotData."
+    - "Gap (b): ScheduleDetailResponse carried no minimumRestMinutes/appliedRestWaiverCount/unusedRestWaiverCount fields, so the frontend header badge and Rest Waivers tab fell back to hidden/not-configured for every finished solve and every reopened ACCEPTED schedule outside the narrow RUNNING-poll window. Closed by plan 22-11: ScheduleDetailResponse gained all three fields (minimumRestMinutes as a mapped-column read, populated by JPA on every path including the DB fallback); ScheduleResults.tsx's badge gate and RestWaiversTab's configured gate were both re-pointed from the two-count presence check onto schedule.minimumRestMinutes != null, which loadDetail's full-state setSchedule(data) replace can no longer silently wipe."
+  gaps_remaining: []
+  regressions: []
+advisory:
+  - finding: "WR-03 — ScheduleService.hydrateRestWaiverInputsFromDb's pre-horizon branch (needsPreHorizon, calling RestPredecessorService.resolvePriorSpans) is untested through the two new call sites it was built for (listSchedules / getScheduleSummary); every new gap (a) test uses a D2-dated waiver, never a D1 (period-start-date) one. Confirmed open by direct inspection of RestWaiverDisclosureTest.java and the production branch at ScheduleService.java (~lines 673-682). The branch itself is byte-for-byte parallel to the already-tested loadSnapshotData call site (same six arguments, same method), so this is a coverage gap on a new combination of already-correct code, not a known defect."
+    category: other
+    reason: "Recorded open in 22-REVIEW-DISPOSITION.md (disposition: open, severity: warning); not required by either gap-closure plan's own must_haves, and the orchestrator's verified_state flags it as open rather than closed."
+    evidence_status: "none provided beyond direct code inspection confirming the production logic mirrors an already-tested call site"
+  - finding: "WR-04 — the IN-01 fix (DeskManagement.tsx hoursStringToMinutes/handleUpdate non-finite-parse refusal) has zero automated regression coverage; this repository has no frontend test runner at all (no *.test.ts*/*.spec.ts* files, no test script in package.json)."
+    category: other
+    reason: "Recorded open in 22-REVIEW-DISPOSITION.md (disposition: open, severity: warning). Correctness rests on tsc plus the grep-level source assertions in 22-12-SUMMARY.md's D3 coverage entry, which is explicitly marked human_judgment: true."
+    evidence_status: "none provided; standing technical debt, out of scope for a frontend-test-runner-less repo per the review's own disposition"
+  - finding: "IN-02 — the reused inline-validation message under the Min Rest input always reads \"Minimum rest must be less than 24 hours.\", including when hoursStringToMinutes returns undefined for a non-numeric keystroke (e.g. \"abc\"), which is a different problem than an out-of-range number. handleUpdate correctly refuses to save in this case; only the message text is imprecise."
+    category: other
+    reason: "Recorded open in 22-REVIEW-DISPOSITION.md (disposition: open, severity: info). Cosmetic — the save-refusal behavior itself is correct and covered by the grep assertions; only the wording is inaccurate."
+    evidence_status: "none provided; cosmetic, deferred per the review's own suggested fix"
+human_verification:
+  - test: "DeskManagement.tsx Min Rest column (22-04's 7-step human-check, deferred to end-of-phase per workflow.human_verify_mode): open the desk config table and confirm the Min Rest (hrs) column sits between Day Start and Actions with the em-dash for an unconfigured desk; edit a desk to 10.5, save, reload twice and confirm it persists; clear to empty and confirm it reads the em-dash (not 0); set to 0 and confirm it reads 0 (not the em-dash); type 25 and confirm the amber (not red) out-of-range message appears without disabling Save; edit only the Name and confirm Min Rest is untouched; narrow the browser until the table scrolls and confirm no clipped content."
+    expected: "All seven sub-checks pass as described; the null/zero distinction in particular must survive a real round trip through the PUT endpoint and a page reload, not just the in-memory state."
+    why_human: "Visual rendering (column position, em-dash vs 0, amber vs red color), a live round trip against a running app and database, and narrow-viewport reflow are explicitly outside what grep/tsc can confirm; screenshots do not settle reliably on this app per this project's own documented hazard."
+  - test: "AgentExceptions.tsx Rest Waivers section (22-09's 9-step human-check, deferred to end-of-phase): open one agent's exceptions page, confirm the Rest Waivers card layout and empty-state copy; add a waiver and confirm immediate (no Save-step) persistence across a reload; double-click Add rapidly and confirm exactly one row with the button disabled between clicks; submit a blank reason and confirm the server's own error surfaces with no row created; delete a row and confirm no confirmation dialog, a success toast, and the row gone after reload; add a waiver on a day-off date and confirm acceptance and consistent dimming; add a very-long-reason waiver and confirm it wraps rather than truncates; narrow the viewport and confirm the form wraps without overflow."
+    expected: "All nine sub-checks pass as described, including the immediate-persistence (no explicit Save) interaction model and the double-click idempotency guard."
+    why_human: "Live add/delete round trip against a running app and database, toast behavior, click-debounce timing, and visual wrap/overflow behavior are outside static analysis; this project's screenshot tool does not settle reliably here."
+  - test: "ScheduleResults.tsx header badge and Rest Waivers tab (22-10's 11-step human-check, deferred to end-of-phase, and the specific surface both gap-closure plans targeted): solve a fixture desk with configured minimum rest and one deliberately waived short-rested pair; confirm the header badge renders last in the header row in the correct muted treatment and updates on the fast 2-second tick while RUNNING; click it and confirm the Rest Waivers tab activates, positioned between Constraint Violations and PTO; confirm Applied (green) sits above Unused (grey) with gaps as one-decimal-hour figures; confirm an unused waiver on a day-off date renders correctly; open a schedule on a desk with NO configured rest and confirm the badge is absent and the tab shows the never-configured (not nothing-recorded) copy; trigger a pre-solve rest refusal and confirm the full untruncated string renders in the existing red block; narrow the viewport and confirm reflow rather than clipping."
+    expected: "All eleven sub-checks pass as described. This is the first human-eyes confirmation that the two now-closed defects (the false DB-fallback 0/0, and the detail-response field gap) actually produce a correct badge/tab for a REOPENED ACCEPTED schedule, not only for a schedule caught mid-poll — the exact distinction the two gap-closure plans were written to fix."
+    why_human: "Visual color/placement checks, the live 2-second poll tick, click-to-switch-tab interaction, and viewport reflow are outside static analysis; running a real solve against a fixture desk is required to produce an actual waived pair to inspect. A pass taken before 22-11/22-12 landed would have exercised the broken fallback path and risked confirming a false negative as correct — this is the first point at which running it is meaningful."
 ---
 
 # Phase 22: Minimum Rest Verification Report
@@ -70,9 +46,10 @@ gaps:
 enforced as a hard constraint the solver cannot silently violate, with a pre-solve refusal for the
 structurally unavoidable cases and a per-agent, per-date waiver for the genuinely exceptional ones.
 
-**Verified:** 2026-10-04T04:51:29Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-10-04T15:57:58Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (plans 22-11 and 22-12, closing both halves of the
+prior `gaps_found` verdict's REST-07 failure)
 
 ## Goal Achievement
 
@@ -80,127 +57,214 @@ structurally unavoidable cases and a per-agent, per-date waiver for the genuinel
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | An operator can set a minimum rest period per desk via the desk config UI, and a desk that sets none solves exactly as today (REST-01, REST-04) | ✓ VERIFIED | `DeskManagement.tsx` "Min Rest (hrs)" column (read/edit, em-dash for null, hours↔minutes conversion); `DeskService.setMinimumRest` enforces `0 ≤ x < 1440`, null clears to SQL NULL, equal-value early return, no ACCEPTED-schedule lock (D-14); `ScheduleConstraintProvider.minimumRestShift`/`minimumRestSlot` both lead with `filter(cfg -> cfg.minimumRestMinutes() != null ...)` so a NULL desk produces zero tuples at the first stream node (not a zero-weight penalty); `ConstraintMatchCountNonVacuityTest` asserts match count 0 for both constraints on the no-rest baseline fixture |
-| 2 | The solver treats insufficient rest as a hard violation, measured between actual end/start instants, with tested behaviour at both horizon edges (REST-02, REST-05) | ✓ VERIFIED | `minimumRestShift`/`minimumRestSlot` constraints penalize via `RestSpan.gapMinutes` on an indexed self-join keyed on `(agentId, businessDate+1)`; `RestPredecessorService.resolvePriorSpans` looks back exactly one business date (`periodStartDate.minusDays(1)`, confirmed at line 107) sourced from ACCEPTED history only; `RestHorizonEdgeTest` proves first-day-constrained-with-predecessor, first-day-unconstrained-without-one, and last-day-deliberately-unconstrained (D-11) in both modes |
-| 3 | A rest violation that is structurally unavoidable is refused before the solve runs, naming the agent and both shifts, by a mechanism separate from the in-solve constraint (REST-03) | ✓ VERIFIED | `SolverService.requireRestFeasibility` (confirmed present, called from `buildSchedule` at line ~499) is a distinct pre-solve method, separate from the constraint-stream mechanism, reasoning over the cross-date product of eligible pairs; `RestFeasibilityRefusalTest` exists covering refusal/non-refusal/pre-horizon/waived-occurrence/both-mode cases per plan 22-07's must_haves |
-| 4 | An operator can waive minimum rest for one agent/date with a reason through the existing per-agent exception mechanism; the solver treats a waived pair as legal, and a waived occurrence does not trigger the pre-solve refusal (REST-06) | ✓ VERIFIED | `AgentRestWaiver`/`RestWaiverService`/`DeskAgentController` (`/rest-waivers` endpoints) confirmed; `AgentExceptions.tsx` "Rest Waivers" section with immediate add/delete wired to `restWaivers.save/delete/list` in `client.ts`; **both** `minimumRestShift` and `minimumRestSlot` call `RestWaiverLookup.waives(...)` via `.ifNotExists(AgentRestWaiver.class, filtering(...))`, placed after the gap filter — confirmed by direct code read at `ScheduleConstraintProvider.java` lines 1080-1082 and 1171-1173; `requireRestFeasibility` also calls the same predicate via `isAgentDayWaived`/`RestWaiverLookup.isWaived` (line 2119) before accumulating an `ErrorDetail`; `RestWaiverPredicateGuardTest` + `rest-waiver-predicate-guard.md` registry confirm exactly ONE implementation (`RestWaiverLookup`) and exactly the three expected call sites (`ScheduleConstraintProvider` ×2, `SolverService` ×1), with the third (pre-solve refusal) correctly recorded as landed rather than "expected, not yet landed" |
-| 5 | A waived rest violation is visible in the solved schedule's output, so a waiver cannot silently hide a roster problem (REST-07) | ✗ FAILED | See Gaps Summary and the `gaps:` frontmatter entry. Two independent, confirmed defects: (a) `listSchedules`/`getScheduleSummary`'s DB-fallback path reports a false `0 applied / 0 unused` for an ACCEPTED schedule's transient (unhydrated) waiver collections — already known, re-flagged by 22-08/22-10; (b) `ScheduleDetailResponse` carries no count fields at all, so the frontend header badge and Rest Waivers tab fall back to hidden/"not configured" for any schedule not actively mid-poll during a RUNNING solve — i.e. every finished or reopened schedule — newly identified in this verification pass |
+| 1 | An operator can set a minimum rest period per desk via the desk config UI, and a desk that sets none solves exactly as today (REST-01, REST-04) | ✓ VERIFIED | Unchanged since the prior pass; re-confirmed by direct re-read of `DeskManagement.tsx`, `DeskService.setMinimumRest`, and `ScheduleConstraintProvider`'s NULL-gated constraints. No regression. |
+| 2 | The solver treats insufficient rest as a hard violation, measured between actual end/start instants, with tested behaviour at both horizon edges (REST-02, REST-05) | ✓ VERIFIED | Unchanged since the prior pass. `RestHorizonEdgeTest` (part of the 213-file, 1454-test green suite) still covers both edges. No regression. |
+| 3 | A rest violation that is structurally unavoidable is refused before the solve runs, naming the agent and both shifts, by a mechanism separate from the in-solve constraint (REST-03) | ✓ VERIFIED | Unchanged since the prior pass. `SolverService.requireRestFeasibility` and `RestFeasibilityRefusalTest` re-confirmed present and passing. No regression. |
+| 4 | An operator can waive minimum rest for one agent/date with a reason through the existing per-agent exception mechanism; the solver treats a waived pair as legal, and a waived occurrence does not trigger the pre-solve refusal (REST-06) | ✓ VERIFIED | Unchanged since the prior pass. `RestWaiverLookup`/`RestWaiverPredicateGuardTest` re-confirmed (8/8 passing per `TEST-com.wfm.service.RestWaiverPredicateGuardTest.xml`). No regression — and the CR-01 fix (below) strengthens this path further. |
+| 5 | A waived rest violation is visible in the solved schedule's output, so a waiver cannot silently hide a roster problem (REST-07) | ✓ VERIFIED | **Both previously-confirmed defects are now closed.** See "REST-07 Gap Closure" below for the full evidence trail. |
 
-### Claim-Specific Adjudications (per the dispatch brief)
+**Score:** 5/5 truths verified (0 present, behavior-unverified)
 
-**1. Is REST-07 genuinely satisfied?** No. Beyond the already-documented DB-fallback false-zero
-(backend), this verification independently confirmed a second, more severe defect: the frontend's
-only signal for "is rest configured" on the schedule detail page is a pair of count fields
-(`appliedRestWaiverCount`/`unusedRestWaiverCount`) that **do not exist on `ScheduleDetailResponse`
-at all** — they exist only on `ScheduleSummary`, reached only via the `/summary` endpoint, polled
-only while `status === 'RUNNING'`. The moment a solve finishes (or whenever an already-accepted
-schedule is reopened), the page's `loadDetail` fully replaces `schedule` state with the detail
-response, which never carries those fields — so the header badge disappears and the Rest Waivers
-tab reports "not configured", even though `restWaiverDisclosure.applied`/`.unused` are correctly
-populated in that very same response. A `gaps_found` verdict is correct and recommended.
+### REST-07 Gap Closure — Direct Code Verification
 
-**2. REST-02's "unless waived" clause — wired into BOTH mode-gated constraints?** Yes, confirmed.
-Direct code inspection shows `minimumRestShift` (lines 1080-1082) and `minimumRestSlot` (lines
-1171-1173) both call `RestWaiverLookup.waives` through an identically-shaped
-`.ifNotExists(AgentRestWaiver.class, filtering(...))` clause placed after the gap filter. Plan
-22-05 (which lands this) has a completed SUMMARY, so the clause genuinely holds at HEAD, not just
-nominally per REQUIREMENTS.md's `Complete` marker.
+This is a re-verification. The prior pass's `gaps_found` verdict rested on two independently
+confirmed defects, both read directly from source again in this pass (not re-trusted from
+SUMMARY.md claims):
 
-**3. Deliberate narrowings — implemented as decided, not as accidents?** Yes, confirmed for all
-four:
-- **D-05 one-business-date lookback:** `RestPredecessorService` reads `periodStartDate.minusDays(1)` exactly once, with the javadoc explicitly invoking D-05's sub-24-hour bound as the proof a single step suffices.
-- **D-11 last-day unconstrained:** `RestHorizonEdgeTest` contains `lastDayUnconstrained_noForwardLookahead_zeroMatches_deliberate`, a named test pinning the decision rather than leaving it an untested accident.
-- **D-04 NULL → zero tuples:** Both rest constraints lead with a filtered `forEach(ScheduleConfig.class)` gate (`cfg.minimumRestMinutes() != null`), and `ConstraintMatchCountNonVacuityTest` asserts a match count of 0 (not merely a zero score) for both "Minimum rest (shift)" and "Minimum rest (slot)" on the no-rest baseline — structural inertness, not a coincidentally-zero penalty.
-- **D-08 single predicate implementation:** `RestWaiverLookup` is the only implementation; `RestWaiverPredicateGuardTest` performs set-equality checks against `rest-waiver-predicate-guard.md`'s two allowlists (entity references, call sites) plus a textual second-implementation scan, and the registry's three-row call-site table correctly shows the pre-solve refusal's row as landed (not the "expected, not yet landed" placeholder), confirming the guard was updated in the same commit series as plan 22-07, per its own must_haves.
+**Gap (a) — DB-fallback false `0`/`0` — CLOSED.**
+Direct read of `src/main/java/com/wfm/service/ScheduleService.java`:
+- `getScheduleSummary` (line ~819): when the resolved schedule came from the DB (`fromDb`) and
+  carries a non-null `getMinimumRestMinutes()`, it now calls the new
+  `AgentRestWaiverRepository.findWithAgentByTenantIdAndDeskIdAndDateBetween` finder and passes the
+  result into the new private `hydrateRestWaiverInputsFromDb` before building the summary — cost
+  gate 1 (line ~841: `if (fromDb && schedule.getMinimumRestMinutes() != null)`).
+- `listSchedules` (line ~80): narrows the DB-sourced schedules to those with a non-null snapshotted
+  minimum rest, issues exactly ONE desk-wide waiver query spanning the narrowed set's combined
+  period, and hydrates each entry from that one shared result — cost gate 2 (lines ~111-131). The
+  in-memory (RUNNING) schedule is excluded from hydration by identity, matching the "never mutate
+  the object `InMemoryScheduleStore` hands back by reference" invariant.
+- `hydrateRestWaiverInputsFromDb` (private helper, line ~628): filters the shared candidate list to
+  the schedule's own period; if empty, returns immediately with no span query (cost gate 3, line
+  ~636); otherwise loads only the `{D, D-1}` business dates each in-period waiver actually
+  references, through the pre-existing per-business-date finders — never `loadSnapshotData`'s
+  seven-load, whole-schedule-assignment path.
+- Behavioral proof, not just presence: `RestWaiverDisclosureTest.acceptedSchedule_dbFallbackSummary_reportsTheTrueCountsNotZero`
+  is a direct inverse of the recorded defect — a short-rested waived agent and an adequately-rested
+  waived agent, asserting `appliedRestWaiverCount == 1` and `unusedRestWaiverCount == 1` on a
+  DB-resolved schedule. The plan's own RED evidence (quoted in `22-12-SUMMARY.md`) shows this exact
+  test failing with `expected: 1 but was: 0` against the pre-fix tree — the literal defect
+  `22-VERIFICATION.md`'s prior pass recorded. `listSchedules_manyAcceptedSchedules_issuesExactlyOneWaiverQuery`,
+  `acceptedSchedule_noWaiversInPeriod_issuesNoSpanQueryAndReportsZero`,
+  `nullMinimumRest_dbFallbackSummary_issuesNoWaiverQueryAtAll`, and
+  `listSchedules_doesNotMutateTheInMemorySchedule` independently assert each of the three cost gates
+  and the no-mutation invariant with `verify(..., never())`/`verify(..., times(1))` — not comments.
+- All five tests confirmed passing in `build/test-results/test/TEST-com.wfm.service.RestWaiverDisclosureTest.xml`
+  (30/30 tests, 0 failures, 0 errors — up from 25 at the end of plan 22-11, up from 22 before this
+  gap closure began).
 
-### Required Artifacts (representative sample; full list in `files_modified` across 10 plans)
+**Gap (b) — detail-response field gap — CLOSED.**
+Direct read of `src/main/java/com/wfm/dto/ScheduleDetailResponse.java`: declares
+`minimumRestMinutes`, `appliedRestWaiverCount` and `unusedRestWaiverCount` (all boxed `Integer`,
+lines 35, 71-72) with matching getters/setters (lines 328-329, 374-377).
+Direct read of `ScheduleService.buildDetailResponse` (line ~767): `r.setMinimumRestMinutes(s.getMinimumRestMinutes())`
+is a mapped-`@Column` read, populated by JPA on every path including the DB fallback that never
+runs `loadSnapshotData`. `getScheduleDetail` (line ~199) computes `buildRestWaiverDisclosure` exactly
+once into a local, sets it on the response, and — gated on `schedule.getMinimumRestMinutes() != null`
+— derives both counts from that single disclosure's list sizes, never a second walk.
+Direct read of `frontend/src/pages/ScheduleResults.tsx`: the header badge's gate (line 258) and
+`RestWaiversTab`'s `configured` gate (line 1448) both now read `schedule.minimumRestMinutes != null`
+— the schedule's own snapshotted value carried directly on the detail response — rather than the two
+counts' presence, which only ever landed on `schedule` state during the 2-second `/summary` poll.
+Both UI-SPEC empty-state copy strings (`"Minimum rest is not configured for this desk."` /
+`"No rest waivers recorded for this schedule."`) are preserved verbatim (lines 1450, 1457).
+Behavioral proof: `detailResponse_declaresEveryRestWaiverCountFieldTheSummaryHas_plusTheSnapshottedRestSignal`
+is a reflection-based RED-then-GREEN test whose quoted RED output (in `22-11-SUMMARY.md`) names the
+three absent fields against HEAD before the fix. `acceptedSchedule_reopenedFromHistory_detailResponseCarriesBothCountsAndTheConfiguredSignal`
+reaches `getScheduleDetail` through the DB-resolve branch (no `/summary` poll involved at all) and
+asserts both counts equal the disclosure's own list sizes. `unconfiguredSchedule_detailResponse_allThreeRestFieldsNullNotZero`
+confirms the REST-04 display-extension invariant: null, never a derived zero, for an unconfigured
+desk.
+
+**Regression check — CR-01 (critical finding from the incremental code review, already fixed per
+the dispatch brief's verified_state) re-confirmed by direct read.** `SolverService.java` line 239
+now calls `findWithAgentByTenantIdAndDeskIdAndDateBetween` (the same relations-fetching finder gap
+(a) introduced), not the non-fetching `findByTenantIdAndDeskIdAndDateBetween`. A repo-wide grep
+confirms the non-fetching finder has **zero remaining production callers** — its only appearances
+in `src/main/java` are its own interface declaration and javadoc — matching
+`RestWaiverFetchingFinderGuardTest`'s structural claim (confirmed passing, 4/4, in
+`build/test-results/test/TEST-com.wfm.repository.RestWaiverFetchingFinderGuardTest.xml`). All three
+production paths that read waivers for the disclosure (`listSchedules`, `getScheduleSummary`,
+`loadSnapshotData` via `getScheduleDetail`, and `SolverService`'s live problem-fact load) now load
+through the exact same fetching finder.
+
+**WR-02 (structural guard for `ScheduleSummary` construction) — re-confirmed.**
+`grep -rl 'new ScheduleSummary(' src/main/java/` returns exactly one file
+(`ScheduleService.java`, line 901). `ScheduleController.toSummary` is deleted; its three
+summary-returning endpoints (`startSolve`, `stopSolve`, `acceptSchedule`) all call
+`scheduleService.toSummary(schedule)` (confirmed by direct read of `ScheduleController.java`, which
+now has exactly 4 constructor parameters, not 6). `ScheduleSummaryConstructionSiteGuardTest`
+(5/5 passing) asserts set equality against `schedule-summary-construction-site.md`'s one-entry
+allowlist, and the plan's quoted RED evidence shows a temporarily-added second construction site in
+`ScheduleExportService` was actually caught by the guard before being reverted — the guard's own
+failing direction was observed, not assumed.
+
+**IN-01 (non-finite minimum-rest parse) — re-confirmed.** `frontend/src/pages/DeskManagement.tsx`'s
+`hoursStringToMinutes` now returns `number | null | undefined`; a non-finite parse returns
+`undefined` (via `Number.isFinite`, confirmed present at line 30), never `NaN` serialising to
+`null`. `handleUpdate` checks for `undefined` before the change-comparison (confirmed at lines
+138-140), so the clearing PUT cannot fire on a garbage keystroke.
+
+### Open Findings Carried Forward (not blocking REST-07)
+
+Three findings from the incremental code review of plans 22-11/22-12 remain `open` per
+`22-REVIEW-DISPOSITION.md` and are recorded in this report's `advisory:` frontmatter rather than as
+gaps, because none of them is required by either gap-closure plan's own `must_haves` and none
+represents a failure of an observable truth: **WR-03** (a test-coverage gap on an already-correct,
+byte-for-byte-parallel code branch — the pre-horizon lookback through the two new DB-fallback call
+sites has no `D1`-dated-waiver test, though the identical call shape is tested on the pre-existing
+`loadSnapshotData` path), **WR-04** (the IN-01 fix has no automated regression test, because this
+repository has no frontend test runner at all — standing, disclosed technical debt), and **IN-02**
+(a cosmetic validation-message mismatch for a non-numeric keystroke; the underlying save-refusal
+behavior is correct).
+
+### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/main/java/com/wfm/model/RestSpan.java` | Shared gap/span implementation | ✓ VERIFIED | 131 lines, `gapMinutes`/`ofShift`/`ofSlots` present, used by both constraints, the pre-solve refusal, and the disclosure builder |
-| `src/main/java/com/wfm/model/RestWaiverLookup.java` | Single waived-pair predicate | ✓ VERIFIED | 65 lines, `waives`/`isWaived`, used by exactly 3 call sites per the structural guard |
-| `src/main/java/com/wfm/model/AgentRestWaiver.java` | Waiver entity | ✓ VERIFIED | 68 lines, substantive |
-| `src/main/java/com/wfm/service/RestWaiverService.java` | Waiver CRUD | ✓ VERIFIED | 124 lines, substantive |
-| `src/main/java/com/wfm/service/RestPredecessorService.java` | Horizon lookback | ✓ VERIFIED | 211 lines, one-day lookback confirmed |
-| `src/main/java/com/wfm/solver/ScheduleConstraintProvider.java` (minimumRestShift/minimumRestSlot) | Both mode-gated hard constraints | ✓ VERIFIED | Both present, both waiver-excluding, both registered in `defineConstraints` |
-| `src/main/java/com/wfm/service/SolverService.java` (requireRestFeasibility) | Pre-solve refusal | ✓ VERIFIED | Present, separate mechanism, waiver-aware |
-| `src/main/java/com/wfm/service/ScheduleOutputService.java` (buildRestWaiverDisclosure) | Disclosure computation | ✓ VERIFIED (compute logic), ⚠️ see gap | Correctly computes from solution rows when its inputs are hydrated; the gap is in what hydrates/reaches it, not this method's own logic |
-| `src/main/java/com/wfm/dto/ScheduleDetailResponse.java` | Disclosure + count fields | ⚠️ PARTIAL (see gap) | Carries `restWaiverDisclosure` correctly but is MISSING `appliedRestWaiverCount`/`unusedRestWaiverCount`, which the frontend badge/tab require |
-| `frontend/src/pages/DeskManagement.tsx` | Min Rest column | ✓ VERIFIED | Header, read/edit cells, conditional PUT, em-dash-for-null all present |
-| `frontend/src/pages/AgentExceptions.tsx` | Rest Waivers section | ✓ VERIFIED | Heading, immediate add/delete, Date/Reason/Actions table all present |
-| `frontend/src/pages/ScheduleResults.tsx` | Header badge + Rest Waivers tab | ✗ WIRED BUT DATA-STARVED | Code is present and structurally correct, but depends on fields never sent by the endpoint it actually reads for 95%+ of real views (see gap) |
+| `src/main/java/com/wfm/dto/ScheduleDetailResponse.java` | Disclosure + count + snapshotted-rest fields | ✓ VERIFIED | `minimumRestMinutes`, `appliedRestWaiverCount`, `unusedRestWaiverCount` all present with accessors (gap (b) closed) |
+| `src/main/java/com/wfm/service/ScheduleService.java` | Truthful DB-fallback counts, single `toSummary` entry point, hydration helper | ✓ VERIFIED | `getScheduleSummary`/`listSchedules` hydrate via `hydrateRestWaiverInputsFromDb` under three cost gates; `toSummary(Schedule)` is the sole public entry point (gap (a) and WR-02 closed) |
+| `src/main/java/com/wfm/repository/AgentRestWaiverRepository.java` | Relations-fetching waiver finder | ✓ VERIFIED | `findWithAgentByTenantIdAndDeskIdAndDateBetween` present, `JOIN FETCH`es `agent`, scoped by `tenantId` and `deskId` |
+| `src/main/java/com/wfm/controller/ScheduleController.java` | Single delegation point, no duplicate construction | ✓ VERIFIED | `toSummary` deleted; 4-arg constructor; all 3 summary endpoints delegate to `scheduleService.toSummary` |
+| `src/test/java/com/wfm/service/ScheduleSummaryConstructionSiteGuardTest.java` | WR-02 structural guard | ✓ VERIFIED | 5/5 passing; RED direction demonstrated live per the plan's own commit evidence |
+| `src/test/resources/schedule-summary-construction-site.md` | Guard registry | ✓ VERIFIED | One-entry allowlist (`com.wfm.service.ScheduleService`), parsed by the guard test |
+| `frontend/src/pages/ScheduleResults.tsx` | Header badge + Rest Waivers tab, correctly gated | ✓ VERIFIED | Badge and tab's `configured` gate both re-pointed at `schedule.minimumRestMinutes != null`; both UI-SPEC empty-state strings preserved verbatim |
+| `frontend/src/pages/DeskManagement.tsx` | Min Rest column, non-finite-parse refusal | ✓ VERIFIED | `Number.isFinite` guard present; `handleUpdate` checks `undefined` before the change comparison (IN-01 closed) |
+| `frontend/src/api/client.ts` | `ScheduleDetail.minimumRestMinutes` | ✓ VERIFIED | Present at line 563, with explanatory comment |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `DeskManagement.tsx` | `client.ts` → `DeskController` | `desks.setMinimumRest` → `PUT /desks/{id}/minimum-rest` | ✓ WIRED | Confirmed end to end |
-| `ScheduleConstraintProvider.minimumRestShift`/`minimumRestSlot` | `RestWaiverLookup` | `.ifNotExists(..., filtering(RestWaiverLookup.waives))` | ✓ WIRED | Confirmed in both constraints |
-| `SolverService.requireRestFeasibility` | `RestWaiverLookup` | `isAgentDayWaived` → `RestWaiverLookup.isWaived` | ✓ WIRED | Confirmed |
-| `ScheduleService.loadSnapshotData` | `AgentRestWaiverRepository`/`RestPredecessorService` | Populates `agentRestWaivers`/`priorRestSpans` for the **detail** path | ✓ WIRED (detail path only) | Confirmed — but this method is NOT called from `listSchedules`/`getScheduleSummary`, which is the root of gap (a) |
-| `ScheduleResults.tsx` header badge / Rest Waivers tab | `ScheduleDetailResponse` | Reads `appliedRestWaiverCount`/`unusedRestWaiverCount` | ✗ NOT WIRED | These fields do not exist on `ScheduleDetailResponse`; the read always resolves to `undefined` outside the RUNNING-poll merge window — root of gap (b) |
+| `Schedule.minimumRestMinutes` (mapped `@Column`) | `ScheduleDetailResponse.minimumRestMinutes` | `buildDetailResponse` | ✓ WIRED | Populated by JPA on every path, including DB fallback |
+| `ScheduleDetailResponse`/`ScheduleResults.tsx` badge+tab gate | `schedule.minimumRestMinutes` | Re-pointed gate expression | ✓ WIRED | `loadDetail`'s full-state replace can no longer wipe the configured-or-not signal |
+| `AgentRestWaiverRepository.findWithAgentByTenantIdAndDeskIdAndDateBetween` | `Schedule.agentRestWaivers` | `hydrateRestWaiverInputsFromDb` | ✓ WIRED | Confirmed at `listSchedules` and `getScheduleSummary` call sites |
+| `ScheduleController.startSolve`/`stopSolve`/`acceptSchedule` | `ScheduleService.toSummary(Schedule)` | Direct delegation | ✓ WIRED | Confirmed — single construction site, no duplicate |
+| `SolverService`'s live problem-fact load | `AgentRestWaiverRepository.findWithAgentByTenantIdAndDeskIdAndDateBetween` | CR-01 fix | ✓ WIRED | Confirmed; non-fetching finder has zero remaining production callers |
+
+### Behavioral Spot-Checks
+
+| Behavior | Command | Result | Status |
+|----------|---------|--------|--------|
+| `RestWaiverDisclosureTest` full class passes, including all 8 new gap-closure tests | JUnit XML aggregate read (not a fresh filtered run, per this project's own XML-corruption hazard) | `tests="30" skipped="0" failures="0" errors="0"` | ✓ PASS |
+| `ScheduleSummaryConstructionSiteGuardTest` passes, including its own observed-RED liveness test | JUnit XML aggregate read | `tests="5" skipped="0" failures="0" errors="0"` | ✓ PASS |
+| `RestWaiverFetchingFinderGuardTest` (CR-01's structural guard) passes | JUnit XML aggregate read | `tests="4" skipped="0" failures="0" errors="0"` | ✓ PASS |
+| `RestWaiverPredicateGuardTest` (D-08, unaffected by this closure) still passes | JUnit XML aggregate read | `tests="8" skipped="0" failures="0" errors="0"` | ✓ PASS |
+| `ScheduleSummaryReadTest` (updated for the 4-arg controller constructor) still passes | JUnit XML aggregate read | `tests="8" skipped="0" failures="0" errors="0"` | ✓ PASS |
+| Full backend suite, no regression | JUnit XML aggregate read across all result files | `213 files, tests="1454" failures="0" errors="0" skipped="4"` | ✓ PASS |
+| No surviving production caller of the non-fetching waiver finder | `grep -rn "findByTenantIdAndDeskIdAndDateBetween\b" src/main/java/` (excluding other entities' same-named methods) | Only the interface's own declaration and javadoc | ✓ PASS |
+| Exactly one `ScheduleSummary` construction site | `grep -rl 'new ScheduleSummary(' src/main/java/ \| wc -l` | `1` | ✓ PASS |
+| No debt markers in any phase-touched file | `grep -nE "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across all 73 `covered_files` entries with source extensions | No matches | ✓ PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |---|---|---|---|---|
-| REST-01 | 22-01, 22-04 | Operator can set minimum rest per desk | ✓ SATISFIED | API + UI confirmed |
-| REST-02 | 22-01, 22-02, 22-05 | Solver treats insufficient rest as hard violation, unless waived | ✓ SATISFIED | Both mode-gated constraints confirmed, waiver exclusion confirmed in both |
-| REST-03 | 22-07 | Pre-solve refusal, mechanism separate from in-solve constraint | ✓ SATISFIED | `requireRestFeasibility` confirmed |
-| REST-04 | 22-01, 22-02, 22-04 | Desk with no minimum rest solves exactly as before | ✓ SATISFIED | Structural zero-tuple gates + non-vacuity test confirmed |
-| REST-05 | 22-06 | Defined, tested behaviour at both horizon edges | ✓ SATISFIED | `RestHorizonEdgeTest` confirmed |
-| REST-06 | 22-03, 22-05, 22-09 | Operator can waive; solver treats waived pair as legal | ✓ SATISFIED | End-to-end waiver path + constraint exclusion confirmed |
-| REST-07 | 22-08, 22-10 | Waived rest violations visible in solved schedule's output | ✗ BLOCKED | Two confirmed defects — see Gaps Summary |
+| REST-01 | 22-01, 22-04 | Operator can set minimum rest per desk | ✓ SATISFIED | Unchanged from prior pass; re-confirmed |
+| REST-02 | 22-01, 22-02, 22-05 | Solver treats insufficient rest as hard violation, unless waived | ✓ SATISFIED | Unchanged from prior pass; re-confirmed |
+| REST-03 | 22-07 | Pre-solve refusal, mechanism separate from in-solve constraint | ✓ SATISFIED | Unchanged from prior pass; re-confirmed |
+| REST-04 | 22-01, 22-02, 22-04 | Desk with no minimum rest solves exactly as before | ✓ SATISFIED | Unchanged from prior pass; re-confirmed, and the display-extension invariant (`unconfiguredSchedule_detailResponse_allThreeRestFieldsNullNotZero`) carried it to the new detail-response fields too |
+| REST-05 | 22-06 | Defined, tested behaviour at both horizon edges | ✓ SATISFIED | Unchanged from prior pass; re-confirmed |
+| REST-06 | 22-03, 22-05, 22-09 | Operator can waive; solver treats waived pair as legal | ✓ SATISFIED | Unchanged from prior pass; re-confirmed, strengthened by the CR-01 fetching-finder fix on the live/poll path |
+| REST-07 | 22-08, 22-10, 22-11, 22-12 | Waived rest violations visible in solved schedule's output | ✓ SATISFIED | **Both previously-confirmed defects closed** — see "REST-07 Gap Closure" above. `.planning/REQUIREMENTS.md`'s `[x]` / Complete marking for REST-07 is now earned by direct code and test evidence, not merely asserted. |
 
-No orphaned requirements found — REQUIREMENTS.md's Phase 22 mapping (REST-01 through REST-07) matches exactly the set declared across the 10 plans' `requirements:` frontmatter.
+No orphaned requirements found — REQUIREMENTS.md's Phase 22 mapping (REST-01 through REST-07)
+matches exactly the set declared across the 12 plans' `requirements:` frontmatter (10 original + 2
+gap-closure).
 
 ### Anti-Patterns Found
 
-No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers found in any of the 28 production/test files modified by this phase.
+No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers found in any of the 73 `covered_files`
+entries with a source extension (`.java`, `.ts`, `.tsx`, `.sql`), including all files touched by
+plans 22-11 and 22-12.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `src/main/java/com/wfm/service/ScheduleService.java` | ~677-718 | DB-fallback summary path silently returns false 0/0 for waiver counts | 🛑 Blocker | Root cause of gap (a) — see REST-07 gap |
-| `frontend/src/pages/ScheduleResults.tsx` | 253, 1441, 48 | Badge/tab visibility keyed on fields absent from the detail response; `setSchedule(data)` full-replace wipes previously-merged counts | 🛑 Blocker | Root cause of gap (b) — see REST-07 gap |
-| `src/main/java/com/wfm/service/ScheduleOutputService.java` | WR-01 (code review) | `buildRestWaiverDisclosure` reads `schedule.getDayStart()` without the codebase's null-coalescing anchor fallback | ⚠️ Warning | Open per 22-REVIEW-DISPOSITION.md; reviewer judged currently unreachable (V54 precedes V55) but inconsistent with the phase's own defensive convention |
-| `ScheduleService.toSummary` / `ScheduleController.toSummary` | WR-02 (code review) | Rest-waiver summary counts computed independently in two places, protected only by a parity test, not a structural guard | ⚠️ Warning | Open per 22-REVIEW-DISPOSITION.md; a real duplication risk the reviewer flagged as inconsistent with this same phase's own structural-guard precedent (D-08) |
-| `frontend/src/pages/DeskManagement.tsx` | IN-01 (code review) | `hoursStringToMinutes`/`handleUpdate` can yield `NaN`, serialized by `JSON.stringify` as `null`, silently clearing a configured minimum rest | ℹ️ Info | Open; reviewer judged likely unreachable through a browser numeric input but unguarded in code |
+| (none — the two 🛑 Blocker rows from the prior pass's report are both resolved; see "REST-07 Gap Closure" above) | | | | |
+| `src/main/java/com/wfm/service/ScheduleService.java` (WR-03) | ~673-682 | `hydrateRestWaiverInputsFromDb`'s pre-horizon branch has no `D1`-waiver test through its two new call sites | ⚠️ Warning | Open per `22-REVIEW-DISPOSITION.md`; production logic verified correct by direct inspection (parallels the already-tested `loadSnapshotData` call), coverage gap only |
+| `frontend/src/pages/DeskManagement.tsx` (WR-04) | 27-32, 138-144 | IN-01's fix has zero automated regression coverage | ⚠️ Warning | Open; no frontend test runner exists in this repository at all — standing, disclosed debt |
+| `frontend/src/pages/DeskManagement.tsx` (IN-02) | 236-249 | Reused inline-validation message is inaccurate for a non-finite (non-numeric) parse | ℹ️ Info | Open; cosmetic — the save-refusal behavior itself is correct |
 
 ### Human Verification Required
 
-None triggered by this pass — the REST-07 failures are deterministically confirmed by direct code
-reading (DTO field lists, call graphs, polling lifecycle), not left as an uncertain judgment call.
-The phase's own accumulated end-of-phase human-check items (20 steps across 22-04/22-09/22-10,
-covering narrow-viewport reflow, visual color reads, and the live round-trip of the badge/tab) are
-recorded in those plans' SUMMARY.md files and remain outstanding UAT items independent of this
-verification's gaps_found verdict; they should still be run once the REST-07 gap is closed, since a
-human UAT pass today would mostly be exercising the broken fallback path.
+Three items — all pre-existing, deferred end-of-phase UAT steps from plans 22-04, 22-09 and 22-10
+(per `workflow.human_verify_mode=end-of-phase`), now meaningful for the first time because both
+REST-07 defects are closed. A pass taken before 22-11/22-12 landed would have exercised the broken
+DB-fallback/detail-response paths and risked confirming a false negative as correct; this is the
+first point at which running them actually tests what they are meant to test. See frontmatter
+`human_verification:` for the full test/expected/why_human detail on each of the three surfaces
+(`DeskManagement.tsx`'s Min Rest column, `AgentExceptions.tsx`'s Rest Waivers section, and
+`ScheduleResults.tsx`'s header badge + Rest Waivers tab).
 
 ### Gaps Summary
 
-Six of seven requirements (REST-01 through REST-06) are genuinely implemented, correctly wired, and
-behaviorally tested — the solver-side hard constraint, the pre-solve refusal, the waiver mechanism,
-the shared predicate and its structural guard, and the desk-configuration UI all hold up under
-direct code inspection, not just under SUMMARY.md's claims.
+None remaining. Both defects behind the prior pass's `gaps_found` verdict on REST-07 — the
+DB-fallback summary paths' false `0`/`0` (gap a) and the detail-response field gap that hid the
+badge/tab for every finished or reopened schedule (gap b) — are closed, verified here by direct
+reading of the production source (not SUMMARY.md claims alone) and by confirming the specific
+behavioral tests that prove each fix pass in the actual JUnit output. The regression check on
+CR-01 (the live/poll-path `LazyInitializationException` risk the incremental code review caught)
+also holds: the non-fetching waiver finder has zero remaining production callers anywhere in
+`src/main/java`.
 
-REST-07 — "waived rest violations are visible in the solved schedule's output, so a waiver cannot
-silently hide a roster problem" — does NOT hold at HEAD for either the solved-schedule's long-term
-record (the list/summary surfaces fall back to a false 0/0) or, more importantly, for the actual
-schedule detail page an operator would check it from, outside the few seconds a solve is actively
-running. This is not a cosmetic UI gap: it is the exact failure mode REST-07 exists to prevent — a
-waiver's effect becoming invisible — occurring on the primary surface built to disclose it. The
-phase's own SUMMARY.md files disclosed gap (a) honestly; this verification additionally identified
-gap (b), a distinct and more impactful defect in the same area that had not previously been
-reported.
+Three findings (WR-03, WR-04, IN-02) remain open per the code review's own disposition and are
+carried forward as advisories rather than gaps — none of them is a failure of an observable truth,
+and WR-03 in particular is a coverage gap on code already verified correct by direct inspection.
 
-Recommended next step: a closure plan (`/gsd-plan-phase 22 --gaps`) addressing both defects —
-hydrating the transient waiver/pre-horizon collections before computing a DB-fallback summary (or
-persisting the disclosure counts at accept time), and giving `ScheduleDetailResponse` its own
-`appliedRestWaiverCount`/`unusedRestWaiverCount` fields (or an equivalent configured-signal) so the
-frontend's badge and tab do not depend on fields that only exist on a sibling DTO reached only
-during live polling.
+The phase's accumulated 27-step human-check (7+9+11, across the three UI surfaces this phase
+built) has not yet been run against a live app and database. It is the only thing standing between
+this report and a clean `passed` verdict, and it is now worth running for the first time.
 
 ---
 
-_Verified: 2026-10-04T04:51:29Z_
+_Verified: 2026-10-04T15:57:58Z_
 _Verifier: Claude (gsd-verifier)_
