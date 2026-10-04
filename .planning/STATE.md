@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 22
-current_phase_name: Minimum Rest
-status: completed
-stopped_at: Phase 22 complete — all phases complete
-last_updated: "2026-10-04T16:45:59.395Z"
+current_phase: 23
+current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
+status: ready_to_execute
+stopped_at: Phase 23 planned — 3 plans in 3 waves, ready to execute
+last_updated: "2026-10-04T19:56:51.411Z"
 last_activity: 2026-10-04
-last_activity_desc: Phase 22 complete
-state_head: 6f2b880102a17c32c7196a41b83b15d00a7fd570
+last_activity_desc: Phase 23 planned — 3 plans, 3 waves
+state_head: ee3507a9ce1500d1b9d20518aafe6fbc3377d784
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 50
+  total_plans: 53
   completed_plans: 50
-  percent: 100
+  percent: 83
 ---
 
 # Project State
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Milestone v1.5 complete — ready to close
+**Current focus:** Milestone v1.5 phases 18–22 shipped; Phase 23 planned (3 plans) to close the audit's one critical cross-phase gap (G-1) before the milestone closes
 
 ## Current Position
 
-Phase: 22 (Minimum Rest) — 5 of 5 in v1.5
+Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — READY TO EXECUTE
 Plan: Not started
-Status: All phases complete
-Last activity: 2026-10-04 — Phase 22 complete
+Status: Ready to execute — 3 plans in 3 serialized waves
+Last activity: 2026-10-04 — Phase 23 planned
 
 ## Milestone v1.3 Outcome
 
@@ -167,6 +167,7 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 - Phase 12 added 2026-08-13: **Atomic Shift Move** — custom Timefold move placing a full contracted shift plus its break in one step. Raised during Phase 10 UAT after the live desk proved unable to produce full-hours shifts: single-slot local search cannot cross the HARD `Exactly one break` rule, so agents pin one slot below the break threshold. Two threshold-tuning attempts were reverted (`76a715f`) before concluding a custom move is required.
 - 2026-08-13: **Timefold version corrected.** The previously stated pinned version (recorded as a later 1.3x release) was incorrect — Phase 12 verified the actual pinned version is 1.16.0 against `build.gradle:35` (`ai.timefold.solver:timefold-solver-bom:1.16.0`) and against the running solver (custom-move API confirmed to be `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, not the newer `Neighborhoods` API introduced at 1.31.0). Assumption A3 in `12-RESEARCH.md` is thereby resolved.
 - Phase 20 edited: edited fields: success_criteria (criterion 5 reworded, criteria 6-7 added), notes (both open decisions resolved) - per 20-CONTEXT D-04/D-07/D-14
+- Phase 23 added: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor (v1.5 audit G-1, critical)
 
 ### Decisions
 
@@ -399,12 +400,13 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-10-04T16:46:00.000Z
-Stopped at: Phase 22 complete — all phases complete
+Stopped at: Phase 23 added — not planned yet
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with `/gsd-new-milestone`
+- **Plan Phase 23 first** — `/gsd-plan-phase 23`. The v1.5 audit's G-1 is a critical, unsafe-direction defect in live solving: `RestSpan.gapMinutes` overstates rest when the predecessor shift spans midnight, so the hard minimum-rest constraint under-fires and an illegal roster scores `0hard`. Closing it is what makes v1.5 shippable
+- Start the next milestone with `/gsd-new-milestone` *(after Phase 23)*
 - **Consider closing Nyquist debt first** — `/gsd-validate-phase` for 10, 13, 14, 15 (all `status: draft`) and 16 (the one genuine PARTIAL). Five phases across two milestones; flagged at the v1.3 audit as having drifted from an oversight into a pattern
 - **999.9 is now three audits old** — the v1.2 I-2 merge-precedence gap has been recorded at every close since 2026-08-21 and never scoped into a phase
 

@@ -464,8 +464,13 @@ lookback path.
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
 - [ ] 23-01-PLAN.md — Tracer: the one wrap-aware `DayWindow` primitive, `RestSpan.gapMinutes` switched onto it, and `requireRestFeasibility`'s SLOT pre-horizon branch pointed at the same primitive (D-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 23-02-PLAN.md — Overnight-predecessor fixtures across the four remaining affected test classes, including `RestHorizonEdgeTest` (a sixth class the research did not enumerate)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 23-03-PLAN.md — The `rest-gap-arithmetic-guard` registry and scanner (D-02), plus the single full-suite phase gate
 
 <details>
