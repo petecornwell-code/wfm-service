@@ -14,7 +14,7 @@ export default function ScheduleResults() {
   const { deskId, scheduleId } = useParams<{ deskId: string; scheduleId: string }>()
   const navigate = useNavigate()
   const [schedule, setSchedule] = useState<ScheduleDetail | null>(null)
-  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'drift' | 'violations' | 'pto'>('staffing')
+  const [activeTab, setActiveTab] = useState<'staffing' | 'agents' | 'allocation' | 'preferences' | 'drift' | 'violations' | 'restWaivers' | 'pto'>('staffing')
   const [dateFilter, setDateFilter] = useState('')
   const [violationFilter, setViolationFilter] = useState<'all' | 'HARD' | 'SOFT'>('all')
   const [expandedConstraint, setExpandedConstraint] = useState<string | null>(null)
@@ -62,8 +62,12 @@ export default function ScheduleResults() {
       schedules.summary(deskId, scheduleId).then(s => {
         if (cancelled) return
         // Merge only the live fields — the heavy sections stay as the last detail left them.
+        // appliedRestWaiverCount/unusedRestWaiverCount join this set (REST-07, D-13): the header
+        // badge must stay live during a RUNNING solve, and a badge fed only by the 30-second
+        // detail fetch below would silently lag the number it most needs to be honest about.
         setSchedule(prev => prev ? { ...prev, status: s.status, score: s.score,
-          feasible: s.feasible, feasibleAt: s.feasibleAt } : prev)
+          feasible: s.feasible, feasibleAt: s.feasibleAt,
+          appliedRestWaiverCount: s.appliedRestWaiverCount, unusedRestWaiverCount: s.unusedRestWaiverCount } : prev)
 
         if (s.status !== 'RUNNING') {
           loadDetail(false)   // final state: pick up the finished grids once
@@ -237,6 +241,21 @@ export default function ScheduleResults() {
           {elapsedSeconds !== null && (
             <span style={{ color: '#6b7280', fontSize: '0.85rem' }}>
               {formatElapsed(elapsedSeconds)}
+            </span>
+          )}
+          {/* REST-07/D-15: hidden entirely when the schedule's snapshotted minimum rest is null —
+              the backend sends both counts if and only if that snapshot is non-null, so their
+              presence is the configured-or-not signal on both the poll-merged and full-detail
+              schedule object (there is no separate snapshotted-minimum-rest field on either DTO).
+              Both counts always render once shown, even at zero (never hidden at zero), so an
+              operator can tell "rest is enforced and nothing needed waiving" apart from "rest is
+              not configured at all" — hiding at zero would conflate the two. */}
+          {(schedule.appliedRestWaiverCount !== undefined || schedule.unusedRestWaiverCount !== undefined) && (
+            <span
+              style={{ color: '#6b7280', fontSize: '0.85rem', cursor: 'pointer' }}
+              onClick={() => setActiveTab('restWaivers')}
+            >
+              Rest Waivers: {schedule.appliedRestWaiverCount !== undefined ? schedule.appliedRestWaiverCount : '—'} applied, {schedule.unusedRestWaiverCount !== undefined ? schedule.unusedRestWaiverCount : '—'} unused
             </span>
           )}
         </div>
