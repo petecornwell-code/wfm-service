@@ -406,7 +406,7 @@ Plans:
 - [x] 22-09-PLAN.md — The Rest Waivers section on the Agent Exceptions page, immediate add and delete (REST-06)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
+- [x] 22-10-PLAN.md — The schedule header waiver badge and the Rest Waivers tab, Applied above Unused (REST-07)
 
 **UI hint**: yes
 
