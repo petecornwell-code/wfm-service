@@ -4,6 +4,9 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.dto.DeskAssignmentSelectionRequest;
 import com.wfm.dto.DeskAgentResponse.UsualShiftEntry;
+import com.wfm.integration.BambooHRClient;
+import com.wfm.integration.BambooTimeOff;
+import com.wfm.model.DayOffType;
 import com.wfm.model.Desk;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.repository.DeskRepository;
@@ -24,14 +27,17 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.UUID;
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Generates the pre-seeded per-desk blank template (D-13/D-14/UPL-09): one worksheet per desk,
@@ -59,15 +65,116 @@ public class DeskAssignmentTemplateService {
     private final DeskAgentService deskAgentService;
     private final AgentEligibilityService agentEligibilityService;
     private final ShiftTemplateRepository shiftTemplateRepository;
+    private final BambooHRClient bambooHRClient;
 
     public DeskAssignmentTemplateService(DeskRepository deskRepository,
                                          DeskAgentService deskAgentService,
                                          AgentEligibilityService agentEligibilityService,
-                                         ShiftTemplateRepository shiftTemplateRepository) {
+                                         ShiftTemplateRepository shiftTemplateRepository,
+                                         BambooHRClient bambooHRClient) {
         this.deskRepository = deskRepository;
         this.deskAgentService = deskAgentService;
         this.agentEligibilityService = agentEligibilityService;
         this.shiftTemplateRepository = shiftTemplateRepository;
+        this.bambooHRClient = bambooHRClient;
+    }
+
+    /**
+     * What to write into the seven day-hour columns.
+     *
+     * <p>{@code null} anywhere a {@code WeekDayFill} is expected means "leave every day cell
+     * blank". That was the only behaviour before this type existed, and it is the shape the upload
+     * parser skips row-by-row: every day cell is REQUIRED, so one blank cell loses the whole person
+     * — after {@code clearDesk} has already run. Populating the cells is what makes a downloaded
+     * template re-uploadable without hand-editing.
+     *
+     * @param offByBamboohrId approved time off only, keyed BambooHR id then day of week
+     * @param workingDayHours written into every day with no approved time off
+     */
+    record WeekDayFill(Map<String, Map<DayOfWeek, DayOffType>> offByBamboohrId,
+                       BigDecimal workingDayHours) {}
+
+    /**
+     * Resolves one week of BambooHR time off for the given people into day-off words.
+     *
+     * <p>The mapping deliberately mirrors {@code BambooRefreshService}'s, so a template agrees with
+     * what a BambooHR refresh would have written: {@code holiday} becomes {@code MANDATORY},
+     * everything else {@code PTO}, and overlapping entries for one person-day resolve MANDATORY
+     * over PTO.
+     *
+     * <p><b>Approved time off only.</b> {@code listTimeOff} returns {@code requested} entries
+     * alongside {@code approved} ones (see {@code HttpBambooHRClient}), and a pending request is not
+     * leave yet. Writing one as {@code PTO} here would have the upload commit it to
+     * {@code agent_day_hours} — silently granting leave nobody approved. Pending days are therefore
+     * left as ordinary working days; the caller surfaces them separately so the operator can decide
+     * person by person.
+     *
+     * <p>Filtering by the selected ids rather than by department is what lets this work for a
+     * selection assembled from several department searches, which is the whole point of the basket.
+     */
+    private WeekDayFill resolveWeekFill(long tenantId, Set<String> bamboohrIds,
+                                        LocalDate weekStart, BigDecimal workingDayHours) {
+        LocalDate monday = weekStart.with(DayOfWeek.MONDAY);
+        LocalDate sunday = monday.plusDays(6);
+
+        Map<String, Map<DayOfWeek, DayOffType>> off = new HashMap<>();
+        if (!bamboohrIds.isEmpty()) {
+            for (BambooTimeOff t : bambooHRClient.listTimeOff(String.valueOf(tenantId), monday, sunday)) {
+                if (t.employeeId() == null || !bamboohrIds.contains(t.employeeId())) continue;
+                if (!"approved".equalsIgnoreCase(t.status())) continue;
+                if (t.date() == null || t.date().isBefore(monday) || t.date().isAfter(sunday)) continue;
+
+                DayOffType type = "holiday".equalsIgnoreCase(t.type())
+                        ? DayOffType.MANDATORY : DayOffType.PTO;
+                Map<DayOfWeek, DayOffType> byDay =
+                        off.computeIfAbsent(t.employeeId(), k -> new EnumMap<>(DayOfWeek.class));
+                // MANDATORY beats PTO for the same person-day, as in BambooRefreshService.
+                byDay.merge(t.date().getDayOfWeek(), type,
+                        (a, b) -> a == DayOffType.MANDATORY || b == DayOffType.MANDATORY
+                                ? DayOffType.MANDATORY : DayOffType.PTO);
+            }
+        }
+        return new WeekDayFill(off, workingDayHours);
+    }
+
+    /**
+     * Writes the seven day-hour cells for one person: the day-off word where they have approved time
+     * off that week, otherwise the chosen working-day hours. A {@code null} fill writes nothing,
+     * leaving the cells blank.
+     */
+    private void writeDayHourCells(Row row, String bamboohrId, WeekDayFill fill) {
+        if (fill == null) {
+            return;
+        }
+        int base = EnrichedColumnLayout.identityHeaders().size();
+        Map<DayOfWeek, DayOffType> off =
+                fill.offByBamboohrId().getOrDefault(bamboohrId, Map.of());
+        for (int i = 0; i < EnrichedColumnLayout.DAY_ORDER.length; i++) {
+            DayOfWeek day = EnrichedColumnLayout.DAY_ORDER[i];
+            Cell cell = row.createCell(base + i);
+            DayOffType type = off.get(day);
+            if (type != null) {
+                // DayOffType.name() is exactly the word parseDayCell accepts.
+                cell.setCellValue(type.name());
+            } else {
+                cell.setCellValue(fill.workingDayHours().doubleValue());
+            }
+        }
+    }
+
+    /** The desk default when the caller named no working-day hours; rejects a value outside 0-24. */
+    private BigDecimal resolveWorkingDayHours(BigDecimal requested, Desk desk) {
+        BigDecimal hours = requested != null ? requested : desk.getDefaultContractedHoursPerDay();
+        if (hours == null) {
+            throw new IllegalArgumentException(
+                    "No working-day hours given and desk '" + desk.getName()
+                            + "' has no default contracted hours per day");
+        }
+        if (hours.signum() < 0 || hours.compareTo(new BigDecimal("24")) > 0) {
+            throw new IllegalArgumentException(
+                    "Working-day hours must be between 0 and 24, but was " + hours.toPlainString());
+        }
+        return hours;
     }
 
     /**
@@ -84,7 +191,7 @@ public class DeskAssignmentTemplateService {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             CellStyle headerStyle = createHeaderStyle(workbook);
             for (Desk desk : desks) {
-                writeDeskSheet(workbook, headerStyle, headers, desk, tenantId);
+                writeDeskSheet(workbook, headerStyle, headers, desk, tenantId, null);
             }
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -105,13 +212,37 @@ public class DeskAssignmentTemplateService {
      * on, so this file uploads through the existing path unchanged.
      */
     public byte[] generateTemplateForDesk(UUID deskId) {
+        return generateTemplateForDesk(deskId, null, null);
+    }
+
+    /**
+     * As above, with the seven day-hour columns pre-populated for one week: approved BambooHR time
+     * off as {@code PTO}/{@code MANDATORY}, every other day the chosen working-day hours.
+     *
+     * <p>A {@code null} {@code weekStart} leaves the day cells blank, which is the shape the upload
+     * parser skips row-by-row after having cleared the desk. Populating them is what makes a
+     * download-edit-reupload round trip work at all.
+     */
+    public byte[] generateTemplateForDesk(UUID deskId, LocalDate weekStart, BigDecimal workingDayHours) {
         long tenantId = TenantContext.getTenantId();
         Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
                 .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
         List<String> headers = buildHeaders();
 
+        WeekDayFill fill = null;
+        if (weekStart != null) {
+            Set<String> ids = deskAgentService
+                    .listDeskAgentResponses(desk.getId(), null, null, Integer.MAX_VALUE).stream()
+                    .filter(a -> isSeedable(tenantId, a))
+                    .map(DeskAgentResponse::bamboohrId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toSet());
+            fill = resolveWeekFill(tenantId, ids, weekStart, resolveWorkingDayHours(workingDayHours, desk));
+        }
+
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            writeDeskSheet(workbook, createHeaderStyle(workbook), headers, desk, tenantId);
+            writeDeskSheet(workbook, createHeaderStyle(workbook), headers, desk, tenantId, fill);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
             return out.toByteArray();
@@ -139,7 +270,7 @@ public class DeskAssignmentTemplateService {
      * usual-shift pre-fill.
      */
     private void writeDeskSheet(XSSFWorkbook workbook, CellStyle headerStyle, List<String> headers,
-                                Desk desk, long tenantId) {
+                                Desk desk, long tenantId, WeekDayFill fill) {
         Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(desk.getName()));
         Row headerRow = sheet.createRow(0);
         for (int i = 0; i < headers.size(); i++) {
@@ -168,6 +299,7 @@ public class DeskAssignmentTemplateService {
             writeSanitized(row, 4, agent.email());
             writeSanitized(row, 5, agent.department());
             writeSanitized(row, 6, agent.active() ? "Yes" : "No");
+            writeDayHourCells(row, agent.bamboohrId() == null ? null : agent.bamboohrId().trim(), fill);
             // Columns 7-13 (Monday..Sunday day hours) and 21-22 (Specialty 1/2) are
             // intentionally left blank for the operator to fill in (D-14). Columns 14-20
             // (Usual Shift Monday..Sunday) are DIFFERENT: they are pre-filled with each
@@ -261,6 +393,17 @@ public class DeskAssignmentTemplateService {
 
         List<String> headers = buildHeaders();
 
+        WeekDayFill fill = null;
+        if (request.weekStart() != null) {
+            Set<String> ids = request.employees().stream()
+                    .map(DeskAssignmentSelectionRequest.Employee::bamboohrId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toSet());
+            fill = resolveWeekFill(tenantId, ids, request.weekStart(),
+                    resolveWorkingDayHours(request.workingDayHours(), desk));
+        }
+
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             CellStyle headerStyle = createHeaderStyle(workbook);
             Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(desk.getName()));
@@ -292,6 +435,7 @@ public class DeskAssignmentTemplateService {
                 writeSanitized(row, 4, employee.workEmail());
                 writeSanitized(row, 5, employee.department());
                 writeSanitized(row, 6, "Active".equalsIgnoreCase(employee.status()) ? "Yes" : "No");
+                writeDayHourCells(row, id, fill);
 
                 DeskAgentResponse onDesk = existing.get(id);
                 if (onDesk != null) {

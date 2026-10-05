@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import com.wfm.integration.BambooHRClient;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.model.Desk;
 import com.wfm.repository.DeskRepository;
@@ -38,6 +39,7 @@ class DeskAssignmentTemplateServiceTest {
     private DeskAgentService deskAgentService;
     private AgentEligibilityService agentEligibilityService;
     private ShiftTemplateRepository shiftTemplateRepository;
+    private BambooHRClient bambooHRClient;
     private DeskAssignmentTemplateService service;
 
     @BeforeEach
@@ -46,6 +48,9 @@ class DeskAssignmentTemplateServiceTest {
         deskAgentService = mock(DeskAgentService.class);
         agentEligibilityService = mock(AgentEligibilityService.class);
         shiftTemplateRepository = mock(ShiftTemplateRepository.class);
+        bambooHRClient = mock(BambooHRClient.class);
+        // No time off by default: these classes assert the blank/pre-population shapes.
+        when(bambooHRClient.listTimeOff(any(), any(), any())).thenReturn(List.of());
         // Default: allowlist inactive, so these pre-existing tests keep asserting the
         // unfiltered seeding behaviour. The allowlist itself is covered by
         // DeskAssignmentTemplateFilterTest.
@@ -55,7 +60,8 @@ class DeskAssignmentTemplateServiceTest {
         // DeskAssignmentTemplateServiceUsualShiftTest).
         when(shiftTemplateRepository.findByTenantIdAndDeskId(anyLong(), any())).thenReturn(List.of());
         service = new DeskAssignmentTemplateService(
-                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository);
+                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository,
+                bambooHRClient);
         TenantContext.setTenantId(TENANT_ID);
     }
 

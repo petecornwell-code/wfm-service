@@ -378,7 +378,8 @@ class DeskAssignmentUploadUsualShiftTest {
                 .thenReturn(List.of(rosterAgent));
 
         DeskAssignmentTemplateService templateService = new DeskAssignmentTemplateService(
-                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository);
+                deskRepository, deskAgentService, agentEligibilityService, shiftTemplateRepository,
+                bambooHRClient);
         byte[] templateBytes = templateService.generateTemplate();
 
         // The template deliberately leaves day-hours cells blank (Phase 10 scope, unchanged by

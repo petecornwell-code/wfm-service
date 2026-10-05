@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -157,14 +158,24 @@ public class ClientManagementController {
     /**
      * The current roster of ONE desk, as a single-sheet workbook.
      *
+     * <p>{@code weekStart} pre-populates the seven day-hour columns for that week: approved
+     * BambooHR time off as {@code PTO}/{@code MANDATORY}, every other day {@code workingDayHours}
+     * (defaulting to the desk's own contracted hours). Omitting it leaves those cells blank, which
+     * the upload parser skips row-by-row AFTER clearing the desk — so a populated week is what makes
+     * a download-edit-reupload round trip actually work.
+     *
      * <p>{@code deskId} is required. This endpoint used to return every desk as one workbook with a
      * sheet each, which is unsafe to hand back: the upload parser walks every sheet and clears each
      * desk it matches, so re-uploading that file rewrote desks the operator never opened. One desk
      * per file makes the blast radius the desk they picked.
      */
     @GetMapping("/desk-assignments/template")
-    public ResponseEntity<byte[]> downloadDeskAssignmentTemplate(@RequestParam UUID deskId) {
-        byte[] xlsx = deskAssignmentTemplateService.generateTemplateForDesk(deskId);
+    public ResponseEntity<byte[]> downloadDeskAssignmentTemplate(
+            @RequestParam UUID deskId,
+            @RequestParam(required = false) LocalDate weekStart,
+            @RequestParam(required = false) BigDecimal workingDayHours) {
+        byte[] xlsx = deskAssignmentTemplateService
+                .generateTemplateForDesk(deskId, weekStart, workingDayHours);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + deskAssignmentTemplateService.templateFilenameForDesk(deskId) + "\"")

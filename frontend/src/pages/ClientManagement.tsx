@@ -49,6 +49,16 @@ export default function ClientManagement() {
   const [uploading, setUploading] = useState(false)
   const [downloadingTemplate, setDownloadingTemplate] = useState(false)
   const [templateDeskId, setTemplateDeskId] = useState('')
+  // Any date in the target week; the server normalises to that ISO week's Monday. Defaults to the
+  // Monday of the current week so the common case needs no input.
+  const [templateWeekStart, setTemplateWeekStart] = useState(() => {
+    const d = new Date()
+    const shift = (d.getDay() + 6) % 7 // Sunday(0) -> 6, Monday(1) -> 0
+    d.setDate(d.getDate() - shift)
+    return d.toISOString().slice(0, 10)
+  })
+  // Blank means "use the desk's default contracted hours". '0' is deliberate and allowed.
+  const [templateWorkingHours, setTemplateWorkingHours] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Upload result modal
@@ -185,7 +195,8 @@ export default function ClientManagement() {
     }
     setDownloadingBasket(true)
     try {
-      const res = await clientManagement.downloadSelectionTemplate(basketDeskId, basket)
+      const res = await clientManagement.downloadSelectionTemplate(
+        basketDeskId, basket, templateWeekStart, templateWorkingHours)
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         showToast('error', body?.error?.message ?? 'Template download failed')
@@ -289,7 +300,8 @@ export default function ClientManagement() {
     }
     setDownloadingTemplate(true)
     try {
-      const res = await clientManagement.downloadDeskAssignmentTemplate(templateDeskId)
+      const res = await clientManagement.downloadDeskAssignmentTemplate(
+        templateDeskId, templateWeekStart, templateWorkingHours)
       if (!res.ok) {
         showToast('error', 'Template download failed')
         return
@@ -476,6 +488,28 @@ export default function ClientManagement() {
             <option value="">-- Desk for this template --</option>
             {deskList.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
+          <label style={{ fontSize: '0.8rem', color: '#374151' }}>
+            Week{' '}
+            <input
+              type="date"
+              value={templateWeekStart}
+              onChange={e => setTemplateWeekStart(e.target.value)}
+              style={{ padding: '0.3rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.8rem' }}
+            />
+          </label>
+          <label style={{ fontSize: '0.8rem', color: '#374151' }}>
+            Hours/working day{' '}
+            <input
+              type="number"
+              min={0}
+              max={24}
+              step={0.25}
+              placeholder="desk default"
+              value={templateWorkingHours}
+              onChange={e => setTemplateWorkingHours(e.target.value)}
+              style={{ width: '7rem', padding: '0.3rem', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.8rem' }}
+            />
+          </label>
           <button onClick={handleDownloadTemplate} disabled={downloadingTemplate || !templateDeskId}>
             {downloadingTemplate ? 'Downloading...' : 'Download template'}
           </button>
@@ -484,7 +518,10 @@ export default function ClientManagement() {
             column and one column per day (Monday…Sunday) — each day cell holds a number of hours (0–24), MANDATORY, or PTO.
             Specialty columns (Specialty 1, Specialty 2, …) are optional. Download the template above to get a workbook
             pre-seeded with that desk's current roster identity columns — one desk per file, so a re-upload
-            only ever touches the desk you picked. Only active agents are seeded, and if a Job Title
+            only ever touches the desk you picked. Day cells are filled for the chosen week: approved BambooHR
+            time off as PTO (or MANDATORY for a holiday), every other day the hours you set above. Pending
+            time-off requests are deliberately left as working days — a request is not granted leave, and the
+            upload would commit it. Weekends get working hours too, so set rest days to MANDATORY yourself. Only active agents are seeded, and if a Job Title
             Allowlist is configured on the Configuration page, only matching job titles are seeded — the same rules are
             enforced on upload, so non-matching rows are reported as skipped. The old 6-column and flat enriched shapes
             are no longer accepted — re-download the template if your file uses either.

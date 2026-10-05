@@ -619,19 +619,28 @@ export const clientManagement = {
     }),
   // One desk per file, deliberately: the upload parser clears every desk whose sheet it finds, so
   // a workbook spanning all desks rewrote desks the operator never opened.
-  downloadDeskAssignmentTemplate: (deskId: string) =>
-    fetch(`${API_BASE}/client-management/desk-assignments/template?deskId=${encodeURIComponent(deskId)}`, {
+  // weekStart pre-populates the seven day-hour columns for that week (approved BambooHR time off as
+  // PTO/MANDATORY, everything else workingDayHours). Omitting it leaves them blank, which the upload
+  // skips row-by-row AFTER clearing the desk -- so always send a week for a round-trippable file.
+  downloadDeskAssignmentTemplate: (deskId: string, weekStart?: string, workingDayHours?: string) => {
+    const q = new URLSearchParams({ deskId })
+    if (weekStart) q.set('weekStart', weekStart)
+    if (workingDayHours !== undefined && workingDayHours !== '') q.set('workingDayHours', workingDayHours)
+    return fetch(`${API_BASE}/client-management/desk-assignments/template?${q}`, {
       headers: { 'X-Tenant-ID': currentTenantId },
-    }),
+    })
+  },
   // One sheet, named after the chosen desk, holding exactly the people passed in -- they need not
   // be on that desk, or on any desk. Downloading assigns nobody; only uploading the filled-in file
   // does that, and that upload CLEARS the desk first.
-  downloadSelectionTemplate: (deskId: string, employees: BambooEmployeeResponse[]) =>
+  downloadSelectionTemplate: (deskId: string, employees: BambooEmployeeResponse[], weekStart?: string, workingDayHours?: string) =>
     fetch(`${API_BASE}/client-management/desk-assignments/template`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': currentTenantId },
       body: JSON.stringify({
         deskId,
+        weekStart: weekStart || null,
+        workingDayHours: workingDayHours === undefined || workingDayHours === '' ? null : workingDayHours,
         employees: employees.map(e => ({
           bamboohrId: e.id,
           displayName: e.displayName,
