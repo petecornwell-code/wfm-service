@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.UUID;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -69,68 +70,119 @@ public class DeskAssignmentTemplateService {
         this.shiftTemplateRepository = shiftTemplateRepository;
     }
 
+    /**
+     * One workbook holding one sheet per desk. Retained because it is the multi-desk shape the
+     * template tests pin; the REST endpoint no longer serves it. A single file spanning every desk
+     * is a hazard on re-upload — the parser clears EVERY desk it finds a matching sheet for — so
+     * {@link #generateTemplateForDesk(UUID)} is what an operator downloads.
+     */
     public byte[] generateTemplate() {
         long tenantId = TenantContext.getTenantId();
         List<Desk> desks = deskRepository.findByTenantId(tenantId);
-
         List<String> headers = buildHeaders();
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             CellStyle headerStyle = createHeaderStyle(workbook);
-
             for (Desk desk : desks) {
-                Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(desk.getName()));
-
-                Row headerRow = sheet.createRow(0);
-                for (int i = 0; i < headers.size(); i++) {
-                    Cell cell = headerRow.createCell(i);
-                    cell.setCellValue(headers.get(i));
-                    cell.setCellStyle(headerStyle);
-                }
-
-                List<DeskAgentResponse> roster = deskAgentService.listDeskAgentResponses(
-                        desk.getId(), null, null, Integer.MAX_VALUE);
-
-                int rowNum = 1;
-                for (DeskAgentResponse agent : roster) {
-                    // Seed only agents the operator can actually schedule: active, and passing the
-                    // tenant's job-title allowlist. Keeps the template consistent with what the
-                    // upload parser will accept, so a downloaded-then-reuploaded template cannot
-                    // produce rows that are immediately skipped.
-                    if (!isSeedable(tenantId, agent)) {
-                        continue;
-                    }
-                    Row row = sheet.createRow(rowNum++);
-                    writeSanitized(row, 0, agent.bamboohrId());
-                    writeSanitized(row, 1, agent.firstName());
-                    writeSanitized(row, 2, agent.lastName());
-                    writeSanitized(row, 3, agent.jobTitle());
-                    writeSanitized(row, 4, agent.email());
-                    writeSanitized(row, 5, agent.department());
-                    writeSanitized(row, 6, agent.active() ? "Yes" : "No");
-                    // Columns 7-13 (Monday..Sunday day hours) and 21-22 (Specialty 1/2) are
-                    // intentionally left blank for the operator to fill in (D-14). Columns 14-20
-                    // (Usual Shift Monday..Sunday) are DIFFERENT: they are pre-filled with each
-                    // agent's stored usual-shift template name (D-09). Without this pre-fill,
-                    // clearDesk's Usual Shift wipe (D-11) plus D-07's blank-means-none rule would
-                    // mean an operator downloading this template to fix one agent's hours would
-                    // silently wipe every stored usual shift on the desk on re-upload -- the
-                    // pre-fill is what makes a download-then-immediate-re-upload a safe no-op.
-                    writeUsualShiftCells(row, agent);
-                }
-
-                attachUsualShiftDropdown(sheet, tenantId, desk);
-
-                for (int i = 0; i < headers.size(); i++) {
-                    sheet.autoSizeColumn(i);
-                }
+                writeDeskSheet(workbook, headerStyle, headers, desk, tenantId);
             }
-
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
             return out.toByteArray();
         } catch (IOException e) {
             throw new RuntimeException("Failed to generate desk assignment template", e);
+        }
+    }
+
+    /**
+     * A workbook for ONE desk, seeded with that desk's current roster — the shape the Client
+     * Management page downloads.
+     *
+     * <p>One desk per file, deliberately. The upload parser walks every sheet in the workbook and
+     * calls {@code clearDesk} for each one whose name matches a desk, so a file spanning all desks
+     * rewrites all of them on re-upload. A single-sheet file can only ever affect the desk the
+     * operator actually chose, and the sheet name still carries the desk identity the parser maps
+     * on, so this file uploads through the existing path unchanged.
+     */
+    public byte[] generateTemplateForDesk(UUID deskId) {
+        long tenantId = TenantContext.getTenantId();
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, tenantId)
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        List<String> headers = buildHeaders();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            writeDeskSheet(workbook, createHeaderStyle(workbook), headers, desk, tenantId);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to generate desk assignment template", e);
+        }
+    }
+
+    /**
+     * {@code desk-assignment-<desk name>.xlsx}, with every run of non-alphanumerics reduced to a
+     * single hyphen. Derived from the STORED desk name, never from caller input, and free of
+     * quotes, semicolons, CR and LF so it cannot break out of a Content-Disposition header.
+     */
+    public String templateFilenameForDesk(UUID deskId) {
+        Desk desk = deskRepository.findByIdAndTenantId(deskId, TenantContext.getTenantId())
+                .orElseThrow(() -> new EntityNotFoundException("Desk", deskId));
+        String slug = desk.getName().toLowerCase().replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-|-$)", "");
+        return "desk-assignment-" + (slug.isEmpty() ? "desk" : slug) + ".xlsx";
+    }
+
+    /**
+     * The single implementation of "write this desk's roster as a sheet", shared by the per-desk
+     * download and the multi-desk form so the two can never drift in header set, seeding rule or
+     * usual-shift pre-fill.
+     */
+    private void writeDeskSheet(XSSFWorkbook workbook, CellStyle headerStyle, List<String> headers,
+                                Desk desk, long tenantId) {
+        Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(desk.getName()));
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < headers.size(); i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers.get(i));
+            cell.setCellStyle(headerStyle);
+        }
+
+        List<DeskAgentResponse> roster = deskAgentService.listDeskAgentResponses(
+                desk.getId(), null, null, Integer.MAX_VALUE);
+
+        int rowNum = 1;
+        for (DeskAgentResponse agent : roster) {
+            // Seed only agents the operator can actually schedule: active, and passing the
+            // tenant's job-title allowlist. Keeps the template consistent with what the
+            // upload parser will accept, so a downloaded-then-reuploaded template cannot
+            // produce rows that are immediately skipped.
+            if (!isSeedable(tenantId, agent)) {
+                continue;
+            }
+            Row row = sheet.createRow(rowNum++);
+            writeSanitized(row, 0, agent.bamboohrId());
+            writeSanitized(row, 1, agent.firstName());
+            writeSanitized(row, 2, agent.lastName());
+            writeSanitized(row, 3, agent.jobTitle());
+            writeSanitized(row, 4, agent.email());
+            writeSanitized(row, 5, agent.department());
+            writeSanitized(row, 6, agent.active() ? "Yes" : "No");
+            // Columns 7-13 (Monday..Sunday day hours) and 21-22 (Specialty 1/2) are
+            // intentionally left blank for the operator to fill in (D-14). Columns 14-20
+            // (Usual Shift Monday..Sunday) are DIFFERENT: they are pre-filled with each
+            // agent's stored usual-shift template name (D-09). Without this pre-fill,
+            // clearDesk's Usual Shift wipe (D-11) plus D-07's blank-means-none rule would
+            // mean an operator downloading this template to fix one agent's hours would
+            // silently wipe every stored usual shift on the desk on re-upload -- the
+            // pre-fill is what makes a download-then-immediate-re-upload a safe no-op.
+            writeUsualShiftCells(row, agent);
+        }
+
+        attachUsualShiftDropdown(sheet, tenantId, desk);
+
+        for (int i = 0; i < headers.size(); i++) {
+            sheet.autoSizeColumn(i);
         }
     }
 

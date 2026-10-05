@@ -154,12 +154,22 @@ public class ClientManagementController {
                 .body(xlsx);
     }
 
+    /**
+     * The current roster of ONE desk, as a single-sheet workbook.
+     *
+     * <p>{@code deskId} is required. This endpoint used to return every desk as one workbook with a
+     * sheet each, which is unsafe to hand back: the upload parser walks every sheet and clears each
+     * desk it matches, so re-uploading that file rewrote desks the operator never opened. One desk
+     * per file makes the blast radius the desk they picked.
+     */
     @GetMapping("/desk-assignments/template")
-    public ResponseEntity<byte[]> downloadDeskAssignmentTemplate() {
-        byte[] xlsx = deskAssignmentTemplateService.generateTemplate();
+    public ResponseEntity<byte[]> downloadDeskAssignmentTemplate(@RequestParam UUID deskId) {
+        byte[] xlsx = deskAssignmentTemplateService.generateTemplateForDesk(deskId);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"desk-assignment-template.xlsx\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + deskAssignmentTemplateService.templateFilenameForDesk(deskId) + "\"")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
     }
+
 }
