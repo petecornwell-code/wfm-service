@@ -59,6 +59,7 @@ export default function ClientManagement() {
   })
   // Blank means "use the desk's default contracted hours". '0' is deliberate and allowed.
   const [templateWorkingHours, setTemplateWorkingHours] = useState('')
+  const [applying, setApplying] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Upload result modal
@@ -83,6 +84,7 @@ export default function ClientManagement() {
   })
   const [basketDeskId, setBasketDeskId] = useState('')
   const [downloadingBasket, setDownloadingBasket] = useState(false)
+  const [applyingBasket, setApplyingBasket] = useState(false)
 
   useEffect(() => {
     try {
@@ -188,6 +190,41 @@ export default function ClientManagement() {
     setSelectedEmployeeIds(new Set())
   }
 
+  // The basket's contents written straight to the desk, no spreadsheet. Destructive like any
+  // upload: the desk is cleared first, so only the basket's people remain on it afterwards.
+  const handleApplyBasketToDesk = async () => {
+    if (!basketDeskId) {
+      showToast('error', 'Choose the desk to apply this selection to')
+      return
+    }
+    if (basket.length === 0) {
+      showToast('error', 'Select at least one employee')
+      return
+    }
+    const deskName = deskList.find(d => d.id === basketDeskId)?.name ?? 'this desk'
+    const hours = templateWorkingHours === '' ? "the desk's default" : `${templateWorkingHours}h`
+    if (!window.confirm(
+      `Apply ${basket.length} selected ${basket.length === 1 ? 'person' : 'people'} directly to "${deskName}"?\n\n`
+      + `Week of ${templateWeekStart}, ${hours} per working day, approved BambooHR time off as PTO.\n\n`
+      + `This CLEARS the desk first — anyone currently on it who is NOT in this selection will be `
+      + `removed, along with desk-scoped preferences, exceptions and per-day hours. It cannot be undone.`
+    )) return
+
+    setApplyingBasket(true)
+    try {
+      const res = await clientManagement.applySelectionToDesk(
+        basketDeskId, basket, templateWeekStart, templateWorkingHours)
+      setUploadResult(res)
+      if (viewDeskId) {
+        loadDeskAgents(viewDeskId)
+      }
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setApplyingBasket(false)
+    }
+  }
+
   const handleDownloadBasket = async () => {
     if (!basketDeskId) {
       showToast('error', 'Choose the desk this template is for')
@@ -290,6 +327,39 @@ export default function ClientManagement() {
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  // Writes the template's contents straight to the desk. Destructive in exactly the way an upload
+  // is -- the desk is cleared first -- so it confirms by desk name before firing, and reports through
+  // the same results modal an upload uses.
+  const handleApplyToDesk = async () => {
+    if (!templateDeskId) {
+      showToast('error', 'Choose a desk to apply to')
+      return
+    }
+    const deskName = deskList.find(d => d.id === templateDeskId)?.name ?? 'this desk'
+    const hours = templateWorkingHours === '' ? "the desk's default" : `${templateWorkingHours}h`
+    if (!window.confirm(
+      `Apply directly to "${deskName}"?\n\n`
+      + `Week of ${templateWeekStart}, ${hours} per working day, approved BambooHR time off as PTO.\n\n`
+      + `This CLEARS the desk first — current assignments, desk-scoped preferences, exceptions and `
+      + `per-day hours are removed, and only this week's rows are written back. It cannot be undone.`
+    )) return
+
+    setApplying(true)
+    try {
+      const res = await clientManagement.applyTemplateToDesk(
+        templateDeskId, templateWeekStart, templateWorkingHours)
+      setUploadResult(res)
+      // Mirror the upload handler: refresh the roster view if it is showing the desk we just rewrote.
+      if (viewDeskId) {
+        loadDeskAgents(viewDeskId)
+      }
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setApplying(false)
     }
   }
 
@@ -513,6 +583,14 @@ export default function ClientManagement() {
           <button onClick={handleDownloadTemplate} disabled={downloadingTemplate || !templateDeskId}>
             {downloadingTemplate ? 'Downloading...' : 'Download template'}
           </button>
+          <button
+            onClick={handleApplyToDesk}
+            disabled={applying || !templateDeskId}
+            title="Write the template's contents straight to the desk, with no spreadsheet. Clears the desk first."
+            style={{ padding: '0.35rem 0.9rem', background: '#b45309', color: '#fff', border: 'none', borderRadius: '4px', cursor: (applying || !templateDeskId) ? 'not-allowed' : 'pointer', opacity: (applying || !templateDeskId) ? 0.6 : 1 }}
+          >
+            {applying ? 'Applying...' : 'Apply directly to desk'}
+          </button>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
             Upload an .xlsx workbook with one worksheet per desk (sheet name = desk name). Each sheet needs a BambooHR ID
             column and one column per day (Monday…Sunday) — each day cell holds a number of hours (0–24), MANDATORY, or PTO.
@@ -609,6 +687,14 @@ export default function ClientManagement() {
                 style={{ padding: '0.35rem 0.9rem', background: '#0f766e', color: '#fff', border: 'none', borderRadius: '4px', cursor: (downloadingBasket || !basketDeskId) ? 'not-allowed' : 'pointer', opacity: (downloadingBasket || !basketDeskId) ? 0.6 : 1, fontSize: '0.85rem' }}
               >
                 {downloadingBasket ? 'Building...' : `Download template (${basket.length})`}
+              </button>
+              <button
+                onClick={handleApplyBasketToDesk}
+                disabled={applyingBasket || !basketDeskId || basket.length === 0}
+                title="Write this selection straight to the desk, with no spreadsheet. Clears the desk first."
+                style={{ padding: '0.35rem 0.9rem', background: '#b45309', color: '#fff', border: 'none', borderRadius: '4px', cursor: (applyingBasket || !basketDeskId || basket.length === 0) ? 'not-allowed' : 'pointer', opacity: (applyingBasket || !basketDeskId || basket.length === 0) ? 0.6 : 1, fontSize: '0.85rem' }}
+              >
+                {applyingBasket ? 'Applying...' : `Apply directly (${basket.length})`}
               </button>
               <button
                 onClick={() => { setBasket([]); setBasketDeskId('') }}

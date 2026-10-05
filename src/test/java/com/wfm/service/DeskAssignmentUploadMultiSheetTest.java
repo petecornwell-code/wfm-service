@@ -10,11 +10,13 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
+import java.util.LinkedHashMap;
 import java.io.ByteArrayOutputStream;
 import java.time.DayOfWeek;
 import java.util.*;
@@ -288,5 +290,32 @@ class DeskAssignmentUploadMultiSheetTest {
         assertThat(hasAgentDayOffRepositoryField)
                 .as("DeskAssignmentUploadService must not depend on AgentDayOffRepository (D-16)")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("the stream overload parses identically to the MultipartFile one -- 'apply directly' runs the real upload")
+    void streamOverload_matchesTheMultipartFilePath() throws Exception {
+        // "Apply directly to desk" builds the workbook in memory and hands it to
+        // uploadDeskAssignments(InputStream). That only carries the real upload's guarantees if the
+        // two entry points are the same parse, so this pins them to the same result for the same bytes.
+        Map<String, String[][]> sheets = new LinkedHashMap<>();
+        sheets.put("Billing", new String[][]{
+                {"BambooHR ID", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+                 "Usual Shift Monday", "Usual Shift Tuesday", "Usual Shift Wednesday", "Usual Shift Thursday",
+                 "Usual Shift Friday", "Usual Shift Saturday", "Usual Shift Sunday"},
+                {"1001", "8", "8", "8", "8", "8", "PTO", "MANDATORY", "", "", "", "", "", "", ""}
+        });
+        MockMultipartFile file = buildMultiSheetWorkbook(sheets);
+        byte[] bytes = file.getBytes();
+
+        DeskAssignmentUploadService.DeskAssignmentUploadResult viaFile =
+                service.uploadDeskAssignments(file);
+        DeskAssignmentUploadService.DeskAssignmentUploadResult viaStream =
+                service.uploadDeskAssignments(new ByteArrayInputStream(bytes));
+
+        assertThat(viaStream.assignedCount()).isEqualTo(viaFile.assignedCount());
+        assertThat(viaStream.skippedCount()).isEqualTo(viaFile.skippedCount());
+        assertThat(viaStream.skippedDetails()).hasSameSizeAs(viaFile.skippedDetails());
+        assertThat(viaStream.sheetSummaries()).hasSameSizeAs(viaFile.sheetSummaries());
     }
 }

@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -143,6 +144,47 @@ public class ClientManagementController {
      * employees do not belong in a URL. It reads nothing and writes nothing; the people are not
      * assigned to the desk by downloading this, only by uploading the filled-in file.
      */
+    /**
+     * Applies what the template WOULD contain straight to the desk, with no spreadsheet in between.
+     *
+     * <p>Same inputs as the download, same result shape as an upload — including the per-row skip
+     * reasons — because it builds the workbook in memory and hands it to the very same parser. There
+     * is no second writer to drift from the real upload path.
+     *
+     * <p><b>Destructive, exactly as the upload is.</b> The parser clears the desk before reimporting:
+     * assignments, desk-scoped preferences, exceptions and per-day hours all go, and only what this
+     * request supplies comes back. The caller confirms before calling.
+     */
+    @PostMapping("/desk-assignments/apply-to-desk")
+    public DeskAssignmentUploadService.DeskAssignmentUploadResult applyTemplateToDesk(
+            @RequestParam UUID deskId,
+            @RequestParam LocalDate weekStart,
+            @RequestParam(required = false) BigDecimal workingDayHours) throws IOException {
+        byte[] xlsx = deskAssignmentTemplateService
+                .generateTemplateForDesk(deskId, weekStart, workingDayHours);
+        return deskAssignmentUploadService.uploadDeskAssignments(new ByteArrayInputStream(xlsx));
+    }
+
+    /**
+     * The same direct apply, for the staged selection rather than the desk's current roster — this is
+     * how a desk gets built from several department searches without a spreadsheet round trip.
+     *
+     * <p>{@code weekStart} is required here, unlike on the download. A selection applied with blank
+     * day cells would clear the desk and then skip every row, leaving it empty — the exact failure
+     * the day-cell population exists to prevent, and not something to offer behind a one-click button.
+     */
+    @PostMapping("/desk-assignments/apply-selection-to-desk")
+    public DeskAssignmentUploadService.DeskAssignmentUploadResult applySelectionToDesk(
+            @RequestBody DeskAssignmentSelectionRequest request) throws IOException {
+        if (request.weekStart() == null) {
+            throw new IllegalArgumentException(
+                    "Choose the week to apply: without it every day cell would be blank, which clears "
+                            + "the desk and re-adds nobody");
+        }
+        byte[] xlsx = deskAssignmentTemplateService.generateTemplateForSelection(request);
+        return deskAssignmentUploadService.uploadDeskAssignments(new ByteArrayInputStream(xlsx));
+    }
+
     @PostMapping("/desk-assignments/template")
     public ResponseEntity<byte[]> downloadSelectionTemplate(
             @RequestBody DeskAssignmentSelectionRequest request) {

@@ -619,6 +619,34 @@ export const clientManagement = {
     }),
   // One desk per file, deliberately: the upload parser clears every desk whose sheet it finds, so
   // a workbook spanning all desks rewrote desks the operator never opened.
+  // Writes what the template WOULD contain straight to the desk -- no spreadsheet. Returns the same
+  // DeskAssignmentUploadResult an upload does, so the results modal renders it unchanged.
+  // DESTRUCTIVE: the desk is cleared before reimport, exactly as on upload. Confirm before calling.
+  applyTemplateToDesk: (deskId: string, weekStart: string, workingDayHours?: string) => {
+    const q = new URLSearchParams({ deskId, weekStart })
+    if (workingDayHours !== undefined && workingDayHours !== '') q.set('workingDayHours', workingDayHours)
+    return request<DeskAssignmentUploadResult>(
+      `/client-management/desk-assignments/apply-to-desk?${q}`, { method: 'POST' })
+  },
+  // Same, for the staged selection rather than the desk's current roster.
+  applySelectionToDesk: (deskId: string, employees: BambooEmployeeResponse[], weekStart: string, workingDayHours?: string) =>
+    request<DeskAssignmentUploadResult>(
+      `/client-management/desk-assignments/apply-selection-to-desk`, {
+        method: 'POST',
+        body: JSON.stringify({
+          deskId,
+          weekStart,
+          workingDayHours: workingDayHours === undefined || workingDayHours === '' ? null : workingDayHours,
+          employees: employees.map(e => ({
+            bamboohrId: e.id,
+            displayName: e.displayName,
+            workEmail: e.workEmail,
+            department: e.department,
+            jobTitle: e.jobTitle,
+            status: e.status,
+          })),
+        }),
+      }),
   // weekStart pre-populates the seven day-hour columns for that week (approved BambooHR time off as
   // PTO/MANDATORY, everything else workingDayHours). Omitting it leaves them blank, which the upload
   // skips row-by-row AFTER clearing the desk -- so always send a week for a round-trippable file.

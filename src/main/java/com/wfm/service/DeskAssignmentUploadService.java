@@ -98,6 +98,19 @@ public class DeskAssignmentUploadService {
     }
 
     public DeskAssignmentUploadResult uploadDeskAssignments(MultipartFile file) throws IOException {
+        return uploadDeskAssignments(file.getInputStream());
+    }
+
+    /**
+     * The whole upload, from a stream rather than an uploaded file.
+     *
+     * <p>Exists so "apply directly to the desk" can run the SAME parse, the same clear-then-reimport
+     * and the same reporting as a real upload, over a workbook built in memory. Routing the direct
+     * path through this method rather than giving it its own writer is deliberate: clear-then-reimport
+     * is the most destructive code in this service, and a second implementation of it could drift from
+     * this one in exactly the ways that lose a roster.
+     */
+    public DeskAssignmentUploadResult uploadDeskAssignments(java.io.InputStream in) throws IOException {
         long tenantId = TenantContext.getTenantId();
 
         // Fresh BambooHR snapshot BEFORE any transaction opens (D-01/D-02/D-04) -- one
@@ -148,14 +161,14 @@ public class DeskAssignmentUploadService {
             // WorkbookFactory auto-detects OLE2 (.xls) vs OOXML (.xlsx) from the stream's
             // magic bytes, so both formats the frontend advertises (accept=".xlsx,.xls")
             // actually parse (WR-03) — new XSSFWorkbook(...) only ever supported .xlsx.
-            workbook = WorkbookFactory.create(file.getInputStream());
+            workbook = WorkbookFactory.create(in);
         } catch (IOException | RuntimeException e) {
             // A stream that isn't a recognized OLE2/OOXML container, or a POI-specific
             // format issue (e.g. EncryptedDocumentException), previously propagated
             // uncaught to GlobalExceptionHandler's generic 500. Surface a clean 400
             // instead (WR-03).
             throw new IllegalArgumentException(
-                    "Unable to read the uploaded file. Please upload a valid .xlsx or .xls spreadsheet.", e);
+                    "Unable to read the workbook. Please upload a valid .xlsx or .xls spreadsheet.", e);
         }
         try (workbook) {
             if (workbook.getNumberOfSheets() == 0) {
