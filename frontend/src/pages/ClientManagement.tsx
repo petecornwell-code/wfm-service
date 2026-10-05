@@ -15,6 +15,9 @@ export default function ClientManagement() {
   const [loading, setLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // 'All' is a pageSize large enough to exceed any department: listEmployees slices
+  // start..min(start+pageSize, total) and reports hasMore=false, so one page holds everything.
+  const ALL_ROWS = 100000
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
   const [searched, setSearched] = useState(false)
@@ -45,6 +48,7 @@ export default function ClientManagement() {
   // Desk assignment upload
   const [uploading, setUploading] = useState(false)
   const [downloadingTemplate, setDownloadingTemplate] = useState(false)
+  const [templateDeskId, setTemplateDeskId] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Upload result modal
@@ -101,14 +105,14 @@ export default function ClientManagement() {
     loadDepartments(false)
   }, [])
 
-  const fetchEmployees = async (page = 1, refresh = false) => {
+  const fetchEmployees = async (page = 1, refresh = false, size = pageSize) => {
     if (!department.trim()) {
       showToast('error', 'Please enter a department name')
       return
     }
     setLoading(true)
     try {
-      const res = await clientManagement.listEmployees(department.trim(), page, pageSize, refresh)
+      const res = await clientManagement.listEmployees(department.trim(), page, size, refresh)
       setEmployees(res.data)
       setHasMore(res.hasMore)
       setTotalCount(res.totalCount)
@@ -279,9 +283,13 @@ export default function ClientManagement() {
   }
 
   const handleDownloadTemplate = async () => {
+    if (!templateDeskId) {
+      showToast('error', 'Choose a desk to download the template for')
+      return
+    }
     setDownloadingTemplate(true)
     try {
-      const res = await clientManagement.downloadDeskAssignmentTemplate()
+      const res = await clientManagement.downloadDeskAssignmentTemplate(templateDeskId)
       if (!res.ok) {
         showToast('error', 'Template download failed')
         return
@@ -290,7 +298,10 @@ export default function ClientManagement() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'desk-assignment-template.xlsx'
+      // Mirrors the server's Content-Disposition name so the file is identifiable once saved.
+      const slug = (deskList.find(d => d.id === templateDeskId)?.name ?? 'desk')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      a.download = `desk-assignment-${slug || 'desk'}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -457,14 +468,23 @@ export default function ClientManagement() {
             {uploading ? 'Uploading...' : 'Upload Desk Assignments'}
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUploadDeskAssignments} />
-          <button onClick={handleDownloadTemplate} disabled={downloadingTemplate}>
+          <select
+            value={templateDeskId}
+            onChange={e => setTemplateDeskId(e.target.value)}
+            style={{ padding: '0.35rem', border: '1px solid #d1d5db', borderRadius: '4px', minWidth: '180px', fontSize: '0.85rem' }}
+          >
+            <option value="">-- Desk for this template --</option>
+            {deskList.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+          <button onClick={handleDownloadTemplate} disabled={downloadingTemplate || !templateDeskId}>
             {downloadingTemplate ? 'Downloading...' : 'Download template'}
           </button>
           <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
             Upload an .xlsx workbook with one worksheet per desk (sheet name = desk name). Each sheet needs a BambooHR ID
             column and one column per day (Monday…Sunday) — each day cell holds a number of hours (0–24), MANDATORY, or PTO.
             Specialty columns (Specialty 1, Specialty 2, …) are optional. Download the template above to get a workbook
-            pre-seeded with your current roster's identity columns. Only active agents are seeded, and if a Job Title
+            pre-seeded with that desk's current roster identity columns — one desk per file, so a re-upload
+            only ever touches the desk you picked. Only active agents are seeded, and if a Job Title
             Allowlist is configured on the Configuration page, only matching job titles are seeded — the same rules are
             enforced on upload, so non-matching rows are reported as skipped. The old 6-column and flat enriched shapes
             are no longer accepted — re-download the template if your file uses either.
@@ -639,8 +659,19 @@ export default function ClientManagement() {
             </button>
             <label style={{ marginLeft: '1rem' }}>
               Rows per page:{' '}
-              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); }}>
+              <select
+                value={pageSize}
+                disabled={loading}
+                onChange={e => {
+                  const next = Number(e.target.value)
+                  setPageSize(next)
+                  // Pass `next` explicitly — fetchEmployees would otherwise close over the
+                  // pre-change pageSize and fetch the old page size.
+                  if (searched) fetchEmployees(1, false, next)
+                }}
+              >
                 {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                <option value={ALL_ROWS}>All</option>
               </select>
             </label>
             <span style={{ marginLeft: 'auto' }}>
