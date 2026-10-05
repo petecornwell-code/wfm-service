@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { schedules, specializations as specApi, daysOff as daysOffApi, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, type RestWaiverEntry, getErrorMessage } from '../api/client'
+import { schedules, specializations as specApi, daysOff as daysOffApi, staffingRequirements, type StaffingRequirement, type ScheduleDetail, type StaffingSummaryEntry, type AgentScheduleEntry, type ConstraintViolationEntry, type Specialization, type DayOffWithAgent, type RestWaiverEntry, getErrorMessage } from '../api/client'
 import { showToast } from '../components/Toast'
 import { anchoredAt, calendarDateFromBusinessDateAndOffset, MINUTES_PER_DAY, type DayWindow } from '../utils/dayWindow'
 
@@ -378,6 +378,51 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
   const agentSchedule = schedule.agentSchedule || []
   const violations = schedule.constraintViolations || []
 
+  // Per-timeslot required FTEs, for the over/under rows below.
+  //
+  // This is the desk's LIVE demand, not the demand this solve saw. There is no snapshot to read:
+  // StaffingRequirement carries a scheduleId column but nothing ever writes it, and every query
+  // filters `scheduleId IS NULL`. So if demand was edited after the solve, these deltas describe
+  // the schedule against today's demand rather than against what it was optimised for -- which is
+  // why the caption below says so rather than presenting the numbers as the solver's own view.
+  const [requiredPerSlot, setRequiredPerSlot] = useState<Record<string, number>>({})
+  const [requiredLoadError, setRequiredLoadError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!schedule.deskId || !schedule.periodStartDate || !schedule.periodEndDate) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const acc: StaffingRequirement[] = []
+        let cursor: string | undefined
+        // Cursor-paginated at 50 a page, and a week of hourly demand across specialities runs to
+        // hundreds of rows, so page to exhaustion rather than reading only the first page.
+        // Bounded so a pagination bug cannot spin forever.
+        for (let page = 0; page < 200; page++) {
+          const res = await staffingRequirements.list(schedule.deskId, {
+            from: schedule.periodStartDate, to: schedule.periodEndDate, cursor,
+          })
+          acc.push(...res.data)
+          if (!res.hasMore || !res.nextCursor) break
+          cursor = res.nextCursor
+        }
+        if (cancelled) return
+        setRequiredPerSlot(Object.fromEntries(
+          acc.reduce((m, r) => {
+            // Summed across specialities when unfiltered, matching how allocated is counted; when a
+            // speciality filter is on, only that speciality's demand is compared.
+            if (specFilter && r.specializationName !== specFilter) return m
+            const key = `${r.date}|${toHHMM(r.startTime)}`
+            m.set(key, (m.get(key) || 0) + Number(r.requiredFTEs))
+            return m
+          }, new Map<string, number>())))
+        setRequiredLoadError(null)
+      } catch (err) {
+        if (!cancelled) setRequiredLoadError(getErrorMessage(err))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [schedule.deskId, schedule.periodStartDate, schedule.periodEndDate, specFilter])
+
   // Build specialization name -> color map
   const specColorMap: Record<string, string> = {}
   for (const s of specs) {
@@ -455,6 +500,16 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
           </select>
         </div>
       )}
+      {requiredLoadError
+        ? <p style={{ fontSize: '0.8rem', color: '#991b1b', marginBottom: '0.5rem' }}>
+            Couldn't load required FTEs, so the Required and Over / under rows are blank — {requiredLoadError}
+          </p>
+        : <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+            <strong>Required</strong> and <strong>Over / under</strong> compare each timeslot's allocated
+            agents against this desk's <em>current</em> demand. No per-schedule demand snapshot is stored,
+            so if demand changed after this solve ran, these deltas are against today's figures rather than
+            the ones it was optimised for.
+          </p>}
       {dates.length === 0 && <p style={{ color: '#6b7280' }}>No agent allocation data for the selected speciality.</p>}
       {dates.map(date => {
         const dayEntries = filtered.filter(e => e.date === date)
@@ -606,6 +661,47 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                         </td>
                       ))}
                     </tr>
+                      {/* Required / over-under, per timeslot. Required is the desk's LIVE demand -- see the
+                          requiredPerSlot comment at the top of this tab for why no solve-time snapshot exists. */}
+                      <tr style={{ fontWeight: 600, background: '#f9fafb' }}>
+                        <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1, fontSize: '0.75rem', color: '#374151' }}>
+                          Required
+                        </td>
+                        <td style={{ background: '#f9fafb' }} />
+                        {slots.map(slot => {
+                          const req = requiredPerSlot[`${date}|${slot}`]
+                          return (
+                            <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#374151' }}>
+                              {req === undefined ? '' : req}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      <tr style={{ fontWeight: 700, background: '#f9fafb', borderBottom: '2px solid #d1d5db' }}>
+                        <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1, fontSize: '0.75rem' }}>
+                          Over / under
+                        </td>
+                        <td style={{ background: '#f9fafb' }} />
+                        {slots.map(slot => {
+                          const req = requiredPerSlot[`${date}|${slot}`]
+                          // No demand loaded for a slot is not a zero requirement -- it is unknown, so show nothing
+                          // rather than reporting the whole allocation as over-staffed.
+                          if (req === undefined) {
+                            return <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }} />
+                          }
+                          const delta = (agentsPerSlot[slot] || 0) - req
+                          const bg = delta < 0 ? '#fee2e2' : delta > 0 ? '#fef3c7' : undefined
+                          const fg = delta < 0 ? '#991b1b' : delta > 0 ? '#92400e' : '#6b7280'
+                          return (
+                            <td key={slot} title={`${agentsPerSlot[slot] || 0} allocated vs ${req} required`} style={{
+                              padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
+                              fontSize: '0.75rem', background: bg, color: fg,
+                            }}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </td>
+                          )
+                        })}
+                      </tr>
                     {/* Unfilled row — only shown when there are unassigned seats */}
                     {hasAnyUnfilled && (
                       <tr style={{ fontWeight: 700, background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
@@ -855,6 +951,47 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
                       </td>
                     ))}
                   </tr>
+                    {/* Required / over-under, per timeslot. Required is the desk's LIVE demand -- see the
+                        requiredPerSlot comment at the top of this tab for why no solve-time snapshot exists. */}
+                    <tr style={{ fontWeight: 600, background: '#f9fafb' }}>
+                      <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1, fontSize: '0.75rem', color: '#374151' }}>
+                        Required
+                      </td>
+                      <td style={{ background: '#f9fafb' }} />
+                      {shiftSlots.map(slot => {
+                        const req = requiredPerSlot[`${date}|${slot}`]
+                        return (
+                          <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem', color: '#374151' }}>
+                            {req === undefined ? '' : req}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                    <tr style={{ fontWeight: 700, background: '#f9fafb', borderBottom: '2px solid #d1d5db' }}>
+                      <td style={{ padding: '4px 8px', position: 'sticky', left: 0, background: '#f9fafb', zIndex: 1, fontSize: '0.75rem' }}>
+                        Over / under
+                      </td>
+                      <td style={{ background: '#f9fafb' }} />
+                      {shiftSlots.map(slot => {
+                        const req = requiredPerSlot[`${date}|${slot}`]
+                        // No demand loaded for a slot is not a zero requirement -- it is unknown, so show nothing
+                        // rather than reporting the whole allocation as over-staffed.
+                        if (req === undefined) {
+                          return <td key={slot} style={{ padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb', fontSize: '0.75rem' }} />
+                        }
+                        const delta = (agentsPerSlot[slot] || 0) - req
+                        const bg = delta < 0 ? '#fee2e2' : delta > 0 ? '#fef3c7' : undefined
+                        const fg = delta < 0 ? '#991b1b' : delta > 0 ? '#92400e' : '#6b7280'
+                        return (
+                          <td key={slot} title={`${agentsPerSlot[slot] || 0} allocated vs ${req} required`} style={{
+                            padding: '3px 6px', textAlign: 'center', borderLeft: '1px solid #e5e7eb',
+                            fontSize: '0.75rem', background: bg, color: fg,
+                          }}>
+                            {delta > 0 ? `+${delta}` : delta}
+                          </td>
+                        )
+                      })}
+                    </tr>
                   {/* Unfilled row — once, after all groups, unchanged — only shown when there are unassigned seats */}
                   {hasAnyUnfilled && (
                     <tr style={{ fontWeight: 700, background: '#fef2f2', borderTop: '1px solid #fca5a5' }}>
