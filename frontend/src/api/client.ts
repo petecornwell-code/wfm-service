@@ -381,7 +381,15 @@ export interface BreakConcentrationAdvisory { templateId: string; templateName: 
 // hour inside it is unmeetable. reachableAgents is a deliberate UPPER bound, which is what makes
 // a reported shortfall provable rather than another number to weigh.
 export interface PeakShortfallAdvisory { date: string; startTime: string; endTime: string; requiredFTEs: number; reachableAgents: number; shortfall: number; message: string }
-export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[]; breakConcentrationAdvisories: BreakConcentrationAdvisory[]; peakShortfallAdvisories: PeakShortfallAdvisory[] }
+// A template with no break bands competing with a banded one for the same agent-days: the solver
+// may assign the bandless option, and that agent-day then has NO break -- at hard 0, with a BETTER
+// soft score, because the unworked hour moves to the shift edge where it buys coverage.
+export interface BandlessCompetitionAdvisory {
+  bandlessTemplateId: string; bandlessTemplateName: string; bandlessStart: string; bandlessEnd: string
+  bandedTemplateId: string; bandedTemplateName: string; bandedStart: string; bandedEnd: string
+  sharedWeekdays: string[]; sameEnvelope: boolean; message: string
+}
+export interface ShiftLibraryValidation { hasLiveDemand: boolean; uncoveredWindows: string[]; misalignedTemplates: string[]; hoursAdvisories: HoursAdvisory[]; unsatisfiableWeekdays: string[]; capacityAdvisories: CapacityAdvisory[]; breakConcentrationAdvisories: BreakConcentrationAdvisory[]; peakShortfallAdvisories: PeakShortfallAdvisory[]; bandlessCompetitionAdvisories: BandlessCompetitionAdvisory[] }
 
 // --- SHLB-07 Suggested Library (D-11) ---
 // A generated candidate mirrors ShiftTemplateBody's field set (P-10) so a draft row can be handed

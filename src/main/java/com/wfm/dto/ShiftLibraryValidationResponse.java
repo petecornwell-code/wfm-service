@@ -21,8 +21,44 @@ public record ShiftLibraryValidationResponse(
         List<CapacityAdvisory> capacityAdvisories,
         List<BreakConcentrationAdvisory> breakConcentrationAdvisories,
         List<PeakShortfallAdvisory> peakShortfallAdvisories,
-        List<OperatingWindowFinding> operatingWindowFindings
+        List<OperatingWindowFinding> operatingWindowFindings,
+        List<BandlessCompetitionAdvisory> bandlessCompetitionAdvisories
 ) {
+    /**
+     * A template with NO break bands competing with a banded one for the same agent-days.
+     *
+     * <p>Zero bands is a legitimate template shape — it means "no break", and
+     * {@code SolverService.buildShiftBandPairs} represents it as a single pair with a {@code null}
+     * band. The hazard is what happens when such a template sits alongside a banded one in the same
+     * era and weekday: the solver may assign the bandless pair instead, and that agent-day then has
+     * no break at all. Nothing is violated, so the score stays feasible and in fact IMPROVES — the
+     * unworked hour relocates to the shift edge, where it buys coverage instead of sitting mid-shift.
+     *
+     * <p>Observed on the live Phil-US desk 2026-10-06: deleting the three bands from a 00:00-09:00
+     * template left it competing with a banded one of the identical envelope, and 186 of 223
+     * agent-days came back with no break at hard 0 and a soft score 323 points BETTER than the
+     * properly-broken schedule. Every other check on this report was clean, which is why this one
+     * exists.
+     *
+     * <p>Advisory only, never blocking: a desk may legitimately run a bandless template (a shift too
+     * short to earn a break), and refusing that would be wrong. {@code sameEnvelope} marks the
+     * strictly-dominant case, where the two envelopes are identical and the bandless option can only
+     * win.
+     */
+    public record BandlessCompetitionAdvisory(
+            UUID bandlessTemplateId,
+            String bandlessTemplateName,
+            LocalTime bandlessStart,
+            LocalTime bandlessEnd,
+            UUID bandedTemplateId,
+            String bandedTemplateName,
+            LocalTime bandedStart,
+            LocalTime bandedEnd,
+            List<DayOfWeek> sharedWeekdays,
+            boolean sameEnvelope,
+            String message
+    ) {}
+
     /** SHLB-06 advisory (D-06/D-07): never blocking, except folded into unsatisfiableWeekdays. */
     public record HoursAdvisory(
             UUID templateId,

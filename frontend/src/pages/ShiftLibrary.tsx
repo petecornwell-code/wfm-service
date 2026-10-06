@@ -607,6 +607,7 @@ export default function ShiftLibrary() {
           // of a failed switch.
           breakConcentrationAdvisories: prev?.breakConcentrationAdvisories ?? [],
           peakShortfallAdvisories: prev?.peakShortfallAdvisories ?? [],
+          bandlessCompetitionAdvisories: prev?.bandlessCompetitionAdvisories ?? [],
         }))
         setModeSwitchHoursError(hoursMessage)
         if (demandMessage) showToast('error', demandMessage)
@@ -1029,9 +1030,14 @@ export default function ShiftLibrary() {
                       // Same glyph-plus-tooltip mechanism as the two columns before it (P-23);
                       // several weekdays collapse into one tooltip; a clean row is a blank cell.
                       const advisories = validation?.breakConcentrationAdvisories.filter(a => a.templateId === t.id) ?? []
-                      if (advisories.length === 0) return null
-                      const tooltip = advisories.map(a => a.message).join('\n')
-                      return <span title={tooltip}>⚠</span>
+                      // Bandless competition rides the same glyph: it is a break-shaped hazard on
+                      // this template's row, and the tooltip distinguishes them by wording. Keyed on
+                      // the BANDLESS side, since that is the template an operator would fix.
+                      const bandless = validation?.bandlessCompetitionAdvisories
+                        .filter(a => a.bandlessTemplateId === t.id) ?? []
+                      const all = [...advisories.map(a => a.message), ...bandless.map(a => a.message)]
+                      if (all.length === 0) return null
+                      return <span title={all.join('\n')}>⚠</span>
                     })()}
                   </td>
                   <td>
@@ -1104,6 +1110,7 @@ export default function ShiftLibrary() {
                         // than unknown.
                         breakConcentrationAdvisories: [],
                         peakShortfallAdvisories: [],
+                        bandlessCompetitionAdvisories: [],
                       }}
                     />
                   </div>

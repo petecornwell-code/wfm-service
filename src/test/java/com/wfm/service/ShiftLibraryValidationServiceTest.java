@@ -37,6 +37,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -108,6 +109,118 @@ class ShiftLibraryValidationServiceTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    // ---------- Bandless-competition advisory ----------
+
+    /**
+     * The Phil-US 2026-10-06 incident, reduced: deleting the bands from one of two same-envelope
+     * templates left the solver a legal no-break option, and 186 of 223 agent-days came back with no
+     * break at hard 0 and a BETTER soft score. Every other check on this report was clean.
+     */
+    @Test
+    void bandlessTemplateSharingAnEnvelopeWithABandedOne_isFlaggedAsStrictlyDominant() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "No bands", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                0, 0, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+        saveTemplate(deskId, "Banded", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+
+        var advisories = service.validate(deskId).bandlessCompetitionAdvisories();
+
+        assertThat(advisories).hasSize(1);
+        var a = advisories.get(0);
+        assertThat(a.bandlessTemplateName()).isEqualTo("No bands");
+        assertThat(a.bandedTemplateName()).isEqualTo("Banded");
+        assertThat(a.sameEnvelope()).isTrue();
+        assertThat(a.sharedWeekdays()).hasSize(7);
+        assertThat(a.message()).contains("no break bands").contains("always score better");
+    }
+
+    @Test
+    void bandlessTemplateAloneIsNotFlagged_zeroBandsIsALegitimateNoBreakShape() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "No bands", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                0, 0, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+
+        assertThat(service.validate(deskId).bandlessCompetitionAdvisories())
+                .isEmpty();
+    }
+
+    @Test
+    void allTemplatesBandedIsNotFlagged() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "A", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+        saveTemplate(deskId, "B", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                360, 60, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+
+        assertThat(service.validate(deskId).bandlessCompetitionAdvisories())
+                .isEmpty();
+    }
+
+    /** Non-overlapping eras cannot compete for one agent-day, so there is nothing to warn about. */
+    @Test
+    void bandlessAndBandedInNonOverlappingEras_notFlagged() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "No bands", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                0, 0, EnumSet.allOf(DayOfWeek.class),
+                LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 20));
+        saveTemplate(deskId, "Banded", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.allOf(DayOfWeek.class),
+                LocalDate.of(2026, 9, 21), null);
+
+        assertThat(service.validate(deskId).bandlessCompetitionAdvisories())
+                .isEmpty();
+    }
+
+    /** Disjoint weekdays likewise never compete for the same agent-day. */
+    @Test
+    void bandlessAndBandedOnDisjointWeekdays_notFlagged() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "Weekend no bands", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                0, 0, EnumSet.of(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY),
+                LocalDate.of(2026, 9, 14), null);
+        saveTemplate(deskId, "Weekday banded", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY),
+                LocalDate.of(2026, 9, 14), null);
+
+        assertThat(service.validate(deskId).bandlessCompetitionAdvisories())
+                .isEmpty();
+    }
+
+    /** Overlapping but unequal envelopes still offer a no-break route, flagged without the
+     *  strictly-dominant claim. */
+    @Test
+    void overlappingButDifferentEnvelopes_flaggedWithoutSameEnvelope() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "No bands", LocalTime.of(0, 0), LocalTime.of(6, 0),
+                0, 0, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+        saveTemplate(deskId, "Banded", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+
+        var advisories = service.validate(deskId).bandlessCompetitionAdvisories();
+
+        assertThat(advisories).hasSize(1);
+        assertThat(advisories.get(0).sameEnvelope()).isFalse();
+        assertThat(advisories.get(0).message()).contains("envelopes overlap");
+    }
+
+    /** Advisory, never blocking: it must not refuse the SHIFT-mode switch on its own. */
+    @Test
+    void bandlessCompetitionDoesNotBlockShiftModeReadiness() {
+        UUID deskId = saveDesk(TENANT_A);
+        saveTemplate(deskId, "No bands", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                0, 0, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+        saveTemplate(deskId, "Banded", LocalTime.of(0, 0), LocalTime.of(9, 0),
+                300, 60, EnumSet.allOf(DayOfWeek.class), LocalDate.of(2026, 9, 14), null);
+
+        var response = service.validate(deskId);
+        assertThat(response.bandlessCompetitionAdvisories()).hasSize(1);
+        // No demand on this desk, so readiness refuses for the demand reason -- never for ours.
+        assertThatThrownBy(() -> service.requireShiftModeReady(deskId))
+                .isInstanceOf(PreSolveValidationException.class)
+                .hasMessageNotContaining("no break bands");
     }
 
     // ---------- Zero-demand refusal (D-05) ----------

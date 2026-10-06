@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
@@ -126,9 +127,12 @@ public class ShiftLibraryValidationService {
         List<PeakShortfallAdvisory> peakShortfallAdvisories =
                 findPeakShortfalls(templates, bandsByTemplateId, demand, hoursByWeekday, dayWindow);
 
+        List<ShiftLibraryValidationResponse.BandlessCompetitionAdvisory> bandlessCompetitionAdvisories =
+                findBandlessCompetitionAdvisories(templates, bandsByTemplateId, dayWindow);
+
         return new ShiftLibraryValidationResponse(hasLiveDemand, uncoveredWindows, misalignedTemplates,
                 hoursAdvisories, unsatisfiableWeekdays, capacityAdvisories, breakConcentrationAdvisories,
-                peakShortfallAdvisories, operatingWindowFindings);
+                peakShortfallAdvisories, operatingWindowFindings, bandlessCompetitionAdvisories);
     }
 
     /**
@@ -740,4 +744,80 @@ public class ShiftLibraryValidationService {
 
     /** Package-visible (not private) so plan 15-02's generation service can call {@link #covers}. */
     record Window(LocalDate date, LocalTime startTime, LocalTime endTime) {}
+
+    /**
+     * Bandless templates competing with banded ones for the same agent-days (see
+     * {@link ShiftLibraryValidationResponse.BandlessCompetitionAdvisory} for why this matters).
+     *
+     * <p>Fires per (bandless, banded) pair whose effective ranges overlap AND which share at least
+     * one valid weekday — the two conditions under which the solver can actually choose between them
+     * for one agent-day. A bandless template alone is NOT flagged: zero bands is a legitimate
+     * "no break" shape, and a desk whose whole library is bandless has no break to lose. It is the
+     * coexistence that makes breaks optional.
+     */
+    private List<ShiftLibraryValidationResponse.BandlessCompetitionAdvisory> findBandlessCompetitionAdvisories(
+            List<ShiftTemplate> templates,
+            Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
+            DayWindow dayWindow) {
+
+        List<ShiftTemplate> bandless = templates.stream()
+                .filter(t -> bandsByTemplateId.getOrDefault(t.getId(), List.of()).isEmpty())
+                .toList();
+        List<ShiftTemplate> banded = templates.stream()
+                .filter(t -> !bandsByTemplateId.getOrDefault(t.getId(), List.of()).isEmpty())
+                .toList();
+        if (bandless.isEmpty() || banded.isEmpty()) {
+            return List.of();
+        }
+
+        List<ShiftLibraryValidationResponse.BandlessCompetitionAdvisory> out = new ArrayList<>();
+        for (ShiftTemplate free : bandless) {
+            for (ShiftTemplate withBands : banded) {
+                if (!erasOverlap(free, withBands)) {
+                    continue;
+                }
+                List<DayOfWeek> shared = Arrays.stream(DayOfWeek.values())
+                        .filter(d -> free.getValidWeekdays().contains(d)
+                                && withBands.getValidWeekdays().contains(d))
+                        .toList();
+                if (shared.isEmpty()) {
+                    continue;
+                }
+                boolean sameEnvelope = free.getStartTime().equals(withBands.getStartTime())
+                        && free.getEndTime().equals(withBands.getEndTime());
+                boolean overlaps = sameEnvelope || dayWindow.anchoredOverlaps(
+                        free.getStartTime(), free.getEndTime(),
+                        withBands.getStartTime(), withBands.getEndTime());
+                if (!overlaps) {
+                    continue;
+                }
+                String message = "Template '" + free.getName() + "' (" + free.getStartTime() + "-"
+                        + free.getEndTime() + ") has no break bands, and competes with '"
+                        + withBands.getName() + "' (" + withBands.getStartTime() + "-"
+                        + withBands.getEndTime() + ") on " + shared.size() + " shared weekday(s). "
+                        + (sameEnvelope
+                           ? "Their envelopes are identical, so the bandless option covers the same "
+                             + "hours with no break and will always score better. "
+                           : "Their envelopes overlap, so the bandless option is a no-break way to "
+                             + "cover those hours. ")
+                        + "Agent-days assigned the bandless template get NO break, at no score "
+                        + "penalty. Add bands to it, or retire it, if every shift must carry a break.";
+                out.add(new ShiftLibraryValidationResponse.BandlessCompetitionAdvisory(
+                        free.getId(), free.getName(), free.getStartTime(), free.getEndTime(),
+                        withBands.getId(), withBands.getName(),
+                        withBands.getStartTime(), withBands.getEndTime(),
+                        shared, sameEnvelope, message));
+            }
+        }
+        return out;
+    }
+
+    /** Whether two templates' [effectiveFrom, effectiveTo] ranges overlap; a null end is open. */
+    private static boolean erasOverlap(ShiftTemplate a, ShiftTemplate b) {
+        boolean aStartsAfterBEnds = b.getEffectiveTo() != null
+                && a.getEffectiveFrom().isAfter(b.getEffectiveTo());
+        boolean bStartsAfterAEnds = a.getEffectiveTo() != null
+                && b.getEffectiveFrom().isAfter(a.getEffectiveTo());
+        return !aStartsAfterBEnds && !bStartsAfterAEnds;
+    }
 }
