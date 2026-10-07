@@ -93,6 +93,27 @@ public class StaffingRequirementService {
         boolean hasDateRange = from != null && to != null;
         boolean hasBusinessRange = businessFrom != null && businessTo != null;
 
+        // D-04: validate ONLY the business-date params, before any repository call. Stricter than
+        // the calendar pair's silent-ignore precedent by design -- silently ignoring a half-supplied
+        // business range would return the desk's entire demand to a caller that asked for two days.
+        // The calendar from/to handling above and below is deliberately unchanged.
+        LocalDate businessFromDate = null;
+        LocalDate businessToDate = null;
+        if ((businessFrom != null) != (businessTo != null)) {
+            throw new IllegalArgumentException("businessFrom and businessTo must be supplied together");
+        }
+        if (hasBusinessRange) {
+            if (from != null || to != null) {
+                throw new IllegalArgumentException(
+                        "Use one range or the other: businessFrom/businessTo cannot be combined with from/to");
+            }
+            businessFromDate = parseBusinessDate("businessFrom", businessFrom);
+            businessToDate = parseBusinessDate("businessTo", businessTo);
+            if (businessFromDate.isAfter(businessToDate)) {
+                throw new IllegalArgumentException("businessFrom must not be after businessTo");
+            }
+        }
+
         List<StaffingRequirement> results;
 
         // D-04: a business-date range filters the STORED business_date column and pages on the
@@ -100,7 +121,7 @@ public class StaffingRequirementService {
         // so a cursor minted by either resumes in either.
         if (hasBusinessRange && hasCursor) {
             results = staffingRequirementRepository.findLiveByDeskAndBusinessDateRangeAfterCursor(
-                    tenantId, deskId, LocalDate.parse(businessFrom), LocalDate.parse(businessTo),
+                    tenantId, deskId, businessFromDate, businessToDate,
                     LocalDate.parse(cursorValues.get("date")),
                     LocalTime.parse(cursorValues.get("startTime")),
                     cursorValues.get("specName"),
@@ -108,8 +129,7 @@ public class StaffingRequirementService {
                     pageable);
         } else if (hasBusinessRange) {
             results = staffingRequirementRepository.findLiveByDeskAndBusinessDateRange(
-                    tenantId, deskId, LocalDate.parse(businessFrom), LocalDate.parse(businessTo),
-                    pageable);
+                    tenantId, deskId, businessFromDate, businessToDate, pageable);
         } else if (hasDateRange && hasCursor) {
             results = staffingRequirementRepository.findLiveByDeskAndDateRangeAfterCursor(
                     tenantId, deskId, LocalDate.parse(from), LocalDate.parse(to),
@@ -144,6 +164,20 @@ public class StaffingRequirementService {
             map.put("id", item.id().toString());
             return map;
         });
+    }
+
+    /**
+     * Parses one business-date request parameter. A {@link java.time.format.DateTimeParseException}
+     * is not an {@link IllegalArgumentException} and would surface as HTTP 500; this rethrows it as
+     * one (mapped to 400 {@code VALIDATION_FAILED}) naming the parameter and the expected form. The
+     * raw value is deliberately not echoed -- the message is returned to the client.
+     */
+    private static LocalDate parseBusinessDate(String paramName, String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new IllegalArgumentException(paramName + " must be an ISO date (yyyy-MM-dd)");
+        }
     }
 
     @Transactional

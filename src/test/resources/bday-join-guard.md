@@ -183,7 +183,16 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   `TimeslotGeneratorService.listTimeslots` and `StaffingRequirementService`'s paginated
   `findLiveByDeskAndDateRangeAfterCursor`/`findLiveByDeskAndDateRange(..., Pageable)` overloads
   are deliberately left on calendar date -- both are operator-facing, fed request-payload calendar
-  dates, the same D-10 reason already recorded above. **Plan 21-04 (OVNT-02) migrated the two
+  dates, the same D-10 reason already recorded above.
+  **Phase 24 (D-04, audit N-2) added business-date twins beside them,
+  `findLiveByDeskAndBusinessDateRange` and `findLiveByDeskAndBusinessDateRangeAfterCursor`, for the
+  new `businessFrom`/`businessTo` request parameters; the calendar overloads keep calendar
+  semantics for `from`/`to` callers, unchanged.** The twins copy the calendar queries' tenant,
+  desk, live and keyset predicates and sort verbatim and differ only in filtering the stored
+  business-date column, so the JPQL-literal shape stays exactly as invisible to this guard as the
+  calendar one was: correctness rests on `StaffingRequirementListBusinessRangeTest` (final business
+  day's post-midnight rows, paging to exhaustion, refusals, tenant scope, 00:00 control), not on
+  this guard. **Plan 21-04 (OVNT-02) migrated the two
   Erlang calculator paths off this calendar-date JPQL-literal shape entirely** -- they no longer
   call `deleteLiveByDeskAndDateRange` at all, so they are no longer an instance of this shape and
   are removed from this list; see the "`StaffingRequirementRepository`'s calendar-date range
@@ -215,6 +224,11 @@ reader files each as a decision rather than rediscovering it as a missed migrati
   `StaffingRequirementResponse.Item`'s `date` field; line number as of plan 20-07) keeps the
   calendar date for the same D-10 display reason, now with an explanatory comment stating so in
   production — it is a response-DTO read, not a join/group key, and uses no verb this guard scans.
+  **Phase 24 (D-03):** `date` stays the calendar date for every caller (D-10 is not reopened); the
+  additive `businessDate` field now sits beside it in `StaffingRequirementResponse.Item`, populated
+  from `Timeslot.getBusinessDate()`, and is the key the schedule grid and allocation rows join on.
+  `StaffingRequirementListBusinessRangeTest` asserts the two fields never disagree with
+  `DayWindow.businessDateOf`.
 
 - **`ShiftLibraryGenerationService` lines 226 and 616** are key positions in substance — a
   `.distinct()` identity (`new ShiftLibraryValidationService.Window(sr.getTimeslot().getBusinessDate(),
