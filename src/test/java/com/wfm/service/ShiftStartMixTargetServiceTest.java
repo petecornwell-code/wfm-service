@@ -200,6 +200,26 @@ class ShiftStartMixTargetServiceTest {
                         f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT))));
     }
 
+    /**
+     * A 06:00 desk whose whole demand for business Monday 2026-10-05 falls AFTER calendar
+     * midnight (calendar Tuesday 00:00-05:00). Keyed on the calendar date the business day looked
+     * demand-free and GUARD 1 skipped it, so the desk silently got no targets at all.
+     */
+    @Test
+    void aBusinessDayWhoseDemandFallsAfterCalendarMidnight_stillGetsTargets() {
+        Fixture f = overnightDesk();
+
+        List<ShiftStartMixTarget> targets = service.computeTargets(SchedulingMode.SHIFT,
+                f.rows, f.usualTargets, f.requirements, f.timeslots, f.seats,
+                DayWindow.anchoredAt(LocalTime.of(6, 0)));
+
+        assertThat(targets).hasSize(2);
+        assertThat(targets).allSatisfy(t -> assertThat(t.date()).isEqualTo(OVERNIGHT_MONDAY));
+        assertThat(targets).extracting(ShiftStartMixTarget::startTime)
+                .containsExactlyInAnyOrder(LocalTime.of(21, 0), LocalTime.of(22, 0));
+        assertThat(targets.stream().mapToInt(ShiftStartMixTarget::targetCount).sum()).isEqualTo(3);
+    }
+
     // ---------- scoring helpers, deliberately independent of the service's own arithmetic ----------
 
     /** Uncovered agent-slots for a start-time mix, spreading each start evenly over its bands. */
@@ -265,6 +285,7 @@ class ShiftStartMixTargetServiceTest {
             Timeslot ts = new Timeslot();
             ts.setId(UUID.randomUUID());
             ts.setDate(DAY);
+            ts.setBusinessDate(DAY);
             ts.setStartTime(LocalTime.of(FIRST_HOUR + i, 0));
             ts.setEndTime(LocalTime.of(FIRST_HOUR + i + 1, 0));
             timeslots.add(ts);
@@ -338,6 +359,94 @@ class ShiftStartMixTargetServiceTest {
                 seats.add(seatAt(timeslots.get(i), spec));
             }
         }
+        return new Fixture(rows, usualTargets, requirements, timeslots, seats);
+    }
+
+    private static final LocalDate OVERNIGHT_MONDAY = LocalDate.of(2026, 10, 5);
+
+    /**
+     * Business Monday on a 06:00 desk: hourly timeslots starting 21:00, 22:00, 23:00 (calendar
+     * Monday) and 00:00 through 05:00 (calendar Tuesday), every one business Monday. Demand of 2
+     * only on the calendar-Tuesday 00:00-04:00 slots; no-band templates 21:00-05:00 and
+     * 22:00-06:00; three same-class 8.0 h agent-days (two want 21:00, one 22:00); three seats per
+     * slot.
+     */
+    private Fixture overnightDesk() {
+        final LocalDate monday = OVERNIGHT_MONDAY;
+        final LocalDate tuesday = monday.plusDays(1);
+        Specialization spec = new Specialization();
+        spec.setId(UUID.randomUUID());
+        spec.setName("Overnight General");
+
+        int[] hours = {21, 22, 23, 0, 1, 2, 3, 4, 5};
+        List<Timeslot> timeslots = new ArrayList<>();
+        List<StaffingRequirement> requirements = new ArrayList<>();
+        List<AgentAssignment> seats = new ArrayList<>();
+        for (int hour : hours) {
+            Timeslot ts = new Timeslot();
+            ts.setId(UUID.randomUUID());
+            ts.setDate(hour >= 21 ? monday : tuesday);
+            ts.setBusinessDate(monday);
+            ts.setStartTime(LocalTime.of(hour, 0));
+            ts.setEndTime(LocalTime.of((hour + 1) % 24, 0));
+            timeslots.add(ts);
+            for (int k = 0; k < 3; k++) {
+                seats.add(seatAt(ts, spec));
+            }
+            if (hour <= 4) {
+                StaffingRequirement r = new StaffingRequirement();
+                r.setId(UUID.randomUUID());
+                r.setTimeslot(ts);
+                r.setSpecialization(spec);
+                r.setRequiredFTEs(2);
+                requirements.add(r);
+            }
+        }
+
+        List<ShiftBandPair> pairs = new ArrayList<>();
+        for (int[] window : new int[][] {{21, 5}, {22, 6}}) {
+            ShiftTemplate t = new ShiftTemplate();
+            t.setId(UUID.randomUUID());
+            t.setName("Overnight " + window[0] + "-" + window[1]);
+            t.setStartTime(LocalTime.of(window[0], 0));
+            t.setEndTime(LocalTime.of(window[1], 0));
+            t.setEffectiveFrom(LocalDate.of(2026, 1, 1));
+            t.setValidWeekdays(EnumSet.allOf(DayOfWeek.class));
+            pairs.add(new ShiftBandPair(t, null));
+        }
+
+        LocalTime[] wanted = {LocalTime.of(21, 0), LocalTime.of(21, 0), LocalTime.of(22, 0)};
+        List<AgentShiftAssignment> rows = new ArrayList<>();
+        List<ResolvedUsualShiftTarget> usualTargets = new ArrayList<>();
+        for (int i = 0; i < wanted.length; i++) {
+            Agent a = new Agent();
+            a.setId(UUID.randomUUID());
+            a.setName("Night agent " + i);
+            a.setPrimarySpecialization(spec);
+            a.setContractedHoursPerDay(new BigDecimal("8.0"));
+            AgentDayConfig cfg = new AgentDayConfig(a.getId(), monday, new BigDecimal("8.0"),
+                    60, 60, new BigDecimal("4.0"), BigDecimal.ONE, BreakAlignment.ON_HALF_HOUR,
+                    200, 70);
+            AgentShiftAssignment sa = new AgentShiftAssignment();
+            sa.setId(UUID.randomUUID());
+            sa.setAgent(a);
+            sa.setDate(monday);
+            sa.setDayConfig(cfg);
+            sa.setDeskShiftBandPairs(pairs);
+            sa.setEnvelopeSlackSlots(0);
+            rows.add(sa);
+            usualTargets.add(new ResolvedUsualShiftTarget(a.getId(), monday, wanted[i]));
+        }
+
+        // Guard the fixture itself: every row offers exactly the two overnight envelopes, and the
+        // demand really does sit on a calendar date that is not the business date.
+        for (AgentShiftAssignment row : rows) {
+            assertThat(row.getEligibleShiftBandPairs()).as("eligible pairs per row").hasSize(2);
+        }
+        assertThat(requirements).allSatisfy(r -> {
+            assertThat(r.getTimeslot().getBusinessDate()).isEqualTo(monday);
+            assertThat(r.getTimeslot().getDate()).isEqualTo(tuesday);
+        });
         return new Fixture(rows, usualTargets, requirements, timeslots, seats);
     }
 

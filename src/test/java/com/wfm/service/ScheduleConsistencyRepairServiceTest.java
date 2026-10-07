@@ -222,6 +222,42 @@ class ScheduleConsistencyRepairServiceTest {
         assertThat(startOf(schedule, noUsual)).isEqualTo(LocalTime.of(9, 0));
     }
 
+    @Test
+    void postMidnightSeatsFollowTheirEnvelopeInASwap() {
+        // A 06:00 desk: business day DAY runs to 06:00 on DAY + 1, so the overnight envelopes'
+        // 01:00 and 02:00 seats are calendar DAY + 1 but still business DAY. A permutation moves
+        // a whole business agent-day, so those seats must travel with their envelope too. Keyed
+        // on the calendar date they stayed with their original holder.
+        Specialization spec = spec("General");
+        Agent a = agent("A", spec, "8.00");
+        Agent b = agent("B", spec, "8.00");
+        ShiftBandPair early = pair("Early", LocalTime.of(20, 0), LocalTime.of(4, 0));
+        ShiftBandPair late = pair("Late", LocalTime.of(21, 0), LocalTime.of(5, 0));
+        LocalDate next = DAY.plusDays(1);
+
+        // A holds Late and wants 20:00; B holds Early and wants 21:00.
+        Schedule schedule = schedule(
+                List.of(shift(a, late), shift(b, early)),
+                List.of(seat(a, 21, DAY, DAY), seat(a, 1, next, DAY),
+                        seat(b, 20, DAY, DAY), seat(b, 2, next, DAY)),
+                List.of(new ResolvedUsualShiftTarget(a.getId(), DAY, LocalTime.of(20, 0)),
+                        new ResolvedUsualShiftTarget(b.getId(), DAY, LocalTime.of(21, 0))));
+
+        List<LocalTime> coverageBefore = workedHours(schedule);
+
+        var result = service.repair(schedule);
+
+        assertThat(result.changedAnything()).isTrue();
+        assertThat(result.exactBefore()).isZero();
+        assertThat(result.exactAfter()).isEqualTo(2);
+        assertThat(startOf(schedule, a)).isEqualTo(LocalTime.of(20, 0));
+        assertThat(startOf(schedule, b)).isEqualTo(LocalTime.of(21, 0));
+        // Each ends up holding exactly the other's original seats, calendar-next-day ones included.
+        assertThat(hoursOf(schedule, a)).containsExactlyInAnyOrder(20, 2);
+        assertThat(hoursOf(schedule, b)).containsExactlyInAnyOrder(21, 1);
+        assertThat(workedHours(schedule)).isEqualTo(coverageBefore);
+    }
+
     // --- fixtures ---
 
     private Specialization spec(String name) {
@@ -263,11 +299,21 @@ class ScheduleConsistencyRepairServiceTest {
     }
 
     private AgentAssignment seat(Agent agent, int hour) {
+        return seat(agent, hour, DAY, DAY);
+    }
+
+    /**
+     * A seat whose calendar and business dates may differ — a post-midnight seat of business
+     * day {@code businessDate} sits on the NEXT calendar date. The 23:00 slot ends at midnight,
+     * hence the modulo.
+     */
+    private AgentAssignment seat(Agent agent, int hour, LocalDate calendarDate, LocalDate businessDate) {
         Timeslot ts = new Timeslot();
         ts.setId(UUID.randomUUID());
-        ts.setDate(DAY);
+        ts.setDate(calendarDate);
+        ts.setBusinessDate(businessDate);
         ts.setStartTime(LocalTime.of(hour, 0));
-        ts.setEndTime(LocalTime.of(hour + 1, 0));
+        ts.setEndTime(LocalTime.of((hour + 1) % 24, 0));
         AgentAssignment a = new AgentAssignment();
         a.setId(UUID.randomUUID());
         a.setTimeslot(ts);
