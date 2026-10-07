@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 24
 current_phase_name: "Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows"
-status: ready_to_execute
-stopped_at: Phase 24 planned — 3 plans in 3 waves, ready to execute
-last_updated: "2026-10-07T15:33:16.741Z"
+status: executing
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-10-07T17:48:19.134Z"
 last_activity: 2026-10-07
-last_activity_desc: Phase 24 planned — 3 plans, 3 waves
-state_head: 3539234dda917cca42b55122639fcaa9095cc9f3
+last_activity_desc: Completed 24-01 — validator keyed on business date
+state_head: 40f8e6e01cc4520ea12aff383326dfc72557f8a4
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 56
-  completed_plans: 53
+  completed_plans: 54
   percent: 71
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 ## Current Position
 
-Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — READY TO EXECUTE
-Plan: 0 of 3
-Status: Ready to execute
-Last activity: 2026-10-07 — Phase 24 planned (3 plans, 3 waves)
+Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — EXECUTING
+Plan: 2 of 3 (24-01 complete)
+Status: Executing Phase 24 — ready for 24-02
+Last activity: 2026-10-07 — Completed 24-01 (validator keyed on business date)
 
 ## Milestone v1.3 Outcome
 
@@ -383,6 +383,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 23]: 23-02: Re-derived the 21:00-anchor numbers in RestPredecessorServiceTest's SLOT regression case against the live DayWindow implementation during execution rather than trusting the plan text blindly -- the derivation (1740) matched exactly
 - [Phase 23]: RestGapArithmeticGuardTest's CALL_SITE_ALLOWLIST_HEADING named '### anchoredWrappedEndMinute call sites' (new wording, not copied verbatim from the waiver precedent)
 - [Phase 23]: End-accessor token built by string concatenation (anchored+End+Minute() in the guard matcher so the guard's own source file is never a textual match for the forbidden composition
+- [Phase 24]: 24-01: PeakShortfallAdvisory.date now carries the business date; ShiftLibrary.tsx and the DTO are unchanged (operator decision 3)
+- [Phase 24]: 24-01: Window.describe(DayWindow) is the single operator-facing window label, calendar date disclosed only when it differs from the business date
 
 ### Blockers/Concerns
 
@@ -408,8 +410,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-04T21:02:56.513Z
-Stopped at: Completed 23-03-PLAN.md
+Last session: 2026-10-07T17:48:19.074Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -515,3 +517,4 @@ Resume file: None
 | Phase 23 P01 | 25min | 3 tasks | 6 files |
 | Phase 23 P02 | 18min | 3 tasks | 4 files |
 | Phase 23 P03 | 30min | 2 tasks | 2 files |
+| Phase 24 P01 | 74 min | 3 tasks | 4 files |
