@@ -18,6 +18,12 @@ public class AgentAssignmentDifficultyComparator implements Comparator<AgentAssi
     @Override
     public int compare(AgentAssignment a, AgentAssignment b) {
         // Earlier date = more constrained (placed first) = "more difficult"
+        // Phase 24 D-06: the CALENDAR date is deliberate here, not a missed business-date
+        // migration. Calendar date plus clock time is the true chronological construction order at
+        // every day-start anchor; business date plus clock time would sort a business day's 01:00
+        // seat (calendar next day) BEFORE its 21:00 seat. This comparator has no anchor to correct
+        // that, and it is only a construction-ordering heuristic with no correctness effect.
+        // Recorded in src/test/resources/bday-join-guard.md ("Known scope boundaries").
         int dateCompare = a.getTimeslot().getDate().compareTo(b.getTimeslot().getDate());
         if (dateCompare != 0) return dateCompare;
 

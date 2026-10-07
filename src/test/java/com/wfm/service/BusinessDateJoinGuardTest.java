@@ -87,12 +87,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p><strong>The allowlist is shipped EMPTY on purpose.</strong> An empty expected set makes a
  * naive set-equality assertion vacuously satisfiable the moment every guarded file is migrated — so
  * this class carries two INDEPENDENT liveness proofs that do not depend on the allowlist's
- * contents at all: {@link #theMatcherDetectsEachReceiverShapeAndRejectsNonKeyPositions()} proves
- * the matcher predicate itself can return both {@code true} and {@code false}, and {@link
+ * contents at all, one matcher proof and one pipeline proof per scan: {@link
+ * #theMatcherDetectsEachReceiverShapeAndRejectsNonKeyPositions()} proves the verb-scoped matcher can
+ * return both {@code true} and {@code false}, {@link
  * #pipelineRedProof_walkStripMatchAndSetCompareAreAllLive()} proves the whole walk-strip-match-
- * compare pipeline is live against a tracked, never-compiled synthetic offender. The widened scope
- * landed RED (fourteen unmigrated sites across the four widened files) and is turned green by
- * migration in plans 24-01 and 24-02, never by allowlisting.
+ * compare pipeline is live against a tracked, never-compiled synthetic offender, {@link
+ * #theWidenedMatcherCatchesVerbFreeTimeslotDateReadsTheVerbScanMisses()} proves the same of the
+ * widened verb-free matcher, and {@link
+ * #widenedPipelineRedProof_walkStripMatchAndSetCompareAreAllLive()} proves the widened pipeline is
+ * live against its own offender under {@link #OFFENDER_ROOT_WIDENED}. The widened scope landed RED
+ * (fourteen unmigrated sites across the four widened files) and was turned green by migration in
+ * plans 24-01 and 24-02, never by allowlisting.
  *
  * <p>No Spring context, no database — a purely textual, comment-stripped scan, mirroring every
  * precedent guard in this codebase. A false positive (an unrelated method literally spelled {@code
@@ -150,6 +155,14 @@ class BusinessDateJoinGuardTest {
      * a deliberately offending {@code .java} file inside a compiled source set.
      */
     private static final Path OFFENDER_ROOT = Path.of("src", "test", "resources", "bday-join-guard-offender");
+
+    /**
+     * The fixture root for the WIDENED pipeline red-proof (Phase 24 D-07): a tracked, never-compiled
+     * offender holding one verb-free calendar-date Timeslot read, so the empty allowlist stays honest
+     * for the widened scan the same way {@link #OFFENDER_ROOT} keeps it honest for the verb scan.
+     */
+    private static final Path OFFENDER_ROOT_WIDENED =
+            Path.of("src", "test", "resources", "bday-join-guard-offender-widened");
 
     @Test
     @DisplayName("business-date join key positions across the verb-scoped and widened guarded files match the allowlist exactly")
@@ -245,6 +258,41 @@ class BusinessDateJoinGuardTest {
                 .as("walk + comment-strip + match against the fixture must yield exactly one entry "
                         + "-- a second entry would mean comment-stripping silently stopped working")
                 .hasSize(1);
+
+        assertThatThrownBy(() -> assertThat(derived).containsExactlyInAnyOrderElementsOf(Set.of()))
+                .isInstanceOf(AssertionError.class);
+    }
+
+    /**
+     * The widened scan's own pipeline red-proof (Phase 24 D-07). {@link
+     * #pipelineRedProof_walkStripMatchAndSetCompareAreAllLive} proves the verb-scoped pipeline; the
+     * widened scan has a different predicate and a different file list, so it needs its own proof
+     * that an EMPTY allowlist is not vacuous. The fixture's single real line carries no join verb,
+     * so the verb-scoped predicate must NOT see it -- the widening, not the verb scan, is what
+     * catches a verb-free calendar-date Timeslot read.
+     */
+    @Test
+    @DisplayName("the widened guard can go red through its whole pipeline, not only its matcher")
+    void widenedPipelineRedProof_walkStripMatchAndSetCompareAreAllLive() throws IOException {
+        List<Path> fixtureFiles;
+        try (Stream<Path> files = Files.walk(OFFENDER_ROOT_WIDENED)) {
+            fixtureFiles = files.filter(p -> p.toString().endsWith(".java")).toList();
+        }
+        assertThat(fixtureFiles)
+                .as("the widened pipeline red-proof fixture must hold exactly one .java file under %s",
+                        OFFENDER_ROOT_WIDENED)
+                .hasSize(1);
+
+        Set<String> derived = scanFiles(fixtureFiles, BusinessDateJoinGuardTest::isWidenedTimeslotDateRead);
+        assertThat(derived)
+                .as("walk + comment-strip + widened match against the fixture must yield exactly one "
+                        + "entry -- a second entry would mean comment-stripping silently stopped working")
+                .hasSize(1);
+
+        assertThat(scanFiles(fixtureFiles, BusinessDateJoinGuardTest::isBusinessDateJoinKeyPosition))
+                .as("the fixture's offending line carries no join verb, so the verb-scoped predicate "
+                        + "must miss it -- otherwise this proof says nothing about the widening")
+                .isEmpty();
 
         assertThatThrownBy(() -> assertThat(derived).containsExactlyInAnyOrderElementsOf(Set.of()))
                 .isInstanceOf(AssertionError.class);

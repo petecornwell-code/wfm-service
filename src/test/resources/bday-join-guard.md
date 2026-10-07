@@ -16,6 +16,19 @@ SOLV-07's coverage/demand-upload work (plans 20-06/20-07) are what this guard po
 build the moment a key position of this shape exists anywhere in the four files below without a
 documented, reasoned allowlist entry.
 
+**Widened scope (Phase 24, D-07).** The four verb-scoped files above are scanned only where one of
+the four verbs AND a `Timeslot` calendar-date read share a line. That gate is what lets
+`ScheduleOutputService`'s deliberate D-10 calendar labels stay quiet, but it is also how gap N-1
+slipped through: `ShiftLibraryValidationService` read the calendar date through `.map(` and a plain
+local assignment, never a join verb. `BusinessDateJoinGuardTest` therefore also scans a second,
+explicit four-file list, `WIDENED_TARGET_FILES` -- `ShiftLibraryValidationService`,
+`ScheduleEnvelopeRepairService`, `ScheduleConsistencyRepairService` and `ShiftStartMixTargetService`
+-- with NO verb requirement: any comment-stripped line reading a `Timeslot`'s calendar `getDate()` on
+one of the three receiver shapes is a hit. A verb-free scan is only workable because none of those
+four files keeps a legitimate calendar-date `Timeslot` read once migrated; the verb-scoped four keep
+their gate for the reason above. The widened list is explicit, never a tree walk, for the same
+reason the first is.
+
 ### Allowlist
 
 ```
@@ -23,11 +36,15 @@ documented, reasoned allowlist entry.
 
 Zero entries is the EXPECTED steady state (D-08 predicted "plausibly empty for key positions"; this
 guard is what proves that rather than assumes it). An empty fenced block makes a naive set-equality
-assertion vacuously satisfiable the moment production is fully migrated — `BusinessDateJoinGuardTest`
-carries two independent liveness proofs (a matcher-level proof against synthetic strings, and a
-pipeline-level proof against a tracked synthetic offender under
-`src/test/resources/bday-join-guard-offender/`) specifically so an empty allowlist here stays
-honest rather than becoming decoration.
+assertion vacuously satisfiable the moment production is fully migrated -- so `BusinessDateJoinGuardTest`
+carries four independent liveness proofs, none of which depends on this block's contents: a
+matcher-level proof for each of the two predicates (the verb-scoped one and the widened verb-free one,
+both against synthetic strings), and a pipeline-level proof for each scan against a tracked,
+never-compiled synthetic offender -- `src/test/resources/bday-join-guard-offender/` for the verb scan
+and `src/test/resources/bday-join-guard-offender-widened/` for the widened scan. The widened
+offender's single real line is verb-free, so the verb-scoped predicate cannot see it; that is what
+proves the widening, not the verb scan, is what catches a verb-free calendar-date read. These exist
+specifically so an empty allowlist here stays honest rather than becoming decoration.
 
 **History.** Before plans 20-05/20-06 migrated `ScheduleConstraintProvider` and `ScheduleOutputService`/
 `ShiftLibraryGenerationService`, this guard was RED: fourteen key positions across
@@ -52,11 +69,50 @@ turned red and then green again. This guard's green has never been, and still is
 about this file; treat its silence on `StaffingRequirementService` as a structural blind spot, not
 as a clean bill of health.
 
+**Phase 24 history (widened scope).** The widened scan landed RED in plan 24-01, committed against the
+unmigrated tree before any production edit, on exactly fourteen sites: three in
+`ShiftLibraryValidationService` (the `Window` construction, the weekday-bucketing `.map(` and the
+peak-shortfall local assignment), seven in `ScheduleEnvelopeRepairService` (the free-seat map key, the
+seat's `AgentDay` key, the violation sort, the candidate date, `planMove`, `restoreBookkeeping` and the
+no-candidate log argument), one in `ScheduleConsistencyRepairService` (`seatsByDateAgent`) and three in
+`ShiftStartMixTargetService` (`reqByDate`, `seatsByDate`, `slotsByDate`). Plan 24-01 migrated the three
+validator sites, leaving eleven red; plan 24-02 migrated the other eleven, each by a key change proven
+red-then-green on a 06:00 desk with the 00:00 behaviour held by the pre-existing tests. The guard is
+GREEN with this Allowlist block empty: no entry was added for a migrated site and none was left
+stale.
+
 ## Known scope boundaries — deliberate, not gaps
 
 Every site below is either genuinely out of this guard's four-verb scope by design, or a measured
 blind spot this guard's own textual technique cannot close. Recording them here means the next
 reader files each as a decision rather than rediscovering it as a missed migration.
+
+- **Phase 24 classification: every remaining `Timeslot` calendar-date read in `src/main/java` after
+  the widened migration.** None of the sites below sits in `TARGET_FILES` or `WIDENED_TARGET_FILES`,
+  so none is allowlisted -- recording the reason here is the whole point.
+  - **`AgentAssignmentDifficultyComparator`** (`compare`, the `getTimeslot().getDate()` comparison)
+    deliberately keeps the CALENDAR date. Calendar date plus clock time is the true chronological
+    construction order at every day-start anchor; business date plus clock time would sort a business
+    day's 01:00 seat (calendar next day) before its 21:00 seat, and the comparator has no anchor to
+    correct that. It is a construction-ordering heuristic for FIRST_FIT_DECREASING with no
+    correctness effect. The comment now at the site says so. The start-time comparison on the next
+    statement is allowlisted verbatim in `midnight-time-arithmetic.md`, so its text must not change.
+  - **`BusinessDayPeriodLoader`'s calendar reads** (`loadLiveTimeslots`' filter and sort, and
+    `loadLiveStaffingRequirements`' filter) ARE the business-date derivation: each passes the stored
+    calendar date and start time through `DayWindow.businessDateOf`. Reading the calendar date there
+    is how the business date is computed, not a place the business date is missed.
+  - **`TimeslotGeneratorService`'s `isDesired`/`slotKey`/sort reads** are the same derivation again
+    (BDAY-03 widen-then-derive), feeding `DayWindow.businessDateOf`, and the surviving-slot key
+    identifies a stored row by its calendar date and clock time.
+  - **`ScheduleOutputService`'s calendar labels** (`calendarDate`/`violationCalendarDate`) are D-10
+    operator-facing labels, which answer "when does this happen" and disclose the business date as an
+    explicit suffix when it differs.
+  - **`TimeslotController`'s `TimeslotResponse` and `StaffingRequirementService`'s
+    `StaffingRequirementResponse.Item`** carry the calendar date as a response-DTO field, for the same
+    D-10 display reason; neither is a join or grouping key.
+  - **`ScheduleService`'s timeslot snapshot copy** (`snapshot.setDate(live.getDate())`) copies a
+    row's calendar date into its immutable snapshot beside the business date; it derives nothing and
+    keys nothing.
 
 - **`SolverService` is deliberately not one of the four files in `TARGET_FILES` above.** Adding it
   would contribute ZERO matched lines: this guard requires one of the four verb tokens
