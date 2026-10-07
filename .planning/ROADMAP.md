@@ -29,6 +29,7 @@ than four captured live desks standing in for both jobs at once.
 - [x] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block (completed 2026-10-03)
 - [x] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver (completed 2026-10-04)
 - [ ] **Phase 23: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor** - The hard minimum-rest constraint measures the true gap when the predecessor shift spans midnight, closing v1.5 audit gap G-1
+- [ ] **Phase 24: Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows** - Shift-library validation and the Agent Allocation demand rows resolve a timeslot's business date the way the solver does, closing v1.5 re-audit gaps N-1/N-2
 
 ### Phase 18: Business-Day Foundation & Guards
 
@@ -472,6 +473,53 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 23-03-PLAN.md — The `rest-gap-arithmetic-guard` registry and scanner (D-02), plus the single full-suite phase gate
+
+### Phase 24: Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows
+
+**Goal:** Every surface that decides which business day a timeslot belongs to agrees with the solver,
+so a weekday-restricted overnight template validates against the hours the solver can actually give
+it, and the Agent Allocation Required / Over-under rows compare like with like — closing v1.5
+re-audit gaps N-1 and N-2 (2026-10-07).
+
+**Requirements**: OVNT-05, OVNT-06, OVNT-07, SOLV-07 (and BDAY-02, BDAY-05, the business-date keys
+both gaps bypass)
+
+**Depends on**: Phase 21 (the validator and grid surfaces), Phase 23 (last v1.5 phase; nothing in it
+is touched)
+
+**Context**: Both gaps are the same defect class — a calendar-date key where the solver uses the
+business date — and both only bite on a desk whose day start is not `00:00`.
+
+- **N-1** (present since Phase 21): `ShiftLibraryValidationService.java:230` builds each demand
+  `Window` from `getTimeslot().getDate()`, and `covers()` (`:257-262`) tests `validWeekdays` and
+  `isEffectiveOn` against it; `:455` and `:576`/`:599` bucket the advisories the same way. The solver
+  (`SolverService.java:2433`, whose comment names this exact defect) and `ShiftLibraryGenerationService`
+  (`:185, 236, 509, 654`) use `getBusinessDate()` — and the generator calls the validator's `covers()`,
+  so the two disagree about what a window's date means. Consequence: `requireShiftModeReady` falsely
+  refuses the SHIFT-mode switch for a weekday-restricted overnight template's own post-midnight
+  hours, can credit a template with another business day's hours, and reports advisories against the
+  wrong weekday. 7-day templates are unaffected; no schedule is ever corrupted.
+- **N-2** (introduced by `e304a85`, 2026-10-05, after Phase 23): `ScheduleResults.tsx:414` keys
+  `requiredPerSlot` on `r.date`, which `StaffingRequirementService.java:390-396` deliberately returns
+  as the CALENDAR date (SOLV-07/D-10 — do not change that response field), while the grid's date is
+  the business date (`ScheduleOutputService.java:173, 323`). Lookups at `:672, :686, :962, :976`.
+  The fetch also filters `from=periodStart&to=periodEnd` on calendar date, so the final business
+  day's post-midnight demand is never loaded. Post-midnight cells show the wrong demand or none.
+
+**Why no test caught it**: `ShiftLibraryValidationServiceTest` has no case with a non-`00:00` anchor
+and a weekday-restricted template (N-3), and the frontend has no test runner (Phase 22 WR-04).
+
+**Plans:** 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 24-01-PLAN.md — Tracer: the business-date join guard widened to a verb-free scan of four explicit files and proven red on 14 unmigrated sites, then N-1 closed — shift-library validation windows, weekday buckets and peak shortfalls keyed on the business date, with one shared `Window.describe` label that discloses the calendar date (D-01, D-02, D-07, D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 24-02-PLAN.md — Same-class sweep: envelope repair, usual-shift swap and start-mix targets keyed on the business date, each red-first; the widened guard turns green with an empty allowlist and a second pipeline liveness proof (D-06, D-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 24-03-PLAN.md — N-2 closed additive-then-consume: `Item.businessDate` plus `businessFrom`/`businessTo` on the staffing-requirements list, the Agent Allocation rows re-keyed, a live local measurement, and the phase's full-suite gate (D-03, D-04, D-05, D-09, D-10)
 
 <details>
 <summary>✅ v1.3 Shift-Based Scheduling & Consistency (Phases 14–17) — SHIPPED 2026-09-21</summary>

@@ -23,7 +23,7 @@ created: "2026-10-07"
 | **Config file** | `build.gradle` (`tasks.named('test') { useJUnitPlatform() ... }`); `frontend/tsconfig.json` |
 | **Quick run command** | `./gradlew test --tests <FQCN> [--tests <FQCN> ...]` (targeted; never read the suite aggregate after a filtered run) |
 | **Full suite command** | `./gradlew --stop && ./gradlew cleanTest test` |
-| **Type check** | `cd frontend && npx tsc --noEmit -p tsconfig.json` |
+| **Type check** | `frontend/node_modules/.bin/tsc --noEmit -p frontend/tsconfig.json` (repo-root-relative; equivalent to `cd frontend && npx tsc --noEmit -p tsconfig.json`) |
 | **Estimated runtime** | ~60-120 s targeted; ~14 min full suite (warm) |
 
 ---
@@ -39,21 +39,25 @@ created: "2026-10-07"
 
 ## Per-Task Verification Map
 
-Populated from 24-RESEARCH.md §Validation Architecture; task IDs are bound by the planner.
+Populated from 24-RESEARCH.md §Validation Architecture; task IDs bound by the planner (2026-10-07).
+Plans run sequentially: 24-01 (wave 1) → 24-02 (wave 2) → 24-03 (wave 3).
+`BusinessDateJoinGuardTest` is EXPECTED RED from 24-01-T1 until 24-02-T3 (precedent: Phases 18-20).
 
-| Req / Decision | Behavior | Test Type | Automated Command | File Exists | Status |
-|----------------|----------|-----------|-------------------|-------------|--------|
-| D-07 / BDAY-05 | Widened guard red on the pre-fix lines, green after the fixes | unit (textual scan) | `./gradlew test --tests com.wfm.service.BusinessDateJoinGuardTest` | edit + ❌ W0 offender fixture | ⬜ pending |
-| D-08a / OVNT-05 | Weekday-restricted overnight template accepts its own post-midnight hours | integration | `./gradlew test --tests com.wfm.service.ShiftLibraryValidationServiceTest` | edit | ⬜ pending |
-| D-08b / OVNT-05, SOLV-07 | No credit for another business day's hours | integration | same | edit | ⬜ pending |
-| D-08c / OVNT-05 | Advisories bucket on the business weekday | integration | same | edit | ⬜ pending |
-| D-02 / OVNT-07 | `[calendar …]` disclosure only when calendar ≠ business; `00:00` strings unchanged | integration | same | edit | ⬜ pending |
-| D-06 envelope | Post-midnight seat finds its envelope on a 06:00 desk; `00:00` control unchanged | unit | `./gradlew test --tests com.wfm.service.ScheduleEnvelopeRepairServiceTest` | edit (fixtures need `setBusinessDate`) | ⬜ pending |
-| D-06 consistency | Post-midnight seats move with the envelope swap on a 06:00 desk | unit | `./gradlew test --tests com.wfm.service.ScheduleConsistencyRepairServiceTest` | edit (fixtures need `setBusinessDate`) | ⬜ pending |
-| D-03 / SOLV-07 | `Item.businessDate` populated; `date` stays calendar | integration | `./gradlew test --tests com.wfm.service.StaffingRequirementListBusinessRangeTest` | ❌ W0 | ⬜ pending |
-| D-04 / BDAY-02 | Business range returns the final business day's post-midnight rows; paging intact | integration | same | ❌ W0 | ⬜ pending |
-| D-05 / N-2 | Rows keyed on `businessDate`; no TS date arithmetic | type check + manual live | `cd frontend && npx tsc --noEmit -p tsconfig.json` | n/a | ⬜ pending |
-| Regression | Whole suite green | full | `./gradlew --stop && ./gradlew cleanTest test` | existing | ⬜ pending |
+| Task ID | Req / Decision | Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|----------------|----------|-----------|-------------------|-------------|--------|
+| 24-01-T1 | D-07 / BDAY-05 | Widened guard red on the 14 pre-fix lines, captured before any production edit | unit (textual scan) | `! ./gradlew test --tests "com.wfm.service.BusinessDateJoinGuardTest"` + XML grep | edit | ⬜ pending |
+| 24-01-T1 | D-08a, D-08c / OVNT-05 | Weekday-restricted overnight template accepts its own post-midnight hours; unsatisfiable weekday buckets on business weekday | integration | `./gradlew test --tests "com.wfm.service.ShiftLibraryValidationServiceTest"` | edit (+ `saveDemandAnchored`) | ⬜ pending |
+| 24-01-T1 | D-08b / OVNT-05, SOLV-07 | No credit for another business day's hours; `isEffectiveOn` on business date | integration | same | edit | ⬜ pending |
+| 24-01-T2 | D-02 / OVNT-07, BDAY-05 | `[calendar …]` disclosure only when calendar ≠ business; day-start ordering; `00:00` strings unchanged | integration | same + `ShiftLibraryGenerationServiceTest`, `MidnightTimeArithmeticGuardTest` | edit | ⬜ pending |
+| 24-01-T3 | D-08c / OVNT-05 | Peak shortfall on a post-midnight hour reported on its business weekday; `00:00` peak message unchanged | integration | `./gradlew test --tests "com.wfm.service.ShiftLibraryValidationServiceTest"` | edit | ⬜ pending |
+| 24-02-T1 | D-06 envelope | Post-midnight seat finds its own envelope on a 06:00 desk, never the next day's; `00:00` control unchanged | unit | `./gradlew test --tests "com.wfm.service.ScheduleEnvelopeRepairServiceTest"` | edit (fixtures need `setBusinessDate`) | ⬜ pending |
+| 24-02-T2 | D-06 consistency + start-mix | Post-midnight seats move with the swap; a post-midnight-only business day still gets targets | unit | `./gradlew test --tests "com.wfm.service.ScheduleConsistencyRepairServiceTest" --tests "com.wfm.service.ShiftStartMixTargetServiceTest" --tests "com.wfm.solver.ShiftStartMixSteerTest"` | edit (fixtures need `setBusinessDate`) | ⬜ pending |
+| 24-02-T3 | D-07 / BDAY-05 | Guard green with empty allowlist; widened pipeline liveness proof (W0 offender fixture) | unit (textual scan) | `./gradlew test --tests "com.wfm.service.BusinessDateJoinGuardTest" --tests "com.wfm.service.MidnightTimeArithmeticGuardTest" --tests "com.wfm.service.BusinessDateWritePathGuardTest"` | edit + ❌ W0 offender fixture | ⬜ pending |
+| 24-03-T1 | D-03 / SOLV-07 | `Item.businessDate` populated; `date` stays calendar | integration | `./gradlew test --tests "com.wfm.service.StaffingRequirementListBusinessRangeTest"` | ❌ W0 | ⬜ pending |
+| 24-03-T1 | D-04 / BDAY-02 | Business range returns the final business day's post-midnight rows | integration | same | ❌ W0 | ⬜ pending |
+| 24-03-T2 | D-04 | Paging intact; half/mixed/inverted/malformed ranges → 400; empty range → empty page; tenant-scoped | integration | same + `GlobalExceptionHandlerTest` | ❌ W0 | ⬜ pending |
+| 24-03-T3 | D-05, D-09 / OVNT-06 | Rows keyed on `businessDate`; no TS date arithmetic; live cells equal seeded demand | type check + live | `frontend/node_modules/.bin/tsc --noEmit -p frontend/tsconfig.json` | n/a | ⬜ pending |
+| 24-03-T3 | Regression / D-10 | Whole suite green on a real run; no VERIFICATION.md touched | full | `./gradlew --stop && ./gradlew cleanTest test` | existing | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

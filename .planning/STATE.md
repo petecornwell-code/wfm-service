@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 23
-current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
-status: verifying
-stopped_at: Completed 23-03-PLAN.md
-last_updated: "2026-10-04T21:02:56.562Z"
-last_activity: 2026-10-04
-last_activity_desc: Phase 23 execution started
-state_head: 46de29c538e045b1208d2b8adec3828e141e7faf
+current_phase: 24
+current_phase_name: "Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows"
+status: ready_to_execute
+stopped_at: Phase 24 planned — 3 plans in 3 waves, ready to execute
+last_updated: "2026-10-07T15:33:16.741Z"
+last_activity: 2026-10-07
+last_activity_desc: Phase 24 planned — 3 plans, 3 waves
+state_head: 3539234dda917cca42b55122639fcaa9095cc9f3
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 5
-  total_plans: 53
+  total_plans: 56
   completed_plans: 53
-  percent: 83
+  percent: 71
 ---
 
 # Project State
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 23 — Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
+**Current focus:** Phase 24 — Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows
 
 ## Current Position
 
-Phase: 23 (Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-10-04 — Phase 23 execution started
+Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — READY TO EXECUTE
+Plan: 0 of 3
+Status: Ready to execute
+Last activity: 2026-10-07 — Phase 24 planned (3 plans, 3 waves)
 
 ## Milestone v1.3 Outcome
 
@@ -168,6 +168,7 @@ Items deferred at v1.0 milestone close on 2026-04-21:
 - 2026-08-13: **Timefold version corrected.** The previously stated pinned version (recorded as a later 1.3x release) was incorrect — Phase 12 verified the actual pinned version is 1.16.0 against `build.gradle:35` (`ai.timefold.solver:timefold-solver-bom:1.16.0`) and against the running solver (custom-move API confirmed to be `AbstractMove.doMoveOnGenuineVariables` with framework-generated undo, not the newer `Neighborhoods` API introduced at 1.31.0). Assumption A3 in `12-RESEARCH.md` is thereby resolved.
 - Phase 20 edited: edited fields: success_criteria (criterion 5 reworded, criteria 6-7 added), notes (both open decisions resolved) - per 20-CONTEXT D-04/D-07/D-14
 - Phase 23 added: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor (v1.5 audit G-1, critical)
+- Phase 24 added: Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows (v1.5 re-audit 2026-10-07)
 
 ### Decisions
 
