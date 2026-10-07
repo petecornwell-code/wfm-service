@@ -136,14 +136,17 @@ public class ScheduleConsistencyRepairService {
                     .put(t.date(), t.usualStartTime());
         }
 
-        // Seats grouped by (date, agent) so a permutation can move a whole agent-day's seats.
+        // Seats grouped by (BUSINESS date, agent) so a permutation can move a whole business
+        // agent-day's seats — including its post-midnight ones, which sit on the next calendar
+        // date on a desk whose day start is not 00:00. This is the key byDate below groups the
+        // shift rows by (AgentShiftAssignment.getDate() is the business date).
         Map<LocalDate, Map<UUID, List<AgentAssignment>>> seatsByDateAgent = new HashMap<>();
         for (AgentAssignment a : schedule.getAssignments()) {
             if (a.getAgent() == null || a.getTimeslot() == null) {
                 continue;
             }
             seatsByDateAgent
-                    .computeIfAbsent(a.getTimeslot().getDate(), k -> new HashMap<>())
+                    .computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new HashMap<>())
                     .computeIfAbsent(a.getAgent().getId(), k -> new ArrayList<>())
                     .add(a);
         }

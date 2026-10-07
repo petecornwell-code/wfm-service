@@ -137,6 +137,11 @@ public class ShiftStartMixTargetService {
             return List.of();
         }
 
+        // All three per-date maps below are keyed on the BUSINESS date, the key rowsByDate (built
+        // from AgentShiftAssignment.getDate()) is read with — a business day's post-midnight
+        // demand, seats and slots sit on the next calendar date on a desk whose day start is not
+        // 00:00, and keyed on the calendar date that day looked demand-free.
+        //
         // Requirements summed across specializations: within one substitutability class every
         // agent can serve every specialization, so the headcount a slot needs is the total.
         Map<LocalDate, Map<LocalTime, Integer>> reqByDate = new HashMap<>();
@@ -145,7 +150,7 @@ public class ShiftStartMixTargetService {
             if (ts == null) {
                 continue;
             }
-            reqByDate.computeIfAbsent(ts.getDate(), k -> new HashMap<>())
+            reqByDate.computeIfAbsent(ts.getBusinessDate(), k -> new HashMap<>())
                     .merge(ts.getStartTime(), r.getRequiredFTEs(), Integer::sum);
         }
 
@@ -160,14 +165,14 @@ public class ShiftStartMixTargetService {
         for (AgentAssignment seat : seats == null ? List.<AgentAssignment>of() : seats) {
             Timeslot ts = seat.getTimeslot();
             if (ts != null) {
-                seatsByDate.computeIfAbsent(ts.getDate(), k -> new HashMap<>())
+                seatsByDate.computeIfAbsent(ts.getBusinessDate(), k -> new HashMap<>())
                         .merge(ts.getStartTime(), 1, Integer::sum);
             }
         }
 
         Map<LocalDate, List<Timeslot>> slotsByDate = new HashMap<>();
         for (Timeslot ts : timeslots) {
-            slotsByDate.computeIfAbsent(ts.getDate(), k -> new ArrayList<>()).add(ts);
+            slotsByDate.computeIfAbsent(ts.getBusinessDate(), k -> new ArrayList<>()).add(ts);
         }
         slotsByDate.values().forEach(l -> l.sort(Comparator.comparing(Timeslot::getStartTime)));
 
