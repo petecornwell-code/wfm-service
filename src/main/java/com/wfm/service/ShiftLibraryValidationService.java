@@ -575,7 +575,7 @@ public class ShiftLibraryValidationService {
                                                              DayWindow dayWindow) {
         List<PeakShortfallAdvisory> advisories = new ArrayList<>();
         for (StaffingRequirement sr : demand) {
-            LocalDate date = sr.getTimeslot().getDate();
+            LocalDate date = sr.getTimeslot().getBusinessDate();
             Window window = new Window(date, sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime());
 
             // Net-hours values an agent could hold and still be working THIS hour.
@@ -610,7 +610,7 @@ public class ShiftLibraryValidationService {
                 long shortfall = sr.getRequiredFTEs() - reachable;
                 advisories.add(new PeakShortfallAdvisory(date, window.startTime(), window.endTime(),
                         sr.getRequiredFTEs(), reachable, shortfall,
-                        peakShortfallMessage(date, window, sr.getRequiredFTEs(), reachable, shortfall)));
+                        peakShortfallMessage(window, dayWindow, sr.getRequiredFTEs(), reachable, shortfall)));
             }
         }
         advisories.sort(Comparator.comparingLong(PeakShortfallAdvisory::shortfall).reversed()
@@ -619,11 +619,11 @@ public class ShiftLibraryValidationService {
         return advisories;
     }
 
-    private static String peakShortfallMessage(LocalDate date, Window window, int required,
+    private static String peakShortfallMessage(Window window, DayWindow dayWindow, int required,
                                                  long reachable, long shortfall) {
-        return date + " " + window.startTime() + "-" + window.endTime() + " needs " + required
+        return window.describe(dayWindow) + " needs " + required
                 + " agent(s), but only " + reachable + " rostered agent(s) that "
-                + date.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+                + window.businessDate().getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
                 + " could be working it at all — short by " + shortfall + ". This counts every "
                 + "agent whose contracted hours match a shift covering that hour, ignoring that "
                 + "they must also staff the rest of their shift, so the real figure can only be "
