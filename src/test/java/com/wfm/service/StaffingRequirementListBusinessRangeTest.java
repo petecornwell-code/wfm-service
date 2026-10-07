@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Audit N-2 (phase 24, plan 03): the Agent Allocation "Required" and "Over / under" rows looked
@@ -194,6 +195,141 @@ class StaffingRequirementListBusinessRangeTest {
         assertThat(ids(business)).containsExactly(r.get(0).getId(), r.get(1).getId());
         assertThat(ids(business)).isEqualTo(ids(calendar));
         assertThat(business.data()).allSatisfy(item -> assertThat(item.businessDate()).isEqualTo(item.date()));
+    }
+
+    // ---------- D-04: refusal rules, paging, empty range, tenant scope ----------
+
+    @Test
+    @DisplayName("only businessFrom, or only businessTo: refused, never silently widened to the desk's whole demand")
+    void halfSuppliedBusinessRange_isRefused() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, null, "2026-10-05", null, null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("together");
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, null, null, "2026-10-06", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("together");
+    }
+
+    @Test
+    @DisplayName("a business range together with from or to: refused, one range or the other")
+    void calendarAndBusinessRangesTogether_areRefused() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), "2026-10-05", "2026-10-06", "2026-10-05", "2026-10-06", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one range");
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), "2026-10-05", null, "2026-10-05", "2026-10-06", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one range");
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, "2026-10-06", "2026-10-05", "2026-10-06", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one range");
+    }
+
+    @Test
+    @DisplayName("businessFrom after businessTo: refused")
+    void invertedBusinessRange_isRefused() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, null, "2026-10-07", "2026-10-05", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("businessFrom");
+    }
+
+    @Test
+    @DisplayName("a malformed business date is an IllegalArgumentException naming the parameter, "
+            + "not a DateTimeParseException, and never echoes the raw input")
+    void malformedBusinessDate_isRefusedAsIllegalArgument() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, null, "2026-13-01", "2026-10-06", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("businessFrom")
+                .hasMessageNotContaining("2026-13-01");
+        assertThatThrownBy(() -> service.listRequirements(
+                f.deskId(), null, null, "2026-10-05", "not-a-date", null, 50))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("businessTo")
+                .hasMessageNotContaining("not-a-date");
+    }
+
+    @Test
+    @DisplayName("paging a business range at limit 1 returns every in-range row exactly once, in order")
+    void businessRange_pagesToExhaustionAtLimitOne_returnsEveryRowExactlyOnceInOrder() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        List<UUID> seen = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        PaginatedResponse<StaffingRequirementResponse.Item> page;
+        do {
+            page = service.listRequirements(f.deskId(), null, null, "2026-10-05", "2026-10-06", cursor, 1);
+            seen.addAll(ids(page));
+            cursor = page.nextCursor();
+            pages++;
+            if (page.hasMore()) {
+                assertThat(page.data()).hasSize(1);
+                assertThat(cursor).isNotNull();
+            }
+        } while (page.hasMore() && pages < 20);
+
+        assertThat(seen).containsExactly(f.id(1), f.id(2), f.id(3), f.id(4));
+        assertThat(pages).isEqualTo(4);
+        assertThat(page.hasMore()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("a well-formed business range with no demand returns an empty page")
+    void businessRangeWithNoDemand_returnsAnEmptyPage() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        PaginatedResponse<StaffingRequirementResponse.Item> page = service.listRequirements(
+                f.deskId(), null, null, "2026-11-01", "2026-11-02", null, 50);
+
+        assertThat(page.data()).isEmpty();
+        assertThat(page.hasMore()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("the same business-range request under a different tenant reads zero rows")
+    void businessRange_isTenantScoped() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+        assertThat(service.listRequirements(f.deskId(), null, null, "2026-10-05", "2026-10-06", null, 50).data())
+                .hasSize(4);
+
+        TenantContext.setTenantId(2L);
+        PaginatedResponse<StaffingRequirementResponse.Item> other = service.listRequirements(
+                f.deskId(), null, null, "2026-10-05", "2026-10-06", null, 50);
+        PaginatedResponse<StaffingRequirementResponse.Item> otherPaged = service.listRequirements(
+                f.deskId(), null, null, "2026-10-05", "2026-10-06", null, 1);
+
+        assertThat(other.data()).isEmpty();
+        assertThat(otherPaged.data()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a half-supplied calendar range is still silently ignored, exactly as before")
+    void halfSuppliedCalendarRange_isStillIgnoredAsBefore() {
+        SixAmDesk f = sixAmDeskWithSixRows();
+
+        PaginatedResponse<StaffingRequirementResponse.Item> fromOnly = service.listRequirements(
+                f.deskId(), "2026-10-06", null, null, null, null, 50);
+        PaginatedResponse<StaffingRequirementResponse.Item> toOnly = service.listRequirements(
+                f.deskId(), null, "2026-10-05", null, null, null, 50);
+
+        assertThat(ids(fromOnly)).containsExactly(f.id(0), f.id(1), f.id(2), f.id(3), f.id(4), f.id(5));
+        assertThat(ids(toOnly)).isEqualTo(ids(fromOnly));
     }
 
     // ---------- helpers ----------
