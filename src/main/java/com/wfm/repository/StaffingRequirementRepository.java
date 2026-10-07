@@ -57,6 +57,34 @@ public interface StaffingRequirementRepository extends JpaRepository<StaffingReq
             LocalDate cursorDate, LocalTime cursorStartTime, String cursorSpecName, UUID cursorId,
             Pageable pageable);
 
+    // --- Business-date twins of the two paginated date-range queries above (phase 24 D-04, audit
+    // N-2). They differ from their calendar twins in exactly one place: the range predicate
+    // filters the timeslot's STORED business date, so a caller must pass bounds already in the
+    // business-date system. The tenant/desk/live predicates, the keyset cursor predicate and the
+    // sort are copied verbatim, so a cursor minted by either twin resumes correctly in the other.
+    // Filtering the stored column (the value the single BDAY-08 derivation wrote) rather than
+    // widening the calendar range and re-deriving in memory keeps hasMore and the cursor exact on
+    // a paginated endpoint.
+    @Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t JOIN FETCH sr.specialization s " +
+           "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL " +
+           "AND t.businessDate BETWEEN :from AND :to " +
+           "ORDER BY t.date, t.startTime, s.name, sr.id")
+    List<StaffingRequirement> findLiveByDeskAndBusinessDateRange(
+            long tenantId, UUID deskId, LocalDate from, LocalDate to, Pageable pageable);
+
+    @Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t JOIN FETCH sr.specialization s " +
+           "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL " +
+           "AND t.businessDate BETWEEN :from AND :to " +
+           "AND (t.date > :cursorDate " +
+           "  OR (t.date = :cursorDate AND t.startTime > :cursorStartTime) " +
+           "  OR (t.date = :cursorDate AND t.startTime = :cursorStartTime AND s.name > :cursorSpecName) " +
+           "  OR (t.date = :cursorDate AND t.startTime = :cursorStartTime AND s.name = :cursorSpecName AND sr.id > :cursorId)) " +
+           "ORDER BY t.date, t.startTime, s.name, sr.id")
+    List<StaffingRequirement> findLiveByDeskAndBusinessDateRangeAfterCursor(
+            long tenantId, UUID deskId, LocalDate from, LocalDate to,
+            LocalDate cursorDate, LocalTime cursorStartTime, String cursorSpecName, UUID cursorId,
+            Pageable pageable);
+
     // --- Unpaginated date range (used by save/delete operations) ---
     @Query("SELECT sr FROM StaffingRequirement sr JOIN FETCH sr.timeslot t JOIN FETCH sr.specialization s " +
            "WHERE sr.tenantId = :tenantId AND sr.deskId = :deskId AND sr.scheduleId IS NULL " +

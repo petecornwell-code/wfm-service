@@ -27,9 +27,11 @@ public class StaffingRequirementController {
             @PathVariable UUID deskId,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
+            @RequestParam(required = false) String businessFrom,
+            @RequestParam(required = false) String businessTo,
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false, defaultValue = "50") int limit) {
-        return staffingRequirementService.listRequirements(deskId, from, to, cursor, limit);
+        return staffingRequirementService.listRequirements(deskId, from, to, businessFrom, businessTo, cursor, limit);
     }
 
     @PostMapping

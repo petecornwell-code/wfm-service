@@ -82,7 +82,8 @@ public class StaffingRequirementService {
     }
 
     public PaginatedResponse<StaffingRequirementResponse.Item> listRequirements(
-            UUID deskId, String from, String to, String cursor, int limit) {
+            UUID deskId, String from, String to, String businessFrom, String businessTo,
+            String cursor, int limit) {
         long tenantId = TenantContext.getTenantId();
         int clampedLimit = CursorPagination.clampLimit(limit);
         Pageable pageable = PageRequest.of(0, clampedLimit + 1);
@@ -90,10 +91,26 @@ public class StaffingRequirementService {
         Map<String, String> cursorValues = CursorPagination.decode(cursor);
         boolean hasCursor = !cursorValues.isEmpty();
         boolean hasDateRange = from != null && to != null;
+        boolean hasBusinessRange = businessFrom != null && businessTo != null;
 
         List<StaffingRequirement> results;
 
-        if (hasDateRange && hasCursor) {
+        // D-04: a business-date range filters the STORED business_date column and pages on the
+        // same calendar keyset (date, startTime, specialization name, id) as the calendar range,
+        // so a cursor minted by either resumes in either.
+        if (hasBusinessRange && hasCursor) {
+            results = staffingRequirementRepository.findLiveByDeskAndBusinessDateRangeAfterCursor(
+                    tenantId, deskId, LocalDate.parse(businessFrom), LocalDate.parse(businessTo),
+                    LocalDate.parse(cursorValues.get("date")),
+                    LocalTime.parse(cursorValues.get("startTime")),
+                    cursorValues.get("specName"),
+                    UUID.fromString(cursorValues.get("id")),
+                    pageable);
+        } else if (hasBusinessRange) {
+            results = staffingRequirementRepository.findLiveByDeskAndBusinessDateRange(
+                    tenantId, deskId, LocalDate.parse(businessFrom), LocalDate.parse(businessTo),
+                    pageable);
+        } else if (hasDateRange && hasCursor) {
             results = staffingRequirementRepository.findLiveByDeskAndDateRangeAfterCursor(
                     tenantId, deskId, LocalDate.parse(from), LocalDate.parse(to),
                     LocalDate.parse(cursorValues.get("date")),
@@ -393,11 +410,14 @@ public class StaffingRequirementService {
         // an operator reads answers "when does this happen", which on a re-anchored desk is a
         // calendar question -- the same deliberate display decision the timeslot labels in
         // ScheduleOutputService carry. Any future labelling change belongs to OVNT-07 (Phase 21).
+        // businessDate (phase 24 D-03) is the additive key the schedule grid and allocation rows
+        // join on; it sits beside date, never in place of it.
         return new StaffingRequirementResponse.Item(
                 sr.getId(),
                 t.getId(),
                 s.getId(),
                 t.getDate(),
+                t.getBusinessDate(),
                 t.getStartTime(),
                 t.getEndTime(),
                 s.getName(),
