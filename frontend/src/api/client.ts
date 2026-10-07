@@ -230,10 +230,15 @@ export const timeslots = {
 
 // --- Staffing Requirements ---
 export const staffingRequirements = {
-  list: (deskId: string, params?: { from?: string; to?: string; cursor?: string }) => {
+  // from/to filter the CALENDAR date; businessFrom/businessTo filter the BUSINESS date (the key the
+  // schedule grid joins on). The server refuses a half-supplied business range or one mixed with
+  // from/to, so send one pair or the other.
+  list: (deskId: string, params?: { from?: string; to?: string; businessFrom?: string; businessTo?: string; cursor?: string }) => {
     const query = new URLSearchParams()
     if (params?.from) query.set('from', params.from)
     if (params?.to) query.set('to', params.to)
+    if (params?.businessFrom) query.set('businessFrom', params.businessFrom)
+    if (params?.businessTo) query.set('businessTo', params.businessTo)
     if (params?.cursor) query.set('cursor', params.cursor)
     return request<PaginatedResponse<StaffingRequirement>>(`/desks/${deskId}/staffing-requirements?${query}`)
   },
@@ -404,7 +409,7 @@ export interface SpecializationAssignment { primarySpecializationId: string; sec
 export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
 export interface TimeslotBounds { periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number }
-export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
+export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; businessDate: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
 export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
 export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[]; adjustments?: ErlangAdjustments | null }

@@ -380,6 +380,12 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
 
   // Per-timeslot required FTEs, for the over/under rows below.
   //
+  // Fetched as a BUSINESS-date range and keyed on the business date the server supplies, matching
+  // the grid's business-day sections (and `unfilledSlots` below). On a desk whose day start is not
+  // 00:00 a business day's post-midnight slots sit on the next calendar date, so a calendar range
+  // dropped the final business day's post-midnight demand and a calendar key mis-filed every other
+  // day's. The server does the business-date derivation; none is done here.
+  //
   // This is the desk's LIVE demand, not the demand this solve saw. There is no snapshot to read:
   // StaffingRequirement carries a scheduleId column but nothing ever writes it, and every query
   // filters `scheduleId IS NULL`. So if demand was edited after the solve, these deltas describe
@@ -399,7 +405,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
         // Bounded so a pagination bug cannot spin forever.
         for (let page = 0; page < 200; page++) {
           const res = await staffingRequirements.list(schedule.deskId, {
-            from: schedule.periodStartDate, to: schedule.periodEndDate, cursor,
+            businessFrom: schedule.periodStartDate, businessTo: schedule.periodEndDate, cursor,
           })
           acc.push(...res.data)
           if (!res.hasMore || !res.nextCursor) break
@@ -411,7 +417,7 @@ function AgentAllocationTab({ schedule, dateFilter, specs, specFilter, onSpecFil
             // Summed across specialities when unfiltered, matching how allocated is counted; when a
             // speciality filter is on, only that speciality's demand is compared.
             if (specFilter && r.specializationName !== specFilter) return m
-            const key = `${r.date}|${toHHMM(r.startTime)}`
+            const key = `${r.businessDate}|${toHHMM(r.startTime)}`
             m.set(key, (m.get(key) || 0) + Number(r.requiredFTEs))
             return m
           }, new Map<string, number>())))
