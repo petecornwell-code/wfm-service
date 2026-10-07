@@ -881,6 +881,37 @@ class ShiftLibraryValidationServiceTest {
             assertThat(a.shortfall()).isEqualTo(7);
             assertThat(a.message()).contains("short by 7");
             assertThat(a.message()).contains("more rostered agents");
+            // Phase 24 00:00 control: the message prefix is byte-identical to before.
+            assertThat(a.message()).startsWith("2026-01-05 09:00-10:00 needs 10 agent(s), but only 3 "
+                    + "rostered agent(s) that Monday could be working it at all");
+        });
+    }
+
+    /**
+     * Phase 24 D-08c: a post-midnight peak is bucketed on its BUSINESS weekday. 3 required at
+     * calendar-Tuesday 01:00, which is business Monday, against one Monday-hours agent. Before the
+     * fix the hour was looked up under Tuesday, matched no covering template, and produced no
+     * advisory at all.
+     */
+    @Test
+    void validate_peakShortfallOnAPostMidnightHour_bucketsOnTheBusinessWeekday() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 10, 1), null);
+        saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A1"), DayOfWeek.MONDAY, new BigDecimal("9.00"));
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, BIZ_MON,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 3);
+
+        assertThat(service.validate(deskId).peakShortfallAdvisories()).singleElement().satisfies(a -> {
+            assertThat(a.date()).isEqualTo(BIZ_MON);
+            assertThat(a.startTime()).isEqualTo(LocalTime.of(1, 0));
+            assertThat(a.requiredFTEs()).isEqualTo(3);
+            assertThat(a.reachableAgents()).isEqualTo(1);
+            assertThat(a.shortfall()).isEqualTo(2);
+            assertThat(a.message()).startsWith("2026-10-05 (Mon) 01:00-02:00 [calendar 2026-10-06] needs 3 "
+                    + "agent(s), but only 1 rostered agent(s) that Monday could be working it at all");
+            assertThat(a.message()).contains("short by 2");
         });
     }
 
