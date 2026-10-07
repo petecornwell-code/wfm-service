@@ -93,7 +93,12 @@ public class ScheduleEnvelopeRepairService {
 
     private static final RepairResult NOTHING = new RepairResult(0, 0, 0);
 
-    /** An agent-day. The unit both the envelope and the seat set are keyed by. */
+    /**
+     * An agent-day. The unit both the envelope and the seat set are keyed by — by BUSINESS date
+     * on both sides ({@code AgentShiftAssignment.getDate()} and {@code Timeslot.getBusinessDate()},
+     * Phase 20 D-05), so on a desk whose day start is not 00:00 a post-midnight seat finds its own
+     * business day's envelope rather than the next calendar day's.
+     */
     private record AgentDay(UUID agentId, LocalDate date) {}
 
     /** One seat-to-seat move: {@code from} is vacated, {@code to} takes the agent. */
@@ -126,7 +131,8 @@ public class ScheduleEnvelopeRepairService {
             return NOTHING;
         }
 
-        // Free seats by date, and the timeslot ids each agent-day already occupies. Both are
+        // Free seats by BUSINESS date, and the timeslot ids each agent-day already occupies (also
+        // keyed by business date, the key the envelopes map above is built with). Both are
         // maintained as moves are applied, so a later violation never targets a seat an earlier
         // repair just took.
         Map<LocalDate, List<AgentAssignment>> freeByDate = new HashMap<>();
@@ -138,10 +144,10 @@ public class ScheduleEnvelopeRepairService {
                 continue;
             }
             if (a.getAgent() == null) {
-                freeByDate.computeIfAbsent(a.getTimeslot().getDate(), k -> new ArrayList<>()).add(a);
+                freeByDate.computeIfAbsent(a.getTimeslot().getBusinessDate(), k -> new ArrayList<>()).add(a);
                 continue;
             }
-            AgentDay key = new AgentDay(a.getAgent().getId(), a.getTimeslot().getDate());
+            AgentDay key = new AgentDay(a.getAgent().getId(), a.getTimeslot().getBusinessDate());
             occupied.computeIfAbsent(key, k -> new HashSet<>()).add(a.getTimeslot().getId());
             ShiftBandPair pair = envelopes.get(key);
             // A null pair is a violation the constraint counts too, but it is not one this repair
@@ -156,9 +162,12 @@ public class ScheduleEnvelopeRepairService {
         }
 
         // Deterministic order, so the same schedule always repairs the same way.
+        // Business date first, then chronological from the desk's day start (a business day's
+        // 01:00 seat comes AFTER its 21:00 seat on a 06:00 desk; identical to start-time order at
+        // 00:00), then the id.
         violations.sort(Comparator
-                .comparing((AgentAssignment a) -> a.getTimeslot().getDate())
-                .thenComparing(a -> a.getTimeslot().getStartTime())
+                .comparing((AgentAssignment a) -> a.getTimeslot().getBusinessDate())
+                .thenComparingInt(a -> window.anchoredStartMinute(a.getTimeslot().getStartTime()))
                 .thenComparing(a -> a.getId().toString()));
 
         log.info("Envelope repair — {} seat(s) outside their agent-day envelope", violations.size());
@@ -274,7 +283,7 @@ public class ScheduleEnvelopeRepairService {
             Map<AgentDay, Set<UUID>> occupied,
             DayWindow window) {
         Agent agent = violation.getAgent();
-        LocalDate date = violation.getTimeslot().getDate();
+        LocalDate date = violation.getTimeslot().getBusinessDate();
         AgentDay key = new AgentDay(agent.getId(), date);
         ShiftBandPair pair = envelopes.get(key);
         List<AgentAssignment> free = freeByDate.get(date);
@@ -316,11 +325,11 @@ public class ScheduleEnvelopeRepairService {
      * but the agent cannot fill it.
      */
     private void logNoCandidate(AgentAssignment violation, Candidates scan) {
-        log.info("Envelope repair — no legal free seat for agent {} on {} at {} (envelope seat at "
+        log.info("Envelope repair — no legal free seat for agent {} on business date {} at {} (envelope seat at "
                         + "{}): {} free seat(s) on the date, of which {} outside the envelope or in "
                         + "the break band, {} at an hour the agent already works, {} requiring a "
                         + "specialization the agent does not hold",
-                violation.getAgent().getId(), violation.getTimeslot().getDate(),
+                violation.getAgent().getId(), violation.getTimeslot().getBusinessDate(),
                 violation.getTimeslot().getStartTime(), violation.getTimeslot().getStartTime(),
                 scan.freeOnDate(), scan.notCovered(), scan.alreadySeated(),
                 scan.wrongSpecialization());
@@ -346,7 +355,7 @@ public class ScheduleEnvelopeRepairService {
             Map<LocalDate, List<AgentAssignment>> freeByDate,
             Map<AgentDay, Set<UUID>> occupied) {
         Agent agent = from.getAgent();
-        LocalDate date = from.getTimeslot().getDate();
+        LocalDate date = from.getTimeslot().getBusinessDate();
         AgentDay key = new AgentDay(agent.getId(), date);
         List<AgentAssignment> free = freeByDate.get(date);
         free.remove(to);
@@ -372,7 +381,7 @@ public class ScheduleEnvelopeRepairService {
             Map<LocalDate, List<AgentAssignment>> freeByDate,
             Map<AgentDay, Set<UUID>> occupied) {
         for (Move move : moves) {
-            LocalDate date = move.from().getTimeslot().getDate();
+            LocalDate date = move.from().getTimeslot().getBusinessDate();
             AgentDay key = new AgentDay(move.agent().getId(), date);
             List<AgentAssignment> free = freeByDate.get(date);
             free.remove(move.from());
