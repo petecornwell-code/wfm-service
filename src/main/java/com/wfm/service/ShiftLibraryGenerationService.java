@@ -171,7 +171,7 @@ public class ShiftLibraryGenerationService {
         int totalCandidates = 0;
         for (Set<DayOfWeek> cluster : shapeClusters) {
             List<ShiftLibraryValidationService.Window> clusterWindows = windows.stream()
-                    .filter(w -> cluster.contains(w.date().getDayOfWeek()))
+                    .filter(w -> cluster.contains(w.businessDate().getDayOfWeek()))
                     .toList();
             if (clusterWindows.isEmpty()) {
                 continue;
@@ -236,7 +236,7 @@ public class ShiftLibraryGenerationService {
                         sr.getTimeslot().getBusinessDate(), sr.getTimeslot().getStartTime(),
                         sr.getTimeslot().getEndTime()))
                 .distinct()
-                .sorted(Comparator.comparing(ShiftLibraryValidationService.Window::date)
+                .sorted(Comparator.comparing(ShiftLibraryValidationService.Window::businessDate)
                         .thenComparing(ShiftLibraryValidationService.Window::startTime))
                 .toList();
     }
@@ -851,7 +851,7 @@ public class ShiftLibraryGenerationService {
             boolean covered = rows.stream()
                     .anyMatch(r -> shiftLibraryValidationService.covers(r.template(), r.bands(), window, dayWindow));
             if (!covered) {
-                details.add(new ErrorDetail("coverage", window.date() + " " + window.startTime()
+                details.add(new ErrorDetail("coverage", window.businessDate() + " " + window.startTime()
                         + "-" + window.endTime(), null));
             }
         }

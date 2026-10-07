@@ -227,10 +227,10 @@ public class ShiftLibraryValidationService {
                                                Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
                                                List<StaffingRequirement> demand, DayWindow dayWindow) {
         List<Window> windows = demand.stream()
-                .map(sr -> new Window(sr.getTimeslot().getDate(),
+                .map(sr -> new Window(sr.getTimeslot().getBusinessDate(),
                         sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime()))
                 .distinct()
-                .sorted(Comparator.comparing(Window::date).thenComparing(Window::startTime))
+                .sorted(Comparator.comparing(Window::businessDate).thenComparing(Window::startTime))
                 .toList();
 
         List<String> uncovered = new ArrayList<>();
@@ -238,7 +238,7 @@ public class ShiftLibraryValidationService {
             boolean covered = templates.stream().anyMatch(t ->
                     covers(t, bandsByTemplateId.getOrDefault(t.getId(), List.of()), window, dayWindow));
             if (!covered) {
-                uncovered.add(window.date() + " " + window.startTime() + "-" + window.endTime());
+                uncovered.add(window.businessDate() + " " + window.startTime() + "-" + window.endTime());
             }
         }
         return uncovered;
@@ -246,7 +246,7 @@ public class ShiftLibraryValidationService {
 
     /**
      * D-02: any-band coverage. A window is covered when the template's weekday set contains the
-     * window's day, the window falls inside the template's effective range, the window sits
+     * window's BUSINESS day, the window's business date falls inside the template's effective range, the window sits
      * inside the envelope, and at least one band leaves that window worked (a band whose duration
      * is zero, or a template with no bands at all, never blocks a window — "zero bands = no
      * break"). Public + package-visible {@link Window} (P-03) so plan 15-02's generation service
@@ -254,10 +254,10 @@ public class ShiftLibraryValidationService {
      */
     public static boolean covers(ShiftTemplate template, List<ShiftTemplateBreakBand> bands, Window window,
                                   DayWindow dayWindow) {
-        if (!template.getValidWeekdays().contains(window.date().getDayOfWeek())) {
+        if (!template.getValidWeekdays().contains(window.businessDate().getDayOfWeek())) {
             return false;
         }
-        if (!template.isEffectiveOn(window.date())) {
+        if (!template.isEffectiveOn(window.businessDate())) {
             return false;
         }
         // dayWindow.anchoredContains: a template ending at the anchor stores the anchor's own
@@ -452,7 +452,7 @@ public class ShiftLibraryValidationService {
                                                      Map<DayOfWeek, List<BigDecimal>> hoursByWeekday,
                                                      DayWindow dayWindow) {
         Map<DayOfWeek, List<LocalDate>> demandDatesByWeekday = demand.stream()
-                .map(sr -> sr.getTimeslot().getDate())
+                .map(sr -> sr.getTimeslot().getBusinessDate())
                 .distinct()
                 .collect(Collectors.groupingBy(LocalDate::getDayOfWeek));
 
@@ -742,8 +742,14 @@ public class ShiftLibraryValidationService {
         return weekdayName.charAt(0) + weekdayName.substring(1).toLowerCase();
     }
 
-    /** Package-visible (not private) so plan 15-02's generation service can call {@link #covers}. */
-    record Window(LocalDate date, LocalTime startTime, LocalTime endTime) {}
+    /**
+     * Package-visible (not private) so plan 15-02's generation service can call {@link #covers}.
+     *
+     * <p>{@code businessDate} is the Timeslot's stored business date (BDAY-02) — the key {@code
+     * SolverService} reads — never its calendar date. On a desk whose day starts after midnight the
+     * two differ for every post-midnight hour.
+     */
+    record Window(LocalDate businessDate, LocalTime startTime, LocalTime endTime) {}
 
     /**
      * Bandless templates competing with banded ones for the same agent-days (see
