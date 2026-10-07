@@ -100,6 +100,13 @@ class ShiftLibraryValidationServiceTest {
     private static final long TENANT_A = 1L;
     private static final long TENANT_B = 2L;
 
+    // Phase 24 (N-1): a 06:00-anchored desk, where business Monday 2026-10-05 runs from calendar
+    // Monday 06:00 to calendar Tuesday 06:00, so its post-midnight hours carry the calendar Tuesday.
+    private static final LocalTime ANCHOR_0600 = LocalTime.of(6, 0);
+    private static final LocalDate BIZ_SUN = LocalDate.of(2026, 10, 4);
+    private static final LocalDate BIZ_MON = LocalDate.of(2026, 10, 5);
+    private static final LocalDate CAL_TUE = LocalDate.of(2026, 10, 6);
+
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(TENANT_A);
@@ -1192,6 +1199,69 @@ class ShiftLibraryValidationServiceTest {
         assertThat(response.uncoveredWindows()).isEmpty();
     }
 
+    // ---------- Phase 24 (N-1): demand windows keyed on the business date ----------
+
+    /**
+     * Audit flow F-2: a Monday-only overnight template on a 06:00 desk covers its OWN business
+     * Monday, including the hours that fall on calendar Tuesday. Before the fix the validator read
+     * the calendar date, called those two windows Tuesday's, found no Tuesday template, reported
+     * TUESDAY unsatisfiable and refused the SHIFT-mode switch.
+     */
+    @Test
+    void requireShiftModeReady_mondayOnlyOvernightTemplate_acceptsItsOwnPostMidnightHours() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 10, 1), null);
+        saveAgentDayHours(TENANT_A, saveAgent(TENANT_A, deskId, "A1"), DayOfWeek.MONDAY, new BigDecimal("9.00"));
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, BIZ_MON, BIZ_MON,
+                LocalTime.of(22, 0), LocalTime.of(23, 0), 1);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, BIZ_MON,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 1);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, BIZ_MON,
+                LocalTime.of(5, 0), LocalTime.of(6, 0), 1);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).isEmpty();
+        assertThat(response.unsatisfiableWeekdays()).isEmpty();
+        assertThatCode(() -> service.requireShiftModeReady(deskId)).doesNotThrowAnyException();
+    }
+
+    /** SOLV-07: business Sunday's 01:00 hour sits on calendar Monday but is NOT Monday's to cover. */
+    @Test
+    void validate_previousBusinessDaysPostMidnightWindow_isNotCreditedToTheCalendarWeekdaysTemplate() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 10, 1), null);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, BIZ_MON, BIZ_SUN,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 1);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).singleElement().satisfies(w -> {
+            assertThat(w).startsWith("2026-10-04 ");
+            assertThat(w).contains("01:00-02:00");
+        });
+    }
+
+    /** isEffectiveOn is judged on the business date, not on the calendar date the hour falls on. */
+    @Test
+    void validate_effectiveFromIsJudgedOnTheBusinessDate() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.SUNDAY, DayOfWeek.MONDAY), BIZ_MON, null);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, BIZ_MON, BIZ_SUN,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 1);
+
+        ShiftLibraryValidationResponse response = service.validate(deskId);
+
+        assertThat(response.uncoveredWindows()).singleElement()
+                .satisfies(w -> assertThat(w).startsWith("2026-10-04 "));
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(long tenantId) {
@@ -1265,6 +1335,31 @@ class ShiftLibraryValidationServiceTest {
         timeslot.setEndTime(end);
         timeslot.setBusinessDate(date);
         return timeslotRepository.save(timeslot);
+    }
+
+    /**
+     * Persists a live Timeslot carrying an EXPLICIT business date — an independent oracle for the
+     * fixture, not a re-derivation. It first asserts the supplied business date really is what
+     * {@link DayWindow#businessDateOf} gives for the anchor, so a mis-built fixture fails loudly
+     * instead of testing an impossible row.
+     */
+    private StaffingRequirement saveDemandAnchored(long tenantId, UUID deskId, Specialization spec,
+                                                    LocalTime anchor, LocalDate calendarDate,
+                                                    LocalDate businessDate, LocalTime start, LocalTime end,
+                                                    int requiredFTEs) {
+        assertThat(DayWindow.businessDateOf(anchor, calendarDate, start))
+                .as("fixture: business date of calendar %s %s at anchor %s", calendarDate, start, anchor)
+                .isEqualTo(businessDate);
+        Timeslot timeslot = new Timeslot();
+        timeslot.setTenantId(tenantId);
+        timeslot.setDeskId(deskId);
+        timeslot.setScheduleId(null);
+        timeslot.setDate(calendarDate);
+        timeslot.setStartTime(start);
+        timeslot.setEndTime(end);
+        timeslot.setBusinessDate(businessDate);
+        timeslot = timeslotRepository.save(timeslot);
+        return saveDemandForTimeslot(tenantId, deskId, spec, timeslot, requiredFTEs, null);
     }
 
     private StaffingRequirement saveDemandForTimeslot(long tenantId, UUID deskId, Specialization specialization,
