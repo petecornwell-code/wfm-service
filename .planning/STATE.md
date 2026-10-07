@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 24
 current_phase_name: "Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows"
-status: executing
-stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-10-07T17:55:37.343Z"
+status: verifying
+stopped_at: Completed 24-03-PLAN.md
+last_updated: "2026-10-07T18:31:15.834Z"
 last_activity: 2026-10-07
-last_activity_desc: Completed 24-02 — repair and start-mix services keyed on business date; guard green
-state_head: d1669ddba82339064a0c03ce4eaa4eba0cfd41e4
+last_activity_desc: Completed 24-03 — business-date range and businessDate on staffing requirements; allocation rows keyed on it; gate 1535 tests, 1 pre-existing flake
+state_head: 4e2bdcb82808829c5e332069800acae9db862657
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 56
-  completed_plans: 55
+  completed_plans: 56
   percent: 71
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 ## Current Position
 
-Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — EXECUTING
-Plan: 3 of 3 (24-01, 24-02 complete)
-Status: Executing Phase 24 — ready for 24-03
-Last activity: 2026-10-07 — Completed 24-02 (repair and start-mix services keyed on business date; guard green)
+Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — ALL PLANS COMPLETE
+Plan: 3 of 3 (24-01, 24-02, 24-03 complete)
+Status: Phase complete — ready for verification
+Last activity: 2026-10-07 — Completed 24-03 (businessDate + businessFrom/businessTo on staffing requirements; Agent Allocation rows keyed on it; live-measured on a throwaway 06:00 desk)
 
 ## Milestone v1.3 Outcome
 
@@ -387,6 +387,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 24]: 24-01: Window.describe(DayWindow) is the single operator-facing window label, calendar date disclosed only when it differs from the business date
 - [Phase 24]: 24-02: violation sort in ScheduleEnvelopeRepairService is business date, anchored start minute, id (chronological from the day start)
 - [Phase 24]: 24-02: AgentAssignmentDifficultyComparator keeps the calendar date by design (construction-order heuristic); classified in bday-join-guard.md, not allowlisted
+- [Phase 24]: 24-03: business-range paging filters the stored business_date column through JPQL twins sharing the calendar keyset, not a widen-then-derive stream filter — A stream filter after a widened read breaks hasMore and the cursor on a paginated endpoint; the stored column is the single BDAY-08 derivation.
+- [Phase 24]: 24-03: half-supplied, mixed, inverted and malformed businessFrom/businessTo are refused with 400; the calendar from/to pair keeps its silent-ignore behaviour — Silently ignoring a half-supplied business range would return the desk's entire demand to a caller that asked for two days; changing the legacy pair is a separate decision.
 
 ### Blockers/Concerns
 
@@ -412,8 +414,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-07T17:55:37.282Z
-Stopped at: Completed 24-02-PLAN.md
+Last session: 2026-10-07T18:31:08.068Z
+Stopped at: Completed 24-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -521,3 +523,4 @@ Resume file: None
 | Phase 23 P03 | 30min | 2 tasks | 2 files |
 | Phase 24 P01 | 74 min | 3 tasks | 4 files |
 | Phase 24 P02 | 5 min | 3 tasks | 10 files |
+| Phase 24 P03 | 32 min | 3 tasks | 9 files |
