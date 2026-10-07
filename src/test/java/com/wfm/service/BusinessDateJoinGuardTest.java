@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,9 +37,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * arithmetic, and conflating the two under one file name and one javadoc would make neither
  * javadoc stay focused on one bug class.
  *
- * <p><strong>Scope: an explicit FOUR-FILE list, never a tree walk.</strong> {@code
- * ScheduleConstraintProvider}, {@code ScheduleOutputService}, {@code ShiftLibraryGenerationService}
- * (D-13) and {@code StaffingRequirementService} (D-15, the demand-upload delete-range file).
+ * <p><strong>Scope: two explicit file lists, never a tree walk.</strong> The verb-scoped list
+ * {@link #TARGET_FILES} is {@code ScheduleConstraintProvider}, {@code ScheduleOutputService},
+ * {@code ShiftLibraryGenerationService} (D-13) and {@code StaffingRequirementService} (D-15, the
+ * demand-upload delete-range file), scanned with the four-verb predicate below. The widened list
+ * {@link #WIDENED_TARGET_FILES} (Phase 24 D-07) is {@code ShiftLibraryValidationService}, {@code
+ * ScheduleEnvelopeRepairService}, {@code ScheduleConsistencyRepairService} and {@code
+ * ShiftStartMixTargetService}, scanned with a VERB-FREE predicate: those four files hold no
+ * legitimate calendar-date Timeslot read once migrated, so the verb gate that keeps the first list
+ * quiet is unnecessary there, and N-1 slipped past it precisely because the validator read the
+ * calendar date through {@code .map(} and a plain local assignment, never a join verb.
  * Deliberately NOT a whole-{@code src/main/java} walk like {@link MidnightTimeArithmeticGuardTest}
  * uses: {@code groupBy} and {@code computeIfAbsent} fire constantly outside date handling
  * elsewhere in this codebase, and an ungated tree walk would demand the 100-plus-entry allowlist
@@ -77,14 +85,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * would never be caught either.
  *
  * <p><strong>The allowlist is shipped EMPTY on purpose.</strong> An empty expected set makes a
- * naive set-equality assertion vacuously satisfiable the moment ALL FOUR files are migrated — so
+ * naive set-equality assertion vacuously satisfiable the moment every guarded file is migrated — so
  * this class carries two INDEPENDENT liveness proofs that do not depend on the allowlist's
  * contents at all: {@link #theMatcherDetectsEachReceiverShapeAndRejectsNonKeyPositions()} proves
  * the matcher predicate itself can return both {@code true} and {@code false}, and {@link
  * #pipelineRedProof_walkStripMatchAndSetCompareAreAllLive()} proves the whole walk-strip-match-
- * compare pipeline is live against a tracked, never-compiled synthetic offender. Today, with
- * production still un-migrated, the guard is expected RED: the set-equality test below fails
- * because the scan finds real key positions and the allowlist holds none.
+ * compare pipeline is live against a tracked, never-compiled synthetic offender. The widened scope
+ * landed RED (fourteen unmigrated sites across the four widened files) and is turned green by
+ * migration in plans 24-01 and 24-02, never by allowlisting.
  *
  * <p>No Spring context, no database — a purely textual, comment-stripped scan, mirroring every
  * precedent guard in this codebase. A false positive (an unrelated method literally spelled {@code
@@ -123,6 +131,19 @@ class BusinessDateJoinGuardTest {
             SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "StaffingRequirementService.java")));
 
     /**
+     * Phase 24 D-07's widened scope — an explicit four-file list, never a tree walk (Phase 20 D-08 /
+     * Phase 18 D-03). These files hold no legitimate calendar-date Timeslot read once migrated, so
+     * they are scanned with {@link #isWidenedTimeslotDateRead}, which has NO verb requirement. The
+     * verb-scoped {@link #TARGET_FILES} keep their verb gate because {@code ScheduleOutputService}'s
+     * D-10 calendar labels would otherwise fire.
+     */
+    private static final List<Path> WIDENED_TARGET_FILES = List.of(
+            SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ShiftLibraryValidationService.java")),
+            SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ScheduleEnvelopeRepairService.java")),
+            SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ScheduleConsistencyRepairService.java")),
+            SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ShiftStartMixTargetService.java")));
+
+    /**
      * The fixture root for the pipeline-level red-proof below, mirroring {@link
      * MidnightTimeArithmeticGuardTest}'s {@code COMPARISON_OFFENDER_ROOT}. Lives under {@code
      * src/test/resources} — never {@code src/main/java} — so a killed or crashed run cannot leave
@@ -131,9 +152,11 @@ class BusinessDateJoinGuardTest {
     private static final Path OFFENDER_ROOT = Path.of("src", "test", "resources", "bday-join-guard-offender");
 
     @Test
-    @DisplayName("business-date join key positions in the four guarded files match the allowlist exactly")
+    @DisplayName("business-date join key positions across the verb-scoped and widened guarded files match the allowlist exactly")
     void businessDateJoinKeyPositionsInProductionCode_matchTheAllowlistExactly() throws IOException {
-        Set<String> derived = scanFiles(TARGET_FILES);
+        Set<String> derived = new LinkedHashSet<>(
+                scanFiles(TARGET_FILES, BusinessDateJoinGuardTest::isBusinessDateJoinKeyPosition));
+        derived.addAll(scanFiles(WIDENED_TARGET_FILES, BusinessDateJoinGuardTest::isWidenedTimeslotDateRead));
         Set<String> allowlist = parseAllowlist();
 
         Set<String> notAllowlisted = new HashSet<>(derived);
@@ -144,8 +167,10 @@ class BusinessDateJoinGuardTest {
         assertThat(derived)
                 .as("""
                         Business-date join key positions (join/equal/groupBy/computeIfAbsent \
-                        resolving a Timeslot's calendar getDate()) across the four D-08 guarded \
-                        files must equal the allowlist in %s exactly, in BOTH directions.
+                        resolving a Timeslot's calendar getDate(), in the verb-scoped files, and \
+                        ANY Timeslot calendar getDate() read in the widened files) across the \
+                        verb-scoped and widened guarded files must equal the allowlist in %s \
+                        exactly, in BOTH directions.
 
                         NEW, not allowlisted -- these are un-migrated key positions still joining \
                         on calendar date where SOLV-01/SOLV-07 require business date. Re-point the \
@@ -215,7 +240,7 @@ class BusinessDateJoinGuardTest {
                 .as("the pipeline red-proof fixture must hold exactly one .java file under %s", OFFENDER_ROOT)
                 .hasSize(1);
 
-        Set<String> derived = scanFiles(fixtureFiles);
+        Set<String> derived = scanFiles(fixtureFiles, BusinessDateJoinGuardTest::isBusinessDateJoinKeyPosition);
         assertThat(derived)
                 .as("walk + comment-strip + match against the fixture must yield exactly one entry "
                         + "-- a second entry would mean comment-stripping silently stopped working")
@@ -256,23 +281,55 @@ class BusinessDateJoinGuardTest {
     }
 
     @Test
-    void allFourTargetFilesExist() {
+    void allGuardedFilesExist() {
         for (Path file : TARGET_FILES) {
             assertThat(Files.exists(file)).as("guarded file must exist: %s", file).isTrue();
         }
+        for (Path file : WIDENED_TARGET_FILES) {
+            assertThat(Files.exists(file)).as("widened guarded file must exist: %s", file).isTrue();
+        }
+    }
+
+    /**
+     * Phase 24 D-07 matcher proof: the widened, verb-free predicate catches the three validator
+     * lines the verb scan missed (N-1), copied verbatim from HEAD before the fix, and still rejects
+     * every non-Timeslot or non-code shape.
+     */
+    @Test
+    @DisplayName("the widened matcher catches verb-free Timeslot date reads the verb scan misses")
+    void theWidenedMatcherCatchesVerbFreeTimeslotDateReadsTheVerbScanMisses() {
+        String[] preFixValidatorLines = {
+                ".map(sr -> new Window(sr.getTimeslot().getDate(),",
+                ".map(sr -> sr.getTimeslot().getDate())",
+                "LocalDate date = sr.getTimeslot().getDate();"
+        };
+        for (String line : preFixValidatorLines) {
+            assertThat(isWidenedTimeslotDateRead(line))
+                    .as("widened matcher must catch: %s", line).isTrue();
+            assertThat(isBusinessDateJoinKeyPosition(line))
+                    .as("the verb scan must miss it (that is N-1): %s", line).isFalse();
+        }
+
+        // A bare sa.getDate() is an AgentShiftAssignment -- already business-date shaped.
+        assertThat(isWidenedTimeslotDateRead("LocalDate d = sa.getDate();")).isFalse();
+        // A commented-out chained Timeslot date read -- comment-stripped to nothing.
+        assertThat(isWidenedTimeslotDateRead("// LocalDate date = sr.getTimeslot().getDate();")).isFalse();
+        // The business-date accessor is the migrated form.
+        assertThat(isWidenedTimeslotDateRead("LocalDate date = sr.getTimeslot().getBusinessDate();")).isFalse();
     }
 
     // --- scanning ---
 
     /**
-     * Scans an explicit list of files (never a directory tree walk for the real target list,
+     * Scans an explicit list of files (never a directory tree walk for the real target lists,
      * though the pipeline red-proof above reuses this against the single-file offender fixture
-     * too), returning every comment-stripped line matching {@link
-     * #isBusinessDateJoinKeyPosition}. Mirrors {@link
+     * too), returning every comment-stripped line accepted by {@code matcher} — {@link
+     * #isBusinessDateJoinKeyPosition} for the verb-scoped list, {@link #isWidenedTimeslotDateRead}
+     * for the widened one. Mirrors {@link
      * MidnightTimeArithmeticGuardTest#scanProductionSources}'s scan body shape, adapted to walk an
      * explicit file list instead of a root directory.
      */
-    private static Set<String> scanFiles(List<Path> files) throws IOException {
+    private static Set<String> scanFiles(List<Path> files, Predicate<String> matcher) throws IOException {
         Set<String> found = new LinkedHashSet<>();
         for (Path file : files) {
             if (!Files.isRegularFile(file)) {
@@ -283,7 +340,7 @@ class BusinessDateJoinGuardTest {
             String fqcn = toFullyQualifiedName(file);
             for (String rawLine : Files.readAllLines(file, StandardCharsets.UTF_8)) {
                 String code = stripComment(rawLine);
-                if (isBusinessDateJoinKeyPosition(rawLine)) {
+                if (matcher.test(rawLine)) {
                     found.add(fqcn + " :: " + code);
                 }
             }
@@ -301,6 +358,18 @@ class BusinessDateJoinGuardTest {
             return false;
         }
         return hasJoinVerb(code) && hasTimeslotReceiverGetDate(code);
+    }
+
+    /**
+     * Phase 24 D-07's widened matcher: any comment-stripped line holding a {@code .getDate()} read
+     * on one of the three Timeslot receiver shapes, with NO verb requirement.
+     */
+    private static boolean isWidenedTimeslotDateRead(String rawLine) {
+        String code = stripComment(rawLine);
+        if (code.isEmpty()) {
+            return false;
+        }
+        return hasTimeslotReceiverGetDate(code);
     }
 
     private static boolean hasJoinVerb(String code) {
