@@ -230,7 +230,9 @@ public class ShiftLibraryValidationService {
                 .map(sr -> new Window(sr.getTimeslot().getBusinessDate(),
                         sr.getTimeslot().getStartTime(), sr.getTimeslot().getEndTime()))
                 .distinct()
-                .sorted(Comparator.comparing(Window::businessDate).thenComparing(Window::startTime))
+                .sorted(Comparator.comparing(Window::businessDate)
+                        .thenComparingInt(w -> dayWindow.anchoredStartMinute(w.startTime()))
+                        .thenComparingInt(w -> dayWindow.anchoredEndMinute(w.endTime())))
                 .toList();
 
         List<String> uncovered = new ArrayList<>();
@@ -238,7 +240,7 @@ public class ShiftLibraryValidationService {
             boolean covered = templates.stream().anyMatch(t ->
                     covers(t, bandsByTemplateId.getOrDefault(t.getId(), List.of()), window, dayWindow));
             if (!covered) {
-                uncovered.add(window.businessDate() + " " + window.startTime() + "-" + window.endTime());
+                uncovered.add(window.describe(dayWindow));
             }
         }
         return uncovered;
@@ -749,7 +751,31 @@ public class ShiftLibraryValidationService {
      * SolverService} reads — never its calendar date. On a desk whose day starts after midnight the
      * two differ for every post-midnight hour.
      */
-    record Window(LocalDate businessDate, LocalTime startTime, LocalTime endTime) {}
+    record Window(LocalDate businessDate, LocalTime startTime, LocalTime endTime) {
+
+        /**
+         * The one operator-facing label for a demand window, shared by the validator and the
+         * generator so their coverage lists cannot drift.
+         *
+         * <p>Business date first, because a weekday restriction is a business-weekday concept and
+         * the schedule grid is ordered by business date. When the hour falls on a different
+         * CALENDAR date (any post-midnight hour on a desk whose day starts after midnight) the
+         * calendar date is disclosed, so an operator is never told an hour happens on a day it
+         * does not (Phase 20 D-10 / OVNT-07). When the two dates agree — every window at a
+         * {@code 00:00} anchor and every same-day window on any anchor — the string is
+         * byte-identical to the pre-phase label.
+         */
+        String describe(DayWindow dayWindow) {
+            LocalDate calendarDate = DayWindow.calendarDateAtDayStartOffset(
+                    dayWindow.dayStart(), businessDate, dayWindow.anchoredStartMinute(startTime));
+            String span = startTime + "-" + endTime;
+            if (calendarDate.equals(businessDate)) {
+                return businessDate + " " + span;
+            }
+            return businessDate + " (" + businessDate.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                    + ") " + span + " [calendar " + calendarDate + "]";
+        }
+    }
 
     /**
      * Bandless templates competing with banded ones for the same agent-days (see

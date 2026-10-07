@@ -851,8 +851,7 @@ public class ShiftLibraryGenerationService {
             boolean covered = rows.stream()
                     .anyMatch(r -> shiftLibraryValidationService.covers(r.template(), r.bands(), window, dayWindow));
             if (!covered) {
-                details.add(new ErrorDetail("coverage", window.businessDate() + " " + window.startTime()
-                        + "-" + window.endTime(), null));
+                details.add(new ErrorDetail("coverage", window.describe(dayWindow), null));
             }
         }
         return details;
