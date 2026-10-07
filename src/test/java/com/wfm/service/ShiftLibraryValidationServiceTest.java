@@ -1262,6 +1262,77 @@ class ShiftLibraryValidationServiceTest {
                 .satisfies(w -> assertThat(w).startsWith("2026-10-04 "));
     }
 
+    // ---------- Phase 24 (D-02): one business-date label, calendar disclosed only when it differs ----------
+
+    @Test
+    void validate_uncoveredPostMidnightWindow_namesTheBusinessDayAndDisclosesTheCalendarDate() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 10, 1), null);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, BIZ_MON, BIZ_SUN,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 1);
+
+        String expected = "2026-10-04 (Sun) 01:00-02:00 [calendar 2026-10-05]";
+        assertThat(service.validate(deskId).uncoveredWindows()).containsExactly(expected);
+        assertThatThrownBy(() -> service.requireShiftModeReady(deskId))
+                .isInstanceOfSatisfying(PreSolveValidationException.class, psve -> {
+                    assertThat(psve.getMessage()).isEqualTo("1 demand window(s) have no covering shift template");
+                    assertThat(psve.getDetails()).anySatisfy(d -> {
+                        assertThat(d.field()).isEqualTo("coverage");
+                        assertThat(d.message()).isEqualTo(expected);
+                    });
+                });
+    }
+
+    @Test
+    void validate_uncoveredWindowsOnAnAnchoredDesk_areOrderedFromTheDayStart() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        // Saved in the WRONG order on purpose: the post-midnight hour first.
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, BIZ_MON,
+                LocalTime.of(1, 0), LocalTime.of(2, 0), 1);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, BIZ_MON, BIZ_MON,
+                LocalTime.of(21, 0), LocalTime.of(22, 0), 1);
+
+        assertThat(service.validate(deskId).uncoveredWindows()).containsExactly(
+                "2026-10-05 21:00-22:00",
+                "2026-10-05 (Mon) 01:00-02:00 [calendar 2026-10-06]");
+    }
+
+    /**
+     * BDAY-05 adjacency: a window ENDING at the anchor belongs to the day that is ending; a window
+     * STARTING at it belongs to the day that is beginning, and sits on one date, so it is undecorated.
+     */
+    @Test
+    void validate_windowStartingExactlyAtTheDayStart_belongsToTheNewBusinessDay_andIsNotDecorated() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, ANCHOR_0600);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        saveTemplate(deskId, "Overnight", LocalTime.of(21, 0), LocalTime.of(6, 0), 0, 0,
+                Set.of(DayOfWeek.MONDAY), LocalDate.of(2026, 10, 1), null);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, BIZ_MON,
+                LocalTime.of(5, 0), LocalTime.of(6, 0), 1);
+        saveDemandAnchored(TENANT_A, deskId, spec, ANCHOR_0600, CAL_TUE, CAL_TUE,
+                LocalTime.of(6, 0), LocalTime.of(7, 0), 1);
+
+        assertThat(service.validate(deskId).uncoveredWindows()).containsExactly("2026-10-06 06:00-07:00");
+    }
+
+    /** The 00:00 control: every string is byte-identical to what it was before this phase. */
+    @Test
+    void validate_midnightDesk_uncoveredStringsStayByteIdentical() {
+        UUID deskId = saveDeskWithDayStart(TENANT_A, LocalTime.MIDNIGHT);
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        LocalDate saturday = LocalDate.of(2026, 1, 10);
+        saveDemandAnchored(TENANT_A, deskId, spec, LocalTime.MIDNIGHT, saturday, saturday,
+                LocalTime.of(23, 0), LocalTime.MIDNIGHT, 1);
+        saveDemandAnchored(TENANT_A, deskId, spec, LocalTime.MIDNIGHT, saturday, saturday,
+                LocalTime.of(9, 0), LocalTime.of(9, 30), 1);
+
+        assertThat(service.validate(deskId).uncoveredWindows())
+                .containsExactly("2026-01-10 09:00-09:30", "2026-01-10 23:00-00:00");
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(long tenantId) {
