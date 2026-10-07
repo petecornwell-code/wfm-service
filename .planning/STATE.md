@@ -5,16 +5,16 @@ milestone_name: Overnight Shifts & Business Dates
 current_phase: 24
 current_phase_name: "Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows"
 status: executing
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-10-07T17:48:19.134Z"
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-10-07T17:55:37.343Z"
 last_activity: 2026-10-07
-last_activity_desc: Completed 24-01 — validator keyed on business date
-state_head: 40f8e6e01cc4520ea12aff383326dfc72557f8a4
+last_activity_desc: Completed 24-02 — repair and start-mix services keyed on business date; guard green
+state_head: d1669ddba82339064a0c03ce4eaa4eba0cfd41e4
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 56
-  completed_plans: 54
+  completed_plans: 55
   percent: 71
 ---
 
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 ## Current Position
 
 Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — EXECUTING
-Plan: 2 of 3 (24-01 complete)
-Status: Executing Phase 24 — ready for 24-02
-Last activity: 2026-10-07 — Completed 24-01 (validator keyed on business date)
+Plan: 3 of 3 (24-01, 24-02 complete)
+Status: Executing Phase 24 — ready for 24-03
+Last activity: 2026-10-07 — Completed 24-02 (repair and start-mix services keyed on business date; guard green)
 
 ## Milestone v1.3 Outcome
 
@@ -385,6 +385,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 23]: End-accessor token built by string concatenation (anchored+End+Minute() in the guard matcher so the guard's own source file is never a textual match for the forbidden composition
 - [Phase 24]: 24-01: PeakShortfallAdvisory.date now carries the business date; ShiftLibrary.tsx and the DTO are unchanged (operator decision 3)
 - [Phase 24]: 24-01: Window.describe(DayWindow) is the single operator-facing window label, calendar date disclosed only when it differs from the business date
+- [Phase 24]: 24-02: violation sort in ScheduleEnvelopeRepairService is business date, anchored start minute, id (chronological from the day start)
+- [Phase 24]: 24-02: AgentAssignmentDifficultyComparator keeps the calendar date by design (construction-order heuristic); classified in bday-join-guard.md, not allowlisted
 
 ### Blockers/Concerns
 
@@ -410,8 +412,8 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-07T17:48:19.074Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-10-07T17:55:37.282Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
@@ -518,3 +520,4 @@ Resume file: None
 | Phase 23 P02 | 18min | 3 tasks | 4 files |
 | Phase 23 P03 | 30min | 2 tasks | 2 files |
 | Phase 24 P01 | 74 min | 3 tasks | 4 files |
+| Phase 24 P02 | 5 min | 3 tasks | 10 files |
