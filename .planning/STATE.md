@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.5
-milestone_name: Overnight Shifts & Business Dates
 status: Awaiting next milestone
 stopped_at: Milestone v1.5 complete and archived
-last_updated: "2026-10-08T14:39:51.001Z"
+last_updated: "2026-10-08T15:27:35.028Z"
 last_activity: 2026-10-08
 last_activity_desc: Milestone v1.5 completed and archived
-state_head: 59b78efca60d7b17ae5bda640f32714e1ca456bb
+state_head: a2462d49fb8d205ea11a4495fe37d92fdcdcec6a
 progress:
   total_phases: 7
   completed_phases: 7
   total_plans: 56
   completed_plans: 56
   percent: 100
+milestone_name: Overnight Shifts & Business Dates
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-08 after v1.5 milestone close)
 Phase: Milestone v1.5 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-08 — Milestone v1.5 completed and archived
+Last activity: 2026-10-08 - Completed quick task 261008-f51: Erlang C/X per-business-date demand input
 
 ## Milestone v1.5 Outcome
 
@@ -448,6 +448,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261008-f51 | Erlang C/X per-business-date demand input: fix cross-day wipe, copy-to, saved inputs (V56) | 2026-10-08 | a2462d4 | [261008-f51-erlang-per-date-demand-input-fix-cross-d](./quick/261008-f51-erlang-per-date-demand-input-fix-cross-d/) |
 
 ## Session Continuity
 
