@@ -422,6 +422,73 @@ class StaffingRequirementBusinessDateDeleteTest {
         assertThat(midnightAfterDayOne).hasSize(2);
     }
 
+    // ---------- quick-261008-f51: per-business-date Erlang ----------
+    //
+    // Reproducer: the Staffing Requirements page shows the Erlang grid for the FIRST business date
+    // only, but sends the whole period as the replace range. The delete therefore wiped days 2..N
+    // while only day 1's rows were re-inserted.
+
+    /** Three 00:00-anchored business days, each with 08-09 and 09-10 slots holding live 5 FTE. */
+    private record ThreeDayFixture(UUID deskId, Specialization spec, LocalDate d1, LocalDate d3,
+                                    Timeslot d1T1, Timeslot d1T2) {
+    }
+
+    private ThreeDayFixture seedThreeDays() {
+        LocalTime anchor = LocalTime.MIDNIGHT;
+        UUID deskId = saveDesk(anchor);
+        Specialization spec = saveSpecialization(deskId, "S1");
+        LocalDate d1 = LocalDate.of(2026, 10, 5);
+        Timeslot d1T1 = null;
+        Timeslot d1T2 = null;
+        for (int i = 0; i < 3; i++) {
+            LocalDate d = d1.plusDays(i);
+            Timeslot t1 = saveTimeslot(deskId, anchor, d, LocalTime.of(8, 0), LocalTime.of(9, 0));
+            Timeslot t2 = saveTimeslot(deskId, anchor, d, LocalTime.of(9, 0), LocalTime.of(10, 0));
+            saveLiveRequirement(deskId, t1, spec, 5);
+            saveLiveRequirement(deskId, t2, spec, 5);
+            if (i == 0) {
+                d1T1 = t1;
+                d1T2 = t2;
+            }
+        }
+        return new ThreeDayFixture(deskId, spec, d1, d1.plusDays(2), d1T1, d1T2);
+    }
+
+    private void assertDaysTwoAndThreeUntouched(ThreeDayFixture fx) {
+        for (int i = 1; i <= 2; i++) {
+            List<StaffingRequirement> day = liveRequirementsOnBusinessDate(fx.deskId(), fx.d1().plusDays(i));
+            assertThat(day).hasSize(2);
+            assertThat(day).allSatisfy(sr -> assertThat(sr.getRequiredFTEs()).isEqualTo(5));
+        }
+    }
+
+    @Test
+    @DisplayName("Erlang C: calculating one business date leaves the rest of the period untouched")
+    void erlangC_calculatingOneBusinessDate_leavesTheRestOfThePeriodUntouched() {
+        ThreeDayFixture fx = seedThreeDays();
+
+        // Exactly what the page sends today: the period-wide range, day 1's rows only.
+        service.calculateErlangC(fx.deskId(), new ErlangCRequest(fx.d1(), fx.d3(), List.of(
+                new ErlangCRequest.Item(fx.d1T1().getId(), fx.spec().getId(), 100, 180, 80, 20),
+                new ErlangCRequest.Item(fx.d1T2().getId(), fx.spec().getId(), 100, 180, 80, 20)),
+                null));
+
+        assertDaysTwoAndThreeUntouched(fx);
+    }
+
+    @Test
+    @DisplayName("Erlang X: calculating one business date leaves the rest of the period untouched")
+    void erlangX_calculatingOneBusinessDate_leavesTheRestOfThePeriodUntouched() {
+        ThreeDayFixture fx = seedThreeDays();
+
+        service.calculateErlangX(fx.deskId(), new ErlangXRequest(fx.d1(), fx.d3(), List.of(
+                new ErlangXRequest.Item(fx.d1T1().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20),
+                new ErlangXRequest.Item(fx.d1T2().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20)),
+                null));
+
+        assertDaysTwoAndThreeUntouched(fx);
+    }
+
     // ---------- helpers ----------
 
     private UUID saveDesk(LocalTime dayStart) {
