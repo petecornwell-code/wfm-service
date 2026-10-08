@@ -230,12 +230,12 @@ class ShiftStartMixTargetServiceTest {
         CallIsolation.assertNoStateSurvivesACall(
                 () -> {
                     Fixture f = saferide();
-                    return service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                    return () -> service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
                             f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
                 },
                 () -> {
                     Fixture f = overnightDesk();
-                    return service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                    return () -> service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
                             f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.of(6, 0)));
                 });
     }

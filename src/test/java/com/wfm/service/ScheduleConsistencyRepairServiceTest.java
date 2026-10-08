@@ -259,8 +259,9 @@ class ScheduleConsistencyRepairServiceTest {
     }
 
     /**
-     * D7: the repair holds no state across calls. The day swap and the 06:00 overnight swap,
-     * each rebuilt fresh per run, reproduce their isolated outcome whether run alone,
+     * D7: the repair holds no state across calls. The day swap and the overnight swap (whose
+     * later seats sit on the next calendar date but business {@link #DAY}), each rebuilt fresh
+     * per run, reproduce their isolated outcome whether run alone,
      * alternately, or concurrently on this one service instance.
      */
     @Test
@@ -268,11 +269,11 @@ class ScheduleConsistencyRepairServiceTest {
         CallIsolation.assertNoStateSurvivesACall(
                 () -> {
                     Schedule s = swapNeeded(LocalTime.of(8, 0), LocalTime.of(9, 0), DAY);
-                    return List.of(service.repair(s), seating(s));
+                    return () -> List.of(service.repair(s), seating(s));
                 },
                 () -> {
                     Schedule s = swapNeeded(LocalTime.of(20, 0), LocalTime.of(21, 0), DAY.plusDays(1));
-                    return List.of(service.repair(s), seating(s));
+                    return () -> List.of(service.repair(s), seating(s));
                 });
     }
 

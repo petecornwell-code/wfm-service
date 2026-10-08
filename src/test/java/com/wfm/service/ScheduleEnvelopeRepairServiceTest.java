@@ -239,13 +239,13 @@ class ScheduleEnvelopeRepairServiceTest {
         CallIsolation.assertNoStateSurvivesACall(
                 () -> {
                     OvernightDesk d = overnightDesk(true, false);
-                    var result = service.repairVerified(d.schedule(), envelopeScorer(LocalTime.of(6, 0)));
-                    return List.of(result, seating(d.schedule()));
+                    return () -> List.of(
+                            service.repairVerified(d.schedule(), envelopeScorer(LocalTime.of(6, 0))),
+                            seating(d.schedule()));
                 },
                 () -> {
                     Fixture f = stuckOnOwnBreakHour();
-                    var result = service.repairVerified(f.schedule(), envelopeScorer());
-                    return List.of(result, seating(f.schedule()));
+                    return () -> List.of(service.repairVerified(f.schedule(), envelopeScorer()), seating(f.schedule()));
                 });
     }
 
