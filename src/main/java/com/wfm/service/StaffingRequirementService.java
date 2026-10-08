@@ -4,11 +4,13 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Desk;
+import com.wfm.model.ErlangDemandInput;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.StaffingSource;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ErlangDemandInputRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -33,19 +35,22 @@ public class StaffingRequirementService {
     private final ErlangCalculatorService erlangCalculatorService;
     private final DeskRepository deskRepository;
     private final EntityManager entityManager;
+    private final ErlangDemandInputRepository erlangDemandInputRepository;
 
     public StaffingRequirementService(StaffingRequirementRepository staffingRequirementRepository,
                                       TimeslotRepository timeslotRepository,
                                       SpecializationRepository specializationRepository,
                                       ErlangCalculatorService erlangCalculatorService,
                                       DeskRepository deskRepository,
-                                      EntityManager entityManager) {
+                                      EntityManager entityManager,
+                                      ErlangDemandInputRepository erlangDemandInputRepository) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
         this.erlangCalculatorService = erlangCalculatorService;
         this.deskRepository = deskRepository;
         this.entityManager = entityManager;
+        this.erlangDemandInputRepository = erlangDemandInputRepository;
     }
 
     /**
@@ -449,6 +454,10 @@ public class StaffingRequirementService {
                     "copyTo may name at most " + MAX_COPY_TARGETS + " dates");
         }
         Map<LocalDate, Map<SlotKey, Timeslot>> targetSlots = new LinkedHashMap<>();
+        Map<LocalDate, List<UUID>> affectedSlotIds = new LinkedHashMap<>();
+        affectedSlotIds.put(businessDate, timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, businessDate).stream().map(Timeslot::getId).toList());
         for (LocalDate target : targetDates) {
             List<Timeslot> live = timeslotRepository
                     .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
@@ -477,6 +486,7 @@ public class StaffingRequirementService {
                 }
             }
             targetSlots.put(target, byKey);
+            affectedSlotIds.put(target, live.stream().map(Timeslot::getId).toList());
         }
 
         // One single-date delete per affected business date -- the only delete in this helper.
@@ -485,6 +495,11 @@ public class StaffingRequirementService {
         affected.addAll(targetSlots.keySet());
         for (LocalDate d : affected) {
             staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, d, d);
+            // OD-3: the date's saved inputs are replaced with its requirements.
+            List<UUID> slotIds = affectedSlotIds.get(d);
+            if (slotIds != null && !slotIds.isEmpty()) {
+                erlangDemandInputRepository.deleteByDeskAndTimeslotIds(tenantId, deskId, slotIds);
+            }
         }
 
         // Flush deletes to DB before inserting new rows -- Hibernate's ActionQueue processes
@@ -498,6 +513,7 @@ public class StaffingRequirementService {
             ErlangLine line = lines.get(i);
             saved.add(insertRequirement(tenantId, deskId, timeslotMap.get(line.timeslotId()),
                     specMap.get(line.specializationId()), results.get(i), model));
+            insertInput(tenantId, deskId, line.timeslotId(), line, adjustments, model);
         }
         for (Map<SlotKey, Timeslot> byKey : targetSlots.values()) {
             for (int i = 0; i < lines.size(); i++) {
@@ -506,10 +522,81 @@ public class StaffingRequirementService {
                 Timeslot match = byKey.get(new SlotKey(source.getStartTime(), source.getEndTime()));
                 saved.add(insertRequirement(tenantId, deskId, match,
                         specMap.get(line.specializationId()), results.get(i), model));
+                // OD-2: reopening a copied date shows what produced it.
+                insertInput(tenantId, deskId, match.getId(), line, adjustments, model);
             }
         }
 
         return new StaffingRequirementResponse(saved.stream().map(this::toResponseItem).toList());
+    }
+
+    private void insertInput(long tenantId, UUID deskId, UUID timeslotId, ErlangLine line,
+                             StaffingAdjustmentOptionsDto adjustments, StaffingSource model) {
+        ErlangDemandInput in = new ErlangDemandInput();
+        in.setTenantId(tenantId);
+        in.setDeskId(deskId);
+        in.setTimeslotId(timeslotId);
+        in.setSpecializationId(line.specializationId());
+        in.setModel(model);
+        in.setCallVolume(line.callVolume());
+        in.setAht(line.aht());
+        in.setServiceLevelTarget(line.serviceLevelTarget());
+        in.setServiceLevelThreshold(line.serviceLevelThreshold());
+        in.setPatience(line.patience());
+        in.setRetryRate(line.retryRate());
+        if (adjustments != null) {
+            in.setShrinkage(adjustments.shrinkage());
+            in.setMaxOccupancy(adjustments.maxOccupancy());
+            in.setConcurrency(adjustments.concurrency());
+        }
+        erlangDemandInputRepository.save(in);
+    }
+
+    /**
+     * The saved inputs of the last Erlang calculation that wrote {@code businessDate}, scoped by
+     * tenant and desk. Empty items when the date has no timeslots or nothing was saved.
+     *
+     * <p>{@link #saveRequirements} (Direct), the FTE upload and timeslot deletes deliberately do
+     * not touch saved inputs: timeslot deletion is handled by the database cascade, and a Direct
+     * overwrite leaves the date's last Erlang worksheet available to reload.
+     */
+    @Transactional(readOnly = true)
+    public ErlangDemandInputResponse getErlangInputs(UUID deskId, String businessDate) {
+        long tenantId = TenantContext.getTenantId();
+        if (businessDate == null) {
+            throw new IllegalArgumentException("businessDate is required");
+        }
+        LocalDate date = parseBusinessDate("businessDate", businessDate);
+
+        List<Timeslot> slots = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, date);
+        if (slots.isEmpty()) {
+            return new ErlangDemandInputResponse(date, List.of());
+        }
+
+        Map<UUID, Integer> slotOrder = new HashMap<>();
+        Map<UUID, Timeslot> slotById = new HashMap<>();
+        for (int i = 0; i < slots.size(); i++) {
+            slotOrder.put(slots.get(i).getId(), i);
+            slotById.put(slots.get(i).getId(), slots.get(i));
+        }
+
+        List<ErlangDemandInputResponse.Item> items = erlangDemandInputRepository
+                .findByTenantIdAndDeskIdAndTimeslotIdIn(tenantId, deskId, slotOrder.keySet()).stream()
+                .sorted(Comparator
+                        .comparing((ErlangDemandInput e) -> slotOrder.get(e.getTimeslotId()))
+                        .thenComparing(e -> e.getSpecializationId().toString()))
+                .map(e -> new ErlangDemandInputResponse.Item(
+                        e.getTimeslotId(), e.getSpecializationId(),
+                        slotById.get(e.getTimeslotId()).getStartTime(),
+                        slotById.get(e.getTimeslotId()).getEndTime(),
+                        e.getModel().name(), e.getCallVolume(), e.getAht(),
+                        e.getServiceLevelTarget(), e.getServiceLevelThreshold(),
+                        e.getPatience(), e.getRetryRate(), e.getShrinkage(),
+                        e.getMaxOccupancy(), e.getConcurrency()))
+                .toList();
+        return new ErlangDemandInputResponse(date, items);
     }
 
     private StaffingRequirement insertRequirement(long tenantId, UUID deskId, Timeslot ts,

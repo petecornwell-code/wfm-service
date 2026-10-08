@@ -86,6 +86,9 @@ class StaffingRequirementBusinessDateDeleteTest {
     @Autowired
     private TestEntityManager testEntityManager;
 
+    @Autowired
+    private com.wfm.repository.ErlangDemandInputRepository erlangDemandInputRepository;
+
     private StaffingRequirementService service;
 
     @BeforeEach
@@ -93,7 +96,8 @@ class StaffingRequirementBusinessDateDeleteTest {
         TenantContext.setTenantId(TENANT);
         service = new StaffingRequirementService(
                 staffingRequirementRepository, timeslotRepository, specializationRepository,
-                new ErlangCalculatorService(), deskRepository, testEntityManager.getEntityManager());
+                new ErlangCalculatorService(), deskRepository, testEntityManager.getEntityManager(),
+                erlangDemandInputRepository);
     }
 
     @AfterEach

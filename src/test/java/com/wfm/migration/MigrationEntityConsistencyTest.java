@@ -4,6 +4,7 @@ import com.wfm.model.AgentShiftAssignment;
 import com.wfm.model.AgentUsualShift;
 import com.wfm.model.ConstraintWeights;
 import com.wfm.model.Desk;
+import com.wfm.model.ErlangDemandInput;
 import com.wfm.model.Schedule;
 import com.wfm.model.ShiftTemplate;
 import com.wfm.model.ShiftTemplateBreakBand;
@@ -91,6 +92,11 @@ class MigrationEntityConsistencyTest {
      * field closes that gap. Both map through the pre-existing {@code LocalTime -> TIME} and
      * {@code LocalDate -> DATE} entries in {@link #COMPATIBLE_SQL_TYPES} -- no new
      * type-compatibility entry is needed.
+     *
+     * <p>{@code erlang_demand_input} added for quick-261008-f51 (V56): reconciled against
+     * {@link ErlangDemandInput}. Its {@code DOUBLE PRECISION} columns normalise to {@code DOUBLE}
+     * (the column-line pattern reads only the first word of a type), so {@code double}/{@code
+     * Double} entries were added to {@link #COMPATIBLE_SQL_TYPES}.
      */
     private static final Map<String, Class<?>> DECLARED_TABLES = Map.of(
             "shift_template", ShiftTemplate.class,
@@ -100,7 +106,8 @@ class MigrationEntityConsistencyTest {
             "schedule", Schedule.class,
             "agent_usual_shift", AgentUsualShift.class,
             "timeslot", Timeslot.class,
-            "desk", Desk.class
+            "desk", Desk.class,
+            "erlang_demand_input", ErlangDemandInput.class
     );
 
     /** Java field type -> SQL types it may legitimately be declared as. */
@@ -110,6 +117,8 @@ class MigrationEntityConsistencyTest {
             Map.entry(Integer.class, Set.of("INTEGER", "BIGINT")),
             Map.entry(long.class, Set.of("BIGINT")),
             Map.entry(Long.class, Set.of("BIGINT")),
+            Map.entry(double.class, Set.of("DOUBLE")),
+            Map.entry(Double.class, Set.of("DOUBLE")),
             Map.entry(UUID.class, Set.of("UUID")),
             Map.entry(LocalTime.class, Set.of("TIME")),
             Map.entry(LocalDate.class, Set.of("DATE")),

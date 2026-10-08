@@ -63,6 +63,17 @@ public class StaffingRequirementController {
         return staffingRequirementService.calculateErlangX(deskId, request);
     }
 
+    /**
+     * The saved inputs of the last Erlang calculation for one business date, so the page can
+     * reload what produced that date's requirements. A missing or malformed {@code businessDate}
+     * is a 400.
+     */
+    @GetMapping("/erlang-inputs")
+    public ErlangDemandInputResponse getErlangInputs(@PathVariable UUID deskId,
+                                                     @RequestParam(required = false) String businessDate) {
+        return staffingRequirementService.getErlangInputs(deskId, businessDate);
+    }
+
     @PostMapping("/upload")
     public FteUploadResult uploadFtes(@PathVariable UUID deskId,
                                       @RequestParam("file") MultipartFile file) throws IOException {

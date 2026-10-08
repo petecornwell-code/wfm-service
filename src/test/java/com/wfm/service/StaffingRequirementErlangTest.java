@@ -61,10 +61,12 @@ class StaffingRequirementErlangTest {
             mock(SpecializationRepository.class);
     private final DeskRepository deskRepository = mock(DeskRepository.class);
     private final EntityManager entityManager = mock(EntityManager.class);
+    private final com.wfm.repository.ErlangDemandInputRepository erlangDemandInputRepository =
+            mock(com.wfm.repository.ErlangDemandInputRepository.class);
 
     private final StaffingRequirementService service = new StaffingRequirementService(
             staffingRequirementRepository, timeslotRepository, specializationRepository,
-            new ErlangCalculatorService(), deskRepository, entityManager);
+            new ErlangCalculatorService(), deskRepository, entityManager, erlangDemandInputRepository);
 
     private UUID timeslotId;
     private UUID specId;
@@ -73,6 +75,8 @@ class StaffingRequirementErlangTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         when(staffingRequirementRepository.save(any(StaffingRequirement.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(erlangDemandInputRepository.save(any(com.wfm.model.ErlangDemandInput.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         // BDAY-04: every Erlang calculation now binds a DayWindow from the desk -- a desk at its
         // default (MIDNIGHT) anchor, matching every fixture's implicit assumption before this plan.
