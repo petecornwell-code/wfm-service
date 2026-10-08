@@ -1074,7 +1074,9 @@ Desk-scoped. Timeslots must exist before staffing requirements can be created (s
 |---|---|---|
 | `GET` | `/desks/{deskId}/staffing-requirements` | List staffing requirements for this desk. Paginated (uses the standard pagination envelope from section 7). Optional query parameters `from` and `to` filter by date range. Returns live data only (`schedule_id IS NULL`). Each item in the `data` array uses the same **individual item format** as the `requirements` array in the POST response body below (i.e. `{ "id", "timeslotId", "specializationId", "date", "startTime", "endTime", "specializationName", "requiredFTEs", "source" }`). |
 | `POST` | `/desks/{deskId}/staffing-requirements` | Create or replace requirements for a schedule period on this desk. Full replace for the specified date range — any existing live requirements for dates in the range not present in the payload are **deleted**. Executes the delete-and-insert in a **single transaction**. Returns `200` with the response body below. Returns `404 Not Found` (error code `NOT_FOUND`) if any referenced timeslot or specialization does not exist. Returns `400` (error code `VALIDATION_FAILED`) if the payload contains duplicate `timeslotId` + `specializationId` combinations. |
-| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs and persist the results. Timeslots for the target date range must already exist. The calculation and persistence is executed in a **single transaction**. Returns `200` with the response body below. |
+| `POST` | `/desks/{deskId}/staffing-requirements/erlang-x` | Calculate per-timeslot requirements from Erlang X inputs for **one business date** (plus optional `copyTo` dates) and persist the results. Timeslots for those dates must already exist. The calculation and persistence is executed in a **single transaction**. Returns `200` with the response body below. Returns `400` (error code `VALIDATION_FAILED`) before anything is deleted if the request cannot be honoured in full. |
+| `POST` | `/desks/{deskId}/staffing-requirements/erlang-c` | Same as `erlang-x`, with Erlang C and no `patience`/`retryRate` (section below). |
+| `GET` | `/desks/{deskId}/staffing-requirements/erlang-inputs?businessDate=YYYY-MM-DD` | The saved inputs of the last Erlang calculation that wrote that business date (see below). `400` if `businessDate` is missing or not an ISO date. |
 
 **Request body for `POST /desks/{deskId}/staffing-requirements`:**
 
@@ -1101,8 +1103,9 @@ Each entry references a timeslot by its `id` (timeslots must already exist in th
 
 ```json
 {
-  "from": "2026-02-23",
-  "to": "2026-02-27",
+  "businessDate": "2026-02-23",
+  "copyTo": ["2026-02-25", "2026-03-02"],
+  "adjustments": { "shrinkage": 0.30, "maxOccupancy": 0.85, "concurrency": null },
   "parameters": [
     {
       "timeslotId": "uuid-of-timeslot",
@@ -1118,7 +1121,30 @@ Each entry references a timeslot by its `id` (timeslots must already exist in th
 }
 ```
 
-Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the required agent count (FTEs) for each entry and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredFTEs = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredFTEs = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The `from`/`to` dates define the replacement range — existing live requirements within this range are deleted before the calculated results are inserted. The response returns the calculated requirements so the UI can display them for review.
+Each entry provides Erlang X input parameters (section 4.4) for a single timeslot/specialization combination. The endpoint calculates the required agent count (FTEs) for each entry and persists the results as staffing requirements with `source = ERLANG_X`. If the calculation produces `requiredFTEs = 0` for a given entry (e.g. very low call volume), the row is **still persisted** with `requiredFTEs = 0` — this means no agents are needed for that specialization in that timeslot, which is different from having no staffing requirement at all. The request replaces the live requirements of **`businessDate` only** (the business date of its timeslots, not the calendar date): every timeslot in `parameters` must belong to that business date, and every other date in the period keeps its requirements unchanged. A request without `businessDate` is refused (an old client sending `from`/`to` cannot trigger a period-wide replace).
+
+`copyTo` is optional. Each listed date receives the source date's per-slot `requiredFTEs` on **its own timeslots**, matched by equal start **and** end time (not list position), and replaces only that date's requirements; dates not listed are unchanged. Each copy date also gets the saved inputs (below), so reopening it shows what produced it.
+
+**Refusals happen before anything is deleted** (`400 VALIDATION_FAILED`): null `businessDate`; an item whose timeslot is on another business date; a `copyTo` date with no live timeslots or no timeslot matching a source slot's start and end; a duplicate `timeslotId` + `specializationId`; a fractional `serviceLevelTarget` (below 1); a timeslot that crosses midnight; more than 366 `copyTo` dates. An empty `parameters` list is a no-op. `POST .../erlang-c` takes the same shape minus `patience` and `retryRate`; both endpoints share one server-side helper so their behaviour cannot drift. The response returns the calculated requirements (the source date's rows, then the copies) so the UI can display them for review.
+
+**Saved Erlang inputs.** Each calculation saves, per desk, timeslot and specialization, the inputs that produced it, for the source date and every `copyTo` date (table `erlang_demand_input`, FK `ON DELETE CASCADE` from timeslot, so regenerating or deleting timeslots removes them). Recalculating a date replaces that date's saved inputs. `GET /desks/{deskId}/staffing-requirements/erlang-inputs?businessDate=2026-02-23` returns:
+
+```json
+{
+  "businessDate": "2026-02-23",
+  "items": [
+    {
+      "timeslotId": "uuid", "specializationId": "uuid", "startTime": "08:00:00", "endTime": "09:00:00",
+      "model": "ERLANG_X", "callVolume": 500, "aht": 180.0,
+      "serviceLevelTarget": 80.0, "serviceLevelThreshold": 20,
+      "patience": 60.0, "retryRate": 20.0,
+      "shrinkage": 0.30, "maxOccupancy": 0.85, "concurrency": null
+    }
+  ]
+}
+```
+
+Units: `serviceLevelTarget` and `retryRate` are percentages (80 means 80%); `shrinkage` and `maxOccupancy` are fractions; `null` means off, or not applicable to the model (`patience`/`retryRate` are `null` for Erlang C). `items` is empty when the date has no timeslots or nothing was saved. Direct saves and the FTE upload deliberately do not touch saved inputs.
 
 **Response body (both endpoints):**
 
@@ -1744,7 +1770,7 @@ Defines how many agents are needed per timeslot per specialization for the selec
 | Save button | Button | Persists via `POST /desks/{deskId}/staffing-requirements`. |
 | **Erlang X mode** | | |
 | Erlang X parameters form | Form fields | Per specialization per timeslot (or per day with a distribution pattern): **Call volume** (integer), **AHT** (seconds), **Patience** (seconds), **Retry rate** (%), **Service level target** (%), **Service level threshold** (seconds). See section 4.4 for parameter definitions. |
-| Calculate & save button | Button | Submits parameters via `POST /desks/{deskId}/staffing-requirements/erlang-x`. The endpoint calculates **and persists** the results in a single transaction (section 7.10). The response returns the calculated requirements, which are displayed in the demand grid so the user can review them. If the results are unsatisfactory, the user can adjust parameters and re-submit — the new results will replace the previous ones for the same date range. |
+| Calculate & save button | Button | Submits the parameters for the **selected business date** via `POST /desks/{deskId}/staffing-requirements/erlang-x` (or `erlang-c`). The endpoint calculates **and persists** the results for that date only, in a single transaction (section 7.10); no other date changes. The response returns the calculated requirements, which are displayed in the results table so the user can review them. If the results are unsatisfactory, the user can adjust parameters and re-submit — the new results replace the previous ones for that business date. A **business-date picker** above the grid selects the date; the volume grid and results are for that date only, and reopening a date reloads its saved volumes and settings (`GET .../erlang-inputs`). After a calculation, a **copy panel** offers copying the result to individual dates or by weekday (Mon–Sun), re-posting the same request with `copyTo`; unselected dates are not changed. |
 
 ### 12.8 Constraint Weights Page
 

@@ -244,12 +244,19 @@ export const staffingRequirements = {
   },
   save: (deskId: string, requirements: StaffingRequirementItem[]) =>
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements`, { method: 'POST', body: JSON.stringify({ requirements }) }),
+  // Replaces the live requirements of the request's business date and each copyTo date only;
+  // every other date keeps its requirements.
   calculateErlangX: (deskId: string, data: ErlangXRequest) =>
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements/erlang-x`, { method: 'POST', body: JSON.stringify(data) }),
-  // Like calculateErlangX, this REPLACES the live requirements for the date range. The read-only
-  // calculator that writes nothing is erlangCalculator at the bottom of this file.
+  // Like calculateErlangX, this replaces the live requirements of the request's business date and
+  // of each copyTo date only. The read-only calculator that writes nothing is erlangCalculator at
+  // the bottom of this file.
   calculateErlangC: (deskId: string, data: ErlangCPersistRequest) =>
     request<StaffingRequirementResponse>(`/desks/${deskId}/staffing-requirements/erlang-c`, { method: 'POST', body: JSON.stringify(data) }),
+  erlangInputs: (deskId: string, businessDate: string) => {
+    const query = new URLSearchParams({ businessDate })
+    return request<ErlangDemandInputResponse>(`/desks/${deskId}/staffing-requirements/erlang-inputs?${query}`)
+  },
   uploadFtes: async (deskId: string, file: File): Promise<FteUploadResult> => {
     const formData = new FormData()
     formData.append('file', file)
@@ -406,17 +413,30 @@ export interface SuggestedTemplate { name: string; startTime: string; endTime: s
 // (field="coverage") — fed straight into the existing CoveragePanel component (P-22/D-12).
 export interface ShiftLibrarySuggestion { templates: SuggestedTemplate[]; uncoveredWindows: ApiErrorDetail[] }
 export interface SpecializationAssignment { primarySpecializationId: string; secondarySpecializationIds: string[] }
-export interface Timeslot { id: string; date: string; startTime: string; endTime: string }
+export interface Timeslot { id: string; date: string; businessDate: string; startTime: string; endTime: string }
 export interface TimeslotBounds { periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface GenerateTimeslotsRequest { periodStartDate: string; periodEndDate: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface StaffingRequirement { id: string; timeslotId: string; specializationId: string; date: string; businessDate: string; startTime: string; endTime: string; specializationName: string; requiredFTEs: number; source: string }
 export interface StaffingRequirementItem { timeslotId: string; specializationId: string; requiredFTEs: number }
 export interface StaffingRequirementResponse { requirements: StaffingRequirement[] }
-export interface ErlangXRequest { from: string; to: string; parameters: ErlangXParam[]; adjustments?: ErlangAdjustments | null }
+// businessDate is the ONE business date whose live requirements are replaced; copyTo adds other
+// business dates that receive the same per-slot result (matched by start+end time). Nothing else changes.
+export interface ErlangXRequest { businessDate: string; copyTo?: string[]; parameters: ErlangXParam[]; adjustments?: ErlangAdjustments | null }
 // Percentages, not fractions: serviceLevelTarget is 80 for 80%, matching ErlangXParam. The backend
 // divides by 100. Sending 0.8 here asks for a 0.8% service level, which almost any headcount meets.
 export interface ErlangCParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; serviceLevelTarget: number; serviceLevelThreshold: number }
-export interface ErlangCPersistRequest { from: string; to: string; parameters: ErlangCParam[]; adjustments?: ErlangAdjustments | null }
+export interface ErlangCPersistRequest { businessDate: string; copyTo?: string[]; parameters: ErlangCParam[]; adjustments?: ErlangAdjustments | null }
+// The saved inputs of the last Erlang calculation for a business date. Units: serviceLevelTarget and
+// retryRate are percent (80 = 80%); shrinkage and maxOccupancy are fractions (0.3 = 30%); null = off
+// or not applicable to the model.
+export interface ErlangDemandInput {
+  timeslotId: string; specializationId: string; startTime: string; endTime: string
+  model: 'ERLANG_C' | 'ERLANG_X'
+  callVolume: number; aht: number; serviceLevelTarget: number; serviceLevelThreshold: number
+  patience: number | null; retryRate: number | null
+  shrinkage: number | null; maxOccupancy: number | null; concurrency: number | null
+}
+export interface ErlangDemandInputResponse { businessDate: string; items: ErlangDemandInput[] }
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
 export interface DayOff { id: string; date: string; type: string; status: string }
 export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }
@@ -777,8 +797,8 @@ export const bambooSyncStatus = {
 // --- Erlang Calculator ---
 // Read-only staffing arithmetic: POST numbers, get numbers back. Nothing is stored, and no desk is
 // involved -- which is why these are not under /desks/{deskId} like staffingRequirements.
-// calculateErlangX above is the persisting path: it REPLACES the live staffing requirements for the
-// date range it is given. These two do not share an endpoint for that reason.
+// calculateErlangX above is the persisting path: it replaces the live staffing requirements of the
+// business date it is given (plus any copyTo dates). These two do not share an endpoint for that reason.
 export interface ErlangAdjustments {
   shrinkage?: number | null
   maxOccupancy?: number | null

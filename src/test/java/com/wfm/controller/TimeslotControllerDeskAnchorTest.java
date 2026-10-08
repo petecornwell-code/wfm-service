@@ -110,6 +110,9 @@ class TimeslotControllerDeskAnchorTest {
                 .map(Timeslot::getDate).collect(Collectors.toSet());
         assertThat(businessDates).containsExactly(businessDay);
         assertThat(calendarDates).containsExactlyInAnyOrder(businessDay, businessDay.plusDays(1));
+        // quick-261008-f51: the response carries the business date the page groups Erlang dates by.
+        assertThat(response.getBody()).extracting(TimeslotResponse::businessDate)
+                .containsOnly(businessDay);
     }
 
     @Test

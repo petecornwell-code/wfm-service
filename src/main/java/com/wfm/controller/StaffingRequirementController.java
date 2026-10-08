@@ -41,9 +41,10 @@ public class StaffingRequirementController {
     }
 
     /**
-     * Erlang C, the conservative baseline. Like {@code /erlang-x} below it REPLACES the live
-     * requirements for the request's date range — it is not the read-only calculator, which lives
-     * at {@code /api/v1/calc/erlang-c} and writes nothing.
+     * Erlang C, the conservative baseline. Like {@code /erlang-x} below it REPLACES live
+     * requirements — but only those of the request's business date and of each {@code copyTo}
+     * date; no other date changes. It is not the read-only calculator, which lives at
+     * {@code /api/v1/calc/erlang-c} and writes nothing.
      */
     @PostMapping("/erlang-c")
     public StaffingRequirementResponse calculateErlangC(@PathVariable UUID deskId,
@@ -51,10 +52,26 @@ public class StaffingRequirementController {
         return staffingRequirementService.calculateErlangC(deskId, request);
     }
 
+    /**
+     * Erlang X. Replaces the live requirements of the request's business date and of each
+     * {@code copyTo} date, and no others. A request that cannot be honoured in full is refused
+     * with 400 before anything is deleted.
+     */
     @PostMapping("/erlang-x")
     public StaffingRequirementResponse calculateErlangX(@PathVariable UUID deskId,
                                                          @RequestBody ErlangXRequest request) {
         return staffingRequirementService.calculateErlangX(deskId, request);
+    }
+
+    /**
+     * The saved inputs of the last Erlang calculation for one business date, so the page can
+     * reload what produced that date's requirements. A missing or malformed {@code businessDate}
+     * is a 400.
+     */
+    @GetMapping("/erlang-inputs")
+    public ErlangDemandInputResponse getErlangInputs(@PathVariable UUID deskId,
+                                                     @RequestParam(required = false) String businessDate) {
+        return staffingRequirementService.getErlangInputs(deskId, businessDate);
     }
 
     @PostMapping("/upload")

@@ -4,11 +4,13 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.*;
 import com.wfm.exception.EntityNotFoundException;
 import com.wfm.model.Desk;
+import com.wfm.model.ErlangDemandInput;
 import com.wfm.model.Specialization;
 import com.wfm.model.StaffingRequirement;
 import com.wfm.model.StaffingSource;
 import com.wfm.model.Timeslot;
 import com.wfm.repository.DeskRepository;
+import com.wfm.repository.ErlangDemandInputRepository;
 import com.wfm.repository.SpecializationRepository;
 import com.wfm.repository.StaffingRequirementRepository;
 import com.wfm.repository.TimeslotRepository;
@@ -33,19 +35,22 @@ public class StaffingRequirementService {
     private final ErlangCalculatorService erlangCalculatorService;
     private final DeskRepository deskRepository;
     private final EntityManager entityManager;
+    private final ErlangDemandInputRepository erlangDemandInputRepository;
 
     public StaffingRequirementService(StaffingRequirementRepository staffingRequirementRepository,
                                       TimeslotRepository timeslotRepository,
                                       SpecializationRepository specializationRepository,
                                       ErlangCalculatorService erlangCalculatorService,
                                       DeskRepository deskRepository,
-                                      EntityManager entityManager) {
+                                      EntityManager entityManager,
+                                      ErlangDemandInputRepository erlangDemandInputRepository) {
         this.staffingRequirementRepository = staffingRequirementRepository;
         this.timeslotRepository = timeslotRepository;
         this.specializationRepository = specializationRepository;
         this.erlangCalculatorService = erlangCalculatorService;
         this.deskRepository = deskRepository;
         this.entityManager = entityManager;
+        this.erlangDemandInputRepository = erlangDemandInputRepository;
     }
 
     /**
@@ -257,78 +262,37 @@ public class StaffingRequirementService {
     }
 
     /**
-     * Erlang C over the same grid as {@link #calculateErlangX}, and with the same consequence: the
-     * live requirements for {@code [from, to]} are REPLACED, including rows for timeslots this
-     * request never mentions.
+     * Erlang C for ONE business date. The live requirements of {@code request.businessDate()} are
+     * REPLACED -- including rows for that date's timeslots this request never mentions -- and so
+     * are those of each {@code copyTo} date, which receive the source date's per-slot result
+     * matched by start and end time. Every other business date keeps its live requirements.
      *
      * <p>Both modes delegate to {@link ErlangCalculatorService}, the same service behind the
      * read-only calculator page, so what this button writes is exactly what that page previews.
      * Erlang C is the conservative baseline and will usually ask for MORE agents than Erlang X on
      * the same inputs, because it assumes nobody ever hangs up.
+     *
+     * <p>Both calculators share {@link #replaceDayWithErlang}, so their delete/insert behaviour
+     * cannot drift.
      */
     @Transactional
     public StaffingRequirementResponse calculateErlangC(UUID deskId, ErlangCRequest request) {
-        long tenantId = TenantContext.getTenantId();
+        List<ErlangLine> lines = request.parameters() == null ? List.of()
+                : request.parameters().stream()
+                .map(i -> new ErlangLine(i.timeslotId(), i.specializationId(), i.callVolume(), i.aht(),
+                        i.serviceLevelTarget(), i.serviceLevelThreshold(), null, null))
+                .toList();
 
-        if (request.parameters() == null || request.parameters().isEmpty()) {
-            return new StaffingRequirementResponse(List.of());
-        }
-
-        LocalDate from = request.from();
-        LocalDate to = request.to();
-
-        Map<UUID, Timeslot> timeslotMap = new HashMap<>();
-        Map<UUID, Specialization> specMap = new HashMap<>();
-
-        for (ErlangCRequest.Item item : request.parameters()) {
-            requirePercentageTarget(item.serviceLevelTarget());
-            loadTimeslot(timeslotMap, item.timeslotId(), tenantId, deskId);
-            loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
-        }
-
-        // OVNT-02 (migrate-now): the inserts below are keyed by explicit timeslotId while this
-        // clear is by range, so the clear must use the SAME date system the rows are attributed
-        // under -- the business date, not the calendar date -- or the two disagree on a desk
-        // whose day start is not midnight (a post-midnight slot of business day D carries
-        // calendar date D+1, so a calendar-scoped clear of [D, D] would miss it and a
-        // calendar-scoped clear of [D, D] would also reach the prior business day's tail on
-        // calendar date D). The demand-save path above already uses the business-date twin for
-        // exactly this reason; this call now matches it.
-        staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, from, to);
-
-        // Same flush-before-insert reason as calculateErlangX: Hibernate's ActionQueue would
-        // otherwise run the inserts first and hit the unique constraint on the live index.
-        entityManager.flush();
-        entityManager.clear();
-
-        DayWindow window = dayWindowFor(deskId, tenantId);
-        List<StaffingRequirement> saved = new ArrayList<>();
-        for (ErlangCRequest.Item item : request.parameters()) {
-            Timeslot ts = timeslotMap.get(item.timeslotId());
-            int intervalMinutes = intervalMinutes(window, ts.getStartTime(), ts.getEndTime());
-
-            // Delegated to the same service the read-only calculator calls, so what this button
-            // writes is exactly what that page previews. The DTO speaks percentages to match this
-            // screen; the calculator takes fractions.
-            ErlangCalculationResponse result = erlangCalculatorService.calculateErlangC(
-                    new ErlangCCalculationRequest(
-                            item.callVolume(), intervalMinutes, item.aht(),
-                            item.serviceLevelTarget() / 100.0, item.serviceLevelThreshold(),
-                            request.adjustments()));
-
-            StaffingRequirement sr = new StaffingRequirement();
-            sr.setTenantId(tenantId);
-            sr.setDeskId(deskId);
-            sr.setTimeslot(ts);
-            sr.setSpecialization(specMap.get(item.specializationId()));
-            // scheduledAgents, not agentsRequired: the number to ROSTER, after any occupancy
-            // ceiling and shrinkage. With no adjustments the two are the same.
-            sr.setRequiredFTEs(result.scheduledAgents());
-            sr.setSource(StaffingSource.ERLANG_C);
-            saved.add(staffingRequirementRepository.save(sr));
-        }
-
-        return new StaffingRequirementResponse(saved.stream().map(this::toResponseItem).toList());
+        // Delegated to the same service the read-only calculator calls, so what this button
+        // writes is exactly what that page previews. The DTO speaks percentages to match this
+        // screen; the calculator takes fractions.
+        return replaceDayWithErlang(deskId, request.businessDate(), request.copyTo(), lines,
+                request.adjustments(), StaffingSource.ERLANG_C,
+                (line, intervalMinutes) -> erlangCalculatorService.calculateErlangC(
+                        new ErlangCCalculationRequest(
+                                line.callVolume(), intervalMinutes, line.aht(),
+                                line.serviceLevelTarget() / 100.0, line.serviceLevelThreshold(),
+                                request.adjustments())));
     }
 
     /**
@@ -372,69 +336,282 @@ public class StaffingRequirementService {
         into.put(specializationId, spec);
     }
 
+    /**
+     * Erlang X for ONE business date, with the same replace and copy semantics as
+     * {@link #calculateErlangC}: the request's business date and each {@code copyTo} date are
+     * replaced, and no other date is touched.
+     */
     @Transactional
     public StaffingRequirementResponse calculateErlangX(UUID deskId, ErlangXRequest request) {
+        List<ErlangLine> lines = request.parameters() == null ? List.of()
+                : request.parameters().stream()
+                .map(i -> new ErlangLine(i.timeslotId(), i.specializationId(), i.callVolume(), i.aht(),
+                        i.serviceLevelTarget(), i.serviceLevelThreshold(), i.patience(), i.retryRate()))
+                .toList();
+
+        return replaceDayWithErlang(deskId, request.businessDate(), request.copyTo(), lines,
+                request.adjustments(), StaffingSource.ERLANG_X,
+                (line, intervalMinutes) -> erlangCalculatorService.calculateErlangX(
+                        new ErlangXCalculationRequest(
+                                line.callVolume(), intervalMinutes, line.aht(), line.patience(),
+                                line.retryRate() / 100.0, line.serviceLevelTarget() / 100.0,
+                                line.serviceLevelThreshold(), false, request.adjustments())));
+    }
+
+    /** One calculated row, model-agnostic: patience and retryRate are null for Erlang C. */
+    private record ErlangLine(UUID timeslotId, UUID specializationId, int callVolume, double aht,
+                              double serviceLevelTarget, int serviceLevelThreshold,
+                              Double patience, Double retryRate) {
+    }
+
+    /** The model-specific half of a calculation: one line on an interval of the given length. */
+    @FunctionalInterface
+    private interface ErlangCalc {
+        ErlangCalculationResponse calculate(ErlangLine line, int intervalMinutes);
+    }
+
+    /** A timeslot's geometry within a day, the key copies are matched on. */
+    private record SlotKey(LocalTime start, LocalTime end) {
+    }
+
+    private static final int MAX_COPY_TARGETS = 366;
+
+    /**
+     * The single replace path behind both Erlang calculators.
+     *
+     * <p>These endpoints destroy live operator demand, so EVERY refusal happens before the first
+     * delete: null business date, duplicate rows, a fractional target, a timeslot that is not on
+     * {@code businessDate}, a midnight-crossing slot, and any copy target that has no live slot
+     * matching a source slot. Deletes are one business date per call (never a span), inside the
+     * caller's single transaction, so a failure mid-insert rolls back both halves.
+     */
+    private StaffingRequirementResponse replaceDayWithErlang(
+            UUID deskId, LocalDate businessDate, List<LocalDate> copyTo, List<ErlangLine> lines,
+            StaffingAdjustmentOptionsDto adjustments, StaffingSource model, ErlangCalc calc) {
         long tenantId = TenantContext.getTenantId();
 
-        if (request.parameters() == null || request.parameters().isEmpty()) {
+        if (lines == null || lines.isEmpty()) {
             return new StaffingRequirementResponse(List.of());
         }
-
-        LocalDate from = request.from();
-        LocalDate to = request.to();
-
-        // Load all referenced timeslots and specializations
-        Map<UUID, Timeslot> timeslotMap = new HashMap<>();
-        Map<UUID, Specialization> specMap = new HashMap<>();
-
-        for (ErlangXRequest.Item item : request.parameters()) {
-            requirePercentageTarget(item.serviceLevelTarget());
-            loadTimeslot(timeslotMap, item.timeslotId(), tenantId, deskId);
-            loadSpecialization(specMap, item.specializationId(), tenantId, deskId);
+        if (businessDate == null) {
+            throw new IllegalArgumentException("businessDate is required");
         }
 
-        // OVNT-02 (migrate-now): delete existing live requirements in the specified business-date
-        // range -- the inserts below are keyed by explicit timeslotId while this clear is by
-        // range, so the clear must use the SAME date system the rows are attributed under, or the
-        // two disagree on a desk whose day start is not midnight. See calculateErlangC's call site
-        // for the full reasoning; the two calculators must not drift apart on this.
-        staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, from, to);
+        Set<String> seen = new HashSet<>();
+        for (ErlangLine line : lines) {
+            String key = line.timeslotId() + ":" + line.specializationId();
+            if (!seen.add(key)) {
+                throw new IllegalArgumentException(
+                        "Duplicate timeslot+specialization combination: timeslotId=" + line.timeslotId()
+                                + ", specializationId=" + line.specializationId());
+            }
+        }
 
-        // Flush deletes to DB before inserting new rows — Hibernate's ActionQueue
-        // processes inserts before deletes in the same flush, which would hit the
-        // unique constraint on idx_staffing_requirement_live.
+        Map<UUID, Timeslot> timeslotMap = new HashMap<>();
+        Map<UUID, Specialization> specMap = new HashMap<>();
+        for (ErlangLine line : lines) {
+            requirePercentageTarget(line.serviceLevelTarget());
+            loadTimeslot(timeslotMap, line.timeslotId(), tenantId, deskId);
+            loadSpecialization(specMap, line.specializationId(), tenantId, deskId);
+            // This membership check is what makes the per-date delete below provably cover every
+            // insert: a row on another date would otherwise collide with a surviving live row.
+            LocalDate slotBusinessDate = timeslotMap.get(line.timeslotId()).getBusinessDate();
+            if (!businessDate.equals(slotBusinessDate)) {
+                throw new IllegalArgumentException(
+                        "Timeslot " + line.timeslotId() + " is on business date " + slotBusinessDate
+                                + ", not the requested business date " + businessDate);
+            }
+        }
+
+        // Computed once, before any delete: a midnight-crossing slot is refused here, with the
+        // desk's demand still intact. The interval comes from the timeslot itself, so the figure
+        // the operator typed against a row is converted on that row's own length. DayWindow,
+        // because a slot ending at 00:00 ends the day -- a raw Duration.between would make the
+        // last slot of a midnight desk negative.
+        DayWindow window = dayWindowFor(deskId, tenantId);
+        List<ErlangCalculationResponse> results = new ArrayList<>();
+        for (ErlangLine line : lines) {
+            Timeslot ts = timeslotMap.get(line.timeslotId());
+            int intervalMinutes = intervalMinutes(window, ts.getStartTime(), ts.getEndTime());
+            results.add(calc.calculate(line, intervalMinutes));
+        }
+
+        // OD-2: copy targets, matched by equal start AND end time (not list position), so a
+        // target whose geometry differs is refused rather than silently shifted.
+        Set<LocalDate> targetDates = new LinkedHashSet<>();
+        if (copyTo != null) {
+            for (LocalDate d : copyTo) {
+                if (d == null) {
+                    throw new IllegalArgumentException("copyTo must not contain null dates");
+                }
+                if (!d.equals(businessDate)) {
+                    targetDates.add(d);
+                }
+            }
+        }
+        if (targetDates.size() > MAX_COPY_TARGETS) {
+            throw new IllegalArgumentException(
+                    "copyTo may name at most " + MAX_COPY_TARGETS + " dates");
+        }
+        Map<LocalDate, Map<SlotKey, Timeslot>> targetSlots = new LinkedHashMap<>();
+        Map<LocalDate, List<UUID>> affectedSlotIds = new LinkedHashMap<>();
+        affectedSlotIds.put(businessDate, timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, businessDate).stream().map(Timeslot::getId).toList());
+        for (LocalDate target : targetDates) {
+            List<Timeslot> live = timeslotRepository
+                    .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+                            tenantId, deskId, target);
+            if (live.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "copyTo date " + target + " has no timeslots on this desk");
+            }
+            Map<SlotKey, Timeslot> byKey = new HashMap<>();
+            for (Timeslot t : live) {
+                byKey.putIfAbsent(new SlotKey(t.getStartTime(), t.getEndTime()), t);
+            }
+            Set<String> targetSeen = new HashSet<>();
+            for (ErlangLine line : lines) {
+                Timeslot source = timeslotMap.get(line.timeslotId());
+                Timeslot match = byKey.get(new SlotKey(source.getStartTime(), source.getEndTime()));
+                if (match == null) {
+                    throw new IllegalArgumentException(
+                            "copyTo date " + target + " has no timeslot "
+                                    + source.getStartTime() + "-" + source.getEndTime());
+                }
+                if (!targetSeen.add(match.getId() + ":" + line.specializationId())) {
+                    throw new IllegalArgumentException(
+                            "copyTo date " + target + " has ambiguous timeslots at "
+                                    + source.getStartTime() + "-" + source.getEndTime());
+                }
+            }
+            targetSlots.put(target, byKey);
+            affectedSlotIds.put(target, live.stream().map(Timeslot::getId).toList());
+        }
+
+        // One single-date delete per affected business date -- the only delete in this helper.
+        List<LocalDate> affected = new ArrayList<>();
+        affected.add(businessDate);
+        affected.addAll(targetSlots.keySet());
+        for (LocalDate d : affected) {
+            staffingRequirementRepository.deleteLiveByDeskAndBusinessDateRange(tenantId, deskId, d, d);
+            // OD-3: the date's saved inputs are replaced with its requirements.
+            List<UUID> slotIds = affectedSlotIds.get(d);
+            if (slotIds != null && !slotIds.isEmpty()) {
+                erlangDemandInputRepository.deleteByDeskAndTimeslotIds(tenantId, deskId, slotIds);
+            }
+        }
+
+        // Flush deletes to DB before inserting new rows -- Hibernate's ActionQueue processes
+        // inserts before deletes in the same flush, which would hit the unique constraint on
+        // idx_staffing_requirement_live.
         entityManager.flush();
         entityManager.clear();
 
-        // Calculate and persist
-        DayWindow window = dayWindowFor(deskId, tenantId);
         List<StaffingRequirement> saved = new ArrayList<>();
-        for (ErlangXRequest.Item item : request.parameters()) {
-            Timeslot ts = timeslotMap.get(item.timeslotId());
-
-            // The interval the volume belongs to comes from the timeslot itself rather than from
-            // the request, so the figure the operator typed against a row is converted on that
-            // row's own length. DayWindow because a slot ending at 00:00 ends the day -- a raw
-            // Duration.between would make the last slot of a midnight desk negative.
-            int intervalMinutes = intervalMinutes(window, ts.getStartTime(), ts.getEndTime());
-
-            ErlangCalculationResponse result = erlangCalculatorService.calculateErlangX(
-                    new ErlangXCalculationRequest(
-                            item.callVolume(), intervalMinutes, item.aht(), item.patience(),
-                            item.retryRate() / 100.0, item.serviceLevelTarget() / 100.0,
-                            item.serviceLevelThreshold(), false, request.adjustments()));
-
-            StaffingRequirement sr = new StaffingRequirement();
-            sr.setTenantId(tenantId);
-            sr.setDeskId(deskId);
-            sr.setTimeslot(ts);
-            sr.setSpecialization(specMap.get(item.specializationId()));
-            sr.setRequiredFTEs(result.scheduledAgents());
-            sr.setSource(StaffingSource.ERLANG_X);
-            saved.add(staffingRequirementRepository.save(sr));
+        for (int i = 0; i < lines.size(); i++) {
+            ErlangLine line = lines.get(i);
+            saved.add(insertRequirement(tenantId, deskId, timeslotMap.get(line.timeslotId()),
+                    specMap.get(line.specializationId()), results.get(i), model));
+            insertInput(tenantId, deskId, line.timeslotId(), line, adjustments, model);
+        }
+        for (Map<SlotKey, Timeslot> byKey : targetSlots.values()) {
+            for (int i = 0; i < lines.size(); i++) {
+                ErlangLine line = lines.get(i);
+                Timeslot source = timeslotMap.get(line.timeslotId());
+                Timeslot match = byKey.get(new SlotKey(source.getStartTime(), source.getEndTime()));
+                saved.add(insertRequirement(tenantId, deskId, match,
+                        specMap.get(line.specializationId()), results.get(i), model));
+                // OD-2: reopening a copied date shows what produced it.
+                insertInput(tenantId, deskId, match.getId(), line, adjustments, model);
+            }
         }
 
         return new StaffingRequirementResponse(saved.stream().map(this::toResponseItem).toList());
+    }
+
+    private void insertInput(long tenantId, UUID deskId, UUID timeslotId, ErlangLine line,
+                             StaffingAdjustmentOptionsDto adjustments, StaffingSource model) {
+        ErlangDemandInput in = new ErlangDemandInput();
+        in.setTenantId(tenantId);
+        in.setDeskId(deskId);
+        in.setTimeslotId(timeslotId);
+        in.setSpecializationId(line.specializationId());
+        in.setModel(model);
+        in.setCallVolume(line.callVolume());
+        in.setAht(line.aht());
+        in.setServiceLevelTarget(line.serviceLevelTarget());
+        in.setServiceLevelThreshold(line.serviceLevelThreshold());
+        in.setPatience(line.patience());
+        in.setRetryRate(line.retryRate());
+        if (adjustments != null) {
+            in.setShrinkage(adjustments.shrinkage());
+            in.setMaxOccupancy(adjustments.maxOccupancy());
+            in.setConcurrency(adjustments.concurrency());
+        }
+        erlangDemandInputRepository.save(in);
+    }
+
+    /**
+     * The saved inputs of the last Erlang calculation that wrote {@code businessDate}, scoped by
+     * tenant and desk. Empty items when the date has no timeslots or nothing was saved.
+     *
+     * <p>{@link #saveRequirements} (Direct), the FTE upload and timeslot deletes deliberately do
+     * not touch saved inputs: timeslot deletion is handled by the database cascade, and a Direct
+     * overwrite leaves the date's last Erlang worksheet available to reload.
+     */
+    @Transactional(readOnly = true)
+    public ErlangDemandInputResponse getErlangInputs(UUID deskId, String businessDate) {
+        long tenantId = TenantContext.getTenantId();
+        if (businessDate == null) {
+            throw new IllegalArgumentException("businessDate is required");
+        }
+        LocalDate date = parseBusinessDate("businessDate", businessDate);
+
+        List<Timeslot> slots = timeslotRepository
+                .findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+                        tenantId, deskId, date);
+        if (slots.isEmpty()) {
+            return new ErlangDemandInputResponse(date, List.of());
+        }
+
+        Map<UUID, Integer> slotOrder = new HashMap<>();
+        Map<UUID, Timeslot> slotById = new HashMap<>();
+        for (int i = 0; i < slots.size(); i++) {
+            slotOrder.put(slots.get(i).getId(), i);
+            slotById.put(slots.get(i).getId(), slots.get(i));
+        }
+
+        List<ErlangDemandInputResponse.Item> items = erlangDemandInputRepository
+                .findByTenantIdAndDeskIdAndTimeslotIdIn(tenantId, deskId, slotOrder.keySet()).stream()
+                .sorted(Comparator
+                        .comparing((ErlangDemandInput e) -> slotOrder.get(e.getTimeslotId()))
+                        .thenComparing(e -> e.getSpecializationId().toString()))
+                .map(e -> new ErlangDemandInputResponse.Item(
+                        e.getTimeslotId(), e.getSpecializationId(),
+                        slotById.get(e.getTimeslotId()).getStartTime(),
+                        slotById.get(e.getTimeslotId()).getEndTime(),
+                        e.getModel().name(), e.getCallVolume(), e.getAht(),
+                        e.getServiceLevelTarget(), e.getServiceLevelThreshold(),
+                        e.getPatience(), e.getRetryRate(), e.getShrinkage(),
+                        e.getMaxOccupancy(), e.getConcurrency()))
+                .toList();
+        return new ErlangDemandInputResponse(date, items);
+    }
+
+    private StaffingRequirement insertRequirement(long tenantId, UUID deskId, Timeslot ts,
+                                                  Specialization spec, ErlangCalculationResponse result,
+                                                  StaffingSource model) {
+        StaffingRequirement sr = new StaffingRequirement();
+        sr.setTenantId(tenantId);
+        sr.setDeskId(deskId);
+        sr.setTimeslot(ts);
+        sr.setSpecialization(spec);
+        // scheduledAgents, not agentsRequired: the number to ROSTER, after any occupancy ceiling
+        // and shrinkage. With no adjustments the two are the same.
+        sr.setRequiredFTEs(result.scheduledAgents());
+        sr.setSource(model);
+        return staffingRequirementRepository.save(sr);
     }
 
     private StaffingRequirementResponse.Item toResponseItem(StaffingRequirement sr) {

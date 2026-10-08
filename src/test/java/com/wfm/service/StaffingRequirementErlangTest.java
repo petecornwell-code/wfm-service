@@ -61,10 +61,12 @@ class StaffingRequirementErlangTest {
             mock(SpecializationRepository.class);
     private final DeskRepository deskRepository = mock(DeskRepository.class);
     private final EntityManager entityManager = mock(EntityManager.class);
+    private final com.wfm.repository.ErlangDemandInputRepository erlangDemandInputRepository =
+            mock(com.wfm.repository.ErlangDemandInputRepository.class);
 
     private final StaffingRequirementService service = new StaffingRequirementService(
             staffingRequirementRepository, timeslotRepository, specializationRepository,
-            new ErlangCalculatorService(), deskRepository, entityManager);
+            new ErlangCalculatorService(), deskRepository, entityManager, erlangDemandInputRepository);
 
     private UUID timeslotId;
     private UUID specId;
@@ -73,6 +75,8 @@ class StaffingRequirementErlangTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         when(staffingRequirementRepository.save(any(StaffingRequirement.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(erlangDemandInputRepository.save(any(com.wfm.model.ErlangDemandInput.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         // BDAY-04: every Erlang calculation now binds a DayWindow from the desk -- a desk at its
         // default (MIDNIGHT) anchor, matching every fixture's implicit assumption before this plan.
@@ -97,6 +101,7 @@ class StaffingRequirementErlangTest {
         ts.setDeskId(DESK);
         ts.setScheduleId(null);
         ts.setDate(DATE);
+        ts.setBusinessDate(DATE);
         ts.setStartTime(start);
         ts.setEndTime(end);
 
@@ -113,15 +118,15 @@ class StaffingRequirementErlangTest {
 
     /** 100 contacts, 180 s AHT, 80% within 20 s. */
     private ErlangCRequest erlangC(StaffingAdjustmentOptionsDto adjustments) {
-        return new ErlangCRequest(DATE, DATE,
-                List.of(new ErlangCRequest.Item(timeslotId, specId, 100, 180, 80, 20)), adjustments);
+        return new ErlangCRequest(DATE,
+                List.of(new ErlangCRequest.Item(timeslotId, specId, 100, 180, 80, 20)), adjustments, null);
     }
 
     /** The same, plus 90 s patience and a 25% retry rate. */
     private ErlangXRequest erlangX(StaffingAdjustmentOptionsDto adjustments) {
-        return new ErlangXRequest(DATE, DATE,
+        return new ErlangXRequest(DATE,
                 List.of(new ErlangXRequest.Item(timeslotId, specId, 100, 180, 90, 25, 80, 20)),
-                adjustments);
+                adjustments, null);
     }
 
     /** The most recent row written, so a test may calculate more than once without bookkeeping. */
@@ -238,34 +243,34 @@ class StaffingRequirementErlangTest {
     @DisplayName("a fraction sent where a percentage belongs is refused before anything is deleted")
     void fractionTargetIsRejectedBeforeTheDelete() {
         givenTimeslot(LocalTime.of(8, 0), LocalTime.of(8, 30));
-        assertThatThrownBy(() -> service.calculateErlangC(DESK, new ErlangCRequest(DATE, DATE,
-                List.of(new ErlangCRequest.Item(timeslotId, specId, 100, 180, 0.8, 20)), null)))
+        assertThatThrownBy(() -> service.calculateErlangC(DESK, new ErlangCRequest(DATE,
+                List.of(new ErlangCRequest.Item(timeslotId, specId, 100, 180, 0.8, 20)), null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("percentage");
 
         givenTimeslot(LocalTime.of(8, 0), LocalTime.of(8, 30));
-        assertThatThrownBy(() -> service.calculateErlangX(DESK, new ErlangXRequest(DATE, DATE,
-                List.of(new ErlangXRequest.Item(timeslotId, specId, 100, 180, 90, 25, 0.8, 20)), null)))
+        assertThatThrownBy(() -> service.calculateErlangX(DESK, new ErlangXRequest(DATE,
+                List.of(new ErlangXRequest.Item(timeslotId, specId, 100, 180, 90, 25, 0.8, 20)), null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("percentage");
 
         // The guard runs before the replace, so a rejected request leaves the desk's existing
         // requirements alone. This is the assertion that makes the endpoint safe to call wrongly.
         verify(staffingRequirementRepository, never())
-                .deleteLiveByDeskAndDateRange(anyLong(), any(), any(), any());
+                .deleteLiveByDeskAndBusinessDateRange(anyLong(), any(), any(), any());
         verify(staffingRequirementRepository, never()).save(any(StaffingRequirement.class));
     }
 
     @Test
     @DisplayName("an empty parameter list writes nothing and deletes nothing")
     void emptyRequestIsANoOp() {
-        assertThat(service.calculateErlangC(DESK, new ErlangCRequest(DATE, DATE, List.of(), null))
+        assertThat(service.calculateErlangC(DESK, new ErlangCRequest(DATE, List.of(), null, null))
                 .requirements()).isEmpty();
-        assertThat(service.calculateErlangX(DESK, new ErlangXRequest(DATE, DATE, List.of(), null))
+        assertThat(service.calculateErlangX(DESK, new ErlangXRequest(DATE, List.of(), null, null))
                 .requirements()).isEmpty();
 
         verify(staffingRequirementRepository, never())
-                .deleteLiveByDeskAndDateRange(anyLong(), any(), any(), any());
+                .deleteLiveByDeskAndBusinessDateRange(anyLong(), any(), any(), any());
         verify(staffingRequirementRepository, never()).save(any(StaffingRequirement.class));
     }
 }

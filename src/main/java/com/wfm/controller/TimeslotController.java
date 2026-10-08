@@ -72,6 +72,7 @@ public class TimeslotController {
     }
 
     private TimeslotResponse toResponse(Timeslot ts) {
-        return new TimeslotResponse(ts.getId(), ts.getDate(), ts.getStartTime(), ts.getEndTime());
+        return new TimeslotResponse(ts.getId(), ts.getDate(), ts.getBusinessDate(),
+                ts.getStartTime(), ts.getEndTime());
     }
 }

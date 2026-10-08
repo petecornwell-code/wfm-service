@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { timeslots as timeslotApi, specializations as specApi, staffingRequirements as srApi, getErrorMessage } from '../api/client'
-import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, ErlangCParam, FteUploadResult } from '../api/client'
+import type { Timeslot, Specialization, StaffingRequirementItem, ErlangXParam, ErlangCParam, ErlangXRequest, ErlangCPersistRequest, FteUploadResult } from '../api/client'
 import { saveTimeslotParams, loadScheduleSetup, saveScheduleSetup } from '../timeslotParams'
 import type { ScheduleSetupParams } from '../timeslotParams'
 import { showToast } from '../components/Toast'
@@ -10,6 +10,18 @@ type DemandMap = Record<string, number>
 
 function demandKey(timeslotId: string, specId: string) {
   return `${timeslotId}:${specId}`
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+// UTC, so the browser's timezone can never shift a calendar date to the neighbouring weekday.
+function weekdayIndex(isoDate: string) {
+  return new Date(isoDate + 'T00:00:00Z').getUTCDay()
+}
+
+function weekdayLabel(isoDate: string) {
+  return isoDate ? WEEKDAY_LABELS[weekdayIndex(isoDate)] : ''
 }
 
 export default function StaffingRequirements() {
@@ -77,6 +89,82 @@ export default function StaffingRequirements() {
 
   // Erlang X default params per timeslot+spec
   const [erlangParams, setErlangParams] = useState<Record<string, Partial<ErlangXParam>>>({})
+
+  // Erlang mode works on ONE business date at a time. Business date, not calendar date: on a desk
+  // whose day starts at 21:00 a business day's slots span two calendar dates.
+  const slotsByBusinessDate = useMemo(
+    () => slots.reduce<Record<string, Timeslot[]>>((acc, s) => {
+      (acc[s.businessDate] ??= []).push(s)
+      return acc
+    }, {}),
+    [slots],
+  )
+  const businessDates = useMemo(() => Object.keys(slotsByBusinessDate).sort(), [slotsByBusinessDate])
+  const [selectedDate, setSelectedDate] = useState('')
+  const selectedSlots = slotsByBusinessDate[selectedDate] ?? []
+  // The model of the inputs last loaded or calculated for selectedDate (null when none are saved).
+  const [savedModel, setSavedModel] = useState<'ERLANG_C' | 'ERLANG_X' | null>(null)
+  const savedModelMismatch = savedModel !== null && isErlang
+    && savedModel !== (mode === 'erlangC' ? 'ERLANG_C' : 'ERLANG_X')
+  // The last calculation, kept so the copy panel can re-post exactly what produced the result.
+  const [lastCalc, setLastCalc] = useState<{
+    model: 'erlangC' | 'erlangX'
+    businessDate: string
+    request: ErlangXRequest | ErlangCPersistRequest
+  } | null>(null)
+  const [copySel, setCopySel] = useState<string[]>([])
+
+  useEffect(() => {
+    if (businessDates.length === 0) return
+    if (!selectedDate || !businessDates.includes(selectedDate)) setSelectedDate(businessDates[0])
+  }, [businessDates, selectedDate])
+
+  // Regenerated slots are new timeslot ids: a stored calculation no longer refers to anything.
+  useEffect(() => {
+    setLastCalc(null)
+    setCopySel([])
+  }, [slots])
+
+  // OD-3: reopening a date reloads the volumes and settings that produced its requirements.
+  useEffect(() => {
+    if (!deskId || !isErlang || !selectedDate) return
+    let cancelled = false
+    srApi.erlangInputs(deskId, selectedDate).then(resp => {
+      if (cancelled) return
+      const daySlotIds = new Set((slotsByBusinessDate[selectedDate] ?? []).map(s => s.id))
+      setErlangParams(prev => {
+        const next: Record<string, Partial<ErlangXParam>> = {}
+        for (const [k, v] of Object.entries(prev)) {
+          if (!daySlotIds.has(k.split(':')[0])) next[k] = v
+        }
+        for (const it of resp.items) {
+          next[demandKey(it.timeslotId, it.specializationId)] = {
+            timeslotId: it.timeslotId, specializationId: it.specializationId, callVolume: it.callVolume,
+          }
+        }
+        return next
+      })
+      if (resp.items.length > 0) {
+        const first = resp.items[0]
+        // Saved shrinkage/occupancy are fractions; the fields on this page are percentages.
+        const pct = (f: number | null) => (f === null ? 0 : Math.round(f * 10000) / 100)
+        setErlangSettings(prev => ({
+          aht: first.aht,
+          serviceLevelTarget: first.serviceLevelTarget,
+          serviceLevelThreshold: first.serviceLevelThreshold,
+          patience: first.patience ?? prev.patience,
+          retryRate: first.retryRate ?? prev.retryRate,
+          shrinkage: pct(first.shrinkage),
+          maxOccupancy: pct(first.maxOccupancy),
+          concurrency: first.concurrency ?? 1,
+        }))
+        setSavedModel(first.model)
+      } else {
+        setSavedModel(null)
+      }
+    }).catch(() => { /* a failed reload leaves the grid as the operator has it */ })
+    return () => { cancelled = true }
+  }, [deskId, isErlang, selectedDate, slotsByBusinessDate])
 
   useEffect(() => {
     if (!deskId) return
@@ -213,10 +301,10 @@ export default function StaffingRequirements() {
     }
   }
 
-  /** Every timeslot+specialization the operator entered a volume against. */
+  /** Every timeslot+specialization the operator entered a volume against, on the selected business date only. */
   const enteredVolumes = () => {
     const entries: Array<{ slotId: string; specId: string; callVolume: number }> = []
-    for (const slot of slots) {
+    for (const slot of slotsByBusinessDate[selectedDate] ?? []) {
       for (const spec of specs) {
         const p = erlangParams[demandKey(slot.id, spec.id)]
         if (p?.callVolume && p.callVolume > 0) {
@@ -227,63 +315,127 @@ export default function StaffingRequirements() {
     return entries
   }
 
+  /**
+   * Folds a calculation's returned rows into the demand map WITHOUT replacing the whole map: only
+   * the business dates the server actually replaced are dropped first, so every other date keeps
+   * the values it had.
+   */
+  const mergeCalculated = (affectedDates: string[], items: Array<{ timeslotId: string; specializationId: string; requiredFTEs: number }>) => {
+    const affectedSlotIds = new Set(
+      affectedDates.flatMap(d => (slotsByBusinessDate[d] ?? []).map(s => s.id)),
+    )
+    setDemand(prev => {
+      const next: DemandMap = {}
+      for (const [k, v] of Object.entries(prev)) {
+        if (!affectedSlotIds.has(k.split(':')[0])) next[k] = v
+      }
+      for (const item of items) {
+        next[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
+      }
+      return next
+    })
+  }
+
   const handleErlangCalculate = async (model: 'erlangC' | 'erlangX') => {
-    if (!deskId) return
+    if (!deskId || !selectedDate) return
     const entries = enteredVolumes()
     if (entries.length === 0) {
-      showToast('error', 'Enter call volume for at least one timeslot')
+      showToast('error', `Enter call volume for at least one timeslot on ${selectedDate}`)
       return
     }
     setSaving(true)
     setError('')
     try {
-      // Both endpoints REPLACE the live requirements for the whole period, so both take the same
-      // grid. The interval each volume is converted on comes from its own timeslot, server-side.
+      // Both endpoints replace the live requirements of the selected business date ONLY, so both
+      // take the same grid. The interval each volume is converted on comes from its own timeslot,
+      // server-side.
       const adjustments = {
         shrinkage: erlangSettings.shrinkage > 0 ? erlangSettings.shrinkage / 100 : null,
         maxOccupancy: erlangSettings.maxOccupancy > 0 ? erlangSettings.maxOccupancy / 100 : null,
         concurrency: erlangSettings.concurrency > 1 ? erlangSettings.concurrency : null,
       }
-      const result = model === 'erlangX'
-        ? await srApi.calculateErlangX(deskId, {
-            from: periodStart,
-            to: periodEnd,
-            adjustments,
-            parameters: entries.map<ErlangXParam>(e => ({
-              timeslotId: e.slotId,
-              specializationId: e.specId,
-              callVolume: e.callVolume,
-              aht: erlangSettings.aht,
-              patience: erlangSettings.patience,
-              retryRate: erlangSettings.retryRate,
-              serviceLevelTarget: erlangSettings.serviceLevelTarget,
-              serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
-            })),
-          })
-        : await srApi.calculateErlangC(deskId, {
-            from: periodStart,
-            to: periodEnd,
-            adjustments,
-            parameters: entries.map<ErlangCParam>(e => ({
-              timeslotId: e.slotId,
-              specializationId: e.specId,
-              callVolume: e.callVolume,
-              aht: erlangSettings.aht,
-              serviceLevelTarget: erlangSettings.serviceLevelTarget,
-              serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
-            })),
-          })
-      const loaded: DemandMap = {}
-      for (const item of result.requirements) {
-        loaded[demandKey(item.timeslotId, item.specializationId)] = item.requiredFTEs
+      let request: ErlangXRequest | ErlangCPersistRequest
+      let result
+      if (model === 'erlangX') {
+        const xRequest: ErlangXRequest = {
+          businessDate: selectedDate,
+          adjustments,
+          parameters: entries.map<ErlangXParam>(e => ({
+            timeslotId: e.slotId,
+            specializationId: e.specId,
+            callVolume: e.callVolume,
+            aht: erlangSettings.aht,
+            patience: erlangSettings.patience,
+            retryRate: erlangSettings.retryRate,
+            serviceLevelTarget: erlangSettings.serviceLevelTarget,
+            serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
+          })),
+        }
+        request = xRequest
+        result = await srApi.calculateErlangX(deskId, xRequest)
+      } else {
+        const cRequest: ErlangCPersistRequest = {
+          businessDate: selectedDate,
+          adjustments,
+          parameters: entries.map<ErlangCParam>(e => ({
+            timeslotId: e.slotId,
+            specializationId: e.specId,
+            callVolume: e.callVolume,
+            aht: erlangSettings.aht,
+            serviceLevelTarget: erlangSettings.serviceLevelTarget,
+            serviceLevelThreshold: erlangSettings.serviceLevelThreshold,
+          })),
+        }
+        request = cRequest
+        result = await srApi.calculateErlangC(deskId, cRequest)
       }
-      setDemand(loaded)
-      showToast('success', model === 'erlangX' ? 'Erlang X calculation complete' : 'Erlang C calculation complete')
+      mergeCalculated([selectedDate], result.requirements)
+      setLastCalc({ model, businessDate: selectedDate, request })
+      setCopySel([])
+      setSavedModel(model === 'erlangX' ? 'ERLANG_X' : 'ERLANG_C')
+      showToast('success', `${model === 'erlangX' ? 'Erlang X' : 'Erlang C'} calculation complete for ${selectedDate}`)
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
       setSaving(false)
     }
+  }
+
+  /**
+   * Re-posts the stored request, unchanged, with copyTo set. Re-posting what was calculated means
+   * the copy carries exactly the displayed result even if the grid was edited afterwards.
+   */
+  const handleErlangCopy = async () => {
+    if (!deskId || !lastCalc || copySel.length === 0) return
+    setSaving(true)
+    setError('')
+    try {
+      const copyTo = [...copySel].sort()
+      const result = lastCalc.model === 'erlangX'
+        ? await srApi.calculateErlangX(deskId, { ...(lastCalc.request as ErlangXRequest), copyTo })
+        : await srApi.calculateErlangC(deskId, { ...(lastCalc.request as ErlangCPersistRequest), copyTo })
+      mergeCalculated([lastCalc.businessDate, ...copyTo], result.requirements)
+      showToast('success', `Copied the ${lastCalc.businessDate} result to ${copyTo.length} date${copyTo.length === 1 ? '' : 's'}`)
+      setCopySel([])
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const otherDates = businessDates.filter(d => d !== selectedDate)
+  const toggleCopyDate = (d: string) =>
+    setCopySel(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]))
+  const toggleCopyWeekday = (wd: number) => {
+    const onWeekday = otherDates.filter(d => weekdayIndex(d) === wd)
+    if (onWeekday.length === 0) return
+    setCopySel(prev => {
+      const allSelected = onWeekday.every(d => prev.includes(d))
+      return allSelected
+        ? prev.filter(d => !onWeekday.includes(d))
+        : [...prev, ...onWeekday.filter(d => !prev.includes(d))]
+    })
   }
 
   const handleFteUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -454,16 +606,34 @@ export default function StaffingRequirements() {
 
         {slots.length > 0 && isErlang && (
           <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 500 }}>
+                Business date
+                <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+                  style={{ padding: '0.25rem 0.4rem', border: '1px solid #d1d5db', borderRadius: '4px' }}>
+                  {businessDates.map(d => (
+                    <option key={d} value={d}>{d} ({weekdayLabel(d)})</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.5rem' }}>
-              Enter call volume for each timeslot+specialization — contacts IN the slot, not a
-              per-hour rate. The parameters below apply to every row.{' '}
+              Enter call volume for each timeslot+specialization of the selected business date — contacts
+              IN the slot, not a per-hour rate. The parameters below apply to every row of this date.
+              Volumes and settings are saved when you Calculate and reload when you reopen the date.{' '}
               {mode === 'erlangC'
                 ? 'Erlang C is the conservative baseline: every caller waits, nobody abandons, so it asks for more agents than Erlang X on the same numbers.'
                 : 'Erlang X adds impatience and retrials, so it asks for fewer agents than Erlang C.'}
             </p>
+            {savedModel && (
+              <p style={{ fontSize: '0.78rem', color: '#374151', marginBottom: '0.5rem' }}>
+                Inputs loaded from the last {savedModel === 'ERLANG_X' ? 'Erlang X' : 'Erlang C'} calculation for {selectedDate}.
+                {savedModelMismatch && ` You are in ${modelLabel} mode: those volumes and settings are shown here, but Calculate will replace them with a ${modelLabel} result.`}
+              </p>
+            )}
             <p style={{ fontSize: '0.8rem', color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '4px', padding: '0.4rem 0.6rem', marginBottom: '0.75rem' }}>
-              Calculating REPLACES every staffing requirement from {periodStart || 'the period start'} to {periodEnd || 'the period end'},
-              including rows for timeslots not listed below. To try numbers without changing anything, use the{' '}
+              Calculating replaces every staffing requirement on business date {selectedDate || 'the selected date'},
+              including slots left at 0. No other date changes. To try numbers without changing anything, use the{' '}
               <Link to={`/desks/${deskId}/erlang-calculator`}>Erlang Calculator</Link>.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: '#f9fafb', borderRadius: '6px' }}>
@@ -485,79 +655,110 @@ export default function StaffingRequirements() {
               {settingField('Max occupancy (%)', 'maxOccupancy', '0 = no ceiling')}
               {settingField('Concurrency', 'concurrency', '1 for voice')}
             </div>
-            {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
-              <div key={date}>
-                <h4>{date} (parameters apply to all days)</h4>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', padding: '4px 8px' }}>Timeslot</th>
-                      {specs.map(s => (
-                        <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>{s.name} — Call Vol</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {daySlots.map(slot => (
-                      <tr key={slot.id}>
-                        <td style={{ padding: '4px 8px' }}>{slot.startTime}–{slot.endTime}</td>
-                        {specs.map(s => {
-                          const key = demandKey(slot.id, s.id)
-                          return (
-                            <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>
-                              <input type="number" min={0}
-                                value={erlangParams[key]?.callVolume ?? 0}
-                                onChange={e => setErlangParams(prev => ({ ...prev, [key]: { ...prev[key], timeslotId: slot.id, specializationId: s.id, callVolume: Number(e.target.value) } }))}
-                                style={{ width: '70px', textAlign: 'center' }} />
-                            </td>
-                          )
-                        })}
-                      </tr>
+            <div>
+              <h4>{selectedDate} ({weekdayLabel(selectedDate)}) — call volume per timeslot</h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '4px 8px' }}>Timeslot</th>
+                    {specs.map(s => (
+                      <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>{s.name} — Call Vol</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSlots.map(slot => (
+                    <tr key={slot.id}>
+                      <td style={{ padding: '4px 8px' }}>{slot.startTime}–{slot.endTime}</td>
+                      {specs.map(s => {
+                        const key = demandKey(slot.id, s.id)
+                        return (
+                          <td key={s.id} style={{ textAlign: 'center', padding: '4px 8px' }}>
+                            <input type="number" min={0}
+                              value={erlangParams[key]?.callVolume ?? 0}
+                              onChange={e => setErlangParams(prev => ({ ...prev, [key]: { ...prev[key], timeslotId: slot.id, specializationId: s.id, callVolume: Number(e.target.value) } }))}
+                              style={{ width: '70px', textAlign: 'center' }} />
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {/* Show calculated results */}
             {Object.keys(demand).length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                {Object.entries(slotsByDate).slice(0, 1).map(([date, daySlots]) => (
-                  <div key={date}>
-                    <h4 style={{ marginBottom: '0.15rem' }}>Required FTEs per timeslot — {date} ({modelLabel})</h4>
-                    <p style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 0, marginBottom: '0.4rem' }}>
-                      One row per {increment}-minute timeslot. The same parameters were applied to every
-                      day from {periodStart} to {periodEnd}; switch to <strong>Direct</strong> to see and edit
-                      the other days.
-                    </p>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
-                          {specs.map(s => <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name}</th>)}
-                          {specs.length > 1 && <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Total</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {daySlots.map(slot => {
-                          const perSpec = specs.map(s => demand[demandKey(slot.id, s.id)] ?? 0)
-                          return (
-                            <tr key={slot.id}>
-                              <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
-                              {perSpec.map((v, i) => (
-                                <td key={specs[i].id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontVariantNumeric: 'tabular-nums' }}>{v}</td>
-                              ))}
-                              {specs.length > 1 && (
-                                <td style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                                  {perSpec.reduce((a, b) => a + b, 0)}
-                                </td>
-                              )}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+                <div>
+                  <h4 style={{ marginBottom: '0.15rem' }}>Required FTEs per timeslot — {selectedDate} ({modelLabel})</h4>
+                  <p style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 0, marginBottom: '0.4rem' }}>
+                    One row per {increment}-minute timeslot. This result is for {selectedDate} only; other
+                    dates keep their own requirements. Copy it to other dates below, or switch to{' '}
+                    <strong>Direct</strong> to see and edit every day.
+                  </p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Timeslot</th>
+                        {specs.map(s => <th key={s.id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>{s.name}</th>)}
+                        {specs.length > 1 && <th style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '2px solid #e5e7eb' }}>Total</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSlots.map(slot => {
+                        const perSpec = specs.map(s => demand[demandKey(slot.id, s.id)] ?? 0)
+                        return (
+                          <tr key={slot.id}>
+                            <td style={{ padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>{slot.startTime}–{slot.endTime}</td>
+                            {perSpec.map((v, i) => (
+                              <td key={specs[i].id} style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontVariantNumeric: 'tabular-nums' }}>{v}</td>
+                            ))}
+                            {specs.length > 1 && (
+                              <td style={{ textAlign: 'center', padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                {perSpec.reduce((a, b) => a + b, 0)}
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {lastCalc && lastCalc.businessDate === selectedDate && lastCalc.model === mode && otherDates.length > 0 && (
+              <div style={{ marginTop: '1rem', padding: '0.6rem 0.75rem', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
+                <strong style={{ fontSize: '0.85rem' }}>Copy this result to other dates</strong>
+                <p style={{ fontSize: '0.78rem', color: '#6b7280', margin: '0.2rem 0 0.5rem' }}>
+                  Replaces the staffing requirements on the selected dates only, using this {selectedDate} result
+                  matched slot by slot on start and end time. Dates you do not select are not changed.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
+                  {WEEKDAY_ORDER.map(wd => {
+                    const onWeekday = otherDates.filter(d => weekdayIndex(d) === wd)
+                    const active = onWeekday.length > 0 && onWeekday.every(d => copySel.includes(d))
+                    return (
+                      <button key={wd} onClick={() => toggleCopyWeekday(wd)} disabled={onWeekday.length === 0}
+                        style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: active ? '#3b82f6' : '#e5e7eb', color: active ? '#fff' : '#374151', borderRadius: '4px', opacity: onWeekday.length === 0 ? 0.4 : 1 }}>
+                        {WEEKDAY_LABELS[wd]}
+                      </button>
+                    )
+                  })}
+                  <button onClick={() => setCopySel([...otherDates])} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}>All other dates</button>
+                  <button onClick={() => setCopySel([])} style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}>Clear</button>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem 1rem', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+                  {otherDates.map(d => (
+                    <label key={d} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <input type="checkbox" checked={copySel.includes(d)} onChange={() => toggleCopyDate(d)} />
+                      {d} ({weekdayLabel(d)})
+                    </label>
+                  ))}
+                </div>
+                <button onClick={handleErlangCopy} disabled={saving || copySel.length === 0}
+                  style={{ padding: '0.3rem 1rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: saving || copySel.length === 0 ? 'not-allowed' : 'pointer', opacity: saving || copySel.length === 0 ? 0.6 : 1 }}>
+                  Copy result to {copySel.length} date{copySel.length === 1 ? '' : 's'}
+                </button>
               </div>
             )}
           </div>
