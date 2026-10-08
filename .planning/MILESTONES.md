@@ -1,5 +1,58 @@
 # Milestones
 
+## v1.5 Overnight Shifts & Business Dates (Shipped: 2026-10-08)
+
+**Delivered:** A shift can span midnight and belongs to the business day it starts on — for any
+desk, any day start, any future data set. A per-desk minimum rest period is enforced as a hard
+constraint, with a pre-solve refusal and a per-agent, per-date waiver.
+
+**Phases completed:** 7 phases (18–24), 56 plans, 129 tasks, plus 1 quick task (261008-eby)
+**Requirements:** 29/29 satisfied (8 BDAY, 7 OVNT, 7 SOLV, 7 REST)
+**Milestone audit:** `tech_debt`. This was the fourth audit pass: 7/7 seams wired, 5/5 E2E flows complete,
+no gaps. Three earlier passes each found a real seam defect, closed in turn by Phase 23 (G-1),
+Phase 24 (N-1/N-2) and quick task 261008-eby (CR-01). See `milestones/v1.5-MILESTONE-AUDIT.md`.
+**Closeout type:** `override_closeout`
+**Known verification overrides:** 3 newly acknowledged, 13 carried forward from a prior close (see
+STATE.md Deferred Items).
+- The 3 are: Phase 21's UAT (passed, but not labelled `complete`); archived v1.2 Phase 12's
+  verification (status relabelled `withdrawn` → `gaps_found` so the scanner can read it, with the
+  withdrawal kept in `disposition`); and the `MultiDayConstraintDiagnosticTest` wall-clock flake.
+- Separately, Phases 18–23 closed with **stale verification digests**: covered source changed after
+  each was verified. Their report bodies all passed, and the integration checks plus targeted tests
+  stood in for re-verification. That re-verification is still owed.
+
+**Nyquist coverage:** 0 compliant, 1 partial (18), 6 not-validated (19–24).
+**Codebase:** +27,013 / −916 across 183 source files over 396 commits (2026-09-30 → 2026-10-08);
+backend suite ~1,510 tests; schema head V52 → V55.
+
+**Key accomplishments:**
+
+- **Business date as a first-class key (Phase 18).** `desk.day_start` and `timeslot.business_date`
+  were added in V53. Exactly one writer derives the business date and one propagates it, pinned by a
+  two-directional guard. A constructed midnight-boundary regression suite replaced v1.4's cancelled
+  golden-file design.
+- **`DayWindow` re-anchored (Phase 19).** All 83 midnight-implicit call sites moved to
+  `DayWindow.anchoredAt(dayStart)`. The nine old statics were demoted to private, so a missed site
+  was a compile error rather than a judgement call. A frozen oracle proved the change byte-identical
+  at 00:00.
+- **The solver resolves one business date everywhere (Phase 20).** Every constraint join, the
+  seat-supply check, SLOT-mode accounting and demand/coverage reporting now key on business date.
+  This is enforced by `BusinessDateJoinGuardTest` and a 26-constraint match-count table. A 48-agent,
+  Phil-US-shaped drift guard proved nothing else moved. The 00:00-only day-start gate was lifted
+  last.
+- **Overnight shift templates (Phase 21).** Templates whose end is earlier than their start save with
+  correct net hours and consume the starting weekday's contracted hours. They are refused if they
+  reach past the desk's operating window. They render as one continuous block in the grid and the
+  Excel export, labelled with both calendar dates.
+- **Minimum rest (Phases 22–23).** A per-desk hard constraint covers both SHIFT and SLOT modes, with
+  a one-business-date lookback into ACCEPTED history and a pre-solve refusal that names the agent.
+  Per-agent, per-date waivers are disclosed in the solved output. `RestSpan.gapMinutes` measures the
+  true gap behind an overnight predecessor.
+- **Audit-driven seam closure (Phase 24 + quick task).**
+  - Shift-library validation, envelope repair, start-mix and the Agent Allocation Required /
+    Over-under rows now key on business date.
+  - The pre-solve rest fallback is scoped to the horizon's first date.
+
 ## v1.4 Overnight Shifts & Business Dates (Cancelled: 2026-09-30)
 
 **Status:** cancelled before shipping, by operator decision. Never pushed, never deployed; the
@@ -43,7 +96,6 @@ its own.
 (`a403bf0`), including all planning artifacts, the four captured fixtures and every guard test.
 Nothing is unrecoverable should the milestone be revived; a revival should re-shape BDAY-06 around
 small constructed midnight-spanning scenarios rather than captured production shapes.
-
 
 ## v1.3 Shift-Based Scheduling & Consistency (Shipped: 2026-09-21)
 

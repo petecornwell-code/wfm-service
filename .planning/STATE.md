@@ -2,14 +2,12 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 23
-current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
-status: completed
-stopped_at: Phase 23 complete — all phases complete
-last_updated: "2026-10-08T14:29:22.651Z"
+status: Awaiting next milestone
+stopped_at: Milestone v1.5 complete and archived
+last_updated: "2026-10-08T14:39:51.001Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 23 complete
-state_head: 4ce7942a6ca14c3a17e07163d27263871b30c0bd
+last_activity_desc: Milestone v1.5 completed and archived
+state_head: 59b78efca60d7b17ae5bda640f32714e1ca456bb
 progress:
   total_phases: 7
   completed_phases: 7
@@ -22,19 +20,38 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-08 after Phase 23)
+See: .planning/PROJECT.md (updated 2026-10-08 after v1.5 milestone close)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** v1.5 milestone close — all 7 phases (18–24) complete; audit and complete the milestone
+**Current focus:** Planning next milestone — run `/gsd-new-milestone` (Phil-US migration onto real overnight shifts is the leading candidate)
 
 ## Current Position
 
-Phase: 23 (last v1.5 phase) — complete
-Plan: 3/3 executed
-Status: All v1.5 phases complete — ready for milestone audit
-Last activity: 2026-10-08 - Completed quick task 261008-eby: fix CR-01 pre-horizon rest fallback
+Phase: Milestone v1.5 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-08 — Milestone v1.5 completed and archived
 
-Progress: [████████████████████] 56/56 plans ([██████████] 100%)
+## Milestone v1.5 Outcome
+
+**Shipped 2026-10-08.** 29/29 requirements were delivered across Phases 18–24 (7 phases, 56 plans,
+129 tasks) plus quick task 261008-eby. The milestone was closed under `override_closeout`:
+
+- 3 artifacts were acknowledged at close: the Phase 21 UAT status label, archived v1.2 Phase 12's
+  verification, and the MultiDay flake.
+- 13 artifacts were carried forward from earlier closes.
+- Phases 18–23 closed with stale verification digests.
+
+The milestone audit returned `tech_debt` on its fourth pass, with 7/7 seams wired and 5/5 E2E flows
+complete. Each of the first three passes found a real cross-phase defect, closed in turn: G-1 by
+Phase 23, N-1/N-2 by Phase 24, and CR-01 by quick task 261008-eby.
+
+The CR-01 miss is worth carrying forward. Phase 23's own code review had already recorded it as
+`critical`, and the 2026-10-07 audit pass still did not pick it up. **Open REVIEW-DISPOSITION
+findings must be read as audit inputs.**
+
+Archives: `.planning/milestones/v1.5-ROADMAP.md`, `v1.5-REQUIREMENTS.md`,
+`v1.5-MILESTONE-AUDIT.md`, `v1.5-phases/` and `v1.5-quick/`.
 
 ## Milestone v1.3 Outcome
 
@@ -86,6 +103,15 @@ Archives: `.planning/milestones/v1.1-ROADMAP.md`, `.planning/milestones/v1.1-REQ
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
+
+Items acknowledged at v1.5 milestone close on 2026-10-08 (3 newly acknowledged, 13 carried forward
+— closeout type: `override_closeout`):
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| uat_gaps | 21/21-UAT.md | passed (0 pending; status label is not `complete`) | 2026-10-08 | v1.5 |
+| verification_gaps | 12 (archived v1.2)/12-VERIFICATION.md | gaps_found (was `withdrawn`; goal not achieved, implementation withdrawn) | 2026-10-08 | v1.5 |
+| deferred_items | 24/deferred-items.md: MultiDayConstraintDiagnosticTest wall-clock flake (-610 vs -500 floor under suite contention; recommend stepCountLimit) | acknowledged | 2026-10-08 | v1.5 |
 
 Items acknowledged at v1.3 milestone close on 2026-09-21 (10 newly acknowledged, 3 carried forward
 from the v1.2 close — closeout type: `override_closeout`):
@@ -422,21 +448,27 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 261008-eby | fix CR-01 pre-horizon rest fallback | 2026-10-08 | 4ce7942 | [261008-eby-fix-cr-01-pre-horizon-rest-fallback](./quick/261008-eby-fix-cr-01-pre-horizon-rest-fallback/) |
 
 ## Session Continuity
 
 Last session: 2026-10-08
-Stopped at: Phase 23 complete — all phases complete
+Stopped at: Milestone v1.5 complete and archived
 Resume file: None
 
 ## Operator Next Steps
 
-- ~~Verify Phase 23~~ — done 2026-10-08 (UAT 1/1 pass, SECURITY 0 open, VERIFICATION passed). Closes v1.5 audit G-1.
-- **Before milestone close:** triage the five `open` findings in `24-REVIEW-DISPOSITION.md` (WR-01/02/03, IN-01/02), and re-verify Phases 18–22, whose `covered_files` include files Phase 24 changed (digests deliberately not refreshed)
-- Then `/gsd-audit-milestone` and `/gsd-complete-milestone v1.5` — the audit should weigh Phase 23's CR-01 and the live-reachability question under Blockers/Concerns
-- **Consider closing Nyquist debt first** — `/gsd-validate-phase` for 10, 13, 14, 15 (all `status: draft`) and 16 (the one genuine PARTIAL). Five phases across two milestones; flagged at the v1.3 audit as having drifted from an oversight into a pattern
-- **999.9 is now three audits old** — the v1.2 I-2 merge-precedence gap has been recorded at every close since 2026-08-21 and never scoped into a phase
+- **Start the next milestone:** run `/gsd-new-milestone`. The leading candidate is the Phil-US
+  migration onto real overnight shifts, which v1.5 deferred by design.
+- **v1.5 debt to schedule or consciously drop:**
+  - Re-verify Phases 18–23. The digests are stale; do not refresh the fingerprints.
+  - Run `/gsd-validate-phase` for 19–24.
+  - Triage 13 open review findings across Phases 21–24.
+  - Widen `BusinessDateJoinGuardTest` to the six unscanned files.
+- **Still open from Blockers/Concerns:** whether a wrapping overnight predecessor is reachable live
+  at all (Phase 23 D5 caveat). Also 999.10, the concurrent duplicate rest-waiver POST that returns
+  a raw 500.
+
+- Start the next milestone with /gsd-new-milestone
 
 ## Performance Metrics
 

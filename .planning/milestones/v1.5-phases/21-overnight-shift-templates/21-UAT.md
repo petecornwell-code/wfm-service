@@ -6,6 +6,10 @@ started: 2026-10-03T13:20:00Z
 updated: 2026-10-03T15:46:00Z
 measured_by: orchestrator session via browser automation (geometry read with browser_evaluate; screenshots deliberately not used — they do not settle on this app)
 environment: throwaway stack — pgvector Postgres :55432, backend :8081, vite :3001; seeded desk at a 21:00 anchor with 60-minute timeslots, one overnight 22:00-06:00 template, and a COMPLETED schedule carrying dayStart 21:00
+audit_acknowledged:
+  milestone: v1.5
+  at: 2026-10-08
+  gap_snapshot: "passed::scenarios=0"
 ---
 
 ## Current Test

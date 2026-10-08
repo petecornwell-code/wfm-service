@@ -1,13 +1,17 @@
 ---
 phase: 12-atomic-shift-move
 verified: 2026-08-21T13:29:43Z
-status: withdrawn
+status: gaps_found  # was "withdrawn" (2026-10-08, v1.5 close): audit-open accepts only passed|gaps_found|human_needed; the withdrawal is carried by `disposition` below
 score: 0/5 truths verified in the current codebase (4 demonstrated in-flight, then withdrawn; 1 failed on measured evidence)
 disposition: goal-not-achieved-implementation-withdrawn
 withdrawn_by: 299c42c
 withdrawn_date: 2026-08-13
 goal_claimed: false
 behavior_unverified: 0
+audit_acknowledged:
+  milestone: v1.5
+  at: 2026-10-08
+  status: gaps_found
 ---
 
 # Phase 12: Atomic Shift Move Verification Report

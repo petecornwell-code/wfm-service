@@ -8,11 +8,50 @@ Operators configure desks (queues), upload staffing demand (FTE spreadsheets), s
 
 Since v1.3 a desk is scheduled in one of two modes. **Slot-scheduled** is the original behaviour: the solver composes each agent-day out of independent per-timeslot seat decisions. **Shift-scheduled** gives the desk a library of shift templates and has the solver assign each working agent exactly one shift per day from it, with seat and specialization assignment happening *inside* that envelope — so an agent works a recognisable, repeating shift, and can still change specialization mid-day. Every desk defaults to slot-scheduled; the mode is per-desk and reversible.
 
+Since v1.5 each desk has a **day start**, and every timeslot carries a **business date** distinct from its calendar date. A shift can therefore span midnight and still belong to the business day it starts on, in the solver, the grid, the Excel export and every report. A desk can also set a **minimum rest** period between an agent's consecutive shifts. It is enforced as a hard constraint, refused before solving when unavoidable, and waivable per agent and date with a recorded reason. A desk left at the `00:00` default with no minimum rest behaves exactly as it did before.
+
 ## Core Value
 
 Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets.
 
 ## Current State
+
+**Shipped:** v1.5 Overnight Shifts & Business Dates — closed 2026-10-08 with **29 of 29
+requirements** delivered across Phases 18–24 plus one quick task. Archived to
+`.planning/milestones/v1.5-ROADMAP.md`.
+
+v1.5 made the **business day** the scheduling unit. A desk sets the time its day begins, and
+timeslot generation produces a contiguous 24-hour business day across two calendar dates.
+`DayWindow` measures every interval from that anchor instead of an implicit midnight. Every solver
+join, the seat-supply check, SLOT accounting, demand upload, coverage reporting and shift-library
+validation resolve the same business date for the same timeslot. On top of that, overnight shift
+templates save with correct net hours, consume the starting weekday's contracted hours, and render
+as one block. A per-desk minimum rest is enforced with a pre-solve refusal and per-date waivers.
+
+**The audit loop earned its keep.** Four audit passes were needed. Each of the first three found a
+real defect at a seam between phases, and each was closed in turn:
+
+- **G-1:** the rest gap after an overnight predecessor. Closed by Phase 23.
+- **N-1/N-2:** calendar-date keys in shift-library validation and in the Agent Allocation rows.
+  Closed by Phase 24.
+- **CR-01:** a pre-solve rest fallback that was not scoped to the horizon edge. Closed by quick task
+  261008-eby.
+
+CR-01 had been recorded as `critical` in Phase 23's own code review four days earlier and was missed
+by one audit pass. **Open review findings are audit inputs, not phase-local notes.**
+
+**Closed under `override_closeout`**, with the milestone audit at `tech_debt` (no gaps).
+
+- **Stale verifications:** Phases 18–23 closed with stale verification digests, because later
+  phases changed source they cover. Every report body passed, but re-verification is still owed.
+- **3 artifacts acknowledged:** Phase 21's UAT status label, archived v1.2 Phase 12's withdrawn
+  verification, and the `MultiDayConstraintDiagnosticTest` wall-clock flake.
+- **Nyquist:** 0 compliant, 1 partial (18), 6 not validated (19–24).
+
+See `.planning/milestones/v1.5-MILESTONE-AUDIT.md`.
+
+<details>
+<summary>Previous state: v1.3 Shift-Based Scheduling & Consistency (closed 2026-09-21)</summary>
 
 **Shipped:** v1.3 Shift-Based Scheduling & Consistency — closed 2026-09-21 with **43 of 43
 requirements** delivered across Phases 14–17. Archived to `.planning/milestones/v1.3-ROADMAP.md`.
@@ -44,6 +83,8 @@ weakness is **stale planning records**: three documents (`14-VERIFICATION.md`, `
 blocked-break-hours has no enforcement point in SHIFT mode (a band at the envelope boundary is a
 late start, not a break, and scores `0hard`), and a template's envelope is never validated against
 the desk's operating window at save time.
+
+</details>
 
 <details>
 <summary>Previous state: v1.2 Unified Agent Provisioning (closed 2026-08-25)</summary>
@@ -87,7 +128,25 @@ or solver-tuning surfaces that were the milestone's other half.
 
 </details>
 
-## Current Milestone: v1.5 Overnight Shifts & Business Dates
+## Next Milestone Goals
+
+Not yet defined. Run `/gsd-new-milestone`. Candidates, in the order the evidence suggests:
+
+1. **Phil-US migration onto real overnight shifts.** v1.5 deliberately deferred this so the capability
+   stayed desk-agnostic. The desk still carries its +3h offset hack. Moving it onto the client's real
+   `2100-0600` / `2200-0700` / `2300-0800` / `0000-0900` shifts, with a tested reversal, is the
+   natural first consumer of what v1.5 built.
+2. **v1.5 verification debt.** Re-verify Phases 18–23, whose digests are stale. Run Nyquist
+   validation on 19–24. Triage the open review findings: Phase 21 WR-01/02/03, Phase 22 WR-03/04 and
+   IN-02, Phase 23 WR-01 and IN-01/02, Phase 24 WR-01/02/03 and IN-01/02.
+3. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload
+   path but not on the Refresh button. High severity, now four milestones old.
+4. **Backlog 999.5 / 999.6 — the reporting half of v1.1:** coverage, utilization, diagnostics,
+   export, score breakdown and tuning. Twelve deferred requirements.
+5. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03).
+
+<details>
+<summary>v1.5 Overnight Shifts & Business Dates — original milestone scope (shipped 2026-10-08)</summary>
 
 **Goal:** A shift can span midnight and belongs to the business day it starts on — for any desk,
 any day start, any future data set.
@@ -149,15 +208,17 @@ chosen by the property under test, and live data is demoted to a drift guard.
 - **Timezones** (the Phil-US roster is PHT, its forecast US Pacific, 15h apart) stay the operator's
   job, done before load. Keeps the re-anchoring self-contained.
 
-**Not in this milestone**, and unchanged as candidates for later:
+**Outcome:** every target feature above shipped, and all v1.4 decisions carried forward held. The
+constructed-scenario regression strategy worked: Phase 20's 26-constraint match-count table and the
+48-agent Phil-US-shaped drift guard caught a silent non-join that score alone would have passed.
 
-1. **Backlog 999.9 — close v1.2's I-2 gap.** The merge-precedence guarantee holds on the upload
-   path but not on the Refresh button. High severity, three audits old.
-2. **Backlog 999.5 / 999.6 — the reporting half of v1.1** that was never built: coverage,
-   utilization, diagnostics, export, score breakdown, tuning. Twelve deferred requirements.
-3. **Backlog 999.4 — solver fairness** (QUAL-02, QUAL-03), dropped from Phase 6 and never re-homed.
-4. **Nyquist validation debt — five phases across two milestones** (10, 13, 14, 15 at
-   `status: draft`, plus 16 validated-but-non-compliant).
+What the original scope did not anticipate was how many **non-solver consumers of a timeslot's
+date** existed. Shift-library validation, envelope repair, start-mix targets and the Agent
+Allocation demand rows each kept a calendar-date key after the solver had moved to business date.
+Two of them survived to the milestone audit (N-1, N-2). The widened `BusinessDateJoinGuardTest` now
+scans eight services with an empty allowlist; six more files remain outside it.
+
+</details>
 
 <details>
 <summary>v1.3 Shift-Based Scheduling & Consistency — original milestone scope (shipped 2026-09-21)</summary>
@@ -341,17 +402,37 @@ building the *view of the model* are separate jobs — hence Phase 13.
 - ✓ Post-solve drift reporting: which agents were assigned a shift other than their usual one, on which dates and by how much; an agent with no stored usual shift distinguished from one whose shift was honoured; and the most over-subscribed templates ranked, making the consistency-versus-fairness tension visible without building a mitigation for it — v1.3 Phase 17 (DRFT-01, DRFT-02, DRFT-04)
 - ✓ The drift report is derived from the same distance calculation the consistency constraint uses (`ShiftBandPair.startDeviationMinutes`), not a second implementation — and its Excel sheet headers are byte-identical to the frontend tab's — v1.3 Phase 17 (DRFT-03, XCUT-01)
 
-- ✓ A per-desk minimum rest period between an agent's consecutive shifts, enforced as a hard solver violation on the actual end/start instants (same-day back-to-back included, not only overnight), with a structurally-unavoidable case refused *pre-solve* by a mechanism separate from the in-solve constraint, horizon-edge behaviour defined and tested rather than accidental, a desk that sets no minimum rest solving exactly as before, a per-agent per-business-date waiver carrying a mandatory recorded reason, and every waived violation disclosed in the solved output so a waiver cannot silently hide a roster problem — v1.5 Phase 22 (REST-01…REST-07); REST-01/02/05 re-satisfied for an overnight (wrapping) predecessor by Phase 23 gap closure G-1 — `RestSpan.gapMinutes` and the SLOT pre-horizon refusal now share one wrap-aware primitive, `DayWindow.anchoredWrappedEndMinute`, held single by a build-time guard
+- ✓ An operator sets the time a desk's day begins; a desk that never sets one behaves exactly as before, and changing it under an ACCEPTED schedule is refused — v1.5 Phases 18, 20, 21 (BDAY-01)
+- ✓ Every timeslot records its business date, distinct from its calendar date, written by exactly one deriving path and one propagating path, held by a two-directional write-path guard — v1.5 Phase 18 (BDAY-02, BDAY-08); re-satisfied at non-00:00 anchors for shift-library validation and allocation rows by Phase 24
+- ✓ A 21:00-anchored desk generates a contiguous 24-hour business day spanning two calendar dates — v1.5 Phase 18 (BDAY-03)
+- ✓ `DayWindow` interval arithmetic anchored on the desk's day start, with the midnight-implicit statics made private so a missed call site is a compile error — v1.5 Phase 19 (BDAY-04)
+- ✓ Structural guards fail the build on a scheduling comparison or arithmetic that bypasses `DayWindow`, and on a constraint joining calendar date where business date is meant, both proven able to go red — v1.5 Phases 18, 20, 24 (BDAY-05, SOLV-02)
+- ✓ A constructed midnight-boundary regression suite with a class-load non-vacuity validator, and a 48-agent Phil-US-shaped drift guard proving the re-anchoring changed nothing it shouldn't have — v1.5 Phases 18, 20 (BDAY-06, BDAY-07)
+- ✓ Overnight shift templates (end before start) save with correct net hours, are reported against and consume the contracted hours of the business day they start on, are blocked by a day off or PTO on that day, are refused if their envelope leaves the desk's business day, and render as one continuous block labelled with both calendar dates in the grid and Excel export — v1.5 Phase 21 (OVNT-01…OVNT-07); OVNT-05/06/07 re-satisfied at non-00:00 anchors by Phase 24
+- ✓ Every solver join, the seat-supply check, SLOT-mode overnight accounting, break bands, contiguity and envelope compliance resolve business date, each migrated join proven non-vacuous by per-constraint match counts, and demand upload / coverage reporting / solver provably agree on a timeslot's business date — v1.5 Phase 20 (SOLV-01…SOLV-07); SOLV-07 extended to the Agent Allocation demand rows by Phase 24
+- ✓ A per-desk minimum rest period between an agent's consecutive shifts, enforced as a hard solver violation on the actual end/start instants (same-day back-to-back included, not only overnight), with a structurally-unavoidable case refused *pre-solve* by a mechanism separate from the in-solve constraint, horizon-edge behaviour defined and tested rather than accidental, a desk that sets no minimum rest solving exactly as before, a per-agent per-business-date waiver carrying a mandatory recorded reason, and every waived violation disclosed in the solved output so a waiver cannot silently hide a roster problem — v1.5 Phase 22 (REST-01…REST-07); REST-01/02/05 re-satisfied for an overnight (wrapping) predecessor by Phase 23 gap closure G-1 — `RestSpan.gapMinutes` and the SLOT pre-horizon refusal now share one wrap-aware primitive, `DayWindow.anchoredWrappedEndMinute`, held single by a build-time guard; the pre-solve fallback to pre-horizon history was scoped to the horizon's first date by quick task 261008-eby (CR-01), so a working day after a mid-horizon day off is no longer falsely refused
 
 ### Active
 
-~~**v1.5 Overnight Shifts & Business Dates**~~ — **all four requirement groups complete as of
-2026-10-04.** Business-day model (BDAY, Phase 18), DayWindow re-anchoring (Phase 19), solver
-business-date correctness (SOLV, Phase 20), overnight shift templates (OVNT, Phase 21) and minimum
-rest (REST, Phase 22) are all shipped; `.planning/REQUIREMENTS.md` records 29/29 mapped requirements
-Complete. The milestone is ready to close — run `/gsd-complete-milestone v1.5`.
+No milestone is active. v1.5 closed 2026-10-08 with 29/29 requirements validated above; the next
+milestone's requirements are defined by `/gsd-new-milestone`.
 
-#### Carried forward, not in v1.5 — see ROADMAP.md Backlog
+#### Carried forward — see ROADMAP.md Backlog
+
+- **Phil-US migration onto real overnight shifts.** Deferred from v1.5 by design; first candidate
+  for the next milestone.
+- **v1.5 verification debt.**
+  - Phases 18–23 closed with stale verification digests and need re-verifying, not
+    fingerprint-refreshing.
+  - Thirteen review findings are still open across Phases 21–24. The ones that matter most:
+    - Phase 21 WR-03: the Agent Allocation tab can throw past the end of the business day, with no
+      error boundary.
+    - Phase 24 WR-03: a malformed business-range cursor returns 500, not 400.
+    - Phase 23 WR-01: the rest-gap arithmetic guard can be evaded.
+- **`BusinessDateJoinGuardTest` breadth.** These files are not scanned: `SolverService`,
+  `ScheduleService`, `ShiftStartMixAllocator`, `ScheduleExportService`, `BusinessDayPeriodLoader`
+  and `TimeslotController`. None has a defect today. This is the regression risk N-1/N-2 showed is
+  real.
 
 - Weekend-position fairness across agents (QUAL-02) → 999.4
 - Day-to-day hours consistency (QUAL-03) → 999.4
@@ -373,7 +454,7 @@ Complete. The milestone is ready to close — run `/gsd-complete-milestone v1.5`
 - **⚠ Blocked-break-hours has no enforcement point in SHIFT mode** — emerged at Phase 15, deferred by operator ruling OR-2. `breakBlockedWindow` is mode-gated off for `SHIFT`, and `ShiftTemplateService.validateBands` never checks a band's offset against the desk's `breakBlockedHours`. A band at offset `0`, or at `envelopeMinutes - duration`, is legal at save time and scores `0hard` — operationally a late start or an early finish, not a break. Invisible in the hard score, so the seat-supply gate cannot catch it. One live agent-day already exhibits it (8 consecutive worked hours, zero breaks, live Stubhub desk). The fix location is settled as **save-time in `ShiftTemplateService`**, not a restored solver constraint — that alternative was considered and rejected for fighting the envelope model; do not relitigate it.
 - **⚠ A template's envelope is never validated against the desk's operating window at save time** — emerged at Phase 15, deferred by operator ruling OR-2. `validateGridAlignment` checks grid alignment but never that the envelope's end fits inside the operating window's close, so a template that cannot fit saves cleanly with an advisory literally reading "It will still save". The seat-supply gate catches the runtime symptom, but the operator is told at solve time about a desk they may not connect back to the template edit. `TimeslotBoundsResponse.endTime()` is read by no caller in `src/main` and is the natural starting point.
 - **Two wall-clock-bounded solver tests should terminate on step count** — `BreakAwareConstructionTest` and `MultiDayConstraintDiagnosticTest` time-box the local-search phase, so they measure hardware and suite contention alongside solver quality and flake under parallel load. `BreakAwareConstructionTest`'s margin against its `-500` assertion fell from 500 to 180 points after Phase 15's mode-gating. Widening that tolerance is explicitly **not** the fix — the threshold is what surfaced two real defects (a dropped `difficultyComparatorClass` and a constraint tax costing ~35–40% of local-search throughput).
-- **Nyquist validation debt — now five phases across two milestones** → 999.9. Phases 10, 13, **14 and 15** have `VALIDATION.md` at `status: draft` (seeded by plan-phase, never reconciled by validate-phase, so their `nyquist_compliant: false` is not authoritative). **Phases 16 and 18 are genuine PARTIALs** — `status: validated` *and* `nyquist_compliant: false`. Only Phase 17 is COMPLIANT. Phase 18 was validated at its own close (2026-09-30) with zero gaps: all six BDAY requirements have automated tests, and its single manual-only item (the `day_start` disclosure copy, D-28) is a knowingly accepted exception that has now been UAT-verified against the deployed environment. The v1.3 audit flagged the accumulation as having drifted "from an oversight into a pattern".
+- **Nyquist validation debt — now eleven phases across three milestones** → 999.9. v1.5 added six (19–24 at `status: draft`; 18 validated-but-PARTIAL). Before that: Phases 10, 13, **14 and 15** have `VALIDATION.md` at `status: draft` (seeded by plan-phase, never reconciled by validate-phase, so their `nyquist_compliant: false` is not authoritative). **Phases 16 and 18 are genuine PARTIALs** — `status: validated` *and* `nyquist_compliant: false`. Only Phase 17 is COMPLIANT. Phase 18 was validated at its own close (2026-09-30) with zero gaps: all six BDAY requirements have automated tests, and its single manual-only item (the `day_start` disclosure copy, D-28) is a knowingly accepted exception that has now been UAT-verified against the deployed environment. The v1.3 audit flagged the accumulation as having drifted "from an oversight into a pattern".
 - **Phase 9 never had a security review** — no `09-SECURITY.md` exists → 999.9
 - ~~**No real-DB test proves business-date *exclusion* at a non-midnight anchor**~~ — **CLOSED 2026-10-02 (`597f171`).** Emerged at Phase 20 (code review WR-01, advisory in `20-VERIFICATION.md`): `BusinessDayPeriodLoader`'s *exclusion* half was proven only at the unit/mocked level (`BusinessDayPeriodLoaderTest` Test 3) and, through the real `acceptSchedule`/JPA path, only at a `00:00` anchor where calendar and business date coincide and the assertion cannot discriminate. Closed by `ScheduleServiceShiftSnapshotTest` Tests E and F — 21:00-anchored accept-path tests carrying one out-of-range decoy per side (calendar MONDAY 08:00 derives to SUNDAY, below; calendar TUESDAY 21:00 derives to TUESDAY, above), both *inside* the widened fetch window so only the derived filter can remove them. Mutation-verified: the real gap was not "nothing catches a deleted filter" (Test D did) but that each existing group was blind to exactly one failure mode — A/B/C miss a deleted filter, D cannot tell derived from calendar date. E/F are the only tests sensitive to both. Absence is asserted on the `(calendarDate, startTime)` pair, since both decoy start times also occur on legitimately in-range rows
 
@@ -393,7 +474,8 @@ Complete. The milestone is ready to close — run `/gsd-complete-milestone v1.5`
 **BambooHR:** Credentials stored in DB via Configuration UI (not env vars); `DelegatingBambooHRClient` falls back to mock when unconfigured
 **Solver:** Timefold OptaPlanner; constraints include staffing demand, specialization match, PTO/exceptions, contracted hours, bulk overallocation limits
 **Multi-tenant:** Tenant ID via JWT; all entities scoped by `tenant_id`
-**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ. Schema head is **V49** after v1.3 added eleven migrations. Key migrations: V29 name-split + per-day fan-out, V30 `day_off_type`, V36 `working_days_source`, V38 `consistent_start_weight` (**no longer orphaned — adopted by v1.3 rather than duplicated, exactly as planned**), V39 `shift_template` + `desk.scheduling_mode`, V40 break bands, V43 `schedule.scheduling_mode` (persisted at accept time), V44 bounded envelope slack, V47 `agent_usual_shift`, V48 consistency tolerance + preferred-start weight, V49 consistency weight defaults. The next migration is **V50**.
+**DB:** RDS PostgreSQL 16, `db.t4g.medium`, single AZ. Schema head is **V55** after v1.5 added three: V53 `desk.day_start` + `timeslot.business_date`, V54 `schedule.day_start`, V55 minimum rest + `agent_rest_waiver`. The next migration is **V56**. Before v1.5 the head was V52; v1.3 left it at V49. Key migrations: V29 name-split + per-day fan-out, V30 `day_off_type`, V36 `working_days_source`, V38 `consistent_start_weight` (**no longer orphaned — adopted by v1.3 rather than duplicated, exactly as planned**), V39 `shift_template` + `desk.scheduling_mode`, V40 break bands, V43 `schedule.scheduling_mode` (persisted at accept time), V44 bounded envelope slack, V47 `agent_usual_shift`, V48 consistency tolerance + preferred-start weight, V49 consistency weight defaults.
+**Codebase after v1.5:** +27,013 / −916 across 183 files in `src/` and `frontend/src/` over 396 commits (2026-09-30 → 2026-10-08); backend suite ~1,510 tests.
 **Codebase after v1.3:** +31,010 / −293 across 169 files in `src/` and `frontend/src/` over 370 commits (2026-08-25 → 2026-09-21). 114 backend test files; the suite grew 402 → 723 tests across the milestone.
 **Agent eligibility for solving:** four filters — active status, desk assignment, schedulable job title, and `workingDaysKnown` (parseable BambooHR field 4517)
 
@@ -458,6 +540,13 @@ Complete. The milestone is ready to close — run `/gsd-complete-milestone v1.5`
 | Consistency's hard-component guard enforced at save time, not asserted in the constraint (Phase 17) | CONS-04 ("soft only — never makes a feasible schedule infeasible") becomes impossible to violate by configuration, rather than being a property someone must remember to preserve | ✓ Good |
 | v1.3's XCUT-04 benchmark reported as a null result (Phase 17, `17-BENCHMARK.md`) | The consistency-weight A/B hit a construction-heuristic plateau — neither a win nor a loss against the pre-committed threshold. Reported as that, with median and full min/max spread, rather than reframed as a win | ✓ Good — the same discipline that correctly withdrew Phase 12 |
 | Template delete shipped as a *guarded* delete, superseding Phase 14's no-delete stance (Phase 15, `81117e3`) | Retire-only stranded typos, duplicates and probe rows in the library forever; the operator asked for the control during UAT. The guard refuses with 409 when any agent-day assignment *or* any stored usual shift references the template, so nothing that ever shaped a roster can be destroyed | ✓ Good — SHLB-04 is satisfied more strongly than before, but the stale "no delete endpoint" wording survived into `14-VERIFICATION.md` for 18 days after `PROJECT.md` had already corrected it |
+| v1.5 proves midnight correctness on constructed scenarios, with one small live desk (Phil-US, 48 agents) demoted to a drift guard (2026-09-30) | v1.4's captured-live-desk golden file was over-sensitive and under-powered on the one boundary it existed to protect. A scenario chosen by the property under test has a knowable answer | ✓ Good — the match-count table caught a silent non-join that score alone passed |
+| `DayWindow`'s nine midnight-implicit statics demoted to private, not deprecated (Phase 19) | A missed call site becomes a compile error rather than a judgement call. 83 production sites moved in one revertible range, proven byte-identical at 00:00 by a frozen oracle | ✓ Good |
+| The 00:00-only day-start gate lifted as Phase 20's final commit, after every join was migrated and guarded | Exposing non-midnight anchors before the solver agreed on business date would have let operators create silently wrong schedules | ✓ Good |
+| `agent_shift_assignment` gets no `business_date` column; its `date` already IS the business date (Phase 20, D-05) | Avoids a second source of truth, held by a derivation-chain guard test (D-06) | ✓ Good |
+| Minimum rest is HARD, with a pre-solve refusal separate from the in-solve constraint, and per-date waivers that must be disclosed (Phase 22) | Overnight shifts without it would create a way to produce illegal back-to-back rosters scoring `0hard`. A waiver that hides a violation is worse than no waiver | ✓ Good |
+| Rest-gap arithmetic routed through one wrap-aware primitive, `DayWindow.anchoredWrappedEndMinute`, held single by `RestGapArithmeticGuardTest` (Phase 23) | G-1 was the second inline copy of a composition that was wrong on overnight predecessors | ✓ Good — but the guard is evadable (23 WR-01, open) |
+| v1.5 closed under `override_closeout` with Phases 18–23 verification digests stale (2026-10-08) | All 29 requirements were satisfied, with 7/7 seams and 5/5 flows confirmed by integration checks and targeted tests. Re-verifying six phases was judged not worth blocking the close | ⚠ Revisit — the third consecutive override close. Stale verification is debt with a known cost, and the CR-01 miss shows that recorded findings can slip through an audit |
 | v1.3 closed under `override_closeout` with 10 artifacts acknowledged (2026-09-21) | All 43 requirements satisfied and zero integration gaps, but 3 debug sessions remain `diagnosed` rather than fixed and 7 deferred items — including two known functional gaps — carry forward by operator ruling OR-2 | ⚠ Revisit — v1.2 closed the same way and its I-2 is now three audits old; two consecutive override closeouts is how debt becomes permanent |
 
 ## Evolution
@@ -478,7 +567,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-08 after Phase 23 (gap closure G-1) — rest gap after an overnight predecessor measured correctly (60, not 1500); UAT D5 passed live (pre-solve refusal at 60 min), with the caveat that the API's template validation means no live overnight template wraps its business day, so the live run cannot tell the old arithmetic from the new — the wrapped case is proven by unit fixtures only. All v1.5 phases complete. Previously: 2026-10-08 after Phase 24 (gap closure N-1/N-2) — shift-library validation, envelope/usual-shift repair, start-mix targets and the Agent Allocation demand rows now all key on the stored business date; OVNT-05/06/07, SOLV-07, BDAY-02/05 re-satisfied at non-00:00 anchors. Phase 23 (G-1) awaits human UAT before v1.5 can close. Previously: 2026-10-04 after Phase 22 (Minimum Rest) — all 29 v1.5
+*Last updated: 2026-10-08 after v1.5 milestone close — 29/29 requirements validated across Phases 18–24 plus quick task 261008-eby (CR-01). Milestone audit `tech_debt` after four passes (G-1, N-1/N-2, CR-01 each found and closed), 7/7 seams, 5/5 flows; closed under `override_closeout` with 3 artifacts acknowledged and Phases 18–23 verification digests stale. Next: `/gsd-new-milestone`. Previously: 2026-10-08 after Phase 23 (gap closure G-1). (gap closure G-1) — rest gap after an overnight predecessor measured correctly (60, not 1500); UAT D5 passed live (pre-solve refusal at 60 min), with the caveat that the API's template validation means no live overnight template wraps its business day, so the live run cannot tell the old arithmetic from the new — the wrapped case is proven by unit fixtures only. All v1.5 phases complete. Previously: 2026-10-08 after Phase 24 (gap closure N-1/N-2) — shift-library validation, envelope/usual-shift repair, start-mix targets and the Agent Allocation demand rows now all key on the stored business date; OVNT-05/06/07, SOLV-07, BDAY-02/05 re-satisfied at non-00:00 anchors. Phase 23 (G-1) awaits human UAT before v1.5 can close. Previously: 2026-10-04 after Phase 22 (Minimum Rest) — all 29 v1.5
 requirements Complete. Previously: 2026-10-02 after Phase 20 — all eight requirements
 (SOLV-01..07, BDAY-07) satisfied, verified 8/8 must-haves after two gap-closure rounds; 12/12 plans.
 Round 2 (plan 20-12) found four repository-level truncation sites that fed business-date period bounds
