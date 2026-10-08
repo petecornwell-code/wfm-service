@@ -48,6 +48,9 @@ class RestFeasibilityRefusalTest {
 
     private static final LocalDate D_MINUS_1 = LocalDate.of(2026, 9, 7);
     private static final LocalDate D = LocalDate.of(2026, 9, 8);
+    // CR-01 fixtures: DAY_OFF never gets a row or a config (a real day off is omitted everywhere).
+    private static final LocalDate DAY_OFF = LocalDate.of(2026, 9, 9);
+    private static final LocalDate AFTER_DAY_OFF = LocalDate.of(2026, 9, 10);
     private static final int MINIMUM_REST_MINUTES = 660;
 
     // ------------------------------------------------------------------
@@ -527,5 +530,110 @@ class RestFeasibilityRefusalTest {
                         LocalTime.of(8, 0), LocalTime.of(18, 0)),
                 warnings, MIDNIGHT_WINDOW))
                 .doesNotThrowAnyException();
+    }
+
+    // ------------------------------------------------------------------
+    //  CR-01 -- the pre-horizon span is a predecessor only at the true horizon edge (D-12, REST-05)
+    // ------------------------------------------------------------------
+
+    // D plays the period's first business date, and D_MINUS_1 is the date RestPredecessorService
+    // resolved the pre-horizon span for. DAY_OFF is absent from every row list and config list,
+    // exactly as computeAgentDayConfigs and buildShiftAssignments omit a real day off, so
+    // AFTER_DAY_OFF has no in-horizon D-1 entry and must NOT fall back to the pre-horizon span.
+
+    @Test
+    @DisplayName("SHIFT: a working day after a mid-horizon day off is not checked against the pre-horizon span -- no refusal")
+    void shift_midHorizonDayOff_dayAfterIsNotCheckedAgainstPreHorizonSpan_noRefusal() {
+        Agent a = agent("Wren");
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(15, 0), LocalTime.of(23, 0),
+                LocalTime.MIDNIGHT);
+        // Pre-horizon end 23:00 = wrapped minute 1380, leaving 60 minutes. D at 12:00: 60 + 720 = 780
+        // (fine). AFTER_DAY_OFF at 06:00 against the pre-horizon span would be 60 + 360 = 420 (false refusal).
+        AgentShiftAssignment dRow = shiftRow(a, D, pair(LocalTime.of(12, 0), LocalTime.of(20, 0)));
+        AgentShiftAssignment afterRow = shiftRow(a, AFTER_DAY_OFF, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SHIFT,
+                MINIMUM_REST_MINUTES, List.of(dRow, afterRow), List.of(), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SHIFT, MINIMUM_REST_MINUTES), warnings,
+                MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.get(0)).contains(D.toString()).contains("at 780 minute(s)");
+    }
+
+    @Test
+    @DisplayName("SHIFT control: an early start on the first business date is still refused against the pre-horizon span; the day after a day off is not")
+    void shift_horizonEdgeControl_earlyStartOnFirstBusinessDateStillRefused_dayAfterDayOffIsNot() {
+        Agent a = agent("Xan");
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(15, 0), LocalTime.of(23, 0),
+                LocalTime.MIDNIGHT);
+        // D at 06:00: 60 + 360 = 420 < 660 -- the genuine REST-05 refusal. AFTER_DAY_OFF adds none.
+        AgentShiftAssignment dRow = shiftRow(a, D, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+        AgentShiftAssignment afterRow = shiftRow(a, AFTER_DAY_OFF, pair(LocalTime.of(6, 0), LocalTime.of(14, 0)));
+        List<String> warnings = new ArrayList<>();
+
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SHIFT,
+                MINIMUM_REST_MINUTES, List.of(dRow, afterRow), List.of(), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SHIFT, MINIMUM_REST_MINUTES), warnings,
+                MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).value()).isEqualTo(a.getId().toString());
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains(D_MINUS_1.toString()).contains(D.toString())
+                            .contains("achieves only 420 minute(s)").contains("required 660")
+                            .doesNotContain(DAY_OFF.toString()).doesNotContain(AFTER_DAY_OFF.toString());
+                });
+    }
+
+    @Test
+    @DisplayName("SLOT: a working day after a mid-horizon day off is not checked against the pre-horizon span -- no refusal")
+    void slot_midHorizonDayOff_dayAfterIsNotCheckedAgainstPreHorizonSpan_noRefusal() {
+        Agent a = agent("Yael");
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(15, 0), LocalTime.of(23, 0),
+                LocalTime.MIDNIGHT);
+        // Window 08:00-20:00 (480-1200). D, 8h: latest start 1200-480 = 720, gap 60 + 720 = 780 (fine).
+        // AFTER_DAY_OFF, 11h: latest start 1200-660 = 540, gap against the pre-horizon span would be
+        // 60 + 540 = 600 < 660 (false refusal).
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 8);
+        AgentDayConfig afterConfig = slotDayConfig(a.getId(), AFTER_DAY_OFF, 11);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatCode(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                MINIMUM_REST_MINUTES, List.of(), List.of(dConfig, afterConfig), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES,
+                        LocalTime.of(8, 0), LocalTime.of(20, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("SLOT control: required hours on the first business date are still refused against the pre-horizon span; the day after a day off is not")
+    void slot_horizonEdgeControl_requiredHoursOnFirstBusinessDateStillRefused_dayAfterDayOffIsNot() {
+        Agent a = agent("Zion");
+        RestSpan priorSpan = new RestSpan(a.getId(), D_MINUS_1, LocalTime.of(15, 0), LocalTime.of(23, 0),
+                LocalTime.MIDNIGHT);
+        // D, 11h: latest start 1200-660 = 540, gap 60 + 540 = 600 < 660 -- the genuine REST-05 refusal.
+        AgentDayConfig dConfig = slotDayConfig(a.getId(), D, 11);
+        AgentDayConfig afterConfig = slotDayConfig(a.getId(), AFTER_DAY_OFF, 11);
+        List<String> warnings = new ArrayList<>();
+
+        assertThatThrownBy(() -> SolverService.requireRestFeasibility(SchedulingMode.SLOT,
+                MINIMUM_REST_MINUTES, List.of(), List.of(dConfig, afterConfig), List.of(priorSpan), List.of(),
+                List.of(), scheduleConfig(SchedulingMode.SLOT, MINIMUM_REST_MINUTES,
+                        LocalTime.of(8, 0), LocalTime.of(20, 0)),
+                warnings, MIDNIGHT_WINDOW))
+                .isInstanceOf(PreSolveValidationException.class)
+                .satisfies(ex -> {
+                    PreSolveValidationException pve = (PreSolveValidationException) ex;
+                    assertThat(pve.getDetails()).hasSize(1);
+                    assertThat(pve.getDetails().get(0).message())
+                            .contains(D_MINUS_1.toString()).contains(D.toString())
+                            .contains("only 600 minute(s)").contains("required 660")
+                            .doesNotContain(DAY_OFF.toString()).doesNotContain(AFTER_DAY_OFF.toString());
+                });
     }
 }
