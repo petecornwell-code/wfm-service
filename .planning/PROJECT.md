@@ -478,8 +478,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-04 after Phase 22 (Minimum Rest) — v1.5's final phase; all 29 v1.5
-requirements Complete and the milestone ready to close. Previously: 2026-10-02 after Phase 20 — all eight requirements
+*Last updated: 2026-10-08 after Phase 24 (gap closure N-1/N-2) — shift-library validation, envelope/usual-shift repair, start-mix targets and the Agent Allocation demand rows now all key on the stored business date; OVNT-05/06/07, SOLV-07, BDAY-02/05 re-satisfied at non-00:00 anchors. Phase 23 (G-1) awaits human UAT before v1.5 can close. Previously: 2026-10-04 after Phase 22 (Minimum Rest) — all 29 v1.5
+requirements Complete. Previously: 2026-10-02 after Phase 20 — all eight requirements
 (SOLV-01..07, BDAY-07) satisfied, verified 8/8 must-haves after two gap-closure rounds; 12/12 plans.
 Round 2 (plan 20-12) found four repository-level truncation sites that fed business-date period bounds
 into calendar-date finders, and closed them behind one shared `BusinessDayPeriodLoader`; the

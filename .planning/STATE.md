@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
-current_phase: 24
-current_phase_name: "Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows"
+current_phase: 23
+current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
 status: verifying
-stopped_at: Completed 24-03-PLAN.md
-last_updated: "2026-10-07T18:31:15.834Z"
-last_activity: 2026-10-07
-last_activity_desc: Completed 24-03 — business-date range and businessDate on staffing requirements; allocation rows keyed on it; gate 1535 tests, 1 pre-existing flake
-state_head: 4e2bdcb82808829c5e332069800acae9db862657
+stopped_at: Phase 24 complete; Phase 23 awaiting human UAT
+last_updated: "2026-10-08T13:44:59.041Z"
+last_activity: 2026-10-08
+last_activity_desc: Phase 24 verified and complete; Phase 23 awaiting human UAT
+state_head: 8ff4bd72540b3c2c74ef33315bb8ea4ca187b482
 progress:
   total_phases: 7
   completed_phases: 5
@@ -25,14 +25,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 24 — Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows
+**Current focus:** Phase 23 — human UAT of the RestSpan.gapMinutes overnight-predecessor fix (last open v1.5 phase)
 
 ## Current Position
 
-Phase: 24 (Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows) — ALL PLANS COMPLETE
-Plan: 3 of 3 (24-01, 24-02, 24-03 complete)
-Status: Phase complete — ready for verification
-Last activity: 2026-10-07 — Completed 24-03 (businessDate + businessFrom/businessTo on staffing requirements; Agent Allocation rows keyed on it; live-measured on a throwaway 06:00 desk)
+Phase: 23 — Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
+Plan: 3/3 executed
+Status: Awaiting human verification (23-VERIFICATION.md human_needed; 23-UAT.md status testing)
+Last activity: 2026-10-08 — Phase 24 verified (UAT 4/4, SECURITY threats_open 0, VERIFICATION passed 34/34) and marked complete
 
 ## Milestone v1.3 Outcome
 
@@ -387,6 +387,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - [Phase 24]: 24-01: Window.describe(DayWindow) is the single operator-facing window label, calendar date disclosed only when it differs from the business date
 - [Phase 24]: 24-02: violation sort in ScheduleEnvelopeRepairService is business date, anchored start minute, id (chronological from the day start)
 - [Phase 24]: 24-02: AgentAssignmentDifficultyComparator keeps the calendar date by design (construction-order heuristic); classified in bday-join-guard.md, not allowlisted
+- [Phase 24]: UAT 2026-10-08: D7 (no state across calls) proven by CallIsolation barrier-stepped tests, mutation-checked for successive and overlap-only leaks; operator accepted the 24-03 phase gate on the clean rerun
 - [Phase 24]: 24-03: business-range paging filters the stored business_date column through JPQL twins sharing the calendar keyset, not a widen-then-derive stream filter — A stream filter after a widened read breaks hasMore and the cursor on a paginated endpoint; the stored column is the single BDAY-08 derivation.
 - [Phase 24]: 24-03: half-supplied, mixed, inverted and malformed businessFrom/businessTo are refused with 400; the calendar from/to pair keeps its silent-ignore behaviour — Silently ignoring a half-supplied business range would return the desk's entire demand to a caller that asked for two days; changing the legacy pair is a separate decision.
 
@@ -414,14 +415,15 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ## Session Continuity
 
-Last session: 2026-10-07T18:31:08.068Z
-Stopped at: Completed 24-03-PLAN.md
+Last session: 2026-10-08
+Stopped at: Phase 24 complete; Phase 23 executed and awaiting human UAT
 Resume file: None
 
 ## Operator Next Steps
 
-- **Plan Phase 23 first** — `/gsd-plan-phase 23`. The v1.5 audit's G-1 is a critical, unsafe-direction defect in live solving: `RestSpan.gapMinutes` overstates rest when the predecessor shift spans midnight, so the hard minimum-rest constraint under-fires and an illegal roster scores `0hard`. Closing it is what makes v1.5 shippable
-- Start the next milestone with `/gsd-new-milestone` *(after Phase 23)*
+- **Verify Phase 23** — `/gsd-verify-work 23`. Executed 3/3 but `23-VERIFICATION.md` is `human_needed` and `23-UAT.md` is still `testing`. It closes the v1.5 audit's G-1 (`RestSpan.gapMinutes` overstating rest after an overnight predecessor), so it is what makes v1.5 shippable
+- **Before milestone close:** triage the five `open` findings in `24-REVIEW-DISPOSITION.md` (WR-01/02/03, IN-01/02), and re-verify Phases 18–22, whose `covered_files` include files Phase 24 changed (digests deliberately not refreshed)
+- Then `/gsd-audit-milestone` and `/gsd-complete-milestone`
 - **Consider closing Nyquist debt first** — `/gsd-validate-phase` for 10, 13, 14, 15 (all `status: draft`) and 16 (the one genuine PARTIAL). Five phases across two milestones; flagged at the v1.3 audit as having drifted from an oversight into a pattern
 - **999.9 is now three audits old** — the v1.2 I-2 merge-precedence gap has been recorded at every close since 2026-08-21 and never scoped into a phase
 
