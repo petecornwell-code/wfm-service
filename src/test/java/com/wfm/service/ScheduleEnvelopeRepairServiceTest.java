@@ -229,9 +229,40 @@ class ScheduleEnvelopeRepairServiceTest {
         assertThat(holderIds(d.schedule())).isEqualTo(holdersBefore);
     }
 
+    /**
+     * D7: the repair holds no state across calls. A 06:00 overnight desk and a midnight-anchored
+     * day desk, each rebuilt fresh per run, reproduce their isolated outcome whether run alone,
+     * alternately, or concurrently on this one service instance.
+     */
+    @Test
+    void holdsNoStateAcrossCalls_desksRepairedInTurnOrConcurrentlyMatchTheirIsolatedRun() throws Exception {
+        CallIsolation.assertNoStateSurvivesACall(
+                () -> {
+                    OvernightDesk d = overnightDesk(true, false);
+                    var result = service.repairVerified(d.schedule(), envelopeScorer(LocalTime.of(6, 0)));
+                    return List.of(result, seating(d.schedule()));
+                },
+                () -> {
+                    Fixture f = stuckOnOwnBreakHour();
+                    var result = service.repairVerified(f.schedule(), envelopeScorer());
+                    return List.of(result, seating(f.schedule()));
+                });
+    }
+
     // ------------------------------------------------------------------
     //  Fixture
     // ------------------------------------------------------------------
+
+    /** Who sits where, by calendar date, business date and hour; fixture ids are random, names are not. */
+    private static List<String> seating(Schedule schedule) {
+        List<String> out = new ArrayList<>();
+        for (AgentAssignment s : schedule.getAssignments()) {
+            Timeslot ts = s.getTimeslot();
+            out.add(ts.getDate() + "/" + ts.getBusinessDate() + " " + ts.getStartTime() + " "
+                    + (s.getAgent() == null ? "-" : s.getAgent().getName()));
+        }
+        return out;
+    }
 
     private record Fixture(Schedule schedule, Agent agent,
                            AgentAssignment breakSeat, AgentAssignment freeLegalSeat) {}

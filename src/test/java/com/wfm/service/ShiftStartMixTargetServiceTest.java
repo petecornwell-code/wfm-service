@@ -220,6 +220,26 @@ class ShiftStartMixTargetServiceTest {
         assertThat(targets.stream().mapToInt(ShiftStartMixTarget::targetCount).sum()).isEqualTo(3);
     }
 
+    /**
+     * D7: the service holds no state across calls. The Saferide day desk and the 06:00 overnight
+     * desk, each rebuilt fresh per run, get their isolated targets whether computed alone,
+     * alternately, or concurrently on this one service instance.
+     */
+    @Test
+    void holdsNoStateAcrossCalls_desksComputedInTurnOrConcurrentlyMatchTheirIsolatedRun() throws Exception {
+        CallIsolation.assertNoStateSurvivesACall(
+                () -> {
+                    Fixture f = saferide();
+                    return service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                            f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.MIDNIGHT));
+                },
+                () -> {
+                    Fixture f = overnightDesk();
+                    return service.computeTargets(SchedulingMode.SHIFT, f.rows, f.usualTargets,
+                            f.requirements, f.timeslots, f.seats, DayWindow.anchoredAt(LocalTime.of(6, 0)));
+                });
+    }
+
     // ---------- scoring helpers, deliberately independent of the service's own arithmetic ----------
 
     /** Uncovered agent-slots for a start-time mix, spreading each start evenly over its bands. */

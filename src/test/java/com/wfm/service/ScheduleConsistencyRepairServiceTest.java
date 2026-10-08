@@ -258,7 +258,62 @@ class ScheduleConsistencyRepairServiceTest {
         assertThat(workedHours(schedule)).isEqualTo(coverageBefore);
     }
 
+    /**
+     * D7: the repair holds no state across calls. The day swap and the 06:00 overnight swap,
+     * each rebuilt fresh per run, reproduce their isolated outcome whether run alone,
+     * alternately, or concurrently on this one service instance.
+     */
+    @Test
+    void holdsNoStateAcrossCalls_desksRepairedInTurnOrConcurrentlyMatchTheirIsolatedRun() throws Exception {
+        CallIsolation.assertNoStateSurvivesACall(
+                () -> {
+                    Schedule s = swapNeeded(LocalTime.of(8, 0), LocalTime.of(9, 0), DAY);
+                    return List.of(service.repair(s), seating(s));
+                },
+                () -> {
+                    Schedule s = swapNeeded(LocalTime.of(20, 0), LocalTime.of(21, 0), DAY.plusDays(1));
+                    return List.of(service.repair(s), seating(s));
+                });
+    }
+
     // --- fixtures ---
+
+    /**
+     * Two 8-hour agents each holding the other's usual nine-hour envelope: A holds the one
+     * starting at {@code lateStart} and wants {@code earlyStart}, B the reverse. Each holds the
+     * envelope's first hour plus one more seven hours later, on {@code laterCalendarDate}
+     * (business date always {@link #DAY}); passing {@code DAY + 1} with evening starts gives
+     * the post-midnight shape.
+     */
+    private Schedule swapNeeded(LocalTime earlyStart, LocalTime lateStart, LocalDate laterCalendarDate) {
+        Specialization spec = spec("General");
+        Agent a = agent("A", spec, "8.00");
+        Agent b = agent("B", spec, "8.00");
+        ShiftBandPair early = pair("Early", earlyStart, earlyStart.plusHours(9));
+        ShiftBandPair late = pair("Late", lateStart, lateStart.plusHours(9));
+        int lateHour = lateStart.getHour();
+        int earlyHour = earlyStart.getHour();
+        return schedule(
+                List.of(shift(a, late), shift(b, early)),
+                List.of(seat(a, lateHour, DAY, DAY), seat(a, (lateHour + 7) % 24, laterCalendarDate, DAY),
+                        seat(b, earlyHour, DAY, DAY), seat(b, (earlyHour + 7) % 24, laterCalendarDate, DAY)),
+                List.of(new ResolvedUsualShiftTarget(a.getId(), DAY, earlyStart),
+                        new ResolvedUsualShiftTarget(b.getId(), DAY, lateStart)));
+    }
+
+    /** Who holds which envelope and which seats; fixture ids are random, names are not. */
+    private List<String> seating(Schedule s) {
+        List<String> out = new ArrayList<>();
+        for (AgentShiftAssignment sa : s.getShiftAssignments()) {
+            out.add(sa.getAgent().getName() + " envelope " + sa.getShiftBandPair().template().getStartTime());
+        }
+        for (AgentAssignment seat : s.getAssignments()) {
+            Timeslot ts = seat.getTimeslot();
+            out.add(ts.getDate() + "/" + ts.getBusinessDate() + " " + ts.getStartTime() + " "
+                    + (seat.getAgent() == null ? "-" : seat.getAgent().getName()));
+        }
+        return out;
+    }
 
     private Specialization spec(String name) {
         Specialization s = new Specialization();
