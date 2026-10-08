@@ -2128,7 +2128,7 @@ public class SolverService {
         return prior != null && prior.businessDate().equals(dMinus1) ? prior : null;
     }
 
-    /** Indexes {@code priorRestSpans} by agent id —{@code RestPredecessorService} resolves at
+    /** Indexes {@code priorRestSpans} by agent id — {@code RestPredecessorService} resolves at
      *  most one business date back per agent, so one entry per agent is all this ever holds. */
     private static Map<UUID, RestSpan> indexPriorSpansByAgent(List<RestSpan> priorRestSpans) {
         if (priorRestSpans == null || priorRestSpans.isEmpty()) {
