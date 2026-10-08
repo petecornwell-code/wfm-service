@@ -4,35 +4,37 @@ milestone: v1.5
 milestone_name: Overnight Shifts & Business Dates
 current_phase: 23
 current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
-status: verifying
-stopped_at: Phase 24 complete; Phase 23 awaiting human UAT
-last_updated: "2026-10-08T13:44:59.041Z"
+status: completed
+stopped_at: Phase 23 complete — all phases complete
+last_updated: "2026-10-08T14:05:52.085Z"
 last_activity: 2026-10-08
-last_activity_desc: Phase 24 verified and complete; Phase 23 awaiting human UAT
-state_head: 8ff4bd72540b3c2c74ef33315bb8ea4ca187b482
+last_activity_desc: Phase 23 complete
+state_head: 1abb7a56dac6a9d424a2e72245d493da5b2e672f
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 7
   total_plans: 56
   completed_plans: 56
-  percent: 71
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-04 after Phase 22)
+See: .planning/PROJECT.md (updated 2026-10-08 after Phase 23)
 
 **Core value:** Scheduling managers can produce optimised, constraint-aware agent schedules in minutes instead of hours — without spreadsheets. *(Re-checked at v1.5 start — unchanged.)*
-**Current focus:** Phase 23 — human UAT of the RestSpan.gapMinutes overnight-predecessor fix (last open v1.5 phase)
+**Current focus:** v1.5 milestone close — all 7 phases (18–24) complete; audit and complete the milestone
 
 ## Current Position
 
-Phase: 23 — Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
+Phase: 23 (last v1.5 phase) — complete
 Plan: 3/3 executed
-Status: Awaiting human verification (23-VERIFICATION.md human_needed; 23-UAT.md status testing)
-Last activity: 2026-10-08 — Phase 24 verified (UAT 4/4, SECURITY threats_open 0, VERIFICATION passed 34/34) and marked complete
+Status: All v1.5 phases complete — ready for milestone audit
+Last activity: 2026-10-08 — Phase 23 UAT passed (1/1), SECURITY threats_open 0, VERIFICATION passed; marked complete
+
+Progress: [████████████████████] 56/56 plans (100%)
 
 ## Milestone v1.3 Outcome
 
@@ -393,6 +395,9 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 
 ### Blockers/Concerns
 
+- **[Phase 23] UAT D5 passed live, but the live run cannot discriminate the fix.** 2026-10-08: the API refuses a 22:00–06:00 template at a 00:00 day start, so the live desk used a 06:00 anchor, where the Night span ends exactly on the business-day boundary and does not wrap — pre-fix and post-fix arithmetic both yield 60. The wrapped-predecessor case is proven by unit fixtures only. Open question for the milestone audit: is a wrapping predecessor reachable live at all (legacy templates, SLOT `ofSlots`, pre-horizon spans across a day-start change)? If not, G-1 was latent rather than live.
+- **⚠ [Phase 23] CR-01 (critical, open, pre-existing) — `requireRestFeasibility`'s pre-horizon fallback indexes `priorSpanByAgent` by agent only, with no check that the lookback is genuinely D-1.** Can substitute a stale historical span for a mid-period day-off/PTO predecessor. Out of Phase 23's arithmetic scope; recorded in `23-VERIFICATION.md` — needs a follow-up phase or plan. Also WR-01 (warning): `RestGapArithmeticGuardTest`'s matcher is evadable via `endMinuteFromDayStart` or a literal `1440`.
+
 - **[Phase 22] Concurrent duplicate rest-waiver POST returns a raw 500 — BACKLOGGED as ROADMAP 999.10.** Found at UAT 2026-10-04. Two genuinely simultaneous `POST .../rest-waivers` for the same `(agent, date)` produce one 200 and one unhandled 500 off the `agent_rest_waiver` unique constraint (3/3 reproductions). No data corruption — the constraint holds and exactly one row ever exists — and a genuine browser double-click is correctly guarded, so T-22-24's own property stands and this is not an open threat. The fix is to catch `DataIntegrityViolationException` on the waiver upsert and return the 200 the sequential duplicate already returns.
 - **[Phase 22] UAT checkpoint 3 was verified against a seeded ACCEPTED-schedule fixture, not a live solver run.** The real `buildRestWaiverDisclosure` computation and the reopened-accepted read path (the surface both gap-closure plans fixed) were exercised end to end and pass. What was NOT exercised is the solver itself producing a waived short-rested pair during a live solve; that behaviour rests on plans 22-01..22-03's backend test coverage. Recorded in `22-UAT.md` under test 3's `limitation`. If a live-solve confirmation is ever wanted, it needs a full solvable fixture desk (shift templates, staffing requirements, specializations, multiple agents).
 - **⚠ [Phase 15] G-15-28 — weekend demand forecast under-reports the roster, operator-owned and OPEN.** The live weekend forecast asserts ~1 FTE at hours where ~20 agents are rostered (Sat 2026-01-10 has no demand row before 11:00; Sun 2026-01-11 reads 1 FTE at 10:00). Because `bulkOverallocationLimit` derives its ceiling from demand, this manufactured the seat scarcity behind most of Phase 15's residual-hard symptoms — proven by experiment: raising `overallocationHardLimitPct` 250→500 with everything else held constant took the live desk to hard 0 for the first time. **The 500% ceiling is a workaround for bad data, not a fix, and must not be left in place** — it disables the over-allocation guard for the rest of the week. Once the forecast is corrected, re-run at 250%. Operator committed to the correction on 2026-09-01; not a code defect.
@@ -416,14 +421,14 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ## Session Continuity
 
 Last session: 2026-10-08
-Stopped at: Phase 24 complete; Phase 23 executed and awaiting human UAT
+Stopped at: Phase 23 complete — all phases complete
 Resume file: None
 
 ## Operator Next Steps
 
-- **Verify Phase 23** — `/gsd-verify-work 23`. Executed 3/3 but `23-VERIFICATION.md` is `human_needed` and `23-UAT.md` is still `testing`. It closes the v1.5 audit's G-1 (`RestSpan.gapMinutes` overstating rest after an overnight predecessor), so it is what makes v1.5 shippable
+- ~~Verify Phase 23~~ — done 2026-10-08 (UAT 1/1 pass, SECURITY 0 open, VERIFICATION passed). Closes v1.5 audit G-1.
 - **Before milestone close:** triage the five `open` findings in `24-REVIEW-DISPOSITION.md` (WR-01/02/03, IN-01/02), and re-verify Phases 18–22, whose `covered_files` include files Phase 24 changed (digests deliberately not refreshed)
-- Then `/gsd-audit-milestone` and `/gsd-complete-milestone`
+- Then `/gsd-audit-milestone` and `/gsd-complete-milestone v1.5` — the audit should weigh Phase 23's CR-01 and the live-reachability question under Blockers/Concerns
 - **Consider closing Nyquist debt first** — `/gsd-validate-phase` for 10, 13, 14, 15 (all `status: draft`) and 16 (the one genuine PARTIAL). Five phases across two milestones; flagged at the v1.3 audit as having drifted from an oversight into a pattern
 - **999.9 is now three audits old** — the v1.2 I-2 merge-precedence gap has been recorded at every close since 2026-08-21 and never scoped into a phase
 

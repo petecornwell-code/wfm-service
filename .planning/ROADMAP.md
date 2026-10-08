@@ -28,7 +28,7 @@ than four captured live desks standing in for both jobs at once.
 - [x] **Phase 20: Solver Business-Date Correctness** - Every solver join, the seat-supply check, SLOT-mode accounting and demand/coverage reporting resolve the same business date, proven by match counts, with one live desk showing nothing else moved (completed 2026-10-02)
 - [x] **Phase 21: Overnight Shift Templates** - A shift can span midnight, save-time validation and contracted-hours consumption treat it as belonging to its starting business day, and the grid/export render it as one continuous block (completed 2026-10-03)
 - [x] **Phase 22: Minimum Rest** - A per-desk minimum rest period is enforced as a hard constraint with a pre-solve refusal and a per-agent, per-date waiver (completed 2026-10-04)
-- [ ] **Phase 23: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor** - The hard minimum-rest constraint measures the true gap when the predecessor shift spans midnight, closing v1.5 audit gap G-1
+- [x] **Phase 23: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor** - The hard minimum-rest constraint measures the true gap when the predecessor shift spans midnight, closing v1.5 audit gap G-1 (completed 2026-10-08)
 - [x] **Phase 24: Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows** - Shift-library validation and the Agent Allocation demand rows resolve a timeslot's business date the way the solver does, closing v1.5 re-audit gaps N-1/N-2 (completed 2026-10-08)
 
 ### Phase 18: Business-Day Foundation & Guards
@@ -462,17 +462,17 @@ prev.endTime())` — rather than reading `endMinuteFromDayStart(prev.endTime())`
 overnight-prev case to `MinimumRestShiftConstraintTest` and to `RestPredecessorServiceTest`'s
 lookback path.
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 23-01-PLAN.md — Tracer: the one wrap-aware `DayWindow` primitive, `RestSpan.gapMinutes` switched onto it, and `requireRestFeasibility`'s SLOT pre-horizon branch pointed at the same primitive (D-01)
+- [x] 23-01-PLAN.md — Tracer: the one wrap-aware `DayWindow` primitive, `RestSpan.gapMinutes` switched onto it, and `requireRestFeasibility`'s SLOT pre-horizon branch pointed at the same primitive (D-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 23-02-PLAN.md — Overnight-predecessor fixtures across the four remaining affected test classes, including `RestHorizonEdgeTest` (a sixth class the research did not enumerate)
+- [x] 23-02-PLAN.md — Overnight-predecessor fixtures across the four remaining affected test classes, including `RestHorizonEdgeTest` (a sixth class the research did not enumerate)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 23-03-PLAN.md — The `rest-gap-arithmetic-guard` registry and scanner (D-02), plus the single full-suite phase gate
+- [x] 23-03-PLAN.md — The `rest-gap-arithmetic-guard` registry and scanner (D-02), plus the single full-suite phase gate
 
 ### Phase 24: Close gap: N-1/N-2 — calendar-date keys in shift-library validation and allocation rows
 
