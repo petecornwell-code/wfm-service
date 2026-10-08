@@ -1793,7 +1793,10 @@ public class SolverService {
      * period's first business date and the agent has no in-horizon row on D-1, the predecessor
      * candidate set is the single ACCEPTED pre-horizon {@link RestSpan} {@code
      * RestPredecessorService} already resolved for that agent — one fixed instant, not a product of
-     * candidates, since that day already happened and cannot be chosen differently.
+     * candidates, since that day already happened and cannot be chosen differently. The span is
+     * consulted only when its own business date is D-1, through {@code preHorizonPredecessor}, so a
+     * mid-horizon date after a day off has no predecessor and is skipped rather than measured
+     * against history (CR-01).
      *
      * <p><strong>Accepted consequence, taken deliberately, in 22-CONTEXT.md D-12's own terms:
      * accepting one period can newly refuse the next period's solve.</strong> The argument for
@@ -1896,11 +1899,13 @@ public class SolverService {
                     List<RestSpan> predecessorCandidates = predecessorRow != null
                             ? shiftCandidateSpans(predecessorRow)
                             // Pre-horizon edge (D-12/REST-05): the single ACCEPTED instant, not a
-                            // product of candidates -- that day already happened.
-                            : priorSpanCandidates(priorSpanByAgent.get(agentId));
+                            // product of candidates -- that day already happened. Applies only
+                            // when the span is dated D-1 (CR-01).
+                            : priorSpanCandidates(preHorizonPredecessor(priorSpanByAgent, agentId, dMinus1));
                     if (predecessorCandidates.isEmpty()) {
-                        // Neither an in-horizon D-1 row nor a pre-horizon span exists -- nothing to
-                        // be impossible against.
+                        // Neither an in-horizon D-1 row nor a pre-horizon span dated D-1 exists
+                        // (this includes a mid-horizon day off, CR-01) -- nothing to be impossible
+                        // against.
                         continue;
                     }
 
@@ -2023,10 +2028,11 @@ public class SolverService {
                         // open and work straight through their required minutes.
                         predecessorEndMinute = windowStartMinute + requiredMinutesDMinus1;
                     } else {
-                        RestSpan prior = priorSpanByAgent.get(agentId);
+                        RestSpan prior = preHorizonPredecessor(priorSpanByAgent, agentId, dMinus1);
                         if (prior == null) {
-                            // Neither an in-horizon D-1 agent-day nor a pre-horizon span exists --
-                            // nothing to be impossible against.
+                            // Neither an in-horizon D-1 agent-day nor a pre-horizon span dated D-1
+                            // exists (this includes a mid-horizon day off, CR-01) -- nothing to be
+                            // impossible against.
                             continue;
                         }
                         // Pre-horizon edge (D-12/REST-05): the predecessor is HISTORY, not a
@@ -2111,7 +2117,18 @@ public class SolverService {
         return prior == null ? List.of() : List.of(prior);
     }
 
-    /** Indexes {@code priorRestSpans} by agent id — {@code RestPredecessorService} resolves at
+    /** The pre-horizon span is the predecessor only of the date it was resolved for
+     *  ({@code periodStart - 1}, D-12/REST-05). Day-off and zero-hour dates are absent from both
+     *  branches' per-date maps, so without this guard a mid-horizon date whose D-1 is a day off
+     *  would be measured against pre-horizon history (CR-01). Keying on the span's own business
+     *  date is the same keying the in-solve constraints use for the registered pre-horizon fact. */
+    private static RestSpan preHorizonPredecessor(Map<UUID, RestSpan> priorSpanByAgent, UUID agentId,
+            LocalDate dMinus1) {
+        RestSpan prior = priorSpanByAgent.get(agentId);
+        return prior != null && prior.businessDate().equals(dMinus1) ? prior : null;
+    }
+
+    /** Indexes {@code priorRestSpans} by agent id —{@code RestPredecessorService} resolves at
      *  most one business date back per agent, so one entry per agent is all this ever holds. */
     private static Map<UUID, RestSpan> indexPriorSpansByAgent(List<RestSpan> priorRestSpans) {
         if (priorRestSpans == null || priorRestSpans.isEmpty()) {
