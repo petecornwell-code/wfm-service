@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "`requireRestFeasibility`'s pre-horizon fallback is not scoped to the true pre-horizon date, in both the SHIFT and SLOT branches"
   - id: WR-01
     severity: warning
@@ -19,7 +19,7 @@ findings:
     severity: info
     disposition: open
     title: "The SLOT branch's best-gap formula re-derives `RestSpan.gapMinutes`'s composition inline instead of delegating to it"
-open: 4
+open: 3
 total: 4
 unparsed: 1
 recorded: 2026-10-04T21:12:20.122Z
@@ -29,7 +29,7 @@ recorded: 2026-10-04T21:12:20.122Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
+| CR-01 | critical | fixed | quick 261008-eby, fix commit 5e454e8 |
 | WR-01 | warning | open | - |
 | IN-01 | info | open | - |
 | IN-02 | info | open | - |
