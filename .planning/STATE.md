@@ -6,10 +6,10 @@ current_phase: 23
 current_phase_name: Close gap REST-01/02/05 — RestSpan.gapMinutes with an overnight predecessor
 status: completed
 stopped_at: Phase 23 complete — all phases complete
-last_updated: "2026-10-08T14:05:52.085Z"
+last_updated: "2026-10-08T14:29:22.651Z"
 last_activity: 2026-10-08
 last_activity_desc: Phase 23 complete
-state_head: 1abb7a56dac6a9d424a2e72245d493da5b2e672f
+state_head: 4ce7942a6ca14c3a17e07163d27263871b30c0bd
 progress:
   total_phases: 7
   completed_phases: 7
@@ -32,9 +32,9 @@ See: .planning/PROJECT.md (updated 2026-10-08 after Phase 23)
 Phase: 23 (last v1.5 phase) — complete
 Plan: 3/3 executed
 Status: All v1.5 phases complete — ready for milestone audit
-Last activity: 2026-10-08 — Phase 23 UAT passed (1/1), SECURITY threats_open 0, VERIFICATION passed; marked complete
+Last activity: 2026-10-08 - Completed quick task 261008-eby: fix CR-01 pre-horizon rest fallback
 
-Progress: [████████████████████] 56/56 plans (100%)
+Progress: [████████████████████] 56/56 plans ([██████████] 100%)
 
 ## Milestone v1.3 Outcome
 
@@ -396,7 +396,7 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 ### Blockers/Concerns
 
 - **[Phase 23] UAT D5 passed live, but the live run cannot discriminate the fix.** 2026-10-08: the API refuses a 22:00–06:00 template at a 00:00 day start, so the live desk used a 06:00 anchor, where the Night span ends exactly on the business-day boundary and does not wrap — pre-fix and post-fix arithmetic both yield 60. The wrapped-predecessor case is proven by unit fixtures only. Open question for the milestone audit: is a wrapping predecessor reachable live at all (legacy templates, SLOT `ofSlots`, pre-horizon spans across a day-start change)? If not, G-1 was latent rather than live.
-- **⚠ [Phase 23] CR-01 (critical, open, pre-existing) — `requireRestFeasibility`'s pre-horizon fallback indexes `priorSpanByAgent` by agent only, with no check that the lookback is genuinely D-1.** Can substitute a stale historical span for a mid-period day-off/PTO predecessor. Out of Phase 23's arithmetic scope; recorded in `23-VERIFICATION.md` — needs a follow-up phase or plan. Also WR-01 (warning): `RestGapArithmeticGuardTest`'s matcher is evadable via `endMinuteFromDayStart` or a literal `1440`.
+- **[RESOLVED 2026-10-08, quick 261008-eby `5e454e8`] [Phase 23] CR-01 (critical, pre-existing) — `requireRestFeasibility`'s pre-horizon fallback indexes `priorSpanByAgent` by agent only, with no check that the lookback is genuinely D-1.** Can substitute a stale historical span for a mid-period day-off/PTO predecessor. Out of Phase 23's arithmetic scope; recorded in `23-VERIFICATION.md` — needs a follow-up phase or plan. Also WR-01 (warning): `RestGapArithmeticGuardTest`'s matcher is evadable via `endMinuteFromDayStart` or a literal `1440`.
 
 - **[Phase 22] Concurrent duplicate rest-waiver POST returns a raw 500 — BACKLOGGED as ROADMAP 999.10.** Found at UAT 2026-10-04. Two genuinely simultaneous `POST .../rest-waivers` for the same `(agent, date)` produce one 200 and one unhandled 500 off the `agent_rest_waiver` unique constraint (3/3 reproductions). No data corruption — the constraint holds and exactly one row ever exists — and a genuine browser double-click is correctly guarded, so T-22-24's own property stands and this is not an open threat. The fix is to catch `DataIntegrityViolationException` on the waiver upsert and return the 200 the sequential duplicate already returns.
 - **[Phase 22] UAT checkpoint 3 was verified against a seeded ACCEPTED-schedule fixture, not a live solver run.** The real `buildRestWaiverDisclosure` computation and the reopened-accepted read path (the surface both gap-closure plans fixed) were exercised end to end and pass. What was NOT exercised is the solver itself producing a waived short-rested pair during a live solve; that behaviour rests on plans 22-01..22-03's backend test coverage. Recorded in `22-UAT.md` under test 3's `limitation`. If a live-solve confirmation is ever wanted, it needs a full solvable fixture desk (shift templates, staffing requirements, specializations, multiple agents).
@@ -417,6 +417,12 @@ Full decision log with outcomes is in `.planning/PROJECT.md` Key Decisions. Carr
 - **⚠ [Phase 18] The `skipped="0"` guard is a one-time observation, not a standing control (T-18-05-04).** `MidnightTimeslotPostgresTest` is what exercises V53 through real Flyway, but `@Testcontainers(disabledWithoutDocker = true)` means a machine with no Docker daemon skips the whole class and the build still reports green — the V39 failure mode. The phase's mitigation ("assert the JUnit XML shows `skipped=\"0\"`") WAS performed and evidenced in `18-05-SUMMARY.md` (`tests="6" skipped="0"`), but no code asserts it: grepping `src/test/java` and `build.gradle` for `skipped="0"` returns nothing. CI has Docker so it is live there; local `./gradlew build` without Docker is not covered. Recorded as a residual risk in `18-SECURITY.md`, not an open threat, because the mitigation as written was an execution-time check. Closing it permanently needs a standing assertion.
 - 16-02: MultiDayConstraintDiagnosticTest (solver package, wall-clock time-boxed) failed once during the mandatory full-suite run under contention; confirmed flaky, green in isolation. Pre-existing, out of this phase's scope — logged to .planning/phases/16-usual-shift-storage/deferred-items.md
 - **[RESOLVED 2026-10-02, `597f171`] [Phase 20] Business-date *exclusion* is now proven at a non-midnight anchor.** Code review WR-01 (advisory in `20-VERIFICATION.md`, never a gap — the phase verified 8/8) flagged that `BusinessDayPeriodLoader`'s exclusion half was proven only at the unit/mocked level and, through the real `acceptSchedule`/JPA path, only at a `00:00` anchor. Closed by `ScheduleServiceShiftSnapshotTest` Tests E/F: 21:00-anchored, one out-of-range decoy per side, both inside the widened fetch window `[MONDAY, TUESDAY]` so only the derived filter can remove them. Mutation matrix recorded in the commit message — deleting both filters goes RED on D and E/F but stays green on A/B/C; swapping the derived date for the calendar date goes RED on A/B/C and E/F but stays green on D. E/F are the only tests sensitive to both, which is the actual gap WR-01 named (its write-up implied no test caught a deleted filter; Test D did)
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261008-eby | fix CR-01 pre-horizon rest fallback | 2026-10-08 | 4ce7942 | [261008-eby-fix-cr-01-pre-horizon-rest-fallback](./quick/261008-eby-fix-cr-01-pre-horizon-rest-fallback/) |
 
 ## Session Continuity
 
