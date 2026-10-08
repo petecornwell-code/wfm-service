@@ -1,0 +1,22 @@
+diff --git a/build.gradle b/build.gradle
+index 3bf4042..e5198f3 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -49,6 +49,17 @@ tasks.named('test') {
+     useJUnitPlatform()
+ }
+ 
++// SPIKE-ONLY (throwaway): dump the test runtime classpath so the spike harness can be
++// compiled and run with plain javac/java, without Spring context loading.
++tasks.register('spikeCp') {
++    doLast {
++        def f = new File(project.buildDir, 'spike-cp.txt')
++        f.parentFile.mkdirs()
++        f.text = sourceSets.test.runtimeClasspath.asPath
++        println "WROTE " + f.absolutePath
++    }
++}
++
+ tasks.register('generateFteSpreadsheet', JavaExec) {
+     classpath = sourceSets.main.runtimeClasspath
+     mainClass = 'com.wfm.util.FteSpreadsheetGenerator'
