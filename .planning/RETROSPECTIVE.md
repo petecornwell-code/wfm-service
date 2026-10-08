@@ -284,6 +284,98 @@ Eleven migrations (V39–V49), 169 files, +31,010/−293, and a backend suite th
 
 ---
 
+## Milestone: v1.5 — Overnight Shifts & Business Dates
+
+**Shipped:** 2026-10-08
+**Phases:** 7 (18–24) | **Plans:** 56 | **Tasks:** 129 | **Requirements:** 29/29 | plus 1 quick task
+
+### What Was Built
+
+The business day became the scheduling unit. A desk sets the time its day begins, and timeslot
+generation produces a contiguous 24-hour business day across two calendar dates. `DayWindow`
+measures every interval from that anchor. Every solver join, the seat-supply check, SLOT
+accounting, demand upload, coverage reporting and shift-library validation now resolve one business
+date per timeslot.
+
+Overnight shift templates save with correct net hours, consume the starting weekday's contracted
+hours, and render as one block in the grid and the Excel export. A per-desk minimum rest is a hard
+constraint, with a pre-solve refusal, a one-day lookback into accepted history, and per-date waivers
+that must be disclosed.
+
+Three migrations (V53–V55), 183 source files, +27,013/−916, 396 commits in nine days. The milestone
+was a clean restart of v1.4, which was cancelled the same morning it began.
+
+### What Worked
+
+- **Redesigning the proof, not just the code, after v1.4's cancellation.**
+  - v1.4 failed on a regression fixture built from captured live desks that barely contain
+    midnight.
+  - v1.5 proved correctness on constructed scenarios chosen by the property under test, and demoted
+    live data to a 48-agent drift guard.
+  - Phase 20's 26-constraint match-count table then caught a silent non-join that the score alone
+    passed. That is exactly the failure mode the redesign was for.
+- **Compiler-forced migration.** Demoting `DayWindow`'s nine midnight-implicit statics to private
+  turned 83 call sites into compile errors rather than a review checklist. A frozen oracle proved
+  the change byte-identical at 00:00.
+- **Ordering the risky switch last.** The 00:00-only gate came off as Phase 20's final commit, after
+  every join was migrated and guarded. No operator could create a re-anchored desk while the solver
+  still disagreed with itself.
+- **The milestone audit loop.** Four passes, three real defects (G-1, N-1/N-2, CR-01), each closed
+  by a small, targeted phase or quick task rather than a rework. Every one was a seam between
+  phases, which no single phase verification is positioned to see.
+
+### What Was Inefficient
+
+- **Non-solver consumers of a timeslot's date were found one at a time.** Phase 20 moved the solver
+  to business date. Afterwards, shift-library validation, envelope repair, start-mix targets and the
+  Agent Allocation rows each still carried a calendar-date key. Two of them (N-1, N-2) reached the
+  milestone audit.
+  - The join guard was scoped to the files known at the time, not to every consumer of
+    `Timeslot`.
+  - Six files are still unscanned.
+- **A recorded critical finding slipped through an audit.** Phase 23's code review flagged CR-01 as
+  `critical` on 2026-10-04 and recorded it `open`. The 2026-10-07 audit pass did not read
+  REVIEW-DISPOSITION files and missed it. It was caught only on the next pass.
+- **Verification went stale faster than it was refreshed.** Gap-closure phases legitimately changed
+  source covered by earlier phases. By close, six of seven phases had stale digests, and the
+  milestone closed on integration checks and targeted tests instead.
+- **Phase 20 needed two gap-closure rounds (12 plans), and a 600x performance regression cost a
+  diagnosis cycle.** The regression came from test fixtures with null `businessDate`, not from the
+  migration.
+
+### Patterns Established
+
+- **Constructed scenarios for correctness, live shapes for drift.** Never ask one fixture to do both
+  jobs.
+- **Widen the guard, then fix (Phase 24).** Commit the widened structural guard red first, naming
+  every unmigrated site, then turn it green with an empty allowlist. The red list is the work list.
+- **One wrap-aware primitive per hazardous composition, held single by a registry-plus-scanner
+  guard.** Examples: `DayWindow.anchoredWrappedEndMinute` and `RestGapArithmeticGuardTest`.
+- **Quick task for a confirmed, contained audit finding.** CR-01 went from audit gap to merged fix
+  with red/green tests in one short session, without the full phase chain.
+
+### Key Lessons
+
+- **When a key changes meaning, enumerate every reader of that key, not just the obvious subsystem.**
+  The solver was the obvious consumer of `Timeslot.getDate()`. Validation, repair and UI allocation
+  rows were the ones that slipped.
+- **An audit must ingest open review findings.** Any `open` row in a REVIEW-DISPOSITION file at
+  `critical`/`warning` is a candidate gap until shown otherwise.
+- **A live UAT that cannot discriminate old behaviour from new is not evidence of the fix.** Phase
+  23's D5 passed at a 06:00 anchor where the predecessor does not wrap. The wrapped case rests on
+  unit fixtures, and whether it is reachable live is still an open question.
+
+### Cost Observations
+
+- **Model mix:** the `balanced` profile — Opus for planning, Sonnet for executors, checkers,
+  verifiers and integration checks. Per-session percentages were not tracked.
+- **Sessions:** not counted.
+- **Notable:** the tail of the milestone was cheap. Audit, quick-task fix, re-audit and close ran in
+  one session. A single integration-check subagent per audit pass (~30–60k tokens) was enough to
+  confirm or refute each seam.
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Requirements shipped | Phases delivered | Closed |
@@ -292,9 +384,18 @@ Eleven migrations (V39–V49), 169 files, +31,010/−293, and a backend suite th
 | v1.1 Schedule Quality & Reporting | 4 of 16 (25%) | 2 of 4 | 2026-07-29 |
 | v1.2 Unified Agent Provisioning | 19 of 19 (100%) | 4 of 5 (1 withdrawn) | 2026-08-25 (override) |
 | v1.3 Shift-Based Scheduling & Consistency | 43 of 43 (100%) | 4 of 4 | 2026-09-21 (override) |
+| v1.4 Overnight Shifts & Business Dates | 0 (cancelled, all work unwound) | 0 of 6 | 2026-09-30 (cancelled) |
+| v1.5 Overnight Shifts & Business Dates | 29 of 29 (100%) | 7 of 7 (2 gap-closure) + 1 quick task | 2026-10-08 (override) |
 
 **Recurring themes:**
 
+- **Third consecutive override close, and the debt is now mostly verification debt.** v1.5 shipped
+  every requirement with zero audit gaps on its final pass. It still closed with six of seven phase
+  verifications stale and Nyquist not run on six phases. Nyquist debt has grown from 5 to 11 phases
+  across three milestones.
+- **The audit is now the most productive quality gate.** v1.2 found one seam; v1.5 found three real
+  seam defects across four passes. Each was invisible to the phase verifications. The audit's own
+  blind spot, ignoring open REVIEW-DISPOSITION findings, cost one pass.
 - **v1.2 broke the scoping pattern; the other patterns held.** The first two milestones closed with
   roughly half their phases undelivered. v1.2 shipped every requirement — but needed a sixth-of-a-
   milestone closure phase to do it, and still closed under override. Tighter scope (19 requirements,
