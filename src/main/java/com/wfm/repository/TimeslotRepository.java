@@ -26,6 +26,13 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, UUID> {
             long tenantId, UUID deskId);
 
     /**
+     * The live timeslots of ONE business date. Ordering by calendar date then start time is
+     * business-chronological at any anchor.
+     */
+    List<Timeslot> findByTenantIdAndDeskIdAndScheduleIdIsNullAndBusinessDateOrderByDateAscStartTimeAsc(
+            long tenantId, UUID deskId, LocalDate businessDate);
+
+    /**
      * Desk bounds as MINUTE-OF-DAY integers, not as TIME values, because a desk whose day runs to
      * midnight stores its final slot as 23:00-00:00 and {@code 00:00} is the SMALLEST value a SQL
      * TIME can hold. The previous form of this query returned two wrong answers on such a desk:

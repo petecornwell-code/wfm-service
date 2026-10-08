@@ -258,7 +258,7 @@ class StaffingRequirementBusinessDateDeleteTest {
         Map<UUID, Integer> dMinus1OriginalFtes = beforeDMinus1.stream()
                 .collect(Collectors.toMap(StaffingRequirement::getId, StaffingRequirement::getRequiredFTEs));
 
-        service.calculateErlangC(fx.deskId(), erlangCRequestFor(fx, fx.dCal(), fx.dCal()));
+        service.calculateErlangC(fx.deskId(), erlangCRequestFor(fx, fx.dCal()));
 
         List<StaffingRequirement> after = staffingRequirementRepository.findAllLiveByDesk(TENANT, fx.deskId());
         assertThat(after).hasSize(8);
@@ -282,7 +282,7 @@ class StaffingRequirementBusinessDateDeleteTest {
         assertThat(beforeD).hasSize(4);
         Set<UUID> beforeDIds = beforeD.stream().map(StaffingRequirement::getId).collect(Collectors.toSet());
 
-        service.calculateErlangC(fx.deskId(), erlangCRequestFor(fx, fx.dCal(), fx.dCal()));
+        service.calculateErlangC(fx.deskId(), erlangCRequestFor(fx, fx.dCal()));
 
         List<StaffingRequirement> afterD = liveRequirementsOnBusinessDate(fx.deskId(), fx.dCal());
         assertThat(afterD).hasSize(4);
@@ -327,10 +327,10 @@ class StaffingRequirementBusinessDateDeleteTest {
         Map<UUID, Integer> dayTwoOriginalFtes = beforeDayTwo.stream()
                 .collect(Collectors.toMap(StaffingRequirement::getId, StaffingRequirement::getRequiredFTEs));
 
-        ErlangCRequest request = new ErlangCRequest(dayOne, dayOne, List.of(
+        ErlangCRequest request = new ErlangCRequest(dayOne, List.of(
                 new ErlangCRequest.Item(d1T1.getId(), spec.getId(), 100, 180, 80, 20),
                 new ErlangCRequest.Item(d1T2.getId(), spec.getId(), 100, 180, 80, 20)),
-                null);
+                null, null);
 
         service.calculateErlangC(deskId, request);
 
@@ -360,7 +360,7 @@ class StaffingRequirementBusinessDateDeleteTest {
         List<StaffingRequirement> beforeD = liveRequirementsOnBusinessDate(fx.deskId(), fx.dCal());
         Set<UUID> beforeDIds = beforeD.stream().map(StaffingRequirement::getId).collect(Collectors.toSet());
 
-        service.calculateErlangX(fx.deskId(), erlangXRequestFor(fx, fx.dCal(), fx.dCal()));
+        service.calculateErlangX(fx.deskId(), erlangXRequestFor(fx, fx.dCal()));
 
         List<StaffingRequirement> after = staffingRequirementRepository.findAllLiveByDesk(TENANT, fx.deskId());
         assertThat(after).hasSize(8);
@@ -402,10 +402,10 @@ class StaffingRequirementBusinessDateDeleteTest {
         Map<UUID, Integer> dayTwoOriginalFtes = beforeDayTwo.stream()
                 .collect(Collectors.toMap(StaffingRequirement::getId, StaffingRequirement::getRequiredFTEs));
 
-        ErlangXRequest midnightRequest = new ErlangXRequest(dayOne, dayOne, List.of(
+        ErlangXRequest midnightRequest = new ErlangXRequest(dayOne, List.of(
                 new ErlangXRequest.Item(d1T1.getId(), midnightSpec.getId(), 100, 180, 90, 25, 80, 20),
                 new ErlangXRequest.Item(d1T2.getId(), midnightSpec.getId(), 100, 180, 90, 25, 80, 20)),
-                null);
+                null, null);
 
         service.calculateErlangX(midnightDeskId, midnightRequest);
 
@@ -468,10 +468,10 @@ class StaffingRequirementBusinessDateDeleteTest {
         ThreeDayFixture fx = seedThreeDays();
 
         // Exactly what the page sends today: the period-wide range, day 1's rows only.
-        service.calculateErlangC(fx.deskId(), new ErlangCRequest(fx.d1(), fx.d3(), List.of(
+        service.calculateErlangC(fx.deskId(), new ErlangCRequest(fx.d1(), List.of(
                 new ErlangCRequest.Item(fx.d1T1().getId(), fx.spec().getId(), 100, 180, 80, 20),
                 new ErlangCRequest.Item(fx.d1T2().getId(), fx.spec().getId(), 100, 180, 80, 20)),
-                null));
+                null, null));
 
         assertDaysTwoAndThreeUntouched(fx);
     }
@@ -481,12 +481,148 @@ class StaffingRequirementBusinessDateDeleteTest {
     void erlangX_calculatingOneBusinessDate_leavesTheRestOfThePeriodUntouched() {
         ThreeDayFixture fx = seedThreeDays();
 
-        service.calculateErlangX(fx.deskId(), new ErlangXRequest(fx.d1(), fx.d3(), List.of(
+        service.calculateErlangX(fx.deskId(), new ErlangXRequest(fx.d1(), List.of(
                 new ErlangXRequest.Item(fx.d1T1().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20),
                 new ErlangXRequest.Item(fx.d1T2().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20)),
-                null));
+                null, null));
 
         assertDaysTwoAndThreeUntouched(fx);
+    }
+
+    /** N consecutive 00:00-anchored days from 2026-10-05, two slots each (08-09, 09-10), live at 5. */
+    private record DaysFixture(UUID deskId, Specialization spec, List<LocalDate> dates,
+                                List<Timeslot> firsts, List<Timeslot> seconds) {
+    }
+
+    private DaysFixture seedDays(int n) {
+        UUID deskId = saveDesk(LocalTime.MIDNIGHT);
+        Specialization spec = saveSpecialization(deskId, "S1");
+        List<LocalDate> dates = new java.util.ArrayList<>();
+        List<Timeslot> firsts = new java.util.ArrayList<>();
+        List<Timeslot> seconds = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            LocalDate d = LocalDate.of(2026, 10, 5).plusDays(i);
+            Timeslot t1 = saveTimeslot(deskId, LocalTime.MIDNIGHT, d, LocalTime.of(8, 0), LocalTime.of(9, 0));
+            Timeslot t2 = saveTimeslot(deskId, LocalTime.MIDNIGHT, d, LocalTime.of(9, 0), LocalTime.of(10, 0));
+            saveLiveRequirement(deskId, t1, spec, 5);
+            saveLiveRequirement(deskId, t2, spec, 5);
+            dates.add(d);
+            firsts.add(t1);
+            seconds.add(t2);
+        }
+        return new DaysFixture(deskId, spec, dates, firsts, seconds);
+    }
+
+    private ErlangCRequest erlangCForDay(DaysFixture fx, int day, List<LocalDate> copyTo) {
+        return new ErlangCRequest(fx.dates().get(day), List.of(
+                new ErlangCRequest.Item(fx.firsts().get(day).getId(), fx.spec().getId(), 100, 180, 80, 20),
+                new ErlangCRequest.Item(fx.seconds().get(day).getId(), fx.spec().getId(), 100, 180, 80, 20)),
+                null, copyTo);
+    }
+
+    private Map<UUID, Integer> snapshotLive(UUID deskId) {
+        return staffingRequirementRepository.findAllLiveByDesk(TENANT, deskId).stream()
+                .collect(Collectors.toMap(StaffingRequirement::getId, StaffingRequirement::getRequiredFTEs));
+    }
+
+    @Test
+    @DisplayName("Erlang C copyTo: the source result lands on the target date's own timeslots; "
+            + "dates not listed are unchanged")
+    void erlangC_copyTo_writesTargetDatesOwnTimeslotsAndNothingElse() {
+        DaysFixture fx = seedDays(4);
+
+        service.calculateErlangC(fx.deskId(), erlangCForDay(fx, 0, List.of(fx.dates().get(2))));
+
+        for (int day : new int[] {0, 2}) {
+            List<StaffingRequirement> rows = liveRequirementsOnBusinessDate(fx.deskId(), fx.dates().get(day));
+            assertThat(rows).hasSize(2);
+            assertThat(rows).allSatisfy(sr -> {
+                assertThat(sr.getRequiredFTEs()).isEqualTo(8);
+                assertThat(sr.getSource()).isEqualTo(com.wfm.model.StaffingSource.ERLANG_C);
+            });
+            assertThat(rows).extracting(sr -> sr.getTimeslot().getId()).containsExactlyInAnyOrder(
+                    fx.firsts().get(day).getId(), fx.seconds().get(day).getId());
+        }
+        for (int day : new int[] {1, 3}) {
+            List<StaffingRequirement> rows = liveRequirementsOnBusinessDate(fx.deskId(), fx.dates().get(day));
+            assertThat(rows).hasSize(2);
+            assertThat(rows).allSatisfy(sr -> assertThat(sr.getRequiredFTEs()).isEqualTo(5));
+        }
+    }
+
+    @Test
+    @DisplayName("Erlang X copyTo at a 21:00 anchor: D-1's rows, including its calendar-D tail, sit "
+            + "on D-1's own timeslots with the same per-slot FTEs as D")
+    void erlangX_anchor21_copyTo_matchesSlotsIncludingPostMidnightTail() {
+        BusinessDayDFixture fx = seedAnchor21FixtureWithLiveRequirements();
+
+        service.calculateErlangX(fx.deskId(), new ErlangXRequest(fx.dCal(), List.of(
+                new ErlangXRequest.Item(fx.dT1().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20),
+                new ErlangXRequest.Item(fx.dT2().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20),
+                new ErlangXRequest.Item(fx.dT3().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20),
+                new ErlangXRequest.Item(fx.dT4().getId(), fx.spec().getId(), 100, 180, 90, 25, 80, 20)),
+                null, List.of(fx.dMinus1Cal())));
+
+        List<StaffingRequirement> afterD = liveRequirementsOnBusinessDate(fx.deskId(), fx.dCal());
+        List<StaffingRequirement> afterDm1 = liveRequirementsOnBusinessDate(fx.deskId(), fx.dMinus1Cal());
+        assertThat(afterD).hasSize(4);
+        assertThat(afterDm1).hasSize(4);
+        assertThat(afterDm1).allSatisfy(sr -> assertThat(sr.getSource())
+                .isEqualTo(com.wfm.model.StaffingSource.ERLANG_X));
+        // Per-slot FTEs equal, keyed by start time, and D-1's tail slots sit on calendar date D.
+        Map<LocalTime, Integer> dFtes = afterD.stream().collect(
+                Collectors.toMap(sr -> sr.getTimeslot().getStartTime(), StaffingRequirement::getRequiredFTEs));
+        Map<LocalTime, Integer> dm1Ftes = afterDm1.stream().collect(
+                Collectors.toMap(sr -> sr.getTimeslot().getStartTime(), StaffingRequirement::getRequiredFTEs));
+        assertThat(dm1Ftes).isEqualTo(dFtes);
+        assertThat(afterDm1).filteredOn(sr -> sr.getTimeslot().getStartTime().equals(LocalTime.MIDNIGHT))
+                .singleElement().satisfies(sr ->
+                        assertThat(sr.getTimeslot().getDate()).isEqualTo(fx.dCal()));
+    }
+
+    @Test
+    @DisplayName("refused: a copyTo date with no live timeslots deletes nothing")
+    void copyToDateWithNoTimeslots_isRefusedBeforeAnythingIsDeleted() {
+        DaysFixture fx = seedDays(2);
+        Map<UUID, Integer> before = snapshotLive(fx.deskId());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.calculateErlangC(fx.deskId(),
+                        erlangCForDay(fx, 0, List.of(LocalDate.of(2027, 1, 1)))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(snapshotLive(fx.deskId())).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("refused: an item whose timeslot belongs to another business date deletes nothing")
+    void itemOnAnotherBusinessDate_isRefusedBeforeAnythingIsDeleted() {
+        DaysFixture fx = seedDays(2);
+        Map<UUID, Integer> before = snapshotLive(fx.deskId());
+
+        ErlangCRequest request = new ErlangCRequest(fx.dates().get(0), List.of(
+                new ErlangCRequest.Item(fx.firsts().get(0).getId(), fx.spec().getId(), 100, 180, 80, 20),
+                new ErlangCRequest.Item(fx.firsts().get(1).getId(), fx.spec().getId(), 100, 180, 80, 20)),
+                null, null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.calculateErlangC(fx.deskId(), request))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(snapshotLive(fx.deskId())).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("refused: a null businessDate (stale client sending from/to) deletes nothing")
+    void nullBusinessDate_isRefusedBeforeAnythingIsDeleted() {
+        DaysFixture fx = seedDays(2);
+        Map<UUID, Integer> before = snapshotLive(fx.deskId());
+
+        ErlangCRequest request = new ErlangCRequest(null, List.of(
+                new ErlangCRequest.Item(fx.firsts().get(0).getId(), fx.spec().getId(), 100, 180, 80, 20)),
+                null, null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.calculateErlangC(fx.deskId(), request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("businessDate");
+
+        assertThat(snapshotLive(fx.deskId())).isEqualTo(before);
     }
 
     // ---------- helpers ----------
@@ -604,24 +740,24 @@ class StaffingRequirementBusinessDateDeleteTest {
 
     /** Builds an {@link ErlangCRequest} over business day D's four timeslots, reusing the request
      *  item shape {@link StaffingRequirementErlangTest} already uses. */
-    private ErlangCRequest erlangCRequestFor(BusinessDayDFixture fx, LocalDate from, LocalDate to) {
+    private ErlangCRequest erlangCRequestFor(BusinessDayDFixture fx, LocalDate businessDate) {
         UUID specId = fx.spec().getId();
-        return new ErlangCRequest(from, to, List.of(
+        return new ErlangCRequest(businessDate, List.of(
                 new ErlangCRequest.Item(fx.dT1().getId(), specId, 100, 180, 80, 20),
                 new ErlangCRequest.Item(fx.dT2().getId(), specId, 100, 180, 80, 20),
                 new ErlangCRequest.Item(fx.dT3().getId(), specId, 100, 180, 80, 20),
                 new ErlangCRequest.Item(fx.dT4().getId(), specId, 100, 180, 80, 20)),
-                null);
+                null, null);
     }
 
     /** The {@link ErlangXRequest} equivalent of {@link #erlangCRequestFor}. */
-    private ErlangXRequest erlangXRequestFor(BusinessDayDFixture fx, LocalDate from, LocalDate to) {
+    private ErlangXRequest erlangXRequestFor(BusinessDayDFixture fx, LocalDate businessDate) {
         UUID specId = fx.spec().getId();
-        return new ErlangXRequest(from, to, List.of(
+        return new ErlangXRequest(businessDate, List.of(
                 new ErlangXRequest.Item(fx.dT1().getId(), specId, 100, 180, 90, 25, 80, 20),
                 new ErlangXRequest.Item(fx.dT2().getId(), specId, 100, 180, 90, 25, 80, 20),
                 new ErlangXRequest.Item(fx.dT3().getId(), specId, 100, 180, 90, 25, 80, 20),
                 new ErlangXRequest.Item(fx.dT4().getId(), specId, 100, 180, 90, 25, 80, 20)),
-                null);
+                null, null);
     }
 }
