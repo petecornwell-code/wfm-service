@@ -201,11 +201,11 @@ export default function ErlangCalculator() {
       <div>
         <h2 style={{ marginBottom: '0.25rem' }}>Erlang Calculator</h2>
         <p style={{ color: '#15803d', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '0.85rem', margin: 0 }}>
-          Nothing here is saved. This page does not touch staffing requirements, timeslots or any
-          schedule — it posts numbers and shows the answer. The <strong>Erlang C</strong> and{' '}
-          <strong>Erlang X</strong> modes on <strong>Staffing Requirements</strong> are the ones that
-          write: each calculation replaces the requirements for the one business date selected there,
-          plus any dates you then copy the result to.
+          This is a scratch pad: nothing here is saved, and it never changes your demand (the number of
+          agents you need in each timeslot) or any schedule. To set demand from call volumes, use the{' '}
+          <strong>Erlang C</strong> or <strong>Erlang X</strong> mode on the{' '}
+          <strong>Staffing Requirements</strong> page. That does save: each calculation replaces the
+          demand for the date you picked there, and for any dates you copy the result to.
         </p>
       </div>
 
