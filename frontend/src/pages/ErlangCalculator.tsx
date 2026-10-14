@@ -202,9 +202,10 @@ export default function ErlangCalculator() {
         <h2 style={{ marginBottom: '0.25rem' }}>Erlang Calculator</h2>
         <p style={{ color: '#15803d', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', padding: '0.5rem 0.75rem', fontSize: '0.85rem', margin: 0 }}>
           Nothing here is saved. This page does not touch staffing requirements, timeslots or any
-          schedule — it posts numbers and shows the answer. The <strong>Erlang X</strong> mode on{' '}
-          <strong>Staffing Requirements</strong> is the one that writes: it replaces the live
-          requirements for the whole date range it is given.
+          schedule — it posts numbers and shows the answer. The <strong>Erlang C</strong> and{' '}
+          <strong>Erlang X</strong> modes on <strong>Staffing Requirements</strong> are the ones that
+          write: each calculation replaces the requirements for the one business date selected there,
+          plus any dates you then copy the result to.
         </p>
       </div>
 
