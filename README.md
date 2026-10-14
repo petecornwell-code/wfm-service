@@ -2,6 +2,13 @@
 
 Workforce management system that allocates agents to timeslots using constraint-based optimisation. Built with Spring Boot (Java 21), Timefold Solver, PostgreSQL, and React.
 
+## Documentation
+
+- **[WFM_Scheduler_User_Guide.docx](WFM_Scheduler_User_Guide.docx)** — the user guide for schedulers (WFM Team Leads): desk setup, loading agents, entering demand, solving, reviewing, accepting and exporting, with screenshots.
+- This README covers developer setup.
+
+The earlier `user_manual.md` and `SCHEDULE_BUILDER_GUIDE.md` were retired in favour of the user guide; they predate the shift library, per-day hours and rest waivers. Both remain in git history (`git show fd451e6:user_manual.md`, `git show 6294ec7:SCHEDULE_BUILDER_GUIDE.md`), including the old manual's API reference section.
+
 ## Architecture
 
 ```
