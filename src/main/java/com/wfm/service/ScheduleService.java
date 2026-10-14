@@ -1,6 +1,7 @@
 package com.wfm.service;
 
 import com.wfm.config.TenantContext;
+import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import com.wfm.dto.PaginatedResponse;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleSummary;
@@ -305,6 +306,36 @@ public class ScheduleService {
         return response;
     }
 
+    /**
+     * V57: the accept-time violation report as JSON, with every timeslot id remapped onto this
+     * accepted schedule's own snapshot timeslots (the live ids it was explained against are not
+     * this schedule's). Returns null -- so the reader keeps its fallback derivation -- when the
+     * report is empty but the score is not zero: buildConstraintViolations returns an empty list
+     * both for "nothing violated" and for "explanation failed", and only the score tells them apart.
+     */
+    private static String constraintViolationsSnapshot(
+            List<ScheduleDetailResponse.ConstraintViolationEntry> entries, Schedule schedule,
+            Map<UUID, UUID> timeslotRemap) {
+        if (entries == null) return null;
+        if (entries.isEmpty() && schedule.getScore() != null
+                && !schedule.getScore().equals(HardSoftScore.ZERO)) {
+            return null;
+        }
+        List<ScheduleDetailResponse.ConstraintViolationEntry> remapped = entries.stream()
+                .map(e -> new ScheduleDetailResponse.ConstraintViolationEntry(
+                        e.constraintName(), e.level(), e.weight(), e.violationCount(), e.totalPenalty(),
+                        e.violations() == null ? null : e.violations().stream()
+                                .map(v -> new ScheduleDetailResponse.ViolationDetail(
+                                        v.agentId(), v.agentName(),
+                                        v.timeslotId() == null ? null
+                                                : timeslotRemap.getOrDefault(v.timeslotId(), v.timeslotId()),
+                                        v.businessDate(), v.calendarDate(), v.startTime(), v.endTime(),
+                                        v.timeslotLabel(), v.description()))
+                                .toList()))
+                .toList();
+        return ConstraintViolationSnapshotCodec.encode(remapped);
+    }
+
     // --- Task 26: acceptSchedule ---
 
     @Transactional
@@ -351,6 +382,11 @@ public class ScheduleService {
         // so this persist() call writes it as a genuine recorded fact — nothing else needs to
         // write or infer it, at accept time or on later reload.
         entityManager.flush();
+        // V57: explain the score NOW, while this is still the live solution with every problem
+        // fact attached -- once accepted, the reload path cannot rebuild those facts and so cannot
+        // explain the score (G-15-32). Must run before setId(null) below.
+        List<ScheduleDetailResponse.ConstraintViolationEntry> liveViolations =
+                scheduleOutputService.buildConstraintViolations(schedule, false);
         schedule.setStatus(ScheduleStatus.ACCEPTED);
         schedule.setId(null);
         entityManager.persist(schedule);
@@ -382,6 +418,9 @@ public class ScheduleService {
             entityManager.persist(snapshot);
             timeslotRemap.put(live.getId(), snapshot.getId());
         }
+
+        schedule.setConstraintViolationsSnapshot(
+                constraintViolationsSnapshot(liveViolations, schedule, timeslotRemap));
 
         // Snapshot live staffing requirements → remap to snapshot timeslots
         // SOLV-01 (20-REVIEW.md CR-01, site 4): same business-date-vs-calendar-date mismatch as

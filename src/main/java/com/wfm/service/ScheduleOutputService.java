@@ -623,6 +623,14 @@ public class ScheduleOutputService {
      */
     @SuppressWarnings("removal")
     public List<ConstraintViolationEntry> buildConstraintViolations(Schedule schedule, boolean isAcceptedSnapshot) {
+        // V57: the report explained from the live solution at accept time, when every problem
+        // fact was present — complete for every constraint, unlike the envelope-only derivation
+        // below. Checked first so it is returned as recorded, even for a schedule with no seats.
+        // Absent for schedules accepted before V57 (or whose accept-time explanation failed),
+        // which keep that derivation.
+        if (isAcceptedSnapshot && schedule.getConstraintViolationsSnapshot() != null) {
+            return ConstraintViolationSnapshotCodec.decode(schedule.getConstraintViolationsSnapshot());
+        }
         if (schedule.getAssignments() == null || schedule.getAssignments().isEmpty()) {
             return List.of();
         }

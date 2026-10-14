@@ -6,6 +6,7 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.ScheduleDetailResponse;
 import com.wfm.dto.ScheduleDetailResponse.ConstraintViolationEntry;
 import com.wfm.dto.ScheduleDetailResponse.ViolationDetail;
+import com.wfm.dto.ScheduleSummary;
 import com.wfm.dto.ShiftTemplateRequest;
 import com.wfm.dto.ShiftTemplateRequest.BreakBandRequest;
 import com.wfm.model.Agent;
@@ -1199,6 +1200,143 @@ class ScheduleServiceShiftSnapshotTest {
 
         assertThat(response.getFeasible()).isTrue();
         assertFeasibleImpliesNoViolatedHardConstraints(response);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // V57 — an accepted schedule kept its NOT FEASIBLE score but lost its violation report: the
+    // accepted path cannot re-explain the score, so it reported nothing for every constraint but
+    // shift-envelope compliance. acceptSchedule now snapshots the live report; the accepted read
+    // path returns it.
+    // ------------------------------------------------------------------------------------------
+
+    @Autowired
+    private org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager testEntityManager;
+
+    /** A one-seat SLOT schedule on a saved live timeslot, ready to accept. */
+    private Schedule acceptableSlotSchedule(UUID deskId, UUID scheduleId, Timeslot liveTimeslot) {
+        Agent agent = saveAgent(TENANT_A, deskId, "A1");
+        Specialization spec = saveSpecialization(TENANT_A, deskId, "S1");
+        Schedule schedule = buildInMemorySchedule(deskId, scheduleId);
+        schedule.setShiftAssignments(new ArrayList<>());
+        AgentAssignment seat = new AgentAssignment();
+        seat.setId(UUID.randomUUID());
+        seat.setTenantId(TENANT_A);
+        seat.setDeskId(deskId);
+        seat.setScheduleId(scheduleId);
+        seat.setTimeslot(liveTimeslot);
+        seat.setRequiredSpecialization(spec);
+        seat.setAgent(agent);
+        schedule.setAssignments(new ArrayList<>(List.of(seat)));
+        return schedule;
+    }
+
+    private Timeslot saveLiveTimeslot(UUID deskId) {
+        Timeslot ts = new Timeslot();
+        ts.setTenantId(TENANT_A);
+        ts.setDeskId(deskId);
+        ts.setDate(MONDAY);
+        ts.setStartTime(LocalTime.of(8, 0));
+        ts.setEndTime(LocalTime.of(9, 0));
+        ts.setBusinessDate(MONDAY);
+        return timeslotRepository.save(ts);
+    }
+
+    private Schedule reloadAccepted(UUID id) {
+        testEntityManager.flush();
+        testEntityManager.clear();
+        return testEntityManager.find(Schedule.class, id);
+    }
+
+    @Test
+    void acceptSchedule_snapshotsTheLiveViolationReport_remappedOntoTheSnapshotTimeslots() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        Timeslot live = saveLiveTimeslot(deskId);
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = acceptableSlotSchedule(deskId, inMemoryScheduleId, live);
+        schedule.setScore(HardSoftScore.of(-3, -40));
+        inMemoryStore.put(schedule);
+
+        UUID agentId = schedule.getAssignments().get(0).getAgent().getId();
+        ConstraintViolationEntry hard = new ConstraintViolationEntry(
+                "Specialization match", "HARD", new ScheduleSummary.ScoreDto(1, 0), 1,
+                new ScheduleSummary.ScoreDto(-3, 0),
+                List.of(new ViolationDetail(agentId, "A1", live.getId(), MONDAY, MONDAY,
+                        LocalTime.of(8, 0), LocalTime.of(9, 0), MONDAY + " 08:00-09:00",
+                        "Specialization match violation for A1")));
+        ConstraintViolationEntry soft = new ConstraintViolationEntry(
+                "Honour preferred start time", "SOFT", new ScheduleSummary.ScoreDto(0, 5), 8,
+                new ScheduleSummary.ScoreDto(0, -40), List.of());
+        when(scheduleOutputService.buildConstraintViolations(any(), org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(List.of(hard, soft));
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+        Schedule reloaded = reloadAccepted(saved.getId());
+
+        assertThat(reloaded.getConstraintViolationsSnapshot()).isNotNull();
+        List<ConstraintViolationEntry> report =
+                ConstraintViolationSnapshotCodec.decode(reloaded.getConstraintViolationsSnapshot());
+        assertThat(report).extracting(ConstraintViolationEntry::constraintName, ConstraintViolationEntry::level,
+                        ConstraintViolationEntry::violationCount)
+                .containsExactly(tuple("Specialization match", "HARD", 1),
+                        tuple("Honour preferred start time", "SOFT", 8));
+        ViolationDetail detail = report.get(0).violations().get(0);
+        assertThat(detail.agentName()).isEqualTo("A1");
+        assertThat(detail.startTime()).isEqualTo(LocalTime.of(8, 0));
+        // Pointed at this accepted schedule's own snapshot timeslot, not the live one.
+        Timeslot snapshotTs = timeslotRepository.findById(detail.timeslotId()).orElseThrow();
+        assertThat(snapshotTs.getId()).isNotEqualTo(live.getId());
+        assertThat(snapshotTs.getScheduleId()).isEqualTo(saved.getId());
+    }
+
+    @Test
+    void acceptSchedule_emptyReportWithANonZeroScore_storesNoSnapshotSoTheFallbackStillApplies() {
+        // buildConstraintViolations returns an empty list when explanation fails, too; a
+        // non-zero score proves that is what happened, and "no violations" must not be recorded.
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = acceptableSlotSchedule(deskId, inMemoryScheduleId, saveLiveTimeslot(deskId));
+        schedule.setScore(HardSoftScore.of(-17, -4856));
+        inMemoryStore.put(schedule);
+        when(scheduleOutputService.buildConstraintViolations(any(), org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(List.of());
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        assertThat(reloadAccepted(saved.getId()).getConstraintViolationsSnapshot()).isNull();
+    }
+
+    @Test
+    void acceptSchedule_emptyReportWithAZeroScore_storesAnEmptySnapshot() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        UUID inMemoryScheduleId = UUID.randomUUID();
+        Schedule schedule = acceptableSlotSchedule(deskId, inMemoryScheduleId, saveLiveTimeslot(deskId));
+        schedule.setScore(HardSoftScore.ZERO);
+        inMemoryStore.put(schedule);
+        when(scheduleOutputService.buildConstraintViolations(any(), org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(List.of());
+
+        Schedule saved = scheduleService.acceptSchedule(deskId, inMemoryScheduleId, 0);
+
+        assertThat(reloadAccepted(saved.getId()).getConstraintViolationsSnapshot()).isEqualTo("[]");
+    }
+
+    @Test
+    void buildConstraintViolations_acceptedPathWithASnapshot_returnsTheRecordedReport() {
+        ConstraintViolationEntry recorded = new ConstraintViolationEntry(
+                "Bulk over-allocation limit", "HARD", new ScheduleSummary.ScoreDto(1, 0), 4,
+                new ScheduleSummary.ScoreDto(-4, 0),
+                List.of(new ViolationDetail(null, null, UUID.randomUUID(), MONDAY, MONDAY,
+                        LocalTime.of(12, 30), LocalTime.of(13, 0), MONDAY + " 12:30-13:00",
+                        "Bulk over-allocation limit violation")));
+        Schedule accepted = new Schedule();
+        accepted.setDayStart(LocalTime.MIDNIGHT);
+        // No seats at all: the recorded report must still come back as recorded.
+        accepted.setAssignments(new ArrayList<>());
+        accepted.setConstraintViolationsSnapshot(ConstraintViolationSnapshotCodec.encode(List.of(recorded)));
+
+        assertThat(realOutputService().buildConstraintViolations(accepted, true)).containsExactly(recorded);
+        // The live path never reads the snapshot.
+        assertThat(realOutputService().buildConstraintViolations(accepted, false)).isEmpty();
     }
 
     private ScheduleOutputService realOutputService() {

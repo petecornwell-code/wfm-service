@@ -114,6 +114,12 @@ public class Schedule {
     @Column(name = "created_at")
     private OffsetDateTime createdAt;
 
+    // JSON of the constraint-violation report, written once at accept time from the live solution
+    // (V57). The accepted path cannot re-explain the score, so this is its only source of the
+    // report. NULL for schedules accepted before V57 and for every in-memory schedule.
+    @Column(name = "constraint_violations_snapshot", columnDefinition = "TEXT")
+    private String constraintViolationsSnapshot;
+
     @Version
     @Column(nullable = false)
     private int version;
@@ -259,6 +265,8 @@ public class Schedule {
     public LocalTime getDayStart() { return dayStart; }
     public void setDayStart(LocalTime dayStart) { this.dayStart = dayStart; }
 
+    public String getConstraintViolationsSnapshot() { return constraintViolationsSnapshot; }
+    public void setConstraintViolationsSnapshot(String constraintViolationsSnapshot) { this.constraintViolationsSnapshot = constraintViolationsSnapshot; }
     public Integer getMinimumRestMinutes() { return minimumRestMinutes; }
     public void setMinimumRestMinutes(Integer minimumRestMinutes) { this.minimumRestMinutes = minimumRestMinutes; }
 
