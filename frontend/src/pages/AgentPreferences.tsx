@@ -46,8 +46,18 @@ export default function AgentPreferences() {
   useEffect(() => { loadPrefs() }, [deskId, agentId, from, to])
 
   const handleAdd = () => {
+    if (!newIsStanding && !newDate) {
+      showToast('error', 'Choose a date for a one-off preference')
+      return
+    }
+    // The server reads dayOfWeek as an enum, so a dated preference must send the date's weekday
+    // rather than '' (which it rejects as a malformed body). Parsed as UTC so the browser's
+    // timezone cannot shift the date to the neighbouring day.
+    const dayOfWeek = newIsStanding
+      ? newDayOfWeek
+      : DAYS_OF_WEEK[(new Date(`${newDate}T00:00:00Z`).getUTCDay() + 6) % 7]
     const pref: AgentPreference = {
-      dayOfWeek: newIsStanding ? newDayOfWeek : '',
+      dayOfWeek,
       isStanding: newIsStanding,
       date: newIsStanding ? undefined : newDate,
       preferredStartTime: newStartTime || undefined,
