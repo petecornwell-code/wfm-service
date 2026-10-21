@@ -150,6 +150,18 @@ public class DeskAgentService {
                         d -> d.getAgent().getId(),
                         Collectors.mapping(AgentDayOff::getDate, Collectors.toList())));
 
+        // Approved PTO from today on — what the Desk Agents PTO column shows alongside the pending
+        // badge, so an agent with an approved vacation no longer reads "—" there. Same single
+        // desk-wide query as pending; BambooHR holidays and working-pattern off-days are stored as
+        // MANDATORY and are deliberately not counted.
+        Map<UUID, List<LocalDate>> upcomingByAgent = agentDayOffRepository
+                .findByAgentDeskIdAndTypeAndStatusAndDateGreaterThanEqual(
+                        deskId, DayOffType.PTO, DayOffStatus.APPROVED, LocalDate.now())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        d -> d.getAgent().getId(),
+                        Collectors.mapping(AgentDayOff::getDate, Collectors.toList())));
+
         Map<UUID, Map<DayOfWeek, AgentDayHours>> dayHoursByAgent = loadDayHoursByAgent(tenantId, deskId);
         Map<UUID, Map<DayOfWeek, AgentUsualShift>> usualShiftsByAgent = loadUsualShiftsByAgent(tenantId, deskId);
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId,
@@ -161,6 +173,7 @@ public class DeskAgentService {
                         usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
                         bandsByTemplateId,
                         pendingByAgent.getOrDefault(a.getId(), List.of()),
+                        upcomingByAgent.getOrDefault(a.getId(), List.of()),
                         dayWindow))
                 .toList();
     }
@@ -169,7 +182,8 @@ public class DeskAgentService {
                                           Map<DayOfWeek, AgentDayHours> dayRows,
                                           Map<DayOfWeek, AgentUsualShift> usualRows,
                                           Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId,
-                                          List<LocalDate> pendingPtoDates, DayWindow dayWindow) {
+                                          List<LocalDate> pendingPtoDates, List<LocalDate> upcomingPtoDates,
+                                          DayWindow dayWindow) {
         Specialization ps = a.getPrimarySpecialization();
 
         // Single combined loop: the D-16 usual-shift discriminator's NOT_WORKED arm needs the
@@ -210,6 +224,8 @@ public class DeskAgentService {
                 a.getEmploymentType(),
                 pendingPtoDates.size(),
                 pendingPtoDates,
+                upcomingPtoDates.size(),
+                upcomingPtoDates,
                 dayHours,
                 usualShift
         );
@@ -321,7 +337,7 @@ public class DeskAgentService {
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
 
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), List.of(), dayWindow);
     }
 
     @Transactional
@@ -364,7 +380,7 @@ public class DeskAgentService {
                 .map(a -> toResponse(a, scheduleDefault,
                         dayHoursByAgent.getOrDefault(a.getId(), Map.of()),
                         usualShiftsByAgent.getOrDefault(a.getId(), Map.of()),
-                        bandsByTemplateId, List.of(), dayWindow))
+                        bandsByTemplateId, List.of(), List.of(), dayWindow))
                 .toList();
     }
 
@@ -437,7 +453,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), List.of(), dayWindow);
     }
 
     @Transactional
@@ -488,7 +504,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
+        return toResponse(saved, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), List.of(), dayWindow);
     }
 
     /**
@@ -542,7 +558,7 @@ public class DeskAgentService {
                 .findByTenantIdAndAgent_Id(tenantId, agentId).stream()
                 .collect(Collectors.toMap(AgentUsualShift::getDayOfWeek, u -> u));
         Map<UUID, List<ShiftTemplateBreakBand>> bandsByTemplateId = loadBandsForUsualShifts(tenantId, usualRows.values());
-        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), dayWindow);
+        return toResponse(agent, scheduleDefault, dayRows, usualRows, bandsByTemplateId, List.of(), List.of(), dayWindow);
     }
 
     /**

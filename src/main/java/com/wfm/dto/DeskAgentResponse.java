@@ -20,8 +20,31 @@ public record DeskAgentResponse(UUID id, UUID deskId, String bamboohrId, String 
                                 EmploymentType employmentType,
                                 int pendingPtoCount,
                                 List<LocalDate> pendingPtoDates,
+                                int upcomingPtoCount,
+                                List<LocalDate> upcomingPtoDates,
                                 Map<DayOfWeek, DayHoursEntry> dayHours,
                                 Map<DayOfWeek, UsualShiftEntry> usualShift) {
+
+    /**
+     * The pre-upcomingPto shape, kept so callers that only care about pending PTO need not
+     * change: no approved upcoming PTO.
+     */
+    public DeskAgentResponse(UUID id, UUID deskId, String bamboohrId, String name,
+                             String firstName, String lastName, String email,
+                             String department, String jobTitle, boolean active,
+                             OffsetDateTime lastRefreshedAt,
+                             SpecSummary primarySpecialization, List<SpecSummary> secondarySpecializations,
+                             BigDecimal contractedHoursPerDay, BigDecimal effectiveContractedHoursPerDay,
+                             EmploymentType employmentType,
+                             int pendingPtoCount,
+                             List<LocalDate> pendingPtoDates,
+                             Map<DayOfWeek, DayHoursEntry> dayHours,
+                             Map<DayOfWeek, UsualShiftEntry> usualShift) {
+        this(id, deskId, bamboohrId, name, firstName, lastName, email, department, jobTitle, active,
+                lastRefreshedAt, primarySpecialization, secondarySpecializations,
+                contractedHoursPerDay, effectiveContractedHoursPerDay, employmentType,
+                pendingPtoCount, pendingPtoDates, 0, List.of(), dayHours, usualShift);
+    }
     public record SpecSummary(UUID id, String name) {}
 
     /**

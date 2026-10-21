@@ -201,6 +201,18 @@ function UsualShiftLine({ entry, day, onClick }: { entry: UsualShiftEntry; day: 
   )
 }
 
+/** Edit endpoints (specializations, hours, day hours, usual shift) answer with one agent and no
+ * PTO — none of those edits change PTO — so keep the row's PTO fields rather than blanking them. */
+function keepPto(previous: DeskAgent, updated: DeskAgent): DeskAgent {
+  return {
+    ...updated,
+    pendingPtoCount: previous.pendingPtoCount,
+    pendingPtoDates: previous.pendingPtoDates,
+    upcomingPtoCount: previous.upcomingPtoCount,
+    upcomingPtoDates: previous.upcomingPtoDates,
+  }
+}
+
 export default function DeskAgents() {
   const { deskId } = useParams<{ deskId: string }>()
   const [agentList, setAgentList] = useState<DeskAgent[]>([])
@@ -371,7 +383,7 @@ export default function DeskAgents() {
         primarySpecializationId: editPrimary,
         secondarySpecializationIds: editSecondary,
       })
-      setAgentList(agentList.map(da => da.id === editSpecAgentId ? updated : da))
+      setAgentList(agentList.map(da => da.id === editSpecAgentId ? keepPto(da, updated) : da))
       setEditSpecAgentId(null)
       showToast('success', 'Specializations updated')
     } catch (err) {
@@ -400,7 +412,7 @@ export default function DeskAgents() {
     setApplyingBulk(true)
     try {
       const updated = await deskAgents.setContractedHours(deskId, editHoursAgentId, hours)
-      setAgentList(agentList.map(a => a.id === editHoursAgentId ? updated : a))
+      setAgentList(agentList.map(a => a.id === editHoursAgentId ? keepPto(a, updated) : a))
       setEditHoursAgentId(null)
       showToast('success', 'Contracted hours updated')
     } catch (err) {
@@ -461,7 +473,7 @@ export default function DeskAgents() {
     setSavingCell(true)
     try {
       const updated = await deskAgents.setDayHours(deskId, da.id, day, body)
-      setAgentList(agentList.map(a => a.id === da.id ? updated : a))
+      setAgentList(agentList.map(a => a.id === da.id ? keepPto(a, updated) : a))
       setEditCell(null)
       showToast('success', 'Day hours updated')
     } catch (err) {
@@ -495,7 +507,7 @@ export default function DeskAgents() {
         ? { clearRow: true }
         : { shiftTemplateId: value }
       const updated = await deskAgents.setUsualShift(deskId, da.id, day, body)
-      setAgentList(agentList.map(a => a.id === da.id ? updated : a))
+      setAgentList(agentList.map(a => a.id === da.id ? keepPto(a, updated) : a))
       setEditUsualShift(null)
     } catch (err) {
       // P-23: revert the control to what was stored before the attempt so the operator is never
@@ -730,23 +742,45 @@ export default function DeskAgents() {
               <td>{da.active ? 'Yes' : 'No'}</td>
               <td style={{ fontSize: '0.8rem' }}>{da.lastRefreshedAt ? new Date(da.lastRefreshedAt).toLocaleDateString() : '—'}</td>
               <td>
-                {da.pendingPtoCount > 0 ? (
-                  <span
-                    title={da.pendingPtoDates.join(', ')}
-                    style={{
-                      display: 'inline-block',
-                      background: '#fef9c3',
-                      color: '#92400e',
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: '4px',
-                      fontSize: '0.85rem',
-                      fontWeight: 400,
-                      cursor: 'default',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {da.pendingPtoCount} pending PTO
-                  </span>
+                {da.upcomingPtoCount > 0 || da.pendingPtoCount > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                    {da.upcomingPtoCount > 0 && (
+                      <span
+                        title={`Approved: ${da.upcomingPtoDates.join(', ')}`}
+                        style={{
+                          display: 'inline-block',
+                          background: '#dbeafe',
+                          color: '#1e40af',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '0.85rem',
+                          fontWeight: 400,
+                          cursor: 'default',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {da.upcomingPtoCount} PTO
+                      </span>
+                    )}
+                    {da.pendingPtoCount > 0 && (
+                      <span
+                        title={`Awaiting approval: ${da.pendingPtoDates.join(', ')}`}
+                        style={{
+                          display: 'inline-block',
+                          background: '#fef9c3',
+                          color: '#92400e',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '0.85rem',
+                          fontWeight: 400,
+                          cursor: 'default',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {da.pendingPtoCount} pending PTO
+                      </span>
+                    )}
+                  </div>
                 ) : '—'}
               </td>
               <td>

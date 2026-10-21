@@ -4,11 +4,14 @@ import com.wfm.config.TenantContext;
 import com.wfm.dto.DeskAgentResponse;
 import com.wfm.model.Agent;
 import com.wfm.model.AgentDayHours;
+import com.wfm.model.AgentDayOff;
+import com.wfm.model.DayOffStatus;
 import com.wfm.model.DayOffType;
 import com.wfm.model.Desk;
 import com.wfm.model.Schedule;
 import com.wfm.model.ScheduleStatus;
 import com.wfm.repository.AgentDayHoursRepository;
+import com.wfm.repository.AgentDayOffRepository;
 import com.wfm.repository.AgentRepository;
 import com.wfm.repository.DeskRepository;
 import com.wfm.repository.ScheduleRepository;
@@ -221,5 +224,44 @@ class DeskAgentServiceReadPathTest {
         DeskAgentResponse response = fetchRosterAgent();
 
         assertThat(response.effectiveContractedHoursPerDay()).isEqualByComparingTo(new BigDecimal("8.00"));
+    }
+
+    @Autowired
+    private AgentDayOffRepository agentDayOffRepository;
+
+    private void persistDayOff(LocalDate date, DayOffType type, DayOffStatus status) {
+        AgentDayOff row = new AgentDayOff();
+        row.setTenantId(TENANT_ID);
+        row.setAgent(agent);
+        row.setDate(date);
+        row.setType(type);
+        row.setStatus(status);
+        agentDayOffRepository.save(row);
+    }
+
+    @Test
+    void ptoColumn_countsApprovedUpcomingPtoSeparatelyFromPending() {
+        LocalDate today = LocalDate.now();
+        persistDayOff(today.plusDays(3), DayOffType.PTO, DayOffStatus.APPROVED);
+        persistDayOff(today.plusDays(4), DayOffType.PTO, DayOffStatus.APPROVED);
+        persistDayOff(today.minusDays(2), DayOffType.PTO, DayOffStatus.APPROVED);      // past: not upcoming
+        persistDayOff(today.plusDays(10), DayOffType.PTO, DayOffStatus.REQUESTED);    // pending only
+        persistDayOff(today.plusDays(5), DayOffType.MANDATORY, DayOffStatus.APPROVED); // holiday/pattern: not PTO
+
+        DeskAgentResponse response = fetchRosterAgent();
+
+        assertThat(response.upcomingPtoCount()).isEqualTo(2);
+        assertThat(response.upcomingPtoDates()).containsExactlyInAnyOrder(today.plusDays(3), today.plusDays(4));
+        assertThat(response.pendingPtoCount()).isEqualTo(1);
+        assertThat(response.pendingPtoDates()).containsExactly(today.plusDays(10));
+    }
+
+    @Test
+    void ptoColumn_isEmptyWhenTheAgentHasNoPto() {
+        DeskAgentResponse response = fetchRosterAgent();
+
+        assertThat(response.upcomingPtoCount()).isZero();
+        assertThat(response.upcomingPtoDates()).isEmpty();
+        assertThat(response.pendingPtoCount()).isZero();
     }
 }
