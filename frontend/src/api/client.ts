@@ -440,7 +440,7 @@ export interface ErlangDemandInputResponse { businessDate: string; items: Erlang
 export interface ErlangXParam { timeslotId: string; specializationId: string; callVolume: number; aht: number; patience: number; retryRate: number; serviceLevelTarget: number; serviceLevelThreshold: number }
 export interface DayOff { id: string; date: string; type: string; status: string }
 export interface DayOffWithAgent { id: string; date: string; type: string; status: string; agent: { id: string; name: string } | null }
-export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string }
+export interface AgentPreference { id?: string; dayOfWeek: string; date?: string; isStanding: boolean; preferredStartTime?: string; preferredBreakTime?: string; adjustedFrom?: string | null }
 export interface AgentException { id?: string; date: string; contractedHoursOverride: number; reason: string }
 export interface RestWaiver { id?: string; date: string; reason: string }
 export interface Score { hardScore: number; softScore: number }
@@ -606,7 +606,7 @@ export interface ScheduleDetail extends ScheduleSummary {
   errorMessage?: string
 }
 
-export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[] }
+export interface PreferenceUploadResult { savedCount: number; skippedCount: number; skippedDetails: string[]; adjustedCount: number; adjustedDetails: string[] }
 export interface FteUploadResult { savedCount: number; skippedCount: number; savedDetails: string[]; skippedDetails: string[]; periodStart: string; periodEnd: string; startTime: string; endTime: string; incrementMinutes: number }
 export interface PaginatedResponse<T> { data: T[]; nextCursor?: string; hasMore: boolean; totalCount: number }
 

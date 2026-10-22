@@ -21,11 +21,14 @@ public class AgentPreferenceService {
 
     private final AgentPreferenceRepository agentPreferenceRepository;
     private final AgentRepository agentRepository;
+    private final ShiftStartSnapService shiftStartSnapService;
 
     public AgentPreferenceService(AgentPreferenceRepository agentPreferenceRepository,
-                                   AgentRepository agentRepository) {
+                                   AgentRepository agentRepository,
+                                   ShiftStartSnapService shiftStartSnapService) {
         this.agentPreferenceRepository = agentPreferenceRepository;
         this.agentRepository = agentRepository;
+        this.shiftStartSnapService = shiftStartSnapService;
     }
 
     public List<PreferenceResponse> listPreferences(UUID deskId, UUID agentId, String from, String to) {
@@ -56,6 +59,10 @@ public class AgentPreferenceService {
                 .orElseThrow(() -> new EntityNotFoundException("Agent not found for desk: " + agentId));
 
         List<AgentPreference> saved = new ArrayList<>();
+        // Shift-scheduled desks only: a start no shift begins at is moved to the nearest shift start,
+        // and the response says so (adjustedFrom) so the page can show it.
+        ShiftStartSnapService.Snapper snapper = shiftStartSnapService.forDesk(tenantId, deskId);
+        java.util.Map<AgentPreference, java.time.LocalTime> adjustedFrom = new java.util.IdentityHashMap<>();
         for (PreferenceResponse pref : preferences) {
             AgentPreference entity;
 
@@ -96,12 +103,27 @@ public class AgentPreferenceService {
                         });
             }
 
-            entity.setPreferredStartTime(pref.preferredStartTime());
+            java.time.LocalTime start = pref.preferredStartTime();
+            var snap = snapper.snap(start, pref.isStanding() ? null : pref.date(),
+                    pref.isStanding() ? pref.dayOfWeek() : (pref.date() != null ? pref.date().getDayOfWeek() : null));
+            if (snap.isPresent()) {
+                start = snap.get().snapped();
+            }
+            entity.setPreferredStartTime(start);
             entity.setPreferredBreakTime(pref.preferredBreakTime());
-            saved.add(agentPreferenceRepository.save(entity));
+            AgentPreference persisted = agentPreferenceRepository.save(entity);
+            saved.add(persisted);
+            snap.ifPresent(s -> adjustedFrom.put(persisted, s.original()));
         }
 
-        return saved.stream().map(this::toResponse).toList();
+        return saved.stream()
+                .map(p -> {
+                    PreferenceResponse r = toResponse(p);
+                    java.time.LocalTime from = adjustedFrom.get(p);
+                    return from == null ? r : new PreferenceResponse(r.id(), r.dayOfWeek(), r.date(),
+                            r.isStanding(), r.preferredStartTime(), r.preferredBreakTime(), from);
+                })
+                .toList();
     }
 
     @Transactional

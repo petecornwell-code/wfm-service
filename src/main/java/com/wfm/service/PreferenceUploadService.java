@@ -26,11 +26,14 @@ public class PreferenceUploadService {
 
     private final AgentRepository agentRepository;
     private final AgentPreferenceRepository agentPreferenceRepository;
+    private final ShiftStartSnapService shiftStartSnapService;
 
     public PreferenceUploadService(AgentRepository agentRepository,
-                                    AgentPreferenceRepository agentPreferenceRepository) {
+                                    AgentPreferenceRepository agentPreferenceRepository,
+                                    ShiftStartSnapService shiftStartSnapService) {
         this.agentRepository = agentRepository;
         this.agentPreferenceRepository = agentPreferenceRepository;
+        this.shiftStartSnapService = shiftStartSnapService;
     }
 
     @Transactional
@@ -39,6 +42,9 @@ public class PreferenceUploadService {
 
         List<PreferenceResponse> saved = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
+        List<String> adjusted = new ArrayList<>();
+        // Shift-scheduled desks only: a start no shift begins at is moved to the nearest shift start.
+        ShiftStartSnapService.Snapper snapper = shiftStartSnapService.forDesk(tenantId, deskId);
 
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -89,6 +95,14 @@ public class PreferenceUploadService {
                 if (startTimeStr != null && !startTimeStr.isBlank()) {
                     startTime = LocalTime.parse(startTimeStr.trim(), DateTimeFormatter.ofPattern("HH:mm"));
                 }
+                var snap = snapper.snap(startTime, isStanding ? null : date, dayOfWeek);
+                if (snap.isPresent()) {
+                    startTime = snap.get().snapped();
+                    adjusted.add("Row " + (i + 1) + " (" + agent.getName() + ", "
+                            + (isStanding ? "every " + dayOfWeek.name().charAt(0) + dayOfWeek.name().substring(1).toLowerCase() : String.valueOf(date))
+                            + "): " + snap.get().original() + " moved to " + snap.get().snapped()
+                            + " (" + snap.get().templateName() + ") — no shift starts at " + snap.get().original());
+                }
 
                 AgentPreference pref;
                 if (isStanding) {
@@ -135,7 +149,7 @@ public class PreferenceUploadService {
             }
         }
 
-        return new PreferenceUploadResult(saved.size(), skipped.size(), skipped);
+        return new PreferenceUploadResult(saved.size(), skipped.size(), skipped, adjusted.size(), adjusted);
     }
 
     private String getCellString(Cell cell) {
@@ -159,5 +173,7 @@ public class PreferenceUploadService {
                 p.getPreferredStartTime(), p.getPreferredBreakTime());
     }
 
-    public record PreferenceUploadResult(int savedCount, int skippedCount, List<String> skippedDetails) {}
+    /** adjusted*: preferences whose start was moved to the nearest shift start (shift-scheduled desks only). */
+    public record PreferenceUploadResult(int savedCount, int skippedCount, List<String> skippedDetails,
+                                         int adjustedCount, List<String> adjustedDetails) {}
 }

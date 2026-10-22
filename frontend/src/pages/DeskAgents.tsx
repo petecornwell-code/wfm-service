@@ -290,6 +290,8 @@ export default function DeskAgents() {
 
   // Preference upload
   const [uploading, setUploading] = useState(false)
+  // What the last preferences upload moved or skipped, shown until dismissed.
+  const [prefReport, setPrefReport] = useState<{ adjusted: string[]; skipped: string[] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadAgents = async () => {
@@ -539,10 +541,13 @@ export default function DeskAgents() {
     setUploading(true)
     try {
       const result = await deskAgents.uploadPreferences(deskId, file)
-      showToast('success', `Preferences loaded: ${result.savedCount} saved, ${result.skippedCount} skipped`)
-      if (result.skippedDetails.length > 0) {
-        console.warn('Skipped rows:', result.skippedDetails)
-      }
+      const moved = result.adjustedCount ?? 0
+      showToast(moved > 0 || result.skippedCount > 0 ? 'warning' : 'success',
+        `Preferences loaded: ${result.savedCount} saved, ${result.skippedCount} skipped`
+        + (moved > 0 ? `, ${moved} moved to the nearest shift start` : ''))
+      setPrefReport(moved > 0 || result.skippedCount > 0
+        ? { adjusted: result.adjustedDetails ?? [], skipped: result.skippedDetails }
+        : null)
     } catch (err) {
       showToast('error', getErrorMessage(err))
     } finally {
@@ -656,6 +661,34 @@ export default function DeskAgents() {
           {sortedAgents.length} agent{sortedAgents.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {prefReport && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px', padding: '0.75rem', margin: '0.5rem 0 1rem', fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <strong>Preferences upload</strong>
+            <button onClick={() => setPrefReport(null)} style={{ marginLeft: 'auto', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}>Dismiss</button>
+          </div>
+          {prefReport.adjusted.length > 0 && (
+            <>
+              <p style={{ margin: '0.5rem 0 0.25rem', color: '#92400e' }}>
+                {prefReport.adjusted.length} preferred start(s) had no shift starting at that time on this
+                desk, so they were moved to the nearest shift start:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', maxHeight: '12rem', overflowY: 'auto' }}>
+                {prefReport.adjusted.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
+          )}
+          {prefReport.skipped.length > 0 && (
+            <>
+              <p style={{ margin: '0.5rem 0 0.25rem', color: '#991b1b' }}>{prefReport.skipped.length} row(s) skipped:</p>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', maxHeight: '12rem', overflowY: 'auto' }}>
+                {prefReport.skipped.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       <table>
         <thead>

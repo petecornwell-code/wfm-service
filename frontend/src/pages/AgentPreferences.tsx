@@ -74,7 +74,14 @@ export default function AgentPreferences() {
     try {
       const saved = await preferences.save(deskId, agentId, prefs)
       setPrefs(saved)
-      showToast('success', 'Preferences saved')
+      // On a shift-scheduled desk a start no shift begins at is moved to the nearest shift start.
+      const moved = saved.filter(p => p.adjustedFrom)
+      if (moved.length > 0) {
+        showToast('warning', `Preferences saved. ${moved.length} start time(s) moved to the nearest shift start: `
+          + moved.map(p => `${p.date ?? p.dayOfWeek} ${p.adjustedFrom?.slice(0, 5)} → ${p.preferredStartTime?.slice(0, 5)}`).join(', '))
+      } else {
+        showToast('success', 'Preferences saved')
+      }
     } catch (err) {
       showToast('error', getErrorMessage(err))
     } finally {
