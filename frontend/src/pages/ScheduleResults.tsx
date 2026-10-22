@@ -373,6 +373,7 @@ export default function ScheduleResults() {
         {activeTab === 'violations' && (
           <ViolationsTab
             data={filteredViolations}
+            warnings={schedule.warnings ?? []}
             filter={violationFilter}
             onFilterChange={setViolationFilter}
             expandedConstraint={expandedConstraint}
@@ -1531,19 +1532,64 @@ function PtoTab({ data, dateFilter, dates }: { data: DayOffWithAgent[]; dateFilt
   )
 }
 
+/** Labels a solver warning by the check that produced it, so the list reads by topic. */
+function warningKind(w: string): string {
+  if (w.startsWith('Demand (')) return 'Capacity'
+  if (w.startsWith('Shift library seat supply')) return 'Seat supply'
+  if (w.startsWith('Minimum rest')) return 'Minimum rest'
+  if (w.includes('outside their assigned shift envelope') || w.includes('legal envelope slot')) return 'Shift envelope'
+  return 'Note'
+}
+
+/** Every warning the solve produced, shown at the top of the Constraint Violations tab. */
+function WarningsSection({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null
+  return (
+    <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem' }}>
+      <strong>Warnings ({warnings.length})</strong>
+      <p style={{ margin: '0.25rem 0 0.5rem', fontSize: '0.8rem', color: '#92400e' }}>
+        Not rule violations — things the solver noticed about this schedule&apos;s inputs or result.
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+        <tbody>
+          {warnings.map((w, i) => (
+            <tr key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid #fde68a' }}>
+              <td style={{ padding: '4px 8px', whiteSpace: 'nowrap', verticalAlign: 'top', width: '1%' }}>
+                <span style={{ padding: '0.1rem 0.4rem', borderRadius: '3px', fontSize: '0.75rem', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
+                  {warningKind(w)}
+                </span>
+              </td>
+              <td style={{ padding: '4px 8px' }}>{w}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function ViolationsTab({
-  data, filter, onFilterChange, expandedConstraint, onToggle
+  data, warnings, filter, onFilterChange, expandedConstraint, onToggle
 }: {
   data: ConstraintViolationEntry[]
+  warnings: string[]
   filter: 'all' | 'HARD' | 'SOFT'
   onFilterChange: (f: 'all' | 'HARD' | 'SOFT') => void
   expandedConstraint: string | null
   onToggle: (c: string) => void
 }) {
-  if (!data || data.length === 0) return <p style={{ color: '#6b7280' }}>No constraint violations.</p>
+  if (!data || data.length === 0) {
+    return (
+      <>
+        <WarningsSection warnings={warnings} />
+        <p style={{ color: '#6b7280' }}>No constraint violations.</p>
+      </>
+    )
+  }
 
   return (
     <>
+      <WarningsSection warnings={warnings} />
       <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
         {(['all', 'HARD', 'SOFT'] as const).map(f => (
           <button key={f} onClick={() => onFilterChange(f)}
