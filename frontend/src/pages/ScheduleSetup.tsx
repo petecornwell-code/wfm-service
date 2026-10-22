@@ -97,7 +97,7 @@ export default function ScheduleSetup() {
   // ScheduleResults already polls its own schedule this way (2s); this list refreshes more
   // slowly because it is a whole-list fetch and nobody watches a summary row second by second.
   // The interval is torn down as soon as nothing is RUNNING, so an idle desk makes no requests.
-  const hasRunningSchedule = pastSchedules.some(s => s.status === 'RUNNING')
+  const hasRunningSchedule = pastSchedules.some(s => s.status === 'RUNNING' || s.status === 'FINISHING')
   useEffect(() => {
     if (!hasRunningSchedule) return
     const id = setInterval(loadSchedules, 5000)
@@ -293,8 +293,8 @@ export default function ScheduleSetup() {
                     <td style={{ fontSize: '0.85rem' }}>{new Date(s.createdAt).toLocaleString()}</td>
                     <td>
                       <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600,
-                        background: s.status === 'ACCEPTED' ? '#f0fdf4' : s.status === 'FAILED' ? '#fef2f2' : s.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
-                        color: s.status === 'ACCEPTED' ? '#15803d' : s.status === 'FAILED' ? '#dc2626' : s.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
+                        background: s.status === 'ACCEPTED' ? '#f0fdf4' : s.status === 'FAILED' ? '#fef2f2' : (s.status === 'RUNNING' || s.status === 'FINISHING') ? '#eff6ff' : '#f3f4f6',
+                        color: s.status === 'ACCEPTED' ? '#15803d' : s.status === 'FAILED' ? '#dc2626' : (s.status === 'RUNNING' || s.status === 'FINISHING') ? '#2563eb' : '#6b7280' }}>
                         {s.status}
                       </span>
                     </td>

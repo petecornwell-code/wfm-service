@@ -234,8 +234,23 @@ class DeskServiceSchedulingModeTest {
         assertThat(reloaded.getSchedulingMode()).isEqualTo(SchedulingMode.SHIFT);
     }
 
+    @Test
+    void switchSchedulingMode_finishingSchedule_throwsConflict_modeUnchanged() {
+        // FINISHING: the solver has stopped but its post-solve repairs are still rewriting seats --
+        // the schedule is as in flight as a RUNNING one.
+        Desk desk = saveDesk(TENANT_A, SchedulingMode.SLOT);
+        putScheduleInStore(desk.getId(), ScheduleStatus.FINISHING);
+
+        assertThatThrownBy(() -> deskService.switchSchedulingMode(desk.getId(), SchedulingMode.SHIFT))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage(IN_FLIGHT_MESSAGE);
+
+        Desk reloaded = deskRepository.findById(desk.getId()).orElseThrow();
+        assertThat(reloaded.getSchedulingMode()).isEqualTo(SchedulingMode.SLOT);
+    }
+
     @ParameterizedTest
-    @EnumSource(value = ScheduleStatus.class, names = "RUNNING", mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = ScheduleStatus.class, names = {"RUNNING", "FINISHING"}, mode = EnumSource.Mode.EXCLUDE)
     void switchSchedulingMode_nonRunningSchedule_switchAllowed(ScheduleStatus status) {
         Desk desk = saveDesk(TENANT_A, SchedulingMode.SLOT);
         putScheduleInStore(desk.getId(), status);

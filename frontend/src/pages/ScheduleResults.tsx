@@ -69,6 +69,12 @@ export default function ScheduleResults() {
           feasible: s.feasible, feasibleAt: s.feasibleAt,
           appliedRestWaiverCount: s.appliedRestWaiverCount, unusedRestWaiverCount: s.unusedRestWaiverCount } : prev)
 
+        // FINISHING: the post-solve repairs are still moving seats, and the server returns no
+        // tables until they are done -- keep polling until the status settles.
+        if (s.status === 'FINISHING') {
+          pollRef.current = setTimeout(tickSummary, 2000)
+          return
+        }
         if (s.status !== 'RUNNING') {
           loadDetail(false)   // final state: pick up the finished grids once
           return
@@ -87,7 +93,7 @@ export default function ScheduleResults() {
     loadDetail(true).then(data => {
       if (cancelled || !data) return
       lastDetailAt = Date.now()
-      if (data.status === 'RUNNING') tickSummary()
+      if (data.status === 'RUNNING' || data.status === 'FINISHING') tickSummary()
     })
 
     return () => {
@@ -117,7 +123,7 @@ export default function ScheduleResults() {
     const tick = () => setElapsedSeconds(Math.floor((Date.now() - start) / 1000))
     tick()
 
-    if (schedule.status === 'RUNNING') {
+    if (schedule.status === 'RUNNING' || schedule.status === 'FINISHING') {
       const id = setInterval(tick, 1000)
       return () => clearInterval(id)
     }
@@ -128,6 +134,7 @@ export default function ScheduleResults() {
   if (!schedule) return null
 
   const isRunning = schedule.status === 'RUNNING'
+  const isFinishing = schedule.status === 'FINISHING'
   const canAccept = schedule.status === 'COMPLETED' || schedule.status === 'STOPPED'
   const canReject = canAccept || schedule.status === 'FAILED'
 
@@ -218,8 +225,8 @@ export default function ScheduleResults() {
           <span>
             <strong>Status:</strong>{' '}
             <span style={{ padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600,
-              background: schedule.status === 'ACCEPTED' ? '#f0fdf4' : schedule.status === 'FAILED' ? '#fef2f2' : schedule.status === 'RUNNING' ? '#eff6ff' : '#f3f4f6',
-              color: schedule.status === 'ACCEPTED' ? '#15803d' : schedule.status === 'FAILED' ? '#dc2626' : schedule.status === 'RUNNING' ? '#2563eb' : '#6b7280' }}>
+              background: schedule.status === 'ACCEPTED' ? '#f0fdf4' : schedule.status === 'FAILED' ? '#fef2f2' : (schedule.status === 'RUNNING' || schedule.status === 'FINISHING') ? '#eff6ff' : '#f3f4f6',
+              color: schedule.status === 'ACCEPTED' ? '#15803d' : schedule.status === 'FAILED' ? '#dc2626' : (schedule.status === 'RUNNING' || schedule.status === 'FINISHING') ? '#2563eb' : '#6b7280' }}>
               {schedule.status}
             </span>
           </span>
@@ -264,6 +271,19 @@ export default function ScheduleResults() {
             </span>
           )}
         </div>
+
+        {isFinishing && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '16px', height: '16px', border: '3px solid #3b82f6', borderTop: '3px solid transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              <span style={{ color: '#3b82f6' }}>Finishing up — tidying shift assignments...</span>
+            </div>
+            <p style={{ marginTop: '0.4rem', marginBottom: 0, fontSize: '0.85rem', color: '#6b7280' }}>
+              The solver has stopped and is making final fixes to the roster. The results, Accept
+              and Export appear here as soon as it is done — usually within a few seconds.
+            </p>
+          </div>
+        )}
 
         {isRunning && (
           <div style={{ marginTop: '0.75rem' }}>
@@ -318,7 +338,7 @@ export default function ScheduleResults() {
           {isRunning && <button className="danger" onClick={handleStop}>Stop Solver</button>}
           {canAccept && <button className="primary" onClick={handleAccept} disabled={submitting}>{submitting ? 'Accepting…' : 'Accept'}</button>}
           {canReject && <button className="danger" onClick={handleReject} disabled={submitting}>Reject</button>}
-          {!isRunning && <button onClick={handleExport}>Export to Excel</button>}
+          {!isRunning && !isFinishing && <button onClick={handleExport}>Export to Excel</button>}
         </div>
       </div>
 

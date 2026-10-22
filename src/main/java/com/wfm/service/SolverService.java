@@ -53,8 +53,12 @@ public class SolverService {
     private final Duration defaultTimeLimit;
     private final InMemoryScheduleStore inMemoryStore;
     private final SolverManager<Schedule, UUID> solverManager;
+    // Schedules whose operator pressed Stop. Their status reads FINISHING from the click until the
+    // post-solve repairs complete, then STOPPED -- never STOPPED while the repairs still mutate it.
+    private final Set<UUID> stopRequested = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final ScheduleConsistencyRepairService consistencyRepairService;
     private final ScheduleEnvelopeRepairService envelopeRepairService;
+    private final ScheduleBreakRepairService breakRepairService;
     private final ShiftStartMixTargetService shiftStartMixTargetService;
     private final ShiftStartMixAllocator shiftStartMixAllocator;
 
@@ -98,6 +102,7 @@ public class SolverService {
                          SolverManager<Schedule, UUID> solverManager,
                          ScheduleConsistencyRepairService consistencyRepairService,
                          ScheduleEnvelopeRepairService envelopeRepairService,
+                         ScheduleBreakRepairService breakRepairService,
                          ShiftStartMixTargetService shiftStartMixTargetService,
                          ShiftStartMixAllocator shiftStartMixAllocator,
                          DeskRepository deskRepository,
@@ -123,6 +128,7 @@ public class SolverService {
         this.solverManager = solverManager;
         this.consistencyRepairService = consistencyRepairService;
         this.envelopeRepairService = envelopeRepairService;
+        this.breakRepairService = breakRepairService;
         this.shiftStartMixTargetService = shiftStartMixTargetService;
         this.shiftStartMixAllocator = shiftStartMixAllocator;
         this.deskRepository = deskRepository;
@@ -160,7 +166,8 @@ public class SolverService {
             Schedule existing = existingOpt.get();
             boolean datesOverlap = !request.periodStartDate().isAfter(existing.getPeriodEndDate())
                     && !request.periodEndDate().isBefore(existing.getPeriodStartDate());
-            if (datesOverlap || existing.getStatus() == ScheduleStatus.RUNNING) {
+            if (datesOverlap || existing.getStatus() == ScheduleStatus.RUNNING
+                    || existing.getStatus() == ScheduleStatus.FINISHING) {
                 throw new ConflictException("A schedule already exists for this desk. "
                         + "Stop it (if running) and accept or reject it before starting a new solve.");
             }
@@ -571,7 +578,8 @@ public class SolverService {
                     try {
                         log.debug("Solver best solution update — schedule={}, score={}",
                                 bestSolution.getId(), bestSolution.getScore());
-                        bestSolution.setStatus(ScheduleStatus.RUNNING);
+                        bestSolution.setStatus(stopRequested.contains(bestSolution.getId())
+                                ? ScheduleStatus.FINISHING : ScheduleStatus.RUNNING);
                         // Capture the first time the solution becomes feasible (hard score reaches 0)
                         if (bestSolution.getFeasibleAt() == null
                                 && bestSolution.getScore() != null
@@ -588,46 +596,7 @@ public class SolverService {
                 .withFinalBestSolutionConsumer((Schedule finalBestSolution) -> {
                     TenantContext.setTenantId(solverTenantId);
                     try {
-                        log.info("Solver finished — schedule={}, score={}, status={}",
-                                finalBestSolution.getId(), finalBestSolution.getScore(),
-                                finalBestSolution.getStatus());
-                        // Post-solve usual-shift repair (see ScheduleConsistencyRepairService):
-                        // permutes WHICH agent holds each chosen shift without changing which
-                        // shifts are worked, recovering consistency the configured move set cannot
-                        // reach. Runs BEFORE the store, so the repaired envelopes are what the
-                        // operator reviews and what acceptance denormalises. Self-verifying — it
-                        // rolls itself back on any hard-score regression — and deliberately not
-                        // allowed to fail the solve: a schedule the solver already produced is
-                        // worth more than a consistency improvement.
-                        try {
-                            consistencyRepairService.repairVerified(
-                                    finalBestSolution, sol -> solutionManager().update(sol));
-                        } catch (RuntimeException e) {
-                            log.error("Usual-shift repair failed for schedule {} — keeping the "
-                                    + "solver's own result", finalBestSolution.getId(), e);
-                        }
-                        // Post-solve shift-envelope repair (see ScheduleEnvelopeRepairService):
-                        // moves a seat that landed outside its agent-day envelope — typically the
-                        // agent's own break hour — onto a free legal seat in the same envelope,
-                        // one for one. That exact swap IS in the solver's move set and IS accepted
-                        // when it improves, but at ~23 000 seat entities it is sampled with
-                        // probability ~1e-8 per draw, so live solves settle at a residual -1..-3
-                        // hard with the repair sitting right there unused. Runs AFTER the
-                        // consistency repair so it has the final say on hard violations, and like
-                        // it, is self-verifying (every move is kept only if the hard score strictly
-                        // improves) and never allowed to fail the solve.
-                        try {
-                            envelopeRepairService.repairVerified(
-                                    finalBestSolution, sol -> solutionManager().update(sol));
-                        } catch (RuntimeException e) {
-                            log.error("Envelope repair failed for schedule {} — keeping the "
-                                    + "solver's own result", finalBestSolution.getId(), e);
-                        }
-                        // Only set COMPLETED if not already STOPPED (avoids race with stopSolve)
-                        if (finalBestSolution.getStatus() == ScheduleStatus.RUNNING) {
-                            finalBestSolution.setStatus(ScheduleStatus.COMPLETED);
-                        }
-                        inMemoryStore.put(finalBestSolution);
+                        finishSolve(finalBestSolution);
                     } finally {
                         TenantContext.clear();
                     }
@@ -636,6 +605,7 @@ public class SolverService {
                     TenantContext.setTenantId(solverTenantId);
                     try {
                         log.error("Solver failed for schedule {}", problemId, throwable);
+                        stopRequested.remove(problemId);
                         schedule.setStatus(ScheduleStatus.FAILED);
                         schedule.setErrorMessage(throwable.getMessage());
                         inMemoryStore.put(schedule);
@@ -665,6 +635,79 @@ public class SolverService {
         return schedule;
     }
 
+    /**
+     * The solver's final-best-solution step: run the post-solve repairs, then settle the status.
+     * The schedule reads FINISHING for the whole time the repairs mutate it -- see
+     * {@link ScheduleStatus#FINISHING} -- and ends COMPLETED, or STOPPED if the operator pressed
+     * Stop. Package-private for tests.
+     */
+    void finishSolve(Schedule finalBestSolution) {
+        log.info("Solver finished — schedule={}, score={}, status={}",
+                finalBestSolution.getId(), finalBestSolution.getScore(),
+                finalBestSolution.getStatus());
+        // The repairs below rewrite seats IN PLACE on an object the store may
+        // already be serving (a mid-repair read once crashed the violation
+        // report, and Accept could persist a half-repaired roster). Publish
+        // FINISHING first so every reader stands off until the end status lands.
+        ScheduleStatus endStatus = stopRequested.remove(finalBestSolution.getId())
+                ? ScheduleStatus.STOPPED : ScheduleStatus.COMPLETED;
+        finalBestSolution.setStatus(ScheduleStatus.FINISHING);
+        inMemoryStore.put(finalBestSolution);
+        try {
+            // Post-solve usual-shift repair (see ScheduleConsistencyRepairService):
+            // permutes WHICH agent holds each chosen shift without changing which
+            // shifts are worked, recovering consistency the configured move set cannot
+            // reach. Runs BEFORE the store, so the repaired envelopes are what the
+            // operator reviews and what acceptance denormalises. Self-verifying — it
+            // rolls itself back on any hard-score regression — and deliberately not
+            // allowed to fail the solve: a schedule the solver already produced is
+            // worth more than a consistency improvement.
+            try {
+                consistencyRepairService.repairVerified(
+                        finalBestSolution, sol -> solutionManager().update(sol));
+            } catch (RuntimeException e) {
+                log.error("Usual-shift repair failed for schedule {} — keeping the "
+                        + "solver's own result", finalBestSolution.getId(), e);
+            }
+            // Post-solve shift-envelope repair (see ScheduleEnvelopeRepairService):
+            // moves a seat that landed outside its agent-day envelope — typically the
+            // agent's own break hour — onto a free legal seat in the same envelope,
+            // one for one. That exact swap IS in the solver's move set and IS accepted
+            // when it improves, but at ~23 000 seat entities it is sampled with
+            // probability ~1e-8 per draw, so live solves settle at a residual -1..-3
+            // hard with the repair sitting right there unused. Runs AFTER the
+            // consistency repair so it has the final say on hard violations, and like
+            // it, is self-verifying (every move is kept only if the hard score strictly
+            // improves) and never allowed to fail the solve.
+            try {
+                envelopeRepairService.repairVerified(
+                        finalBestSolution, sol -> solutionManager().update(sol));
+            } catch (RuntimeException e) {
+                log.error("Envelope repair failed for schedule {} — keeping the "
+                        + "solver's own result", finalBestSolution.getId(), e);
+            }
+            // Post-solve break repair (see ScheduleBreakRepairService): moves a break out of an
+            // over-capacity band, or out of an hour below the under-allocation floor, into another
+            // band of the same shift -- band and seats together, the three-part change the solver's
+            // one-variable moves cannot reach. Runs LAST so it sees the envelope repair's seats, and
+            // like both repairs above is self-verifying and never allowed to fail the solve.
+            if (breakRepairService != null) {
+                try {
+                    breakRepairService.repairVerified(
+                            finalBestSolution, sol -> solutionManager().update(sol));
+                } catch (RuntimeException e) {
+                    log.error("Break repair failed for schedule {} — keeping the "
+                            + "solver's own result", finalBestSolution.getId(), e);
+                }
+            }
+        } finally {
+            // In finally: even an Error escaping a repair must not leave the schedule stuck on
+            // FINISHING, where nothing can accept, reject or export it.
+            finalBestSolution.setStatus(endStatus);
+            inMemoryStore.put(finalBestSolution);
+        }
+    }
+
     public Schedule stopSolve(UUID deskId, UUID scheduleId) {
         Schedule schedule = inMemoryStore.get(scheduleId)
                 .orElseThrow(() -> new EntityNotFoundException("Schedule not found: " + scheduleId));
@@ -673,8 +716,11 @@ public class SolverService {
             throw new ConflictException("Schedule is not running (status: " + schedule.getStatus() + ")");
         }
 
-        // Set STOPPED before terminateEarly so the finalBestSolution callback won't overwrite
-        schedule.setStatus(ScheduleStatus.STOPPED);
+        // FINISHING, not STOPPED: the final-solution callback still has the post-solve repairs to
+        // run on this schedule. It sets STOPPED itself once they are done (stopRequested tells it
+        // the operator, not the time limit, ended the solve).
+        stopRequested.add(scheduleId);
+        schedule.setStatus(ScheduleStatus.FINISHING);
         solverManager.terminateEarly(scheduleId);
         inMemoryStore.put(schedule);
         return schedule;

@@ -146,6 +146,7 @@ class BusinessDateJoinGuardTest {
             SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ShiftLibraryValidationService.java")),
             SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ScheduleEnvelopeRepairService.java")),
             SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ScheduleConsistencyRepairService.java")),
+            SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ScheduleBreakRepairService.java")),
             SOURCE_ROOT.resolve(Path.of("com", "wfm", "service", "ShiftStartMixTargetService.java")));
 
     /**

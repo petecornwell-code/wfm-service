@@ -202,7 +202,8 @@ public class DeskService {
         }
 
         boolean runningSolveInFlight = inMemoryScheduleStore.getByDeskId(deskId)
-                .map(schedule -> schedule.getStatus() == ScheduleStatus.RUNNING)
+                .map(schedule -> schedule.getStatus() == ScheduleStatus.RUNNING
+                        || schedule.getStatus() == ScheduleStatus.FINISHING)
                 .orElse(false);
         if (runningSolveInFlight) {
             throw new ConflictException("This desk has a schedule currently solving. "

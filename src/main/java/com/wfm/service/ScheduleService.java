@@ -186,6 +186,19 @@ public class ScheduleService {
         deskRepository.findByIdAndTenantId(deskId, tenantId)
                 .ifPresent(desk -> response.setDeskName(desk.getName()));
 
+        // FINISHING: the post-solve repairs are rewriting seats on this very object right now, so
+        // building any view from it would read a roster mid-move (this is what crashed the
+        // violation report). Return the header only; the page keeps polling and loads the views
+        // once the status settles on COMPLETED or STOPPED.
+        if (schedule.getStatus() == ScheduleStatus.FINISHING) {
+            response.setStaffingSummary(List.of());
+            response.setAgentSchedule(List.of());
+            response.setConstraintViolations(List.of());
+            response.setViolatedHardConstraints(List.of());
+            response.setRestWaiverDisclosure(new ScheduleDetailResponse.RestWaiverDisclosure(List.of(), List.of()));
+            return response;
+        }
+
         // Compute output views
         response.setStaffingSummary(scheduleOutputService.buildStaffingSummary(schedule));
         response.setAgentSchedule(scheduleOutputService.buildAgentSchedule(schedule));
@@ -336,6 +349,10 @@ public class ScheduleService {
         return ConstraintViolationSnapshotCodec.encode(remapped);
     }
 
+    /** Shown when Accept/Reject/Export reach a schedule whose post-solve repairs are still running. */
+    public static final String FINISHING_MESSAGE =
+            "This schedule is still finishing — the solver is tidying up shift assignments. Try again in a few seconds.";
+
     // --- Task 26: acceptSchedule ---
 
     @Transactional
@@ -350,6 +367,9 @@ public class ScheduleService {
             throw new EntityNotFoundException("Schedule not found for desk: " + deskId);
         }
 
+        if (schedule.getStatus() == ScheduleStatus.FINISHING) {
+            throw new ConflictException(FINISHING_MESSAGE);
+        }
         if (schedule.getStatus() != ScheduleStatus.COMPLETED
                 && schedule.getStatus() != ScheduleStatus.STOPPED) {
             throw new ConflictException("Schedule must be COMPLETED or STOPPED to accept (status: "
@@ -548,6 +568,9 @@ public class ScheduleService {
             throw new EntityNotFoundException("Schedule not found for desk: " + deskId);
         }
 
+        if (schedule.getStatus() == ScheduleStatus.FINISHING) {
+            throw new ConflictException(FINISHING_MESSAGE);
+        }
         if (schedule.getStatus() != ScheduleStatus.COMPLETED
                 && schedule.getStatus() != ScheduleStatus.STOPPED
                 && schedule.getStatus() != ScheduleStatus.FAILED) {

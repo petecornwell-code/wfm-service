@@ -1339,6 +1339,45 @@ class ScheduleServiceShiftSnapshotTest {
         assertThat(realOutputService().buildConstraintViolations(accepted, false)).isEmpty();
     }
 
+
+    // ------------------------------------------------------------------------------------------
+    // FINISHING — the post-solve repairs mutate the in-memory schedule; nothing may read, accept
+    // or reject it until the status settles.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    void getScheduleDetail_whileFinishing_returnsTheHeaderWithoutBuildingAnyView() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        UUID id = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, id);
+        schedule.setStatus(ScheduleStatus.FINISHING);
+        inMemoryStore.put(schedule);
+
+        ScheduleDetailResponse detail = scheduleService.getScheduleDetail(deskId, id, null);
+
+        assertThat(detail.getStatus()).isEqualTo("FINISHING");
+        assertThat(detail.getConstraintViolations()).isEmpty();
+        assertThat(detail.getAgentSchedule()).isEmpty();
+        assertThat(detail.getStaffingSummary()).isEmpty();
+        // The views are what read the mid-repair roster; none may run.
+        org.mockito.Mockito.verifyNoInteractions(scheduleOutputService);
+    }
+
+    @Test
+    void acceptAndReject_whileFinishing_areRefusedWithThePlainMessage() {
+        UUID deskId = saveDesk(TENANT_A, SchedulingMode.SHIFT);
+        UUID id = UUID.randomUUID();
+        Schedule schedule = buildInMemorySchedule(deskId, id);
+        schedule.setStatus(ScheduleStatus.FINISHING);
+        inMemoryStore.put(schedule);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> scheduleService.acceptSchedule(deskId, id, 0))
+                .hasMessage(ScheduleService.FINISHING_MESSAGE);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> scheduleService.rejectSchedule(deskId, id))
+                .hasMessage(ScheduleService.FINISHING_MESSAGE);
+        assertThat(inMemoryStore.get(id)).isPresent();
+    }
+
     private ScheduleOutputService realOutputService() {
         // Phase 17: widened constructor takes the drift-report dependencies. Every call site of
         // this helper exercises buildAgentSchedule only, never buildDriftReport, so plain mocks

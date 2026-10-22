@@ -105,6 +105,10 @@ public class ScheduleController {
     @GetMapping("/{id}/export")
     public ResponseEntity<byte[]> exportToExcel(@PathVariable UUID deskId, @PathVariable UUID id) {
         ScheduleDetailResponse detail = scheduleService.getScheduleDetail(deskId, id, null);
+        if (com.wfm.model.ScheduleStatus.FINISHING.name().equals(detail.getStatus())) {
+            // The detail above carries no views while FINISHING -- exporting it would be an empty workbook.
+            throw new com.wfm.exception.ConflictException(ScheduleService.FINISHING_MESSAGE);
+        }
 
         // Day-off rows are fetched here rather than inside the export service: they are not part
         // of ScheduleDetailResponse, and the UI's PTO tab issues its own request for the same
