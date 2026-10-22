@@ -31,7 +31,8 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
         "secretsmanager:GetSecretValue"
       ]
       Resource = [
-        aws_secretsmanager_secret.db_password.arn
+        aws_secretsmanager_secret.db_password.arn,
+        aws_secretsmanager_secret.bamboohr_api_key.arn
       ]
     }]
   })

@@ -56,6 +56,11 @@ resource "aws_ecs_task_definition" "app" {
       {
         name      = "SPRING_DATASOURCE_PASSWORD"
         valueFrom = aws_secretsmanager_secret.db_password.arn
+      },
+      {
+        # Spring binds BAMBOOHR_API_KEY to bamboohr.api-key (bamboohr.tf explains where the value comes from).
+        name      = "BAMBOOHR_API_KEY"
+        valueFrom = aws_secretsmanager_secret.bamboohr_api_key.arn
       }
     ]
 

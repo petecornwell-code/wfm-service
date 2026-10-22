@@ -5,7 +5,9 @@ import { showToast } from '../components/Toast'
 
 export default function Configuration() {
   const [bambooServer, setBambooServer] = useState('')
-  const [bambooApiKey, setBambooApiKey] = useState('')
+  // The API key itself never reaches the browser: it lives in AWS Secrets Manager. Only whether it
+  // is set is reported.
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
   const [bambooCacheMaxSize, setBambooCacheMaxSize] = useState('5000')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -66,7 +68,7 @@ export default function Configuration() {
     appConfiguration.get()
       .then(config => {
         setBambooServer(config['bamboohr.server'] || '')
-        setBambooApiKey(config['bamboohr.apiKey'] || '')
+        setApiKeyConfigured(config['bamboohr.apiKeyConfigured'] === 'true')
         setBambooCacheMaxSize(config['bamboohr.cache.maxSize'] || '5000')
       })
       .catch(err => showToast('error', getErrorMessage(err)))
@@ -78,11 +80,10 @@ export default function Configuration() {
     try {
       const updated = await appConfiguration.update({
         'bamboohr.server': bambooServer,
-        'bamboohr.apiKey': bambooApiKey,
         'bamboohr.cache.maxSize': bambooCacheMaxSize,
       })
       setBambooServer(updated['bamboohr.server'] || '')
-      setBambooApiKey(updated['bamboohr.apiKey'] || '')
+      setApiKeyConfigured(updated['bamboohr.apiKeyConfigured'] === 'true')
       setBambooCacheMaxSize(updated['bamboohr.cache.maxSize'] || '5000')
       showToast('success', 'Configuration saved')
     } catch (err) {
@@ -111,13 +112,19 @@ export default function Configuration() {
         </div>
         <div style={{ marginBottom: '1rem' }}>
           <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem' }}>API Key</label>
-          <input
-            value={bambooApiKey}
-            onChange={e => setBambooApiKey(e.target.value)}
-            placeholder="Enter BambooHR API key"
-            style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '4px' }}
-          />
-          <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>Your BambooHR API key (will be hidden in a future release)</span>
+          {apiKeyConfigured ? (
+            <div style={{ padding: '0.5rem', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', color: '#15803d' }}>
+              ✓ Set — stored securely in AWS Secrets Manager
+            </div>
+          ) : (
+            <div style={{ padding: '0.5rem', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '4px', color: '#991b1b' }}>
+              Not set — the app is using built-in test data instead of BambooHR
+            </div>
+          )}
+          <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+            The key is no longer entered here. An administrator changes it in AWS Secrets Manager
+            (secret <code>wfm-service/dev/bamboohr-api-key</code>), then redeploys the app.
+          </span>
         </div>
         <div style={{ marginBottom: '1.5rem' }}>
           <label style={{ display: 'block', fontWeight: 500, marginBottom: '0.25rem' }}>Cache Max Size</label>

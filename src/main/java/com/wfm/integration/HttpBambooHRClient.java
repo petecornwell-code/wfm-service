@@ -101,7 +101,7 @@ public class HttpBambooHRClient implements BambooHRClient {
         }
         String key = configurationService.getConfigValue(AppConfigurationService.BAMBOOHR_API_KEY);
         if (key == null || key.isBlank()) {
-            throw new IllegalStateException("BambooHR API key is not configured. Please set it in Configuration.");
+            throw new IllegalStateException("BambooHR API key is not configured. It is read from the BAMBOOHR_API_KEY environment variable (AWS Secrets Manager in deployed environments).");
         }
         return key;
     }
